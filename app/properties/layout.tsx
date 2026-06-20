@@ -1,0 +1,14 @@
+import { AppNav } from "@/components/app-nav";
+
+export default function PropertiesLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <main className="min-h-screen">
+      <AppNav active="properties" />
+      <div className="mx-auto flex max-w-6xl flex-col px-5 py-8">{children}</div>
+    </main>
+  );
+}
