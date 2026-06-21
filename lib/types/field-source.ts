@@ -87,6 +87,8 @@ export const PACKET_SOURCE_PATHS = [
 export const CUSTOM_RESOLVER_KEYS = [
   "agent_full_name",
   "broker_full_name",
+  "property_hoa_name",
+  "property_hoa_phone",
 ] as const;
 
 export const STATIC_DEFAULT_SOURCE_PATHS = ["default_checked", "default_value"] as const;

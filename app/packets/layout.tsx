@@ -1,4 +1,6 @@
 import { AppNav } from "@/components/app-nav";
+import { PacketsSectionLayout } from "@/components/packets/packets-section-layout";
+import { Suspense } from "react";
 
 export default function PacketsLayout({
   children,
@@ -8,7 +10,9 @@ export default function PacketsLayout({
   return (
     <main className="min-h-screen">
       <AppNav active="packets" />
-      <div className="mx-auto flex max-w-6xl flex-col px-5 py-8">{children}</div>
+      <Suspense>
+        <PacketsSectionLayout>{children}</PacketsSectionLayout>
+      </Suspense>
     </main>
   );
 }

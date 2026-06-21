@@ -7,6 +7,11 @@ import {
   normalizeFieldSourceInput,
   validateFieldSourceInput,
 } from "@/lib/types/field-source";
+import {
+  AUTHENTISIGN_EXCLUSION_MESSAGE,
+  isAuthentisignExcludedFieldKey,
+  isAuthentisignExcludedWidgetType,
+} from "@/lib/types/authentisign-excluded-fields";
 
 export type Field = {
   id: string;
@@ -284,6 +289,14 @@ export function validateFieldInput(input: FieldInput): string | null {
   }
   if (!input.field_widget_type.trim()) {
     return "Field widget type is required.";
+  }
+
+  if (isAuthentisignExcludedWidgetType(input.field_widget_type)) {
+    return AUTHENTISIGN_EXCLUSION_MESSAGE;
+  }
+
+  if (isAuthentisignExcludedFieldKey(input.field_key)) {
+    return AUTHENTISIGN_EXCLUSION_MESSAGE;
   }
 
   return validateFieldSourceInput(input);

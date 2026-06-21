@@ -1,8 +1,10 @@
 import type { FormFieldMapping } from "@/lib/types/form-field-mapping";
 import type {
+  FieldInstance,
   FieldInstanceMapping,
   FieldInstanceWithField,
 } from "@/lib/types/field-instance";
+import { isAuthentisignExcludedFormFieldMapping } from "@/lib/types/authentisign-excluded-fields";
 import type { TemplatePdfFieldType } from "@/lib/types/template-pdf-field";
 import { catalogTypesToLegacyFieldType } from "@/lib/types/field";
 
@@ -99,6 +101,10 @@ export function buildPacketFormFieldViews(params: {
   );
 
   return params.mappings.flatMap((mapping) => {
+    if (isAuthentisignExcludedFormFieldMapping(mapping)) {
+      return [];
+    }
+
     const instance = instancesByFieldId.get(mapping.field_id);
     if (!instance) {
       return [];
@@ -141,6 +147,7 @@ export function packetFormFieldViewToOverlayField(
   is_required: boolean;
   hasPlacementOverride: boolean;
   displayValue: string;
+  default_checked: boolean;
 } {
   const field = fieldView.instance.fields;
 
@@ -161,6 +168,7 @@ export function packetFormFieldViewToOverlayField(
     is_required: fieldView.mapping.required,
     hasPlacementOverride: fieldView.hasPlacementOverride,
     displayValue: fieldView.displayValue,
+    default_checked: field?.default_checked ?? false,
   };
 }
 
@@ -179,4 +187,149 @@ export function formatPacketFieldDisplayValue(
   }
 
   return value.trim() || "—";
+}
+
+export function isCheckboxCheckedValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["false", "0", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return false;
+}
+
+export function resolveCheckboxCheckedState(
+  value: string,
+  defaultChecked?: boolean | null,
+): boolean {
+  const trimmed = value.trim();
+  if (trimmed) {
+    return isCheckboxCheckedValue(trimmed);
+  }
+  return defaultChecked === true;
+}
+
+export function isPacketFieldValueEmpty(
+  value: string,
+  fieldType: TemplatePdfFieldType,
+  defaultChecked?: boolean | null,
+): boolean {
+  if (fieldType === "CHECKBOX") {
+    if (value.trim()) {
+      return !resolveCheckboxCheckedState(value, defaultChecked);
+    }
+    return defaultChecked !== true;
+  }
+
+  return !value.trim();
+}
+
+export function formatPacketFieldOverlayValue(
+  value: string,
+  fieldType: TemplatePdfFieldType,
+): string {
+  if (fieldType === "CHECKBOX") {
+    return "";
+  }
+
+  return value.trim();
+}
+
+export function packetFieldSidebarLabel(fieldView: PacketFormFieldView): string {
+  const field = fieldView.instance.fields;
+  return (
+    field?.field_label?.trim() ||
+    fieldView.mapping.mapping_name?.trim() ||
+    field?.field_key ||
+    "Field"
+  );
+}
+
+export type PacketFieldEditorControl =
+  | "text"
+  | "number"
+  | "date"
+  | "checkbox";
+
+export function resolvePacketFieldEditorControl(
+  fieldView: PacketFormFieldView,
+): PacketFieldEditorControl {
+  const field = fieldView.instance.fields;
+  const widgetType = (
+    field?.field_widget_type ??
+    fieldView.mapping.field_widget_type ??
+    "text"
+  ).toLowerCase();
+  const dataType = (field?.field_data_type ?? "text").toLowerCase();
+
+  if (widgetType === "checkbox" || dataType === "boolean") {
+    return "checkbox";
+  }
+
+  if (widgetType === "date" || dataType === "date") {
+    return "date";
+  }
+
+  if (dataType === "number" || dataType === "currency") {
+    return "number";
+  }
+
+  return "text";
+}
+
+export function buildDraftValuesFromFieldViews(
+  fieldViews: PacketFormFieldView[],
+): Record<string, string> {
+  const drafts: Record<string, string> = {};
+
+  for (const fieldView of fieldViews) {
+    drafts[fieldView.instance.id] = fieldView.displayValue;
+  }
+
+  return drafts;
+}
+
+export function applyDraftValuesToFieldViews(
+  fieldViews: PacketFormFieldView[],
+  draftValuesByInstanceId: Record<string, string>,
+): PacketFormFieldView[] {
+  return fieldViews.map((fieldView) => ({
+    ...fieldView,
+    displayValue:
+      draftValuesByInstanceId[fieldView.instance.id] ?? fieldView.displayValue,
+  }));
+}
+
+export function getDirtyFieldInstanceIds(
+  draftValuesByInstanceId: Record<string, string>,
+  savedValuesByInstanceId: Record<string, string>,
+): string[] {
+  const dirtyIds = new Set<string>();
+
+  for (const [instanceId, draftValue] of Object.entries(
+    draftValuesByInstanceId,
+  )) {
+    if (draftValue !== (savedValuesByInstanceId[instanceId] ?? "")) {
+      dirtyIds.add(instanceId);
+    }
+  }
+
+  return [...dirtyIds];
+}
+
+export function isManualFieldValueOverride(
+  instance: Pick<FieldInstance, "is_override" | "source">,
+): boolean {
+  if (instance.is_override) {
+    return true;
+  }
+
+  const source = (instance.source ?? "").trim().toLowerCase();
+  return (
+    source === "manual" ||
+    source === "manual_override" ||
+    source === "override"
+  );
 }

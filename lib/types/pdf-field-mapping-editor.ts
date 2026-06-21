@@ -10,6 +10,10 @@ import {
   normalizeFieldInput,
   validateFieldInput,
 } from "@/lib/types/field";
+import {
+  AUTHENTISIGN_EXCLUSION_MESSAGE,
+  isAuthentisignExcludedWidgetType,
+} from "@/lib/types/authentisign-excluded-fields";
 import { emptyFieldSourceInput } from "@/lib/types/field-source";
 import {
   type PlacedPdfField,
@@ -49,6 +53,10 @@ export type PdfMappingEditorInput = {
 };
 
 export const MAPPING_ALIGNMENT_OPTIONS = ["left", "center", "right"] as const;
+
+export const MAPPABLE_FIELD_WIDGET_TYPES = FIELD_WIDGET_TYPES.filter(
+  (widgetType) => !isAuthentisignExcludedWidgetType(widgetType),
+);
 
 export function emptyQuickCreateFieldInput(): QuickCreateFieldInput {
   return {
@@ -189,6 +197,10 @@ export function validatePdfMappingEditorInput(
 
   if (!input.field_widget_type.trim()) {
     return "Widget type is required.";
+  }
+
+  if (isAuthentisignExcludedWidgetType(input.field_widget_type)) {
+    return AUTHENTISIGN_EXCLUSION_MESSAGE;
   }
 
   const pageNumber = Number(input.page_number);

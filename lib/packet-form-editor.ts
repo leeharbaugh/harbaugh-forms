@@ -1,11 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { revertFieldInstanceToResolvedValue } from "@/lib/field-resolver";
 import { createPacketFormDownloadUrl } from "@/lib/packet-form-storage";
 import {
   ensureFieldInstancesForPacketForm,
   fieldInstancesByFieldId,
   loadActiveFormFieldMappingsForForm,
 } from "@/lib/field-instances";
-import type { FieldInstanceMapping } from "@/lib/types/field-instance";
+import { filterMappableFormFieldMappings } from "@/lib/types/authentisign-excluded-fields";
+import type {
+  FieldInstanceMapping,
+  FieldInstanceWithField,
+} from "@/lib/types/field-instance";
 import {
   buildPacketFormFieldViews,
   type PacketFormEditorData,
@@ -91,7 +96,7 @@ export async function loadPacketFormEditorData(
   ]);
 
   const fields = buildPacketFormFieldViews({
-    mappings,
+    mappings: filterMappableFormFieldMappings(mappings),
     instances,
     placementOverrides,
   });
@@ -137,6 +142,23 @@ export async function saveFieldInstanceValue(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export async function saveFieldInstanceValues(
+  supabase: SupabaseClient,
+  updates: Array<{ fieldInstanceId: string; value: string }>,
+  source: "manual_override" | "override" = "manual_override",
+): Promise<void> {
+  await Promise.all(
+    updates.map((update) =>
+      saveFieldInstanceValue(
+        supabase,
+        update.fieldInstanceId,
+        update.value,
+        source,
+      ),
+    ),
+  );
 }
 
 export type PlacementUpdateInput = Pick<
@@ -237,6 +259,24 @@ export async function resetFieldInstanceMappingPlacement(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export async function revertPacketFormFieldValue(
+  supabase: SupabaseClient,
+  params: {
+    packetId: number;
+    packetFormId: number;
+    fieldInstanceId: string;
+  },
+): Promise<FieldInstanceWithField> {
+  return revertFieldInstanceToResolvedValue(supabase, params);
+}
+
+export async function refreshPacketFormFieldValues(
+  supabase: SupabaseClient,
+  packetFormId: number,
+): Promise<void> {
+  await ensureFieldInstancesForPacketForm(supabase, packetFormId);
 }
 
 export { fieldInstancesByFieldId };

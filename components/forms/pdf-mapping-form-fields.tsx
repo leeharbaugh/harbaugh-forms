@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import type { Field } from "@/lib/types/field";
 import {
   FIELD_DATA_TYPES,
-  FIELD_WIDGET_TYPES,
+  MAPPABLE_FIELD_WIDGET_TYPES,
   MAPPING_ALIGNMENT_OPTIONS,
   type FieldSelectionMode,
   type PdfMappingEditorInput,
@@ -197,7 +197,7 @@ export function PdfMappingFormFields({
               }
               disabled={readOnly}
             >
-              {FIELD_WIDGET_TYPES.map((widgetType) => (
+              {MAPPABLE_FIELD_WIDGET_TYPES.map((widgetType) => (
                 <option key={widgetType} value={widgetType}>
                   {formatFieldWidgetType(widgetType)}
                 </option>
@@ -239,7 +239,7 @@ export function PdfMappingFormFields({
           onChange={(event) => handleWidgetTypeChange(event.target.value)}
           disabled={readOnly}
         >
-          {FIELD_WIDGET_TYPES.map((widgetType) => (
+          {MAPPABLE_FIELD_WIDGET_TYPES.map((widgetType) => (
             <option key={widgetType} value={widgetType}>
               {formatFieldWidgetType(widgetType)}
             </option>

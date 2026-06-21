@@ -5,13 +5,23 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
 import { PdfFieldEditDialog } from "@/components/forms/pdf-field-edit-dialog";
+import { PdfFieldInventoryPanel } from "@/components/forms/pdf-field-inventory-panel";
 import { PdfFieldOverlay } from "@/components/forms/pdf-field-overlay";
 import { PdfFieldPlacementDialog } from "@/components/forms/pdf-field-placement-dialog";
 import { Button } from "@/components/ui/button";
 import { createActiveField } from "@/lib/field-catalog";
 import { getFormPdfSignedUrl } from "@/lib/form-storage";
+import { extractPdfFieldInventory } from "@/lib/pdf-field-extract";
+import {
+  applyPdfFieldInventory,
+  type ApplyPdfFieldInventoryResult,
+} from "@/lib/pdf-field-inventory";
 import { createClient } from "@/lib/supabase/client";
 import { type Form, formatFormReference } from "@/lib/types/form";
+import {
+  isAuthentisignExcludedField,
+  isAuthentisignExcludedFormFieldMapping,
+} from "@/lib/types/authentisign-excluded-fields";
 import {
   FORM_FIELD_MAPPING_SELECT,
   type FormFieldMapping,
@@ -50,6 +60,7 @@ import { Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
+import type { PdfFieldInventoryResult } from "@/lib/pdf-field-extract";
 
 type PdfFieldEditorProps = {
   formId: number;
@@ -123,6 +134,14 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   const [updateLayoutError, setUpdateLayoutError] = useState<string | null>(
     null,
   );
+  const [inventory, setInventory] = useState<PdfFieldInventoryResult | null>(
+    null,
+  );
+  const [inventoryApplyResult, setInventoryApplyResult] =
+    useState<ApplyPdfFieldInventoryResult | null>(null);
+  const [isExtractingInventory, setIsExtractingInventory] = useState(false);
+  const [isApplyingInventory, setIsApplyingInventory] = useState(false);
+  const [inventoryError, setInventoryError] = useState<string | null>(null);
   const [selectedMappingId, setSelectedMappingId] = useState<string | null>(
     null,
   );
@@ -275,14 +294,22 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       setMappings([]);
     } else {
       const rows = (mappingsResult.data as FormFieldMapping[]) ?? [];
-      setMappings(rows.map((row) => formFieldMappingToPlacedPdfField(row)));
+      setMappings(
+        rows
+          .filter((row) => !isAuthentisignExcludedFormFieldMapping(row))
+          .map((row) => formFieldMappingToPlacedPdfField(row)),
+      );
     }
 
     if (catalogResult.error) {
       setLoadError(catalogResult.error.message);
       setCatalogFields([]);
     } else {
-      setCatalogFields((catalogResult.data as Field[]) ?? []);
+      setCatalogFields(
+        ((catalogResult.data as Field[]) ?? []).filter(
+          (field) => !isAuthentisignExcludedField(field),
+        ),
+      );
     }
 
     try {
@@ -306,6 +333,59 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const handleExtractInventory = async () => {
+    if (!pdfUrl) {
+      return;
+    }
+
+    setIsExtractingInventory(true);
+    setInventoryError(null);
+    setInventoryApplyResult(null);
+
+    try {
+      const result = await extractPdfFieldInventory(pdfUrl);
+      setInventory(result);
+    } catch (error) {
+      setInventory(null);
+      setInventoryError(
+        error instanceof Error
+          ? error.message
+          : "Failed to extract PDF field inventory.",
+      );
+    } finally {
+      setIsExtractingInventory(false);
+    }
+  };
+
+  const handleApplyInventory = async () => {
+    if (!inventory || inventory.items.length === 0) {
+      return;
+    }
+
+    setIsApplyingInventory(true);
+    setInventoryError(null);
+
+    const supabase = createClient();
+
+    try {
+      const result = await applyPdfFieldInventory(
+        supabase,
+        formId,
+        inventory.items,
+      );
+      setInventoryApplyResult(result);
+      await loadData();
+    } catch (error) {
+      setInventoryError(
+        error instanceof Error
+          ? error.message
+          : "Failed to apply PDF field inventory.",
+      );
+    } finally {
+      setIsApplyingInventory(false);
+    }
+  };
 
   const mappingsByPage = useMemo(() => {
     const grouped: Record<number, PlacedPdfField[]> = {};
@@ -881,6 +961,15 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         </div>
 
         <aside className="flex min-h-0 min-w-0 flex-col border-l bg-card">
+          <PdfFieldInventoryPanel
+            inventory={inventory}
+            applyResult={inventoryApplyResult}
+            isExtracting={isExtractingInventory}
+            isApplying={isApplyingInventory}
+            error={inventoryError}
+            onExtract={() => void handleExtractInventory()}
+            onApply={() => void handleApplyInventory()}
+          />
           <div className="shrink-0 border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Template placements</h2>
             <p className="mt-1 text-xs text-muted-foreground">

@@ -8,25 +8,31 @@ import {
   PacketFormFieldOverlay,
   type PacketFormOverlayField,
 } from "@/components/packets/packet-form-field-overlay";
-import { PacketFormFieldValueDialog } from "@/components/packets/packet-form-field-value-dialog";
+import { PacketFormFieldsSidebar } from "@/components/packets/packet-form-fields-sidebar";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   loadPacketFormEditorData,
+  refreshPacketFormFieldValues,
   resetFieldInstanceMappingPlacement,
-  saveFieldInstanceValue,
+  revertPacketFormFieldValue,
+  saveFieldInstanceValues,
   upsertFieldInstanceMappingPlacement,
 } from "@/lib/packet-form-editor";
+import {
+  PDF_EDITOR_SIDEBAR_WIDTH,
+  PDF_MIN_PAGE_WIDTH,
+  type PdfZoomMode,
+  computePdfPageWidth,
+  displayZoomPercent,
+  stepZoomPercent,
+} from "@/lib/pdf-editor-zoom";
 import { createClient } from "@/lib/supabase/client";
 import { formatFormReference } from "@/lib/types/form";
+import type { FieldInstanceWithField } from "@/lib/types/field-instance";
 import {
-  formatPacketFieldDisplayValue,
+  applyDraftValuesToFieldViews,
+  buildDraftValuesFromFieldViews,
+  getDirtyFieldInstanceIds,
   packetFormFieldViewToOverlayField,
   type PacketFormFieldView,
 } from "@/lib/types/packet-form-editor";
@@ -35,8 +41,10 @@ import {
   pdfToRenderRect,
   renderRectToPdfPlacement,
 } from "@/lib/types/template-pdf-field";
+import { cn } from "@/lib/utils";
+import { Minus, Plus, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
 
 type PacketFormEditorProps = {
@@ -54,17 +62,26 @@ export function PacketFormEditor({
   const [formId, setFormId] = useState<number | null>(null);
   const [formName, setFormName] = useState("");
   const [fields, setFields] = useState<PacketFormFieldView[]>([]);
+  const [draftValuesByInstanceId, setDraftValuesByInstanceId] = useState<
+    Record<string, string>
+  >({});
+  const [savedValuesByInstanceId, setSavedValuesByInstanceId] = useState<
+    Record<string, string>
+  >({});
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [pageMetrics, setPageMetrics] = useState<
     Record<number, PartialPageMetrics>
   >({});
-  const [editingFieldView, setEditingFieldView] =
-    useState<PacketFormFieldView | null>(null);
-  const [editValue, setEditValue] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [isSavingValue, setIsSavingValue] = useState(false);
-  const [isResettingPlacement, setIsResettingPlacement] = useState(false);
+  const [isSavingChanges, setIsSavingChanges] = useState(false);
+  const [isResettingPlacementId, setIsResettingPlacementId] = useState<
+    string | null
+  >(null);
+  const [isRevertingInstanceId, setIsRevertingInstanceId] = useState<
+    string | null
+  >(null);
+  const [isRefreshingValues, setIsRefreshingValues] = useState(false);
   const [updatingMappingId, setUpdatingMappingId] = useState<string | null>(
     null,
   );
@@ -73,8 +90,114 @@ export function PacketFormEditor({
   const [updateLayoutError, setUpdateLayoutError] = useState<string | null>(
     null,
   );
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [selectedMappingId, setSelectedMappingId] = useState<string | null>(
+    null,
+  );
+  const pdfWorkspaceRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const sidebarItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 });
+  const [basePageWidth, setBasePageWidth] = useState<number | null>(null);
+  const [basePageHeight, setBasePageHeight] = useState<number | null>(null);
+  const [zoomMode, setZoomMode] = useState<PdfZoomMode>("fit-width");
+  const [zoomPercent, setZoomPercent] = useState(100);
+  const [useComfortableDefault, setUseComfortableDefault] = useState(true);
 
-  const pageWidth = 820;
+  useEffect(() => {
+    const element = pdfWorkspaceRef.current;
+    if (!element) {
+      return;
+    }
+
+    const updateWorkspaceSize = () => {
+      setWorkspaceSize({
+        width: element.clientWidth,
+        height: element.clientHeight,
+      });
+    };
+
+    updateWorkspaceSize();
+    const observer = new ResizeObserver(updateWorkspaceSize);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, [pdfUrl, isLoading]);
+
+  const pageWidth = useMemo(() => {
+    if (!basePageWidth || !basePageHeight) {
+      return PDF_MIN_PAGE_WIDTH;
+    }
+
+    return computePdfPageWidth({
+      mode: zoomMode,
+      zoomPercent,
+      basePageWidth,
+      basePageHeight,
+      workspaceWidth: workspaceSize.width,
+      workspaceHeight: workspaceSize.height,
+      comfortableClamp: useComfortableDefault && zoomMode === "fit-width",
+    });
+  }, [
+    basePageWidth,
+    basePageHeight,
+    workspaceSize.width,
+    workspaceSize.height,
+    zoomMode,
+    zoomPercent,
+    useComfortableDefault,
+  ]);
+
+  const currentZoomLabel = useMemo(() => {
+    if (!basePageWidth) {
+      return "—";
+    }
+
+    return `${displayZoomPercent(pageWidth, basePageWidth)}%`;
+  }, [basePageWidth, pageWidth]);
+
+  const handleFitWidth = () => {
+    setUseComfortableDefault(false);
+    setZoomMode("fit-width");
+  };
+
+  const handleFitPage = () => {
+    setUseComfortableDefault(false);
+    setZoomMode("fit-page");
+  };
+
+  const handleZoomIn = () => {
+    setUseComfortableDefault(false);
+    const current =
+      basePageWidth != null
+        ? displayZoomPercent(pageWidth, basePageWidth)
+        : zoomPercent;
+    setZoomMode("custom");
+    setZoomPercent(stepZoomPercent(current, "in"));
+  };
+
+  const handleZoomOut = () => {
+    setUseComfortableDefault(false);
+    const current =
+      basePageWidth != null
+        ? displayZoomPercent(pageWidth, basePageWidth)
+        : zoomPercent;
+    setZoomMode("custom");
+    setZoomPercent(stepZoomPercent(current, "out"));
+  };
+
+  const setBasePageDimensions = (
+    pageNumber: number,
+    width: number,
+    height: number,
+  ) => {
+    if (pageNumber !== 1) {
+      return;
+    }
+
+    setBasePageWidth(width);
+    setBasePageHeight(height);
+  };
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -93,6 +216,9 @@ export function PacketFormEditor({
       setFormId(data.packetForm.form_id);
       setFormName(data.packetForm.forms?.form_name ?? "");
       setFields(data.fields);
+      const valueState = buildDraftValuesFromFieldViews(data.fields);
+      setDraftValuesByInstanceId(valueState);
+      setSavedValuesByInstanceId(valueState);
       setPdfUrl(data.pdfUrl);
     } catch (error) {
       setLoadError(
@@ -111,10 +237,15 @@ export function PacketFormEditor({
     void loadData();
   }, [loadData]);
 
+  const fieldsWithDraftValues = useMemo(
+    () => applyDraftValuesToFieldViews(fields, draftValuesByInstanceId),
+    [fields, draftValuesByInstanceId],
+  );
+
   const fieldsByPage = useMemo(() => {
     const grouped: Record<number, PacketFormOverlayField[]> = {};
 
-    for (const fieldView of fields) {
+    for (const fieldView of fieldsWithDraftValues) {
       const overlayField = packetFormFieldViewToOverlayField(fieldView);
       if (!grouped[overlayField.page_number]) {
         grouped[overlayField.page_number] = [];
@@ -123,7 +254,7 @@ export function PacketFormEditor({
     }
 
     return grouped;
-  }, [fields]);
+  }, [fieldsWithDraftValues]);
 
   const updatePageMetrics = (
     pageNumber: number,
@@ -139,63 +270,105 @@ export function PacketFormEditor({
   };
 
   const findFieldViewByMappingId = (mappingId: string) =>
-    fields.find((fieldView) => fieldView.mapping.id === mappingId) ?? null;
+    fieldsWithDraftValues.find(
+      (fieldView) => fieldView.mapping.id === mappingId,
+    ) ?? null;
 
-  const openValueDialog = (overlayField: PacketFormOverlayField) => {
+  const handleDraftChange = (instanceId: string, value: string) => {
+    setDraftValuesByInstanceId((current) => ({
+      ...current,
+      [instanceId]: value,
+    }));
+    setSaveError(null);
+  };
+
+  const applyRevertedInstance = (updated: FieldInstanceWithField) => {
+    const revertedValue = updated.value ?? "";
+    const instanceId = updated.id;
+
+    setDraftValuesByInstanceId((current) => ({
+      ...current,
+      [instanceId]: revertedValue,
+    }));
+    setSavedValuesByInstanceId((current) => ({
+      ...current,
+      [instanceId]: revertedValue,
+    }));
+    setFields((current) =>
+      current.map((fieldView) =>
+        fieldView.instance.id === instanceId
+          ? {
+              ...fieldView,
+              displayValue: revertedValue,
+              instance: {
+                ...fieldView.instance,
+                ...updated,
+                fields: updated.fields ?? fieldView.instance.fields,
+              },
+            }
+          : fieldView,
+      ),
+    );
+  };
+
+  const selectField = (fieldView: PacketFormFieldView) => {
+    setSelectedMappingId(fieldView.mapping.id);
+    pageRefs.current[fieldView.placement.page_number]?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    sidebarItemRefs.current[fieldView.mapping.id]?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  };
+
+  const selectFieldFromOverlay = (overlayField: PacketFormOverlayField) => {
     const fieldView = findFieldViewByMappingId(overlayField.id);
-    if (!fieldView) {
-      return;
+    if (fieldView) {
+      selectField(fieldView);
     }
-
-    setEditingFieldView(fieldView);
-    setEditValue(fieldView.displayValue);
-    setSaveError(null);
   };
 
-  const closeValueDialog = () => {
-    if (isSavingValue || isResettingPlacement) {
+  const handleSaveChanges = async () => {
+    const dirtyInstanceIds = getDirtyFieldInstanceIds(
+      draftValuesByInstanceId,
+      savedValuesByInstanceId,
+    );
+
+    if (dirtyInstanceIds.length === 0) {
       return;
     }
 
-    setEditingFieldView(null);
-    setEditValue("");
-    setSaveError(null);
-  };
-
-  const handleSaveValue = async () => {
-    if (!editingFieldView) {
-      return;
-    }
-
-    setIsSavingValue(true);
+    setIsSavingChanges(true);
     setSaveError(null);
 
     const supabase = createClient();
 
     try {
-      await saveFieldInstanceValue(
+      await saveFieldInstanceValues(
         supabase,
-        editingFieldView.instance.id,
-        editValue,
-        "manual_override",
+        dirtyInstanceIds.map((instanceId) => ({
+          fieldInstanceId: instanceId,
+          value: draftValuesByInstanceId[instanceId] ?? "",
+        })),
       );
-      setIsSavingValue(false);
-      closeValueDialog();
       await loadData();
     } catch (error) {
-      setIsSavingValue(false);
       setSaveError(
-        error instanceof Error ? error.message : "Failed to save field value.",
+        error instanceof Error ? error.message : "Failed to save field values.",
       );
+    } finally {
+      setIsSavingChanges(false);
     }
   };
 
-  const handleResetPlacement = async () => {
-    if (!editingFieldView?.hasPlacementOverride) {
+  const handleResetPlacement = async (fieldView: PacketFormFieldView) => {
+    if (!fieldView.hasPlacementOverride) {
       return;
     }
 
-    setIsResettingPlacement(true);
+    setIsResettingPlacementId(fieldView.mapping.id);
     setSaveError(null);
 
     const supabase = createClient();
@@ -204,18 +377,63 @@ export function PacketFormEditor({
       await resetFieldInstanceMappingPlacement(
         supabase,
         packetFormId,
-        editingFieldView.mapping.id,
+        fieldView.mapping.id,
       );
-      setIsResettingPlacement(false);
-      closeValueDialog();
       await loadData();
     } catch (error) {
-      setIsResettingPlacement(false);
       setSaveError(
         error instanceof Error
           ? error.message
           : "Failed to reset placement override.",
       );
+    } finally {
+      setIsResettingPlacementId(null);
+    }
+  };
+
+  const handleRevertToDefault = async (fieldView: PacketFormFieldView) => {
+    const instanceId = fieldView.instance.id;
+
+    setIsRevertingInstanceId(instanceId);
+    setSaveError(null);
+
+    const supabase = createClient();
+
+    try {
+      const updated = await revertPacketFormFieldValue(supabase, {
+        packetId,
+        packetFormId,
+        fieldInstanceId: instanceId,
+      });
+      applyRevertedInstance(updated);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "Failed to revert field value.",
+      );
+    } finally {
+      setIsRevertingInstanceId(null);
+    }
+  };
+
+  const handleRefreshValues = async () => {
+    setIsRefreshingValues(true);
+    setRefreshError(null);
+
+    const supabase = createClient();
+
+    try {
+      await refreshPacketFormFieldValues(supabase, packetFormId);
+      await loadData();
+    } catch (error) {
+      setRefreshError(
+        error instanceof Error
+          ? error.message
+          : "Failed to refresh field values.",
+      );
+    } finally {
+      setIsRefreshingValues(false);
     }
   };
 
@@ -365,7 +583,7 @@ export function PacketFormEditor({
 
   if (isLoading) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="p-4 text-sm text-muted-foreground">
         Loading packet form editor...
       </p>
     );
@@ -373,7 +591,7 @@ export function PacketFormEditor({
 
   if (loadError) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 p-4">
         <p className="text-sm text-destructive">{loadError}</p>
         <Button variant="outline" asChild>
           <Link href={`/packets/${packetId}`}>Back to packet</Link>
@@ -383,257 +601,255 @@ export function PacketFormEditor({
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {documentName}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Packet form editor · {formName}
-              {formId != null ? ` (${formatFormReference(formId)})` : ""}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" asChild>
-              <Link href={`/packets/${packetId}`}>Back to packet</Link>
-            </Button>
-            {formId != null && (
-              <Button variant="outline" asChild>
-                <Link href={`/forms/${formId}/editor`}>Edit template</Link>
-              </Button>
-            )}
-          </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-background px-4 py-2">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-semibold tracking-tight">
+            {documentName}
+          </h1>
+          <p className="truncate text-xs text-muted-foreground">
+            {formName}
+            {formId != null ? ` (${formatFormReference(formId)})` : ""} · fill
+            form · packet only
+          </p>
         </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
-            <p className="font-medium">This packet form only</p>
-            <p className="mt-1 text-emerald-900/90 dark:text-emerald-100/90">
-              Value edits and drag/resize placement overrides apply to this
-              packet form instance only.
-            </p>
-          </div>
-          <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-100">
-            <p className="font-medium">Template placement</p>
-            <p className="mt-1 text-sky-900/90 dark:text-sky-100/90">
-              Use{" "}
-              {formId != null ? (
-                <Link
-                  href={`/forms/${formId}/editor`}
-                  className="font-medium underline-offset-4 hover:underline"
-                >
-                  Edit template
-                </Link>
-              ) : (
-                "the PDF Field Editor"
-              )}{" "}
-              to change default field positions for all future packets.
-            </p>
-          </div>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/packets/${packetId}`}>Back to packet</Link>
+          </Button>
+          {formId != null && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/forms/${formId}/editor`}>Edit template</Link>
+            </Button>
+          )}
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Populated PDF</CardTitle>
-            <CardDescription>
-              Green overlays use template placement. Amber overlays use a
-              packet-specific placement override. Click to edit values; drag or
-              resize to override placement for this packet form.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+      <div
+        className="grid min-h-0 flex-1"
+        style={{
+          gridTemplateColumns: `minmax(0, 1fr) ${PDF_EDITOR_SIDEBAR_WIDTH}px`,
+        }}
+      >
+        <div className="flex min-h-0 min-w-0 flex-col border-r">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleZoomOut}
+              disabled={!pdfUrl}
+              aria-label="Zoom out"
+            >
+              <Minus className="h-4 w-4" />
+            </Button>
+            <span className="min-w-[3.5rem] text-center text-sm font-medium tabular-nums">
+              {currentZoomLabel}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleZoomIn}
+              disabled={!pdfUrl}
+              aria-label="Zoom in"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+            <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
+            <Button
+              type="button"
+              variant={zoomMode === "fit-width" ? "secondary" : "outline"}
+              size="sm"
+              onClick={handleFitWidth}
+              disabled={!pdfUrl}
+            >
+              Fit Width
+            </Button>
+            <Button
+              type="button"
+              variant={zoomMode === "fit-page" ? "secondary" : "outline"}
+              size="sm"
+              onClick={handleFitPage}
+              disabled={!pdfUrl}
+            >
+              Fit Page
+            </Button>
+            <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRefreshValues()}
+              disabled={isRefreshingValues}
+            >
+              <RefreshCw
+                className={cn(
+                  "mr-1.5 h-4 w-4",
+                  isRefreshingValues && "animate-spin",
+                )}
+              />
+              {isRefreshingValues ? "Refreshing..." : "Refresh values"}
+            </Button>
+            <p className="hidden text-xs text-muted-foreground lg:block">
+              Edit values in the sidebar. Click overlays to select fields. Drag
+              or resize to override placement for this packet form.
+            </p>
+          </div>
+
+          <div
+            ref={pdfWorkspaceRef}
+            className="isolate min-h-0 flex-1 overflow-auto bg-muted/50"
+          >
             {updateLayoutError && (
-              <p className="mb-4 text-sm text-destructive">{updateLayoutError}</p>
+              <p className="p-4 text-sm text-destructive">{updateLayoutError}</p>
+            )}
+            {refreshError && (
+              <p className="p-4 text-sm text-destructive">{refreshError}</p>
             )}
             {!pdfUrl ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="p-4 text-sm text-muted-foreground">
                 No PDF is available for this packet form yet.
               </p>
             ) : (
-              <Document
-                file={pdfUrl}
-                onLoadSuccess={({ numPages: loadedPages }) =>
-                  setNumPages(loadedPages)
-                }
-                loading={
-                  <p className="text-sm text-muted-foreground">Loading PDF...</p>
-                }
-                error={
-                  <p className="text-sm text-destructive">
-                    Failed to render the PDF.
-                  </p>
-                }
-                className="flex flex-col gap-8"
-              >
-                {Array.from({ length: numPages }, (_, index) => {
-                  const pageNumber = index + 1;
-                  const pageFields = fieldsByPage[pageNumber] ?? [];
-                  const metrics = pageMetrics[pageNumber];
+              <div className="flex min-h-full flex-col items-center gap-8 p-6">
+                <Document
+                  file={pdfUrl}
+                  onLoadSuccess={({ numPages: loadedPages }) =>
+                    setNumPages(loadedPages)
+                  }
+                  loading={
+                    <p className="text-sm text-muted-foreground">
+                      Loading PDF...
+                    </p>
+                  }
+                  error={
+                    <p className="text-sm text-destructive">
+                      Failed to render the PDF.
+                    </p>
+                  }
+                  className="flex w-max flex-col gap-8"
+                >
+                  {Array.from({ length: numPages }, (_, index) => {
+                    const pageNumber = index + 1;
+                    const pageFields = fieldsByPage[pageNumber] ?? [];
+                    const metrics = pageMetrics[pageNumber];
 
-                  return (
-                    <div key={pageNumber} className="space-y-2">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Page {pageNumber}
-                      </p>
-                      <div className="relative inline-block border bg-muted/20 shadow-sm">
-                        <Page
-                          pageNumber={pageNumber}
-                          width={pageWidth}
-                          renderTextLayer={false}
-                          renderAnnotationLayer={false}
-                          onLoadSuccess={(page) => {
-                            const viewport = page.getViewport({ scale: 1 });
-                            updatePageMetrics(pageNumber, {
-                              originalWidth: viewport.width,
-                              originalHeight: viewport.height,
-                            });
-                          }}
-                          onRenderSuccess={({ width, height }) => {
-                            updatePageMetrics(pageNumber, {
-                              renderedWidth: width,
-                              renderedHeight: height,
-                            });
-                          }}
-                        />
+                    return (
+                      <div
+                        key={pageNumber}
+                        ref={(element) => {
+                          pageRefs.current[pageNumber] = element;
+                        }}
+                        className="space-y-2"
+                      >
+                        <p className="text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Page {pageNumber}
+                        </p>
+                        <div className="relative w-fit border bg-white shadow-md dark:bg-zinc-900">
+                          <Page
+                            pageNumber={pageNumber}
+                            width={pageWidth}
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
+                            onLoadSuccess={(page) => {
+                              const viewport = page.getViewport({ scale: 1 });
+                              updatePageMetrics(pageNumber, {
+                                originalWidth: viewport.width,
+                                originalHeight: viewport.height,
+                              });
+                              setBasePageDimensions(
+                                pageNumber,
+                                viewport.width,
+                                viewport.height,
+                              );
+                            }}
+                            onRenderSuccess={({ width, height }) => {
+                              updatePageMetrics(pageNumber, {
+                                renderedWidth: width,
+                                renderedHeight: height,
+                              });
+                            }}
+                          />
 
-                        {metrics?.renderedWidth &&
-                          metrics.renderedHeight &&
-                          metrics.originalWidth &&
-                          metrics.originalHeight && (
-                            <div
-                              className="absolute left-0 top-0"
-                              style={{
-                                width: metrics.renderedWidth,
-                                height: metrics.renderedHeight,
-                              }}
-                            >
-                              {pageFields.map((overlayField) => (
-                                <PacketFormFieldOverlay
-                                  key={overlayField.id}
-                                  field={overlayField}
-                                  metrics={metrics as PageMetrics}
-                                  isUpdating={
-                                    updatingMappingId === overlayField.id
-                                  }
-                                  onEdit={openValueDialog}
-                                  onDragStop={(field, x, y) =>
-                                    handleOverlayDragStop(
+                          {metrics?.renderedWidth &&
+                            metrics.renderedHeight &&
+                            metrics.originalWidth &&
+                            metrics.originalHeight && (
+                              <div
+                                className="absolute left-0 top-0 overflow-hidden"
+                                style={{
+                                  width: metrics.renderedWidth,
+                                  height: metrics.renderedHeight,
+                                }}
+                              >
+                                {pageFields.map((overlayField) => (
+                                  <PacketFormFieldOverlay
+                                    key={overlayField.id}
+                                    field={overlayField}
+                                    metrics={metrics as PageMetrics}
+                                    isSelected={
+                                      selectedMappingId === overlayField.id
+                                    }
+                                    isUpdating={
+                                      updatingMappingId === overlayField.id
+                                    }
+                                    onEdit={selectFieldFromOverlay}
+                                    onDragStop={(field, x, y) =>
+                                      handleOverlayDragStop(
+                                        field,
+                                        metrics as PageMetrics,
+                                        x,
+                                        y,
+                                      )
+                                    }
+                                    onResizeStop={(
                                       field,
-                                      metrics as PageMetrics,
-                                      x,
-                                      y,
-                                    )
-                                  }
-                                  onResizeStop={(
-                                    field,
-                                    x,
-                                    y,
-                                    width,
-                                    height,
-                                  ) =>
-                                    handleOverlayResizeStop(
-                                      field,
-                                      metrics as PageMetrics,
                                       x,
                                       y,
                                       width,
                                       height,
-                                    )
-                                  }
-                                />
-                              ))}
-                            </div>
-                          )}
+                                    ) =>
+                                      handleOverlayResizeStop(
+                                        field,
+                                        metrics as PageMetrics,
+                                        x,
+                                        y,
+                                        width,
+                                        height,
+                                      )
+                                    }
+                                  />
+                                ))}
+                              </div>
+                            )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </Document>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle>Field values</CardTitle>
-            <CardDescription>
-              {fields.length} template placement{fields.length === 1 ? "" : "s"} on
-              this form.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {fields.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No template placements found for this form.
-              </p>
-            ) : (
-              <div className="divide-y rounded-md border">
-                {fields.map((fieldView) => {
-                  const field = fieldView.instance.fields;
-                  return (
-                    <div
-                      key={fieldView.mapping.id}
-                      className="flex flex-col gap-2 p-3 text-sm"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">
-                          {field?.field_key ?? "Field"}
-                        </span>
-                        {fieldView.hasPlacementOverride && (
-                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-900">
-                            Placement override
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-muted-foreground">
-                        {formatPacketFieldDisplayValue(
-                          fieldView.displayValue,
-                          fieldView.field_type,
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Page {fieldView.placement.page_number}
-                        {fieldView.mapping.occurrence_index != null
-                          ? ` · #${fieldView.mapping.occurrence_index}`
-                          : ""}
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-fit"
-                        onClick={() =>
-                          openValueDialog(
-                            packetFormFieldViewToOverlayField(fieldView),
-                          )
-                        }
-                      >
-                        Edit value
-                      </Button>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </Document>
               </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
 
-      <PacketFormFieldValueDialog
-        open={editingFieldView != null}
-        fieldView={editingFieldView}
-        value={editValue}
-        onChange={setEditValue}
-        onSubmit={() => void handleSaveValue()}
-        onResetPlacement={() => void handleResetPlacement()}
-        onCancel={closeValueDialog}
-        isSubmitting={isSavingValue}
-        isResettingPlacement={isResettingPlacement}
-        error={saveError}
-      />
+        <PacketFormFieldsSidebar
+          fields={fields}
+          draftValuesByInstanceId={draftValuesByInstanceId}
+          savedValuesByInstanceId={savedValuesByInstanceId}
+          selectedMappingId={selectedMappingId}
+          isSaving={isSavingChanges}
+          isResettingPlacementId={isResettingPlacementId}
+          isRevertingInstanceId={isRevertingInstanceId}
+          saveError={saveError}
+          onDraftChange={handleDraftChange}
+          onSelectField={selectField}
+          onSaveChanges={() => void handleSaveChanges()}
+          onResetPlacement={(fieldView) => void handleResetPlacement(fieldView)}
+          onRevertToDefault={(fieldView) => void handleRevertToDefault(fieldView)}
+          itemRefs={sidebarItemRefs}
+        />
+      </div>
     </div>
   );
 }

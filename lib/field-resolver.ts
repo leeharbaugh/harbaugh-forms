@@ -14,6 +14,7 @@ import type {
   FieldInstance,
   FieldInstanceWithField,
 } from "@/lib/types/field-instance";
+import { isAuthentisignExcludedFormFieldMapping } from "@/lib/types/authentisign-excluded-fields";
 import {
   type BrokerageSettings,
   agentFullName,
@@ -35,6 +36,12 @@ import {
   type Property,
   formatPropertyAddress,
 } from "@/lib/types/property";
+import {
+  type PropertyHoa,
+  isPropertyHoaResolverKey,
+  pickPrimaryPropertyHoa,
+  resolvePropertyHoaFieldValue,
+} from "@/lib/types/property-hoa";
 
 export type FieldResolverSource =
   | "manual_override"
@@ -74,6 +81,7 @@ export type FieldResolverContext = {
     effective_date: string | null;
     expiration_date: string | null;
   } | null;
+  propertyHoas: PropertyHoa[];
 };
 
 const NUMBERED_CONTACT_ROLE_PREFIXES = [
@@ -428,15 +436,47 @@ function resolveSettingsSourcePath(
   };
 }
 
+function resolvePropertyHoaResolverKey(
+  resolverKey: string,
+  context: FieldResolverContext,
+): ResolvedFieldValue | null {
+  if (!isPropertyHoaResolverKey(resolverKey)) {
+    return null;
+  }
+
+  const hoa = pickPrimaryPropertyHoa(context.propertyHoas);
+  const value = resolvePropertyHoaFieldValue(resolverKey, hoa);
+
+  if (!value) {
+    return null;
+  }
+
+  return {
+    value,
+    value_json: null,
+    source: "property",
+  };
+}
+
 function resolveCustomResolverKey(
   resolverKey: string,
   context: FieldResolverContext,
 ): ResolvedFieldValue | null {
+  const normalizedKey = resolverKey.trim().toLowerCase();
+  const hoaResolved = resolvePropertyHoaResolverKey(normalizedKey, context);
+
+  if (hoaResolved) {
+    return hoaResolved;
+  }
+
+  if (isPropertyHoaResolverKey(normalizedKey)) {
+    return null;
+  }
+
   if (!context.settings) {
     return null;
   }
 
-  const normalizedKey = resolverKey.trim().toLowerCase();
   const value = resolveBrokerageSettingsField(context.settings, normalizedKey);
 
   if (!value?.trim()) {
@@ -594,6 +634,13 @@ function resolveContactRoleFieldKey(
   };
 }
 
+function resolvePropertyHoaFieldKey(
+  fieldKey: string,
+  context: FieldResolverContext,
+): ResolvedFieldValue | null {
+  return resolvePropertyHoaResolverKey(normalizeFieldKey(fieldKey), context);
+}
+
 function resolvePropertyFieldKey(
   fieldKey: string,
   context: FieldResolverContext,
@@ -653,6 +700,7 @@ const CONTEXT_FIELD_KEY_HANDLERS: Array<
   (fieldKey: string, context: FieldResolverContext) => ResolvedFieldValue | null
 > = [
   resolveContactRoleFieldKey,
+  resolvePropertyHoaFieldKey,
   resolvePropertyFieldKey,
   resolveSettingsFieldKey,
 ];
@@ -880,6 +928,29 @@ function normalizeRepresentationAgreementJoin(
   };
 }
 
+async function loadActivePropertyHoasForProperty(
+  supabase: SupabaseClient,
+  propertyId: number | null | undefined,
+): Promise<PropertyHoa[]> {
+  if (propertyId == null) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("property_hoas")
+    .select("*")
+    .eq("property_id", propertyId)
+    .eq("status", "ACTIVE")
+    .order("create_date", { ascending: true })
+    .order("id", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as PropertyHoa[]) ?? [];
+}
+
 export async function loadFieldResolverContext(
   supabase: SupabaseClient,
   packetId: number,
@@ -916,6 +987,11 @@ export async function loadFieldResolverContext(
       | null;
   };
 
+  const propertyHoas = await loadActivePropertyHoasForProperty(
+    supabase,
+    packetRow.property_id,
+  );
+
   return {
     packetId,
     packetFormId,
@@ -933,6 +1009,7 @@ export async function loadFieldResolverContext(
     representationAgreement: normalizeRepresentationAgreementJoin(
       packetRow.representation_agreements,
     ),
+    propertyHoas,
   };
 }
 
@@ -1003,6 +1080,79 @@ export async function resolveFieldValue(
     context,
     existingInstance,
   });
+}
+
+export async function revertFieldInstanceToResolvedValue(
+  supabase: SupabaseClient,
+  params: {
+    packetId: number;
+    packetFormId: number;
+    fieldInstanceId: string;
+  },
+): Promise<FieldInstanceWithField> {
+  const { data: instanceData, error: instanceError } = await supabase
+    .from("field_instances")
+    .select(FIELD_INSTANCE_SELECT)
+    .eq("id", params.fieldInstanceId)
+    .eq("packet_form_id", params.packetFormId)
+    .eq("packet_id", params.packetId)
+    .eq("status", "ACTIVE")
+    .single();
+
+  if (instanceError || !instanceData) {
+    throw new Error(instanceError?.message ?? "Field instance not found.");
+  }
+
+  const instance = instanceData as FieldInstanceWithField;
+  const field = instance.fields;
+  if (!field) {
+    throw new Error("Field catalog record not found for this instance.");
+  }
+
+  const packetForm = await getPacketFormFieldContext(
+    supabase,
+    params.packetFormId,
+  );
+  let mapping: FormFieldMapping | null = null;
+  if (packetForm.form_id != null) {
+    const mappings = await loadActiveFormFieldMappingsForForm(
+      supabase,
+      packetForm.form_id,
+    );
+    mapping = mappings.find((row) => row.field_id === field.id) ?? null;
+  }
+
+  const context = await loadFieldResolverContext(
+    supabase,
+    params.packetId,
+    params.packetFormId,
+  );
+
+  const resolved = resolveFieldValueFromContext({
+    field,
+    mapping,
+    context,
+    existingInstance: null,
+  });
+
+  const { data: updated, error: updateError } = await supabase
+    .from("field_instances")
+    .update({
+      value: resolved.value || null,
+      value_json: resolved.value_json,
+      source: resolved.source,
+      is_override: false,
+    })
+    .eq("id", params.fieldInstanceId)
+    .eq("status", "ACTIVE")
+    .select(FIELD_INSTANCE_SELECT)
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(updateError?.message ?? "Failed to revert field value.");
+  }
+
+  return updated as FieldInstanceWithField;
 }
 
 function buildFieldInstancePersistenceRow(params: {
@@ -1077,7 +1227,7 @@ export async function resolvePacketFormFieldValues(
   for (const fieldId of fieldIds) {
     const mapping = mappings.find((row) => row.field_id === fieldId);
     const field = mapping?.fields;
-    if (!field) {
+    if (!field || (mapping && isAuthentisignExcludedFormFieldMapping(mapping))) {
       continue;
     }
 

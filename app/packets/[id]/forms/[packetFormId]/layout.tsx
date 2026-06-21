@@ -4,6 +4,6 @@ export default function PacketFormEditorLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="-mx-5 w-auto max-w-none px-5 xl:max-w-7xl">{children}</div>
+    <div className="flex h-full min-h-0 w-full max-w-none flex-col">{children}</div>
   );
 }
