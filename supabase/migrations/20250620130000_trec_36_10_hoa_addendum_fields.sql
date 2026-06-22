@@ -108,15 +108,15 @@ with seed (
       null::text
     ),
     (
-      'hoa_addendum_delivery_days',
-      'hoa_addendum_delivery_days',
-      'HOA Document Delivery Days',
-      'number',
+      'hoa_addendum_seller_delivery_days',
+      'hoa_addendum_seller_delivery_days',
+      'HOA Addendum Seller Delivery Days',
+      'integer',
       'text',
       null::text,
       null::boolean,
       false,
-      'TREC 36-10 HOA Addendum · Packet-specific value stored in field_instances.',
+      'TREC 36-10 HOA Addendum · Option 1 · Seller shall obtain, pay for, and deliver the Subdivision Information within ___ days.',
       'manual_only',
       null::text,
       null::text

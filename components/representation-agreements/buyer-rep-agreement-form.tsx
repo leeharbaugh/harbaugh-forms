@@ -194,16 +194,109 @@ export function BuyerRepAgreementForm({
               disabled={readOnly}
             />
           </div>
+          {value.representation_kind === "PURCHASE" ? (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="compensation_percent">
+                  Purchase compensation percent
+                </Label>
+                <Input
+                  id="compensation_percent"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={value.compensation_percent}
+                  onChange={(event) =>
+                    setField("compensation_percent", event.target.value)
+                  }
+                  disabled={readOnly}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="purchase_flat_fee">Purchase flat fee</Label>
+                <Input
+                  id="purchase_flat_fee"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={value.purchase_flat_fee}
+                  onChange={(event) =>
+                    setField("purchase_flat_fee", event.target.value)
+                  }
+                  disabled={readOnly}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="lease_one_month_rent_percent">
+                  Lease one month rent percent
+                </Label>
+                <Input
+                  id="lease_one_month_rent_percent"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={value.lease_one_month_rent_percent}
+                  onChange={(event) =>
+                    setField("lease_one_month_rent_percent", event.target.value)
+                  }
+                  disabled={readOnly}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lease_all_rents_percent">
+                  Lease all rents percent
+                </Label>
+                <Input
+                  id="lease_all_rents_percent"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={value.lease_all_rents_percent}
+                  onChange={(event) =>
+                    setField("lease_all_rents_percent", event.target.value)
+                  }
+                  disabled={readOnly}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lease_flat_fee">Lease flat fee</Label>
+                <Input
+                  id="lease_flat_fee"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={value.lease_flat_fee}
+                  onChange={(event) =>
+                    setField("lease_flat_fee", event.target.value)
+                  }
+                  disabled={readOnly}
+                />
+              </div>
+            </>
+          )}
           <div className="space-y-2">
-            <Label htmlFor="compensation_percent">Compensation percent</Label>
+            <Label htmlFor="construction_compensation">
+              Construction compensation
+            </Label>
             <Input
-              id="compensation_percent"
-              type="number"
-              step="0.001"
-              min="0"
-              value={value.compensation_percent}
+              id="construction_compensation"
+              value={value.construction_compensation}
               onChange={(event) =>
-                setField("compensation_percent", event.target.value)
+                setField("construction_compensation", event.target.value)
+              }
+              disabled={readOnly}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="other_compensation">Other compensation</Label>
+            <Input
+              id="other_compensation"
+              value={value.other_compensation}
+              onChange={(event) =>
+                setField("other_compensation", event.target.value)
               }
               disabled={readOnly}
             />
@@ -260,6 +353,19 @@ export function BuyerRepAgreementForm({
               disabled={readOnly}
             />
           </div>
+          <div className="flex items-center gap-2 sm:col-span-2">
+            <Checkbox
+              id="retainer_applies_to_fee"
+              checked={value.retainer_applies_to_fee}
+              onCheckedChange={(checked) =>
+                setField("retainer_applies_to_fee", checked === true)
+              }
+              disabled={readOnly}
+            />
+            <Label htmlFor="retainer_applies_to_fee" className="font-normal">
+              Retainer applies to fee
+            </Label>
+          </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="special_provisions">Special provisions</Label>
             <textarea
@@ -283,6 +389,15 @@ export function BuyerRepAgreementForm({
               ["add_home_inspection", "Add home inspection"],
               ["add_wire_fraud", "Add wire fraud"],
               ["add_mineral_clauses", "Add mineral clauses"],
+              ["add_lead_based_paint", "Add lead-based paint"],
+              ["add_mold_remediation", "Add mold remediation"],
+              ["add_flood_hazard", "Add flood hazard"],
+              ["add_property_insurance", "Add property insurance"],
+              [
+                "add_general_information_notice",
+                "Add general information notice",
+              ],
+              ["add_other_document", "Add other document"],
             ] as const
           ).map(([key, label]) => (
             <div key={key} className="flex items-center gap-2">
@@ -300,6 +415,24 @@ export function BuyerRepAgreementForm({
             </div>
           ))}
         </div>
+
+        {value.add_other_document && (
+          <div className="space-y-2">
+            <Label htmlFor="add_other_document_description">
+              Other document description
+            </Label>
+            <textarea
+              id="add_other_document_description"
+              rows={3}
+              className={cn(fieldClassName, "min-h-24 py-2")}
+              value={value.add_other_document_description}
+              onChange={(event) =>
+                setField("add_other_document_description", event.target.value)
+              }
+              disabled={readOnly}
+            />
+          </div>
+        )}
       </section>
 
       {(error || validationError) && (

@@ -56,6 +56,19 @@ export const PACKET_CONTACT_ROLES: PacketContactRole[] = [
   "OTHER",
 ];
 
+/** Roles treated as buyers/clients on buyer/tenant representation agreements. */
+export const BUYER_CLIENT_PACKET_ROLES: PacketContactRole[] = [
+  "BUYER",
+  "CO_CLIENT",
+  "SPOUSE",
+  "TENANT",
+  "PRIMARY",
+];
+
+export function isBuyerClientPacketRole(role: PacketContactRole): boolean {
+  return BUYER_CLIENT_PACKET_ROLES.includes(role);
+}
+
 export function formatPacketContactRole(role: PacketContactRole): string {
   return ROLE_LABELS[role];
 }
@@ -127,6 +140,60 @@ export function sortPacketContacts<
     }
     return a.id - b.id;
   });
+}
+
+/** Active buyer/client packet contacts in display order. */
+export function getOrderedBuyerClientPacketContacts(
+  packetContacts: PacketContact[],
+): PacketContact[] {
+  return sortPacketContacts(
+    packetContacts.filter(
+      (row) =>
+        row.status === "ACTIVE" &&
+        row.contacts &&
+        isBuyerClientPacketRole(row.packet_role),
+    ),
+  );
+}
+
+/** Active buyer/client contacts in display order (buyer/tenant rep agreements). */
+export function getOrderedBuyerClientContacts(
+  packetContacts: PacketContact[],
+): Contact[] {
+  return getOrderedBuyerClientPacketContacts(packetContacts).map(
+    (row) => row.contacts as Contact,
+  );
+}
+
+export function getBuyerClientContactAtIndex(
+  packetContacts: PacketContact[],
+  index: number,
+): Contact | null {
+  if (!Number.isInteger(index) || index < 1) {
+    return null;
+  }
+
+  return getOrderedBuyerClientContacts(packetContacts)[index - 1] ?? null;
+}
+
+export function getPrimaryBuyerClientContact(
+  packetContacts: PacketContact[],
+): Contact | null {
+  return getBuyerClientContactAtIndex(packetContacts, 1);
+}
+
+export function parseBuyerClientIndexSlug(slug: string): number | null {
+  const match = slug.trim().toLowerCase().match(/^buyer_client_(\d+)$/);
+  if (!match) {
+    return null;
+  }
+
+  const index = Number(match[1]);
+  if (!Number.isInteger(index) || index < 1) {
+    return null;
+  }
+
+  return index;
 }
 
 export async function addPacketContact(

@@ -1,9 +1,18 @@
+import {
+  BUYER_REP_DETAILS_SOURCE_PATHS,
+  REPRESENTATION_AGREEMENT_SOURCE_PATHS,
+} from "@/lib/types/buyer-rep-field-resolution";
+
+export { BUYER_REP_DETAILS_SOURCE_PATHS, REPRESENTATION_AGREEMENT_SOURCE_PATHS };
+
 export const FIELD_SOURCE_TYPES = [
   "settings_agent",
   "settings_brokerage",
   "packet_contact",
   "packet_property",
   "packet",
+  "buyer_rep_details",
+  "representation_agreement",
   "static_default",
   "custom_resolver",
   "manual_only",
@@ -52,14 +61,36 @@ const CONTACT_FIELD_SUFFIXES = [
   "phone",
 ] as const;
 
-export const PACKET_CONTACT_SOURCE_PATHS = CONTACT_ROLE_PREFIXES.flatMap(
-  (role) =>
+const BUYER_CLIENT_CONTACT_FIELD_SUFFIXES = [
+  ...CONTACT_FIELD_SUFFIXES,
+  "phone_primary",
+  "phone_secondary",
+  "mailing_address_line_1",
+  "mailing_address_line_2",
+  "mailing_city",
+  "mailing_state",
+  "mailing_zip",
+] as const;
+
+const BUYER_CLIENT_CONTACT_INDICES = [1, 2] as const;
+
+export const BUYER_CLIENT_CONTACT_SOURCE_PATHS =
+  BUYER_CLIENT_CONTACT_INDICES.flatMap((index) =>
+    BUYER_CLIENT_CONTACT_FIELD_SUFFIXES.map(
+      (field) => `buyer_client_${index}.${field}` as const,
+    ),
+  );
+
+export const PACKET_CONTACT_SOURCE_PATHS = [
+  ...CONTACT_ROLE_PREFIXES.flatMap((role) =>
     CONTACT_ROLE_INDICES.flatMap((index) =>
       CONTACT_FIELD_SUFFIXES.map(
         (field) => `${role}_${index}.${field}` as const,
       ),
     ),
-);
+  ),
+  ...BUYER_CLIENT_CONTACT_SOURCE_PATHS,
+];
 
 export const PACKET_PROPERTY_SOURCE_PATHS = [
   "address",
@@ -89,6 +120,11 @@ export const CUSTOM_RESOLVER_KEYS = [
   "broker_full_name",
   "property_hoa_name",
   "property_hoa_phone",
+  "buyer_client_address",
+  "buyer_client_city_state_zip",
+  "brokerage_city_state_zip",
+  "buyer_rep_retainer_will_not_apply",
+  "buyer_rep_intermediary_status_no",
 ] as const;
 
 export const STATIC_DEFAULT_SOURCE_PATHS = ["default_checked", "default_value"] as const;
@@ -99,6 +135,8 @@ const SOURCE_TYPE_LABELS: Record<FieldSourceType, string> = {
   packet_contact: "Packet contact",
   packet_property: "Packet property",
   packet: "Packet metadata",
+  buyer_rep_details: "Buyer rep details",
+  representation_agreement: "Representation agreement",
   static_default: "Static default",
   custom_resolver: "Custom resolver",
   manual_only: "Manual entry only",
@@ -135,6 +173,10 @@ export function sourcePathsForType(
       return PACKET_PROPERTY_SOURCE_PATHS;
     case "packet":
       return PACKET_SOURCE_PATHS;
+    case "buyer_rep_details":
+      return BUYER_REP_DETAILS_SOURCE_PATHS;
+    case "representation_agreement":
+      return REPRESENTATION_AGREEMENT_SOURCE_PATHS;
     case "static_default":
       return STATIC_DEFAULT_SOURCE_PATHS;
     case "custom_resolver":
@@ -151,6 +193,8 @@ export function sourceTypeRequiresPath(sourceType: FieldSourceType | ""): boolea
     sourceType === "packet_contact" ||
     sourceType === "packet_property" ||
     sourceType === "packet" ||
+    sourceType === "buyer_rep_details" ||
+    sourceType === "representation_agreement" ||
     sourceType === "static_default"
   );
 }

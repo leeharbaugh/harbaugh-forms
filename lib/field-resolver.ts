@@ -14,7 +14,10 @@ import type {
   FieldInstance,
   FieldInstanceWithField,
 } from "@/lib/types/field-instance";
-import { isAuthentisignExcludedFormFieldMapping } from "@/lib/types/authentisign-excluded-fields";
+import {
+  isAuthentisignExcludedFieldKey,
+  isAuthentisignExcludedFormFieldMapping,
+} from "@/lib/types/authentisign-excluded-fields";
 import {
   type BrokerageSettings,
   agentFullName,
@@ -29,6 +32,9 @@ import {
 import {
   type PacketContact,
   type PacketContactRole,
+  getBuyerClientContactAtIndex,
+  getPrimaryBuyerClientContact,
+  parseBuyerClientIndexSlug,
   sortPacketContacts,
 } from "@/lib/types/packet-contact";
 import type { Packet } from "@/lib/types/packet";
@@ -42,6 +48,19 @@ import {
   pickPrimaryPropertyHoa,
   resolvePropertyHoaFieldValue,
 } from "@/lib/types/property-hoa";
+import {
+  type BuyerRepDetails,
+} from "@/lib/types/buyer-rep-agreement";
+import {
+  formatBrokerageCityStateZip,
+  formatContactCityStateZip,
+  formatContactMailingAddress,
+  isBooleanBuyerRepDetailsSourcePath,
+  isBuyerRepDetailsSourcePath,
+  isRepresentationAgreementSourcePath,
+  resolveBuyerRepDetailsFieldValue,
+  resolveBuyerRepCheckboxMatches,
+} from "@/lib/types/buyer-rep-field-resolution";
 
 export type FieldResolverSource =
   | "manual_override"
@@ -81,6 +100,7 @@ export type FieldResolverContext = {
     effective_date: string | null;
     expiration_date: string | null;
   } | null;
+  buyerRepDetails: BuyerRepDetails | null;
   propertyHoas: PropertyHoa[];
 };
 
@@ -147,7 +167,8 @@ const PACKET_RESOLVER_SELECT = `
   properties(*),
   representation_agreements(
     effective_date,
-    expiration_date
+    expiration_date,
+    buyer_rep_details(*)
   ),
   packet_contacts(
     id,
@@ -261,16 +282,44 @@ function normalizeContactFieldName(contactField: string): string {
   return contactField;
 }
 
-function parsePacketContactSourcePath(sourcePath: string): {
-  roleSlug: string;
-  contactField: string;
-} | null {
+type ParsedPacketContactSourcePath =
+  | {
+      kind: "buyer_client";
+      index: number;
+      contactField: string;
+    }
+  | {
+      kind: "numbered_role";
+      roleSlug: string;
+      contactField: string;
+    };
+
+function parsePacketContactSourcePath(
+  sourcePath: string,
+): ParsedPacketContactSourcePath | null {
   const trimmed = sourcePath.trim();
-  const dotMatch = trimmed.match(/^([a-z]+_\d+)\.([a-z_]+)$/i);
-  if (dotMatch) {
+  const dotMatch = trimmed.match(/^([a-z0-9_]+)\.([a-z_]+)$/i);
+  if (!dotMatch) {
+    return null;
+  }
+
+  const slug = dotMatch[1].toLowerCase();
+  const contactField = normalizeContactFieldName(dotMatch[2].toLowerCase());
+
+  const buyerClientIndex = parseBuyerClientIndexSlug(slug);
+  if (buyerClientIndex != null) {
     return {
-      roleSlug: dotMatch[1].toLowerCase(),
-      contactField: normalizeContactFieldName(dotMatch[2].toLowerCase()),
+      kind: "buyer_client",
+      index: buyerClientIndex,
+      contactField,
+    };
+  }
+
+  if (parseNumberedContactRoleSlug(slug)) {
+    return {
+      kind: "numbered_role",
+      roleSlug: slug,
+      contactField,
     };
   }
 
@@ -307,16 +356,137 @@ function resolvePacketContactSourcePath(
     return null;
   }
 
-  const contact = getPacketContactByRole(
-    context.packetContacts,
-    parsed.roleSlug,
-  );
+  const contact =
+    parsed.kind === "buyer_client"
+      ? getBuyerClientContactAtIndex(context.packetContacts, parsed.index)
+      : getPacketContactByRole(context.packetContacts, parsed.roleSlug);
 
   if (!contact) {
     return null;
   }
 
   const value = resolveContactFieldValue(contact, parsed.contactField);
+  if (!value) {
+    return null;
+  }
+
+  return {
+    value,
+    value_json: null,
+    source: "contact_role",
+  };
+}
+
+function resolveBuyerClientContactField(
+  contact: Contact,
+  fieldSuffix: string,
+): string | null {
+  if (fieldSuffix === "address") {
+    const value = formatContactMailingAddress(contact);
+    return value || null;
+  }
+
+  if (fieldSuffix === "city_state_zip") {
+    const value = formatContactCityStateZip(contact);
+    return value || null;
+  }
+
+  const value = resolveContactFieldValue(
+    contact,
+    normalizeContactFieldName(fieldSuffix),
+  );
+  return value || null;
+}
+
+function resolveBuyerRepAgreementCheckboxFieldKey(
+  fieldKey: string,
+  context: FieldResolverContext,
+): ResolvedFieldValue | null {
+  const normalized = normalizeFieldKey(fieldKey);
+  const details = context.buyerRepDetails;
+
+  let matches: boolean | null = null;
+
+  switch (normalized) {
+    case "buyer_rep_retainer_will_apply":
+      matches = details
+        ? resolveBuyerRepCheckboxMatches(details, "retainer_applies_to_fee", true)
+        : null;
+      break;
+    case "buyer_rep_retainer_will_not_apply":
+      matches = details
+        ? resolveBuyerRepCheckboxMatches(details, "retainer_applies_to_fee", false)
+        : null;
+      break;
+    case "buyer_rep_intermediary_status_yes":
+      matches = details
+        ? resolveBuyerRepCheckboxMatches(details, "intermediary_allowed", true)
+        : null;
+      break;
+    case "buyer_rep_intermediary_status_no":
+      matches = details
+        ? resolveBuyerRepCheckboxMatches(details, "intermediary_allowed", false)
+        : null;
+      break;
+    default:
+      return null;
+  }
+
+  if (matches == null) {
+    return null;
+  }
+
+  return resolveBuyerRepCheckboxValue(matches);
+}
+
+function resolveBuyerClientFieldKey(
+  fieldKey: string,
+  context: FieldResolverContext,
+): ResolvedFieldValue | null {
+  const normalized = normalizeFieldKey(fieldKey);
+
+  if (
+    isAuthentisignExcludedFieldKey(normalized) ||
+    !normalized.startsWith("buyer_client_")
+  ) {
+    return null;
+  }
+
+  const nameMatch = normalized.match(/^buyer_client_name_(\d+)$/);
+  if (nameMatch) {
+    const index = Number(nameMatch[1]);
+    if (index !== 1 && index !== 2) {
+      return null;
+    }
+
+    const contact = getBuyerClientContactAtIndex(context.packetContacts, index);
+    if (!contact) {
+      return null;
+    }
+
+    const value = formatContactDisplayName(contact);
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  const fieldSuffix = normalized.slice("buyer_client_".length);
+  if (!fieldSuffix || fieldSuffix.startsWith("name_")) {
+    return null;
+  }
+
+  const contact = getPrimaryBuyerClientContact(context.packetContacts);
+  if (!contact) {
+    return null;
+  }
+
+  const value = resolveBuyerClientContactField(contact, fieldSuffix);
   if (!value) {
     return null;
   }
@@ -458,6 +628,85 @@ function resolvePropertyHoaResolverKey(
   };
 }
 
+function resolveBuyerRepCheckboxValue(checked: boolean): ResolvedFieldValue {
+  return {
+    value: checked ? "true" : "false",
+    value_json: { checked },
+    source: "packet",
+  };
+}
+
+function resolveBuyerRepDetailsSourcePath(
+  sourcePath: string,
+  context: FieldResolverContext,
+): ResolvedFieldValue | null {
+  const details = context.buyerRepDetails;
+  if (!details) {
+    return null;
+  }
+
+  const normalizedPath = sourcePath.trim().toLowerCase();
+  if (!isBuyerRepDetailsSourcePath(normalizedPath)) {
+    return null;
+  }
+
+  if (isBooleanBuyerRepDetailsSourcePath(normalizedPath)) {
+    const checked =
+      normalizedPath === "retainer_applies_to_fee" ||
+      normalizedPath === "intermediary_allowed"
+        ? resolveBuyerRepCheckboxMatches(
+            details,
+            normalizedPath,
+            true,
+          )
+        : details[normalizedPath as keyof BuyerRepDetails] === true;
+
+    return resolveBuyerRepCheckboxValue(checked);
+  }
+
+  const value = resolveBuyerRepDetailsFieldValue(details, normalizedPath);
+  if (!value) {
+    return null;
+  }
+
+  return {
+    value,
+    value_json: null,
+    source: "packet",
+  };
+}
+
+function resolveRepresentationAgreementSourcePath(
+  sourcePath: string,
+  context: FieldResolverContext,
+): ResolvedFieldValue | null {
+  const normalizedPath = sourcePath.trim().toLowerCase();
+  if (!isRepresentationAgreementSourcePath(normalizedPath)) {
+    return null;
+  }
+
+  const agreement = context.representationAgreement;
+  if (!agreement) {
+    return null;
+  }
+
+  const rawValue = agreement[normalizedPath];
+  if (!rawValue) {
+    return null;
+  }
+
+  const value = normalizeDateDisplay(rawValue.split("T")[0]);
+  if (!value) {
+    return null;
+  }
+
+  return {
+    value,
+    value_json: null,
+    source: "packet",
+  };
+}
+
 function resolveCustomResolverKey(
   resolverKey: string,
   context: FieldResolverContext,
@@ -471,6 +720,103 @@ function resolveCustomResolverKey(
 
   if (isPropertyHoaResolverKey(normalizedKey)) {
     return null;
+  }
+
+  if (normalizedKey === "buyer_client_address") {
+    const contact = getPrimaryBuyerClientContact(context.packetContacts);
+    if (!contact) {
+      return null;
+    }
+
+    const value = resolveBuyerClientContactField(contact, "address");
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "buyer_client_city_state_zip") {
+    const contact = getPrimaryBuyerClientContact(context.packetContacts);
+    if (!contact) {
+      return null;
+    }
+
+    const value = resolveBuyerClientContactField(contact, "city_state_zip");
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "brokerage_city_state_zip") {
+    if (!context.settings) {
+      return null;
+    }
+
+    const value = formatBrokerageCityStateZip(context.settings);
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "settings",
+    };
+  }
+
+  if (normalizedKey === "buyer_rep_retainer_will_not_apply") {
+    const details = context.buyerRepDetails;
+    if (!details) {
+      return null;
+    }
+
+    return resolveBuyerRepCheckboxValue(
+      resolveBuyerRepCheckboxMatches(details, "retainer_applies_to_fee", false),
+    );
+  }
+
+  if (normalizedKey === "buyer_rep_intermediary_status_no") {
+    const details = context.buyerRepDetails;
+    if (!details) {
+      return null;
+    }
+
+    return resolveBuyerRepCheckboxValue(
+      resolveBuyerRepCheckboxMatches(details, "intermediary_allowed", false),
+    );
+  }
+
+  if (normalizedKey === "buyer_rep_retainer_will_apply") {
+    const details = context.buyerRepDetails;
+    if (!details) {
+      return null;
+    }
+
+    return resolveBuyerRepCheckboxValue(
+      resolveBuyerRepCheckboxMatches(details, "retainer_applies_to_fee", true),
+    );
+  }
+
+  if (normalizedKey === "buyer_rep_intermediary_status_yes") {
+    const details = context.buyerRepDetails;
+    if (!details) {
+      return null;
+    }
+
+    return resolveBuyerRepCheckboxValue(
+      resolveBuyerRepCheckboxMatches(details, "intermediary_allowed", true),
+    );
   }
 
   if (!context.settings) {
@@ -543,6 +889,14 @@ function resolveFromFieldSourceMapping(
     case "packet":
       return field.source_path
         ? resolvePacketMetadataSourcePath(field.source_path, context)
+        : null;
+    case "buyer_rep_details":
+      return field.source_path
+        ? resolveBuyerRepDetailsSourcePath(field.source_path, context)
+        : null;
+    case "representation_agreement":
+      return field.source_path
+        ? resolveRepresentationAgreementSourcePath(field.source_path, context)
         : null;
     case "static_default":
       return resolveStaticDefaultSource(field);
@@ -699,6 +1053,8 @@ function resolveSettingsFieldKey(
 const CONTEXT_FIELD_KEY_HANDLERS: Array<
   (fieldKey: string, context: FieldResolverContext) => ResolvedFieldValue | null
 > = [
+  resolveBuyerRepAgreementCheckboxFieldKey,
+  resolveBuyerClientFieldKey,
   resolveContactRoleFieldKey,
   resolvePropertyHoaFieldKey,
   resolvePropertyFieldKey,
@@ -982,8 +1338,22 @@ export async function loadFieldResolverContext(
     properties?: Property | Property[] | null;
     packet_contacts?: PacketContact[] | null;
     representation_agreements?:
-      | { effective_date: string | null; expiration_date: string | null }
-      | Array<{ effective_date: string | null; expiration_date: string | null }>
+      | {
+          effective_date: string | null;
+          expiration_date: string | null;
+          buyer_rep_details?:
+            | BuyerRepDetails
+            | BuyerRepDetails[]
+            | null;
+        }
+      | Array<{
+          effective_date: string | null;
+          expiration_date: string | null;
+          buyer_rep_details?:
+            | BuyerRepDetails
+            | BuyerRepDetails[]
+            | null;
+        }>
       | null;
   };
 
@@ -1009,8 +1379,41 @@ export async function loadFieldResolverContext(
     representationAgreement: normalizeRepresentationAgreementJoin(
       packetRow.representation_agreements,
     ),
+    buyerRepDetails: normalizeBuyerRepDetailsJoin(packetRow.representation_agreements),
     propertyHoas,
   };
+}
+
+function normalizeBuyerRepDetailsJoin(
+  raw:
+    | {
+        buyer_rep_details?: BuyerRepDetails | BuyerRepDetails[] | null;
+      }
+    | Array<{
+        buyer_rep_details?: BuyerRepDetails | BuyerRepDetails[] | null;
+      }>
+    | null
+    | undefined,
+): BuyerRepDetails | null {
+  if (!raw) {
+    return null;
+  }
+
+  const agreement = Array.isArray(raw) ? (raw[0] ?? null) : raw;
+  if (!agreement) {
+    return null;
+  }
+
+  const details = agreement.buyer_rep_details;
+  if (!details) {
+    return null;
+  }
+
+  if (Array.isArray(details)) {
+    return details[0] ?? null;
+  }
+
+  return details;
 }
 
 async function loadFieldForResolution(

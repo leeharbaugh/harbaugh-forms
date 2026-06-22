@@ -168,7 +168,8 @@ export function FieldSourceFormFields({
           <p className="text-xs text-muted-foreground sm:col-span-2">
             Without an explicit mapping, the resolver will attempt to infer a
             value from the field key (for example{" "}
-            <code className={cn("text-xs")}>buyer_1_full_name</code> or{" "}
+            <code className={cn("text-xs")}>buyer_1_full_name</code>,{" "}
+            <code className="text-xs">buyer_client_name_1</code>, or{" "}
             <code className="text-xs">property_address</code>).
           </p>
         )}
