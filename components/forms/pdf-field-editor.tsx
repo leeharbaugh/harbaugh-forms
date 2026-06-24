@@ -20,10 +20,6 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { type Form, formatFormReference } from "@/lib/types/form";
 import {
-  isAuthentisignExcludedField,
-  isAuthentisignExcludedFormFieldMapping,
-} from "@/lib/types/authentisign-excluded-fields";
-import {
   FORM_FIELD_MAPPING_SELECT,
   type FormFieldMapping,
 } from "@/lib/types/form-field-mapping";
@@ -340,22 +336,14 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       setMappings([]);
     } else {
       const rows = (mappingsResult.data as FormFieldMapping[]) ?? [];
-      setMappings(
-        rows
-          .filter((row) => !isAuthentisignExcludedFormFieldMapping(row))
-          .map((row) => formFieldMappingToPlacedPdfField(row)),
-      );
+      setMappings(rows.map((row) => formFieldMappingToPlacedPdfField(row)));
     }
 
     if (catalogResult.error) {
       setLoadError(catalogResult.error.message);
       setCatalogFields([]);
     } else {
-      setCatalogFields(
-        ((catalogResult.data as Field[]) ?? []).filter(
-          (field) => !isAuthentisignExcludedField(field),
-        ),
-      );
+      setCatalogFields((catalogResult.data as Field[]) ?? []);
     }
 
     try {
@@ -585,12 +573,6 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         data as FormFieldMapping,
       );
 
-      if (isAuthentisignExcludedFormFieldMapping(data as FormFieldMapping)) {
-        setSaveError("This field type cannot be placed on the form.");
-        setIsSaving(false);
-        return;
-      }
-
       setMappings((current) =>
         sortPlacedPdfFields([...current, newMapping]),
       );
@@ -603,11 +585,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           .order("field_key", { ascending: true });
 
         if (!catalogError && catalogData) {
-          setCatalogFields(
-            (catalogData as Field[]).filter(
-              (field) => !isAuthentisignExcludedField(field),
-            ),
-          );
+          setCatalogFields(catalogData as Field[]);
         }
       }
 

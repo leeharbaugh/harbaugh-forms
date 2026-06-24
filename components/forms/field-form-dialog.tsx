@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { FieldAdminInput } from "@/lib/types/field";
+import type { Field, FieldAdminInput } from "@/lib/types/field";
 
 type FieldFormDialogProps = {
   open: boolean;
@@ -21,6 +21,10 @@ type FieldFormDialogProps = {
   isSubmitting: boolean;
   error: string | null;
   fieldId?: string | null;
+  existingFields?: Pick<
+    Field,
+    "id" | "field_key" | "field_label" | "field_name" | "status"
+  >[];
 };
 
 export function FieldFormDialog({
@@ -35,6 +39,7 @@ export function FieldFormDialog({
   isSubmitting,
   error,
   fieldId = null,
+  existingFields = [],
 }: FieldFormDialogProps) {
   if (!open) {
     return null;
@@ -64,6 +69,7 @@ export function FieldFormDialog({
             error={error}
             mode={mode}
             fieldId={fieldId}
+            existingFields={existingFields}
           />
         </CardContent>
       </Card>

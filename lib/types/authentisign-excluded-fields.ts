@@ -81,7 +81,6 @@ export function isAuthentisignExcludedField(
 
   return (
     isAuthentisignExcludedWidgetType(field.field_widget_type) ||
-    isAuthentisignExcludedFieldKey(field.field_key) ||
     isAuthentisignExcludedLegacyFieldType(
       catalogTypesToLegacyFieldType(field.field_widget_type),
     )

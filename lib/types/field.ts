@@ -1,17 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { retireFieldGlobally } from "@/lib/field-retire";
 import {
-  type FieldSourceInput,
   emptyFieldSourceInput,
   fieldSourceFromField,
   normalizeFieldSourceInput,
   validateFieldSourceInput,
+  type FieldSourceInput,
 } from "@/lib/types/field-source";
-import {
-  AUTHENTISIGN_EXCLUSION_MESSAGE,
-  isAuthentisignExcludedFieldKey,
-  isAuthentisignExcludedWidgetType,
-} from "@/lib/types/authentisign-excluded-fields";
 
 export type Field = {
   id: string;
@@ -72,6 +67,8 @@ export const FIELD_WIDGET_TYPES = [
   "text",
   "checkbox",
   "date",
+  "number",
+  "currency",
   "signature",
   "initials",
 ] as const;
@@ -98,6 +95,8 @@ const WIDGET_TYPE_LABELS: Record<string, string> = {
   text: "Text",
   checkbox: "Checkbox",
   date: "Date",
+  number: "Number",
+  currency: "Currency",
   signature: "Signature",
   initial: "Initials",
   initials: "Initials",
@@ -164,9 +163,116 @@ export function catalogTypesToLegacyFieldType(
     case "initial":
     case "initials":
       return "INITIAL_PLACEHOLDER";
+    case "number":
+    case "currency":
     default:
       return "TEXT";
   }
+}
+
+export const SIMILAR_FIELD_WARNING =
+  "A similar reusable field may already exist. Consider reusing an existing field instead of creating a form-specific field.";
+
+function normalizeFieldSimilarityValue(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function fieldKeysAreSimilar(left: string, right: string): boolean {
+  const normalizedLeft = normalizeFieldSimilarityValue(left);
+  const normalizedRight = normalizeFieldSimilarityValue(right);
+
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  if (normalizedLeft === normalizedRight) {
+    return true;
+  }
+
+  const shorter =
+    normalizedLeft.length <= normalizedRight.length
+      ? normalizedLeft
+      : normalizedRight;
+  const longer =
+    normalizedLeft.length > normalizedRight.length
+      ? normalizedLeft
+      : normalizedRight;
+
+  return shorter.length >= 8 && longer.includes(shorter);
+}
+
+function fieldLabelsAreSimilar(left: string, right: string): boolean {
+  const normalizedLeft = normalizeFieldSimilarityValue(left);
+  const normalizedRight = normalizeFieldSimilarityValue(right);
+
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  if (normalizedLeft === normalizedRight) {
+    return true;
+  }
+
+  const minimumLength = 6;
+  return (
+    normalizedLeft.length >= minimumLength &&
+    normalizedRight.length >= minimumLength &&
+    (normalizedLeft.includes(normalizedRight) ||
+      normalizedRight.includes(normalizedLeft))
+  );
+}
+
+export function findSimilarCatalogFields(
+  input: Pick<FieldInput, "field_key" | "field_label">,
+  existingFields: Pick<
+    Field,
+    "id" | "field_key" | "field_label" | "field_name" | "status"
+  >[],
+): Pick<Field, "id" | "field_key" | "field_label" | "field_name">[] {
+  const candidateKey = input.field_key.trim();
+  const candidateLabel = input.field_label.trim();
+
+  if (!candidateKey && !candidateLabel) {
+    return [];
+  }
+
+  return existingFields
+    .filter((field) => field.status !== "DELETED")
+    .filter((field) => {
+      const existingLabel =
+        field.field_label?.trim() || field.field_name?.trim() || "";
+
+      return (
+        (candidateKey &&
+          fieldKeysAreSimilar(candidateKey, field.field_key)) ||
+        (candidateLabel &&
+          existingLabel &&
+          fieldLabelsAreSimilar(candidateLabel, existingLabel))
+      );
+    })
+    .map((field) => ({
+      id: field.id,
+      field_key: field.field_key,
+      field_label: field.field_label,
+      field_name: field.field_name,
+    }));
+}
+
+export function normalizeCatalogWidgetType(
+  widgetType: string,
+): FieldWidgetType | null {
+  const normalized = widgetType.trim().toLowerCase();
+  if (normalized === "initial") {
+    return "initials";
+  }
+
+  return FIELD_WIDGET_TYPES.includes(normalized as FieldWidgetType)
+    ? (normalized as FieldWidgetType)
+    : null;
 }
 
 export function emptyFieldAdminInput(): FieldAdminInput {
@@ -291,12 +397,8 @@ export function validateFieldInput(input: FieldInput): string | null {
     return "Field widget type is required.";
   }
 
-  if (isAuthentisignExcludedWidgetType(input.field_widget_type)) {
-    return AUTHENTISIGN_EXCLUSION_MESSAGE;
-  }
-
-  if (isAuthentisignExcludedFieldKey(input.field_key)) {
-    return AUTHENTISIGN_EXCLUSION_MESSAGE;
+  if (!normalizeCatalogWidgetType(input.field_widget_type)) {
+    return "Select a valid widget type.";
   }
 
   return validateFieldSourceInput(input);
@@ -305,17 +407,14 @@ export function validateFieldInput(input: FieldInput): string | null {
 export function normalizeFieldInput(input: FieldInput) {
   const trim = (value: string) => value.trim();
   const fieldKey = trim(input.field_key).toUpperCase();
-  const widgetType =
-    trim(input.field_widget_type) === "initial"
-      ? "initials"
-      : trim(input.field_widget_type);
+  const widgetType = normalizeCatalogWidgetType(input.field_widget_type);
 
   return {
     field_key: fieldKey,
     field_name: trim(input.field_name) || fieldKey,
     field_label: trim(input.field_label) || null,
     field_data_type: trim(input.field_data_type),
-    field_widget_type: widgetType,
+    field_widget_type: widgetType ?? trim(input.field_widget_type),
     default_value: trim(input.default_value) || null,
     default_checked: isBooleanField(input) ? input.default_checked : null,
     required: input.required,

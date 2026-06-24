@@ -8,17 +8,22 @@ import {
   FIELD_DATA_TYPES,
   FIELD_STATUSES,
   FIELD_WIDGET_TYPES,
+  type Field,
   type FieldAdminInput,
   type FieldStatus,
-  formatFieldDataType,
+  type FieldWidgetType,
+  findSimilarCatalogFields,
   formatFieldReference,
+  formatFieldDataType,
   formatFieldStatus,
   formatFieldWidgetType,
   isBooleanField,
+  SIMILAR_FIELD_WARNING,
   validateFieldAdminInput,
 } from "@/lib/types/field";
 import { FieldSourceFormFields } from "@/components/forms/field-source-form-fields";
 import { cn } from "@/lib/utils";
+import { useMemo } from "react";
 
 type FieldFormProps = {
   value: FieldAdminInput;
@@ -29,6 +34,10 @@ type FieldFormProps = {
   error: string | null;
   mode: "create" | "edit" | "view";
   fieldId?: string | null;
+  existingFields?: Pick<
+    Field,
+    "id" | "field_key" | "field_label" | "field_name" | "status"
+  >[];
 };
 
 const fieldClassName =
@@ -43,8 +52,31 @@ export function FieldForm({
   error,
   mode,
   fieldId = null,
+  existingFields = [],
 }: FieldFormProps) {
   const readOnly = mode === "view";
+
+  const widgetTypeOptions = useMemo(() => {
+    const options = new Set<FieldWidgetType>(FIELD_WIDGET_TYPES);
+    const currentWidgetType = value.field_widget_type.trim().toLowerCase();
+
+    if (
+      currentWidgetType &&
+      !options.has(currentWidgetType as FieldWidgetType)
+    ) {
+      options.add(currentWidgetType as FieldWidgetType);
+    }
+
+    return [...options];
+  }, [value.field_widget_type]);
+
+  const similarFields = useMemo(() => {
+    if (mode !== "create") {
+      return [];
+    }
+
+    return findSimilarCatalogFields(value, existingFields);
+  }, [existingFields, mode, value.field_key, value.field_label]);
 
   const setField = <K extends keyof FieldAdminInput>(
     key: K,
@@ -66,9 +98,29 @@ export function FieldForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <p className="text-sm text-muted-foreground">
-        Reusable business field definitions. Template PDF placement is managed
-        in each form&apos;s PDF Field Editor.
+        Fields represent reusable business concepts and may be used on multiple
+        forms. Prefer generic field keys (for example{" "}
+        <code className="text-xs">broker_signs_in_lieu_checkbox</code>) over
+        form-specific names (for example{" "}
+        <code className="text-xs">listing_broker_signature_checkbox</code>).
+        Template PDF placement is managed in each form&apos;s PDF Field Editor.
       </p>
+
+      {mode === "create" && similarFields.length > 0 && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+          <p>{SIMILAR_FIELD_WARNING}</p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {similarFields.slice(0, 5).map((field) => (
+              <li key={field.id} className="font-mono">
+                {field.field_key}
+                {field.field_label?.trim() || field.field_name?.trim()
+                  ? ` · ${field.field_label?.trim() || field.field_name?.trim()}`
+                  : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {fieldId != null && (
@@ -152,7 +204,7 @@ export function FieldForm({
             disabled={readOnly}
             required
           >
-            {FIELD_WIDGET_TYPES.map((widgetType) => (
+            {widgetTypeOptions.map((widgetType) => (
               <option key={widgetType} value={widgetType}>
                 {formatFieldWidgetType(widgetType)}
               </option>

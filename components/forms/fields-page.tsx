@@ -511,6 +511,7 @@ export function FieldsPage() {
         isSubmitting={isSubmitting}
         error={formError}
         fieldId={editingFieldId}
+        existingFields={fields}
       />
 
       <FieldRetireConfirmDialog
