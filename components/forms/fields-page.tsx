@@ -283,7 +283,7 @@ export function FieldsPage() {
   };
 
   return (
-    <div className="flex w-full flex-col gap-6">
+    <div className="flex w-full min-w-0 max-w-full flex-col gap-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Fields</h1>
@@ -294,14 +294,14 @@ export function FieldsPage() {
         <Button onClick={openCreateForm}>Add field</Button>
       </div>
 
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardHeader>
           <CardTitle>Field catalog</CardTitle>
           <CardDescription>
             Generic field definitions without form placement or coordinates.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="min-w-0 space-y-4">
           <Input
             placeholder="Search fields..."
             value={searchQuery}
@@ -328,21 +328,24 @@ export function FieldsPage() {
               No fields found. Add a field to build your catalog.
             </p>
           ) : (
-            <div className="rounded-md border">
-              <table className="w-full border-collapse">
+            <div className="max-w-full overflow-x-auto rounded-md border">
+              <table className="w-full table-fixed border-collapse">
+                <colgroup>
+                  <col className="min-w-0" />
+                  <col className="hidden sm:table-column sm:w-24" />
+                  <col className="hidden sm:table-column sm:w-24" />
+                  <col className="hidden sm:table-column sm:w-[26%]" />
+                  <col className="w-36 sm:w-44" />
+                </colgroup>
                 <thead>
                   <tr className="border-b bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     <th className="min-w-0 px-4 py-3">Field</th>
-                    <th className="hidden px-4 py-3 sm:table-cell sm:w-[6.5rem]">
-                      Data type
-                    </th>
-                    <th className="hidden px-4 py-3 sm:table-cell sm:w-[6.5rem]">
-                      Widget type
-                    </th>
-                    <th className="hidden min-w-0 max-w-[14rem] px-4 py-3 sm:table-cell">
+                    <th className="hidden px-4 py-3 sm:table-cell">Data type</th>
+                    <th className="hidden px-4 py-3 sm:table-cell">Widget type</th>
+                    <th className="hidden min-w-0 px-4 py-3 sm:table-cell">
                       Source mapping
                     </th>
-                    <th className="sticky right-0 min-w-[12.5rem] whitespace-nowrap bg-muted/40 px-4 py-3 text-right shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]">
+                    <th className="whitespace-nowrap px-4 py-3 text-right">
                       Actions
                     </th>
                   </tr>
@@ -360,9 +363,9 @@ export function FieldsPage() {
                         className={cn(deleted && "bg-muted/20")}
                       >
                         <td className="min-w-0 px-4 py-3 align-middle">
-                          <div className="min-w-0 space-y-1">
+                          <div className="min-w-0 space-y-1 overflow-hidden">
                             <div
-                              className="break-words font-medium leading-snug"
+                              className="truncate font-medium leading-snug"
                               title={displayLabel}
                             >
                               {displayLabel}
@@ -373,7 +376,7 @@ export function FieldsPage() {
                             >
                               {field.field_key}
                             </div>
-                            <div className="space-y-1 text-xs text-muted-foreground sm:hidden">
+                            <div className="space-y-1 overflow-hidden text-xs text-muted-foreground sm:hidden">
                               <div className="flex flex-wrap gap-x-3 gap-y-1">
                                 <span>
                                   {formatFieldDataType(field.field_data_type)}
@@ -385,50 +388,49 @@ export function FieldsPage() {
                               {sourceStatus.status === "globally_mapped" &&
                               sourceMapping ? (
                                 <div
-                                  className="break-words font-mono leading-snug"
+                                  className="truncate font-mono leading-snug"
                                   title={sourceMapping}
                                 >
                                   {sourceMapping}
                                 </div>
                               ) : (
-                                <div className="text-muted-foreground/80">
+                                <div className="truncate text-muted-foreground/80">
                                   {sourceStatus.label}
                                 </div>
                               )}
                             </div>
                           </div>
                         </td>
-                        <td className="hidden px-4 py-3 align-middle text-sm sm:table-cell sm:w-[6.5rem]">
-                          {formatFieldDataType(field.field_data_type)}
+                        <td className="hidden min-w-0 truncate px-4 py-3 align-middle text-sm sm:table-cell">
+                          <span title={formatFieldDataType(field.field_data_type)}>
+                            {formatFieldDataType(field.field_data_type)}
+                          </span>
                         </td>
-                        <td className="hidden px-4 py-3 align-middle text-sm sm:table-cell sm:w-[6.5rem]">
-                          {formatFieldWidgetType(field.field_widget_type)}
+                        <td className="hidden min-w-0 truncate px-4 py-3 align-middle text-sm sm:table-cell">
+                          <span title={formatFieldWidgetType(field.field_widget_type)}>
+                            {formatFieldWidgetType(field.field_widget_type)}
+                          </span>
                         </td>
-                        <td className="hidden min-w-0 max-w-[14rem] px-4 py-3 align-middle sm:table-cell">
+                        <td className="hidden min-w-0 px-4 py-3 align-middle sm:table-cell">
                           {sourceStatus.status === "globally_mapped" &&
                           sourceMapping ? (
                             <div
-                              className="line-clamp-2 break-words font-mono text-xs leading-snug"
+                              className="line-clamp-2 overflow-hidden font-mono text-xs leading-snug"
                               title={sourceMapping}
                             >
                               {sourceMapping}
                             </div>
                           ) : (
                             <span
-                              className="text-xs text-muted-foreground"
+                              className="block truncate text-xs text-muted-foreground"
                               title={sourceStatus.helperText ?? undefined}
                             >
                               {sourceStatus.label}
                             </span>
                           )}
                         </td>
-                        <td
-                          className={cn(
-                            "sticky right-0 min-w-[12.5rem] whitespace-nowrap px-4 py-3 align-middle shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]",
-                            deleted ? "bg-muted/20" : "bg-background",
-                          )}
-                        >
-                          <div className="flex flex-row flex-nowrap items-center justify-end gap-2 max-sm:flex-wrap">
+                        <td className="whitespace-nowrap px-4 py-3 align-middle text-right">
+                          <div className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
                             <Button
                               variant="outline"
                               size="sm"
