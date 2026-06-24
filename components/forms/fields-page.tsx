@@ -32,6 +32,7 @@ import {
 import {
   formatFieldSourceMappingCatalog,
   formatFieldSourceSaveError,
+  formatFieldSourceStatusDisplay,
 } from "@/lib/types/field-source";
 import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useState } from "react";
@@ -350,6 +351,7 @@ export function FieldsPage() {
                   {fields.map((field) => {
                     const deleted = isFieldDeleted(field);
                     const displayLabel = formatFieldDisplayLabel(field);
+                    const sourceStatus = formatFieldSourceStatusDisplay(field);
                     const sourceMapping = formatFieldSourceMappingCatalog(field);
 
                     return (
@@ -380,7 +382,8 @@ export function FieldsPage() {
                                   {formatFieldWidgetType(field.field_widget_type)}
                                 </span>
                               </div>
-                              {sourceMapping ? (
+                              {sourceStatus.status === "globally_mapped" &&
+                              sourceMapping ? (
                                 <div
                                   className="break-words font-mono leading-snug"
                                   title={sourceMapping}
@@ -389,7 +392,7 @@ export function FieldsPage() {
                                 </div>
                               ) : (
                                 <div className="text-muted-foreground/80">
-                                  Unmapped
+                                  {sourceStatus.label}
                                 </div>
                               )}
                             </div>
@@ -402,7 +405,8 @@ export function FieldsPage() {
                           {formatFieldWidgetType(field.field_widget_type)}
                         </td>
                         <td className="hidden min-w-0 max-w-[14rem] px-4 py-3 align-middle sm:table-cell">
-                          {sourceMapping ? (
+                          {sourceStatus.status === "globally_mapped" &&
+                          sourceMapping ? (
                             <div
                               className="line-clamp-2 break-words font-mono text-xs leading-snug"
                               title={sourceMapping}
@@ -410,8 +414,11 @@ export function FieldsPage() {
                               {sourceMapping}
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground">
-                              Unmapped
+                            <span
+                              className="text-xs text-muted-foreground"
+                              title={sourceStatus.helperText ?? undefined}
+                            >
+                              {sourceStatus.label}
                             </span>
                           )}
                         </td>

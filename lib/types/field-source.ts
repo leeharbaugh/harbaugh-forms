@@ -12,13 +12,36 @@ export const FIELD_SOURCE_TYPES = [
   "packet_property",
   "packet",
   "buyer_rep_details",
+  "listing_agreement_details",
   "representation_agreement",
   "static_default",
   "custom_resolver",
   "manual_only",
+  "packet_instance",
 ] as const;
 
 export type FieldSourceType = (typeof FIELD_SOURCE_TYPES)[number];
+
+export type FieldSourceStatus =
+  | "globally_mapped"
+  | "packet_instance"
+  | "unmapped";
+
+/** Canonical field keys backfilled to packet_instance via migration (not used for UI inference). */
+export const PACKET_INSTANCE_BACKFILL_FIELD_KEYS = [
+  "special_provisions",
+  "seller_contribution",
+  "option_fee",
+  "earnest_money",
+  "hoa_transfer_fee",
+  "custom_contract_language",
+  "transaction_notes",
+  "listing_price",
+  "buyer_specific_terms",
+] as const;
+
+/** @deprecated Use PACKET_INSTANCE_BACKFILL_FIELD_KEYS. Kept for migration references only. */
+export const PACKET_INSTANCE_FIELD_KEY_HINTS = PACKET_INSTANCE_BACKFILL_FIELD_KEYS;
 
 export const SETTINGS_AGENT_SOURCE_PATHS = [
   "agent_first_name",
@@ -41,6 +64,9 @@ export const SETTINGS_BROKERAGE_SOURCE_PATHS = [
   "brokerage_state",
   "brokerage_zip",
   "brokerage_office_phone",
+  "brokerage_license_number",
+  "brokerage_email",
+  "brokerage_city_state_zip",
   "broker_first_name",
   "broker_middle_name",
   "broker_last_name",
@@ -94,6 +120,7 @@ export const PACKET_CONTACT_SOURCE_PATHS = [
 
 export const PACKET_PROPERTY_SOURCE_PATHS = [
   "address",
+  "address_city",
   "street_address",
   "city",
   "state",
@@ -120,9 +147,11 @@ export const CUSTOM_RESOLVER_KEYS = [
   "broker_full_name",
   "property_hoa_name",
   "property_hoa_phone",
+  "property_address_city",
   "buyer_client_address",
   "buyer_client_city_state_zip",
   "brokerage_city_state_zip",
+  "buyer_rep_agreement_between",
   "buyer_rep_retainer_will_not_apply",
   "buyer_rep_intermediary_status_no",
 ] as const;
@@ -136,11 +165,80 @@ const SOURCE_TYPE_LABELS: Record<FieldSourceType, string> = {
   packet_property: "Packet property",
   packet: "Packet metadata",
   buyer_rep_details: "Buyer rep details",
+  listing_agreement_details: "Listing agreement details",
   representation_agreement: "Representation agreement",
   static_default: "Static default",
   custom_resolver: "Custom resolver",
   manual_only: "Manual entry only",
+  packet_instance: "Packet/form instance value",
 };
+
+export function isGloballyMappedSourceType(
+  sourceType: string | null | undefined,
+): sourceType is Exclude<FieldSourceType, "packet_instance"> {
+  return (
+    sourceType != null &&
+    isFieldSourceType(sourceType) &&
+    sourceType !== "packet_instance"
+  );
+}
+
+export function getFieldSourceStatus(field: {
+  source_type?: string | null;
+}): FieldSourceStatus {
+  if (field.source_type === "packet_instance") {
+    return "packet_instance";
+  }
+
+  if (isGloballyMappedSourceType(field.source_type)) {
+    return "globally_mapped";
+  }
+
+  return "unmapped";
+}
+
+export type FieldSourceStatusDisplay = {
+  status: FieldSourceStatus;
+  label: string;
+  detail: string | null;
+  helperText: string | null;
+};
+
+export function formatFieldSourceStatusDisplay(field: {
+  field_key?: string | null;
+  source_type?: string | null;
+  source_path?: string | null;
+  resolver_key?: string | null;
+  fallback_value?: string | null;
+}): FieldSourceStatusDisplay {
+  const status = getFieldSourceStatus(field);
+
+  if (status === "globally_mapped") {
+    return {
+      status,
+      label: "Globally Mapped",
+      detail: formatFieldSourceMappingCatalog(field),
+      helperText: null,
+    };
+  }
+
+  if (status === "packet_instance") {
+    return {
+      status,
+      label: "Packet/Form Instance Value",
+      detail: null,
+      helperText:
+        "This field is intentionally supplied on a per-packet basis and does not derive its value from a global source.",
+    };
+  }
+
+  return {
+    status,
+    label: "Unmapped",
+    detail: null,
+    helperText: "This field does not currently have a configured value source.",
+  };
+}
 
 export function formatFieldSourceType(sourceType: string | null | undefined): string {
   if (!sourceType) {
@@ -208,7 +306,11 @@ export function sourceTypeRequiresResolverKey(
 export function sourceTypeAllowsFallbackValue(
   sourceType: FieldSourceType | "",
 ): boolean {
-  return sourceType === "static_default" || sourceType === "manual_only";
+  return (
+    sourceType === "static_default" ||
+    sourceType === "manual_only" ||
+    sourceType === "packet_instance"
+  );
 }
 
 export type FieldSourceInput = {
@@ -305,13 +407,19 @@ export function normalizeFieldSourceInput(input: FieldSourceInput) {
 }
 
 export function formatFieldSourceSummary(field: {
+  field_key?: string | null;
   source_type?: string | null;
   source_path?: string | null;
   resolver_key?: string | null;
   fallback_value?: string | null;
 }): string {
+  const statusDisplay = formatFieldSourceStatusDisplay(field);
+  if (statusDisplay.status !== "globally_mapped") {
+    return statusDisplay.label;
+  }
+
   if (!field.source_type) {
-    return "Field key fallback";
+    return statusDisplay.label;
   }
 
   const typeLabel = formatFieldSourceType(field.source_type);
@@ -333,6 +441,7 @@ export function formatFieldSourceSummary(field: {
 
 /** Compact catalog display: settings_brokerage → brokerage_name */
 export function formatFieldSourceMappingCatalog(field: {
+  field_key?: string | null;
   source_type?: string | null;
   source_path?: string | null;
   resolver_key?: string | null;
@@ -343,6 +452,10 @@ export function formatFieldSourceMappingCatalog(field: {
   }
 
   const sourceType = field.source_type.trim();
+
+  if (sourceType === "packet_instance") {
+    return "packet_instance";
+  }
 
   if (sourceType === "manual_only") {
     return "manual_only";

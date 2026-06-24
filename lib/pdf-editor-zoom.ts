@@ -87,3 +87,26 @@ export function stepZoomPercent(
   const factor = direction === "in" ? PDF_ZOOM_STEP : 1 / PDF_ZOOM_STEP;
   return clampCustomZoomPercent(currentPercent * factor);
 }
+
+/** Scroll a child element into view within a scroll container (never the window). */
+export function scrollElementIntoContainer(
+  container: HTMLElement,
+  element: HTMLElement,
+  padding = 8,
+): void {
+  const containerRect = container.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+
+  if (elementRect.top < containerRect.top + padding) {
+    container.scrollTop -= containerRect.top + padding - elementRect.top;
+  } else if (elementRect.bottom > containerRect.bottom - padding) {
+    container.scrollTop += elementRect.bottom - containerRect.bottom + padding;
+  }
+}
+
+/** Run a callback after layout settles (avoids scroll during click/drag handlers). */
+export function afterLayoutSettled(callback: () => void): void {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(callback);
+  });
+}

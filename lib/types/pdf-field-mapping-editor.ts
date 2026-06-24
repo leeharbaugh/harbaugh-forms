@@ -169,32 +169,9 @@ export function templatePlacementSidebarDetails(
   };
 }
 
-export function validatePdfMappingEditorInput(
+export function validatePdfPlacementInput(
   input: PdfMappingEditorInput,
 ): string | null {
-  if (input.field_selection_mode === "existing" && !input.field_id.trim()) {
-    return "Select a field from the catalog.";
-  }
-
-  if (input.field_selection_mode === "quick_create") {
-    const quickCreateInput: FieldInput = {
-      field_key: input.quick_create.field_key,
-      field_name: input.quick_create.field_name,
-      field_label: input.quick_create.field_label,
-      field_data_type: input.quick_create.field_data_type,
-      field_widget_type: input.quick_create.field_widget_type,
-      default_value: "",
-      default_checked: false,
-      required: false,
-      notes: "",
-      ...emptyFieldSourceInput(),
-    };
-    const quickCreateError = validateFieldInput(quickCreateInput);
-    if (quickCreateError) {
-      return quickCreateError;
-    }
-  }
-
   if (!input.field_widget_type.trim()) {
     return "Widget type is required.";
   }
@@ -234,6 +211,35 @@ export function validatePdfMappingEditorInput(
   }
 
   return null;
+}
+
+export function validatePdfMappingEditorInput(
+  input: PdfMappingEditorInput,
+): string | null {
+  if (input.field_selection_mode === "existing" && !input.field_id.trim()) {
+    return "Select a field from the catalog.";
+  }
+
+  if (input.field_selection_mode === "quick_create") {
+    const quickCreateInput: FieldInput = {
+      field_key: input.quick_create.field_key,
+      field_name: input.quick_create.field_name,
+      field_label: input.quick_create.field_label,
+      field_data_type: input.quick_create.field_data_type,
+      field_widget_type: input.quick_create.field_widget_type,
+      default_value: "",
+      default_checked: false,
+      required: false,
+      notes: "",
+      ...emptyFieldSourceInput(),
+    };
+    const quickCreateError = validateFieldInput(quickCreateInput);
+    if (quickCreateError) {
+      return quickCreateError;
+    }
+  }
+
+  return validatePdfPlacementInput(input);
 }
 
 export function normalizePdfMappingEditorInput(input: PdfMappingEditorInput) {

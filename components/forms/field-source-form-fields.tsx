@@ -6,6 +6,7 @@ import type { FieldAdminInput } from "@/lib/types/field";
 import {
   CUSTOM_RESOLVER_KEYS,
   FIELD_SOURCE_TYPES,
+  formatFieldSourceStatusDisplay,
   formatFieldSourceType,
   sourcePathsForType,
   sourceTypeAllowsFallbackValue,
@@ -13,7 +14,6 @@ import {
   sourceTypeRequiresResolverKey,
   type FieldSourceType,
 } from "@/lib/types/field-source";
-import { cn } from "@/lib/utils";
 
 type FieldSourceFormFieldsProps = {
   value: FieldAdminInput;
@@ -37,6 +37,8 @@ export function FieldSourceFormFields({
   const showFallbackValue =
     sourceType && sourceTypeAllowsFallbackValue(sourceType);
 
+  const sourceStatus = formatFieldSourceStatusDisplay(value);
+
   const setSourceType = (nextType: FieldSourceType | "") => {
     onChange({
       ...value,
@@ -44,7 +46,9 @@ export function FieldSourceFormFields({
       source_path: "",
       resolver_key: "",
       fallback_value:
-        nextType === "static_default" || nextType === "manual_only"
+        nextType === "static_default" ||
+        nextType === "manual_only" ||
+        nextType === "packet_instance"
           ? value.fallback_value
           : "",
     });
@@ -72,13 +76,18 @@ export function FieldSourceFormFields({
             }
             disabled={readOnly}
           >
-            <option value="">Field key fallback (no explicit mapping)</option>
+            <option value="">Unmapped (no explicit source type)</option>
             {FIELD_SOURCE_TYPES.map((type) => (
               <option key={type} value={type}>
                 {formatFieldSourceType(type)}
               </option>
             ))}
           </select>
+          {!sourceType && (
+            <p className="text-xs text-muted-foreground">
+              {sourceStatus.helperText}
+            </p>
+          )}
         </div>
 
         {showSourcePath && (
@@ -164,13 +173,18 @@ export function FieldSourceFormFields({
           </p>
         )}
 
-        {!sourceType && (
+        {sourceType === "packet_instance" && (
           <p className="text-xs text-muted-foreground sm:col-span-2">
-            Without an explicit mapping, the resolver will attempt to infer a
-            value from the field key (for example{" "}
-            <code className={cn("text-xs")}>buyer_1_full_name</code>,{" "}
-            <code className="text-xs">buyer_client_name_1</code>, or{" "}
-            <code className="text-xs">property_address</code>).
+            This field is intentionally supplied on a per-packet basis and does
+            not derive its value from a global source.
+          </p>
+        )}
+
+        {!sourceType && sourceStatus.status === "unmapped" && (
+          <p className="text-xs text-muted-foreground sm:col-span-2">
+            Without an explicit source type, the resolver may still infer a value
+            from the field key when possible. Select a source type above to
+            configure an explicit mapping.
           </p>
         )}
       </div>

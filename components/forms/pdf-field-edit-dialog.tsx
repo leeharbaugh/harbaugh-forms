@@ -1,6 +1,7 @@
 "use client";
 
-import { PdfMappingFormFields } from "@/components/forms/pdf-mapping-form-fields";
+import { PdfFieldDefinitionFormFields } from "@/components/forms/pdf-field-definition-form-fields";
+import { PdfPlacementFormFields } from "@/components/forms/pdf-placement-form-fields";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,10 +10,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { Field } from "@/lib/types/field";
+import {
+  type FieldInput,
+  validateFieldInput,
+} from "@/lib/types/field";
 import {
   type PdfMappingEditorInput,
-  validatePdfMappingEditorInput,
+  validatePdfPlacementInput,
 } from "@/lib/types/pdf-field-mapping-editor";
 import type { PlacedPdfField } from "@/lib/types/template-pdf-field";
 import { formatFieldMappingReference } from "@/lib/types/form-field-mapping";
@@ -20,35 +24,39 @@ import { formatFieldMappingReference } from "@/lib/types/form-field-mapping";
 type PdfFieldEditDialogProps = {
   open: boolean;
   mapping: PlacedPdfField | null;
-  value: PdfMappingEditorInput;
-  onChange: (value: PdfMappingEditorInput) => void;
+  placementValue: PdfMappingEditorInput;
+  fieldValue: FieldInput;
+  onPlacementChange: (value: PdfMappingEditorInput) => void;
+  onFieldChange: (value: FieldInput) => void;
   onSubmit: () => void;
   onDelete: () => void;
   onCancel: () => void;
   isSubmitting: boolean;
   isDeleting: boolean;
   error: string | null;
-  catalogFields: Field[];
 };
 
 export function PdfFieldEditDialog({
   open,
   mapping,
-  value,
-  onChange,
+  placementValue,
+  fieldValue,
+  onPlacementChange,
+  onFieldChange,
   onSubmit,
   onDelete,
   onCancel,
   isSubmitting,
   isDeleting,
   error,
-  catalogFields,
 }: PdfFieldEditDialogProps) {
   if (!open || !mapping) {
     return null;
   }
 
-  const validationError = validatePdfMappingEditorInput(value);
+  const placementValidationError = validatePdfPlacementInput(placementValue);
+  const fieldValidationError = validateFieldInput(fieldValue);
+  const validationError = placementValidationError ?? fieldValidationError;
   const isBusy = isSubmitting || isDeleting;
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -66,25 +74,50 @@ export function PdfFieldEditDialog({
         disabled={isBusy}
         aria-label="Close edit dialog"
       />
-      <Card className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto shadow-lg">
+      <Card className="relative z-10 max-h-[90vh] w-full max-w-3xl overflow-y-auto shadow-lg">
         <CardHeader>
-          <CardTitle>Edit template placement</CardTitle>
+          <CardTitle>Edit field mapping</CardTitle>
           <p className="text-sm text-muted-foreground">
             Placement {formatFieldMappingReference(mapping.id)} ·{" "}
             {mapping.field_key}
           </p>
         </CardHeader>
         <form onSubmit={handleSubmit}>
-          <CardContent>
-            <PdfMappingFormFields
-              value={value}
-              onChange={onChange}
-              catalogFields={catalogFields}
-              showLayoutFields
-            />
+          <CardContent className="space-y-8">
+            <section className="space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold">
+                  Section A: Placement on this form
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  These settings apply only to this form template placement.
+                </p>
+              </div>
+              <PdfPlacementFormFields
+                value={placementValue}
+                onChange={onPlacementChange}
+                showLayoutFields
+              />
+            </section>
+
+            <section className="space-y-4 border-t pt-6">
+              <div>
+                <h3 className="text-sm font-semibold">
+                  Section B: Reusable field source mapping
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  These settings update the catalog field definition used across
+                  all forms.
+                </p>
+              </div>
+              <PdfFieldDefinitionFormFields
+                value={fieldValue}
+                onChange={onFieldChange}
+              />
+            </section>
 
             {(error || validationError) && (
-              <p className="mt-4 text-sm text-destructive">
+              <p className="text-sm text-destructive">
                 {error ?? validationError}
               </p>
             )}

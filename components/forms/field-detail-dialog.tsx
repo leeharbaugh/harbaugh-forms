@@ -17,6 +17,7 @@ import {
   isBooleanField,
 } from "@/lib/types/field";
 import {
+  formatFieldSourceStatusDisplay,
   formatFieldSourceType,
   isFieldSourceType,
 } from "@/lib/types/field-source";
@@ -77,6 +78,7 @@ export function FieldDetailDialog({
   }
 
   const showDefaultChecked = isBooleanField(field);
+  const sourceStatus = formatFieldSourceStatusDisplay(field);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -114,12 +116,19 @@ export function FieldDetailDialog({
               />
             )}
             <DetailRow label="Required" value={field.required ? "Yes" : "No"} />
+            <DetailRow label="Value source" value={sourceStatus.label} />
+            {sourceStatus.status === "globally_mapped" && sourceStatus.detail && (
+              <DetailRow label="Source mapping" value={sourceStatus.detail} mono />
+            )}
+            {sourceStatus.helperText && (
+              <DetailRow label="Source notes" value={sourceStatus.helperText} />
+            )}
             <DetailRow
               label="Source type"
               value={
                 field.source_type && isFieldSourceType(field.source_type)
                   ? formatFieldSourceType(field.source_type)
-                  : field.source_type ?? "Field key fallback"
+                  : "—"
               }
             />
             <DetailRow label="Source path" value={field.source_path ?? ""} mono />

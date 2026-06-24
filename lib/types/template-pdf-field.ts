@@ -174,6 +174,33 @@ export function roundPdfCoordinate(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+export function clampPdfPlacementToPage(params: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  page_width: number;
+  page_height: number;
+}): { x: number; y: number; width: number; height: number } {
+  const { page_width, page_height } = params;
+  const minDimension = 1;
+
+  let width = Math.max(minDimension, params.width);
+  let height = Math.max(minDimension, params.height);
+  width = Math.min(width, page_width);
+  height = Math.min(height, page_height);
+
+  const x = Math.max(0, Math.min(params.x, page_width - width));
+  const y = Math.max(0, Math.min(params.y, page_height - height));
+
+  return {
+    x: roundPdfCoordinate(x),
+    y: roundPdfCoordinate(y),
+    width: roundPdfCoordinate(width),
+    height: roundPdfCoordinate(height),
+  };
+}
+
 export function clickToPdfCoordinates(
   clickX: number,
   clickY: number,

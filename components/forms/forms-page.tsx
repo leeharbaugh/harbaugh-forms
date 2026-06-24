@@ -24,10 +24,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-type FormMode = "hidden" | "create" | "edit" | "view";
-
-const LIST_COLUMNS =
-  "grid grid-cols-[minmax(0,0.5fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,0.5fr)_minmax(0,1.2fr)] gap-3";
+type FormMode = "hidden" | "create" | "edit";
 
 export function FormsPage() {
   const [templates, setTemplates] = useState<Form[]>([]);
@@ -111,8 +108,8 @@ export function FormsPage() {
     resetFormState();
   };
 
-  const openTemplateForm = (template: Form, mode: "edit" | "view") => {
-    setFormMode(mode);
+  const openEditForm = (template: Form) => {
+    setFormMode("edit");
     setEditingTemplateId(template.id);
     setFormValue(formToInput(template));
     setExistingStoragePath(template.source_storage_path);
@@ -250,18 +247,12 @@ export function FormsPage() {
   };
 
   const formTitle =
-    formMode === "create"
-      ? "Add form template"
-      : formMode === "edit"
-        ? "Edit form template"
-        : "View form template";
+    formMode === "create" ? "Add form template" : "Edit form template";
 
   const formDescription =
     formMode === "create"
       ? "Upload a blank PDF and register it as a reusable form template."
-      : formMode === "edit"
-        ? "Update template details or replace the stored PDF."
-        : "Read-only view of the form template.";
+      : "Update template details or replace the stored PDF.";
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
@@ -293,7 +284,7 @@ export function FormsPage() {
               onCancel={closeForm}
               isSubmitting={isSubmitting}
               error={formError}
-              mode={formMode === "view" ? "view" : formMode}
+              mode={formMode}
               templateId={editingTemplateId}
               existingStoragePath={existingStoragePath}
               pdfFile={pdfFile}
@@ -331,76 +322,81 @@ export function FormsPage() {
             </p>
           ) : (
             <div className="overflow-x-auto rounded-md border">
-              <div className="min-w-[960px]">
-                <div
-                  className={`${LIST_COLUMNS} border-b bg-muted/40 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground`}
-                >
-                  <span>ID</span>
-                  <span>Template name</span>
-                  <span>Template code</span>
-                  <span>Category</span>
-                  <span>Version</span>
-                  <span>State</span>
-                  <span>Storage path</span>
-                </div>
-                <div className="divide-y">
+              <table className="w-full min-w-[52rem] table-fixed border-collapse">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <th className="w-[4rem] px-4 py-3">ID</th>
+                    <th className="min-w-0 px-4 py-3">Template name</th>
+                    <th className="min-w-0 px-4 py-3">Template code</th>
+                    <th className="w-[9rem] px-4 py-3">Category</th>
+                    <th className="w-[6rem] px-4 py-3">Version</th>
+                    <th className="min-w-0 px-4 py-3">Storage path</th>
+                    <th className="w-[11rem] px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
                   {templates.map((template) => (
-                    <div
-                      key={template.id}
-                      className="flex flex-col gap-3 p-4 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-4"
-                    >
-                      <div
-                        className={`${LIST_COLUMNS} items-center px-0 text-sm`}
-                      >
-                        <span className="text-muted-foreground">
-                          {formatFormReference(template.id)}
+                    <tr key={template.id} className="text-sm">
+                      <td className="px-4 py-3 align-middle text-muted-foreground">
+                        {formatFormReference(template.id)}
+                      </td>
+                      <td className="min-w-0 px-4 py-3 align-middle">
+                        <span
+                          className="line-clamp-2 font-medium leading-snug"
+                          title={template.form_name}
+                        >
+                          {template.form_name}
                         </span>
-                        <span className="font-medium">
-                          <Link
-                            href={`/forms/${template.id}`}
-                            className="hover:underline"
-                          >
-                            {template.form_name}
-                          </Link>
+                      </td>
+                      <td className="min-w-0 px-4 py-3 align-middle">
+                        <span
+                          className="line-clamp-2 break-all font-mono text-xs leading-snug"
+                          title={template.form_code}
+                        >
+                          {template.form_code}
                         </span>
-                        <span>{template.form_code}</span>
-                        <span>
-                          {formatFormCategory(template.form_category)}
-                        </span>
-                        <span>{template.version_label ?? "—"}</span>
-                        <span>{template.state_code}</span>
-                        <span className="truncate">
+                      </td>
+                      <td className="px-4 py-3 align-middle">
+                        {formatFormCategory(template.form_category)}
+                      </td>
+                      <td className="px-4 py-3 align-middle">
+                        {template.version_label ?? "—"}
+                      </td>
+                      <td className="min-w-0 px-4 py-3 align-middle">
+                        <span
+                          className="line-clamp-2 break-all font-mono text-xs leading-snug text-muted-foreground"
+                          title={template.source_storage_path}
+                        >
                           {template.source_storage_path}
                         </span>
-                      </div>
-                      <div className="flex flex-wrap gap-2 lg:justify-end">
-                        <Button variant="outline" size="sm" asChild>
-                          <Link href={`/forms/${template.id}/editor`}>
-                            Map fields
-                          </Link>
-                        </Button>
-                        <Button variant="outline" size="sm" asChild>
-                          <Link href={`/forms/${template.id}`}>View</Link>
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openTemplateForm(template, "edit")}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => void handleDelete(template)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 align-middle text-right">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={`/forms/${template.id}/editor`}>
+                              Map fields
+                            </Link>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditForm(template)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => void handleDelete(template)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
                   ))}
-                </div>
-              </div>
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>

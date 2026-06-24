@@ -151,3 +151,46 @@ export function resolveBuyerRepCheckboxMatches(
 ): boolean {
   return details[field] === matches;
 }
+
+/** Join buyer/client display names for the TXR-1501 agreement-between line. */
+export function joinBuyerClientNamesForAgreement(names: string[]): string {
+  const filtered = names.map((name) => name.trim()).filter(Boolean);
+
+  if (filtered.length === 0) {
+    return "";
+  }
+
+  if (filtered.length === 1) {
+    return filtered[0];
+  }
+
+  if (filtered.length === 2) {
+    return `${filtered[0]} and ${filtered[1]}`;
+  }
+
+  const last = filtered[filtered.length - 1];
+  const rest = filtered.slice(0, -1);
+  return `${rest.join(", ")}, and ${last}`;
+}
+
+export function formatBuyerRepAgreementBetween(
+  buyerNames: string[],
+  brokerageName: string | null | undefined,
+): string {
+  const namesPart = joinBuyerClientNamesForAgreement(buyerNames);
+  const broker = brokerageName?.trim() ?? "";
+
+  if (!namesPart && !broker) {
+    return "";
+  }
+
+  if (!namesPart) {
+    return broker;
+  }
+
+  if (!broker) {
+    return namesPart;
+  }
+
+  return `${namesPart} and ${broker}`;
+}

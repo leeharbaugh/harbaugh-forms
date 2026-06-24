@@ -115,6 +115,30 @@ export function formatPropertyAddress(property: Property | PropertyInput): strin
   return line2 ? `${line1}, ${line2}` : line1;
 }
 
+/** Street address, optional unit, and city only (no state/ZIP). */
+export function formatPropertyAddressCity(
+  property: Pick<Property, "street_address" | "unit" | "city">,
+): string {
+  const street = [property.street_address?.trim(), property.unit?.trim()]
+    .filter(Boolean)
+    .join(property.unit?.trim() ? " " : "");
+  const city = property.city?.trim() ?? "";
+
+  if (!street && !city) {
+    return "";
+  }
+
+  if (!street) {
+    return city;
+  }
+
+  if (!city) {
+    return street;
+  }
+
+  return `${street}, ${city}`;
+}
+
 function parseOptionalInteger(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;

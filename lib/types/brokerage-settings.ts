@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { formatBrokerageCityStateZip } from "@/lib/types/buyer-rep-field-resolution";
 
 export type BrokerageSettings = {
   id: number;
@@ -23,6 +24,8 @@ export type BrokerageSettings = {
   brokerage_state: string | null;
   brokerage_zip: string | null;
   brokerage_office_phone: string | null;
+  brokerage_license_number: string | null;
+  brokerage_email: string | null;
 
   broker_first_name: string | null;
   broker_middle_name: string | null;
@@ -47,11 +50,13 @@ export type AgentProfileInput = {
 
 export type BrokerageProfileInput = {
   brokerage_name: string;
+  brokerage_license_number: string;
   brokerage_address: string;
   brokerage_city: string;
   brokerage_state: string;
   brokerage_zip: string;
   brokerage_office_phone: string;
+  brokerage_email: string;
   broker_first_name: string;
   broker_middle_name: string;
   broker_last_name: string;
@@ -80,6 +85,8 @@ export const emptyBrokerageProfileInput = (): BrokerageProfileInput => ({
   brokerage_state: "TX",
   brokerage_zip: "",
   brokerage_office_phone: "",
+  brokerage_license_number: "",
+  brokerage_email: "",
   broker_first_name: "",
   broker_middle_name: "",
   broker_last_name: "",
@@ -115,6 +122,8 @@ export function brokerageSettingsToBrokerageInput(
     brokerage_state: settings.brokerage_state ?? "TX",
     brokerage_zip: settings.brokerage_zip ?? "",
     brokerage_office_phone: settings.brokerage_office_phone ?? "",
+    brokerage_license_number: settings.brokerage_license_number ?? "",
+    brokerage_email: settings.brokerage_email ?? "",
     broker_first_name: settings.broker_first_name ?? "",
     broker_middle_name: settings.broker_middle_name ?? "",
     broker_last_name: settings.broker_last_name ?? "",
@@ -158,6 +167,8 @@ export function normalizeBrokerageProfileInput(
     brokerage_state: trimToEmpty(input.brokerage_state) || "TX",
     brokerage_zip: trimToEmpty(input.brokerage_zip),
     brokerage_office_phone: trimToEmpty(input.brokerage_office_phone),
+    brokerage_license_number: trimToEmpty(input.brokerage_license_number),
+    brokerage_email: trimToEmpty(input.brokerage_email),
     broker_first_name: trimToEmpty(input.broker_first_name),
     broker_middle_name: trimToEmpty(input.broker_middle_name),
     broker_last_name: trimToEmpty(input.broker_last_name),
@@ -206,6 +217,8 @@ export function brokerageProfileInputToRow(
   | "brokerage_state"
   | "brokerage_zip"
   | "brokerage_office_phone"
+  | "brokerage_license_number"
+  | "brokerage_email"
   | "broker_first_name"
   | "broker_middle_name"
   | "broker_last_name"
@@ -220,6 +233,8 @@ export function brokerageProfileInputToRow(
     brokerage_state: trimToNull(input.brokerage_state),
     brokerage_zip: trimToNull(input.brokerage_zip),
     brokerage_office_phone: trimToNull(input.brokerage_office_phone),
+    brokerage_license_number: trimToNull(input.brokerage_license_number),
+    brokerage_email: trimToNull(input.brokerage_email),
     broker_first_name: trimToNull(input.broker_first_name),
     broker_middle_name: trimToNull(input.broker_middle_name),
     broker_last_name: trimToNull(input.broker_last_name),
@@ -331,6 +346,8 @@ export function resolveBrokerageSettingsField(
       return brokerFullName(settings) || null;
     case "brokerage_phone":
       return settings.brokerage_office_phone;
+    case "brokerage_city_state_zip":
+      return formatBrokerageCityStateZip(settings) || null;
     default:
       if (field in settings) {
         const value = settings[field as keyof BrokerageSettings];

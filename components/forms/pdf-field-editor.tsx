@@ -9,6 +9,7 @@ import { PdfFieldInventoryPanel } from "@/components/forms/pdf-field-inventory-p
 import { PdfFieldOverlay } from "@/components/forms/pdf-field-overlay";
 import { PdfFieldPlacementDialog } from "@/components/forms/pdf-field-placement-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { createActiveField } from "@/lib/field-catalog";
 import { getFormPdfSignedUrl } from "@/lib/form-storage";
 import { extractPdfFieldInventory } from "@/lib/pdf-field-extract";
@@ -27,7 +28,14 @@ import {
   type FormFieldMapping,
 } from "@/lib/types/form-field-mapping";
 import type { Field } from "@/lib/types/field";
-import { emptyFieldSourceInput } from "@/lib/types/field-source";
+import {
+  emptyFieldInput,
+  fieldToInput,
+  normalizeFieldInput,
+  validateFieldInput,
+  type FieldInput,
+} from "@/lib/types/field";
+import { formatFieldSourceSaveError, emptyFieldSourceInput } from "@/lib/types/field-source";
 import {
   formatMappingOverlayLabel,
   emptyPdfMappingEditorInput,
@@ -37,13 +45,16 @@ import {
   templatePlacementSidebarDetails,
   type PdfMappingEditorInput,
   validatePdfMappingEditorInput,
+  validatePdfPlacementInput,
 } from "@/lib/types/pdf-field-mapping-editor";
 import {
   type PageMetrics,
   type PendingPdfPlacement,
   type PlacedPdfField,
+  clampPdfPlacementToPage,
   clickToPdfCoordinates,
   formFieldMappingToPlacedPdfField,
+  getDefaultFieldDimensions,
   pdfToRenderRect,
   renderRectToPdfPlacement,
 } from "@/lib/types/template-pdf-field";
@@ -52,11 +63,13 @@ import {
   PDF_EDITOR_SIDEBAR_WIDTH,
   PDF_MIN_PAGE_WIDTH,
   type PdfZoomMode,
+  afterLayoutSettled,
   computePdfPageWidth,
   displayZoomPercent,
+  scrollElementIntoContainer,
   stepZoomPercent,
 } from "@/lib/pdf-editor-zoom";
-import { Minus, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
@@ -67,6 +80,30 @@ type PdfFieldEditorProps = {
 };
 
 type PartialPageMetrics = Partial<PageMetrics>;
+
+const PLACEMENT_EPSILON = 0.5;
+
+function mappingLayoutMatches(
+  mapping: PlacedPdfField,
+  updates: {
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+  },
+): boolean {
+  const nextWidth = updates.width ?? mapping.width ?? 0;
+  const nextHeight = updates.height ?? mapping.height ?? 0;
+  const currentWidth = mapping.width ?? 0;
+  const currentHeight = mapping.height ?? 0;
+
+  return (
+    Math.abs(updates.x - mapping.x_position) <= PLACEMENT_EPSILON &&
+    Math.abs(updates.y - mapping.y_position) <= PLACEMENT_EPSILON &&
+    Math.abs(nextWidth - currentWidth) <= PLACEMENT_EPSILON &&
+    Math.abs(nextHeight - currentHeight) <= PLACEMENT_EPSILON
+  );
+}
 
 async function resolveFieldId(
   supabase: ReturnType<typeof createClient>,
@@ -119,6 +156,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   const [editValue, setEditValue] = useState<PdfMappingEditorInput>(
     emptyPdfMappingEditorInput(),
   );
+  const [editFieldValue, setEditFieldValue] = useState<FieldInput>(
+    emptyFieldInput(),
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -147,6 +187,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   );
   const pdfWorkspaceRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const inventoryListRef = useRef<HTMLDivElement>(null);
+  const inventoryItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 });
   const [basePageWidth, setBasePageWidth] = useState<number | null>(null);
   const [basePageHeight, setBasePageHeight] = useState<number | null>(null);
@@ -249,9 +291,13 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     setBasePageHeight(height);
   };
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError(null);
+  const loadData = useCallback(
+    async (options?: { showFullScreenLoading?: boolean }) => {
+      const showFullScreenLoading = options?.showFullScreenLoading ?? false;
+      if (showFullScreenLoading) {
+        setIsLoading(true);
+      }
+      setLoadError(null);
 
     const supabase = createClient();
 
@@ -331,7 +377,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   }, [formId]);
 
   useEffect(() => {
-    void loadData();
+    void loadData({ showFullScreenLoading: true });
   }, [loadData]);
 
   const handleExtractInventory = async () => {
@@ -400,6 +446,56 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     return grouped;
   }, [mappings]);
 
+  const sortPlacedPdfFields = useCallback((rows: PlacedPdfField[]) => {
+    return [...rows].sort((a, b) => {
+      if (a.page_number !== b.page_number) {
+        return a.page_number - b.page_number;
+      }
+
+      const aOccurrence = a.occurrence_index ?? 0;
+      const bOccurrence = b.occurrence_index ?? 0;
+      if (aOccurrence !== bOccurrence) {
+        return aOccurrence - bOccurrence;
+      }
+
+      return a.id.localeCompare(b.id);
+    });
+  }, []);
+
+  const scrollInventoryItemIntoView = useCallback((mappingId: string) => {
+    const container = inventoryListRef.current;
+    const item = inventoryItemRefs.current[mappingId];
+    if (!container || !item) {
+      return;
+    }
+
+    scrollElementIntoContainer(container, item);
+  }, []);
+
+  const scrollPdfPageIntoView = useCallback((pageNumber: number) => {
+    const workspace = pdfWorkspaceRef.current;
+    const pageElement = pageRefs.current[pageNumber];
+    if (!workspace || !pageElement) {
+      return;
+    }
+
+    scrollElementIntoContainer(workspace, pageElement, 16);
+  }, []);
+
+  const restorePdfViewerAfterPlacement = useCallback(
+    (pageNumber: number, mappingId: string, scrollTop: number) => {
+      afterLayoutSettled(() => {
+        const workspace = pdfWorkspaceRef.current;
+        if (workspace) {
+          workspace.scrollTop = scrollTop;
+        }
+        scrollPdfPageIntoView(pageNumber);
+        scrollInventoryItemIntoView(mappingId);
+      });
+    },
+    [scrollInventoryItemIntoView, scrollPdfPageIntoView],
+  );
+
   const updatePageMetrics = (
     pageNumber: number,
     patch: PartialPageMetrics,
@@ -457,6 +553,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
     const normalized = normalizePdfMappingEditorInput(placementValue);
     const metrics = pageMetrics[pendingPlacement.pageNumber];
+    const placementPageNumber = pendingPlacement.pageNumber;
+    const workspaceScrollTop = pdfWorkspaceRef.current?.scrollTop ?? 0;
     setIsSaving(true);
     setSaveError(null);
 
@@ -465,19 +563,62 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     try {
       const fieldId = await resolveFieldId(supabase, normalized);
 
-      const { error } = await supabase.from("form_field_mappings").insert({
-        form_id: formId,
-        field_id: fieldId,
-        page_width: metrics?.originalWidth ?? null,
-        page_height: metrics?.originalHeight ?? null,
-        ...normalized.mapping,
-      });
+      const { data, error } = await supabase
+        .from("form_field_mappings")
+        .insert({
+          form_id: formId,
+          field_id: fieldId,
+          page_width: metrics?.originalWidth ?? null,
+          page_height: metrics?.originalHeight ?? null,
+          ...normalized.mapping,
+        })
+        .select(FORM_FIELD_MAPPING_SELECT)
+        .single();
 
       if (error) {
         setSaveError(error.message);
         setIsSaving(false);
         return;
       }
+
+      const newMapping = formFieldMappingToPlacedPdfField(
+        data as FormFieldMapping,
+      );
+
+      if (isAuthentisignExcludedFormFieldMapping(data as FormFieldMapping)) {
+        setSaveError("This field type cannot be placed on the form.");
+        setIsSaving(false);
+        return;
+      }
+
+      setMappings((current) =>
+        sortPlacedPdfFields([...current, newMapping]),
+      );
+
+      if (normalized.field_selection_mode === "quick_create") {
+        const { data: catalogData, error: catalogError } = await supabase
+          .from("fields")
+          .select("*")
+          .in("status", ["ACTIVE", "INACTIVE"])
+          .order("field_key", { ascending: true });
+
+        if (!catalogError && catalogData) {
+          setCatalogFields(
+            (catalogData as Field[]).filter(
+              (field) => !isAuthentisignExcludedField(field),
+            ),
+          );
+        }
+      }
+
+      setSelectedMappingId(newMapping.id);
+      setIsSaving(false);
+      closePlacementDialog();
+      restorePdfViewerAfterPlacement(
+        placementPageNumber,
+        newMapping.id,
+        workspaceScrollTop,
+      );
     } catch (placementError) {
       setSaveError(
         placementError instanceof Error
@@ -485,12 +626,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           : "Failed to save template placement.",
       );
       setIsSaving(false);
-      return;
     }
-
-    setIsSaving(false);
-    closePlacementDialog();
-    await loadData();
   };
 
   const handleDeleteMapping = async (mapping: PlacedPdfField) => {
@@ -530,19 +666,35 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     await loadData();
   };
 
+  const selectMappingFromOverlay = useCallback(
+    (mapping: PlacedPdfField) => {
+      setSelectedMappingId(mapping.id);
+      afterLayoutSettled(() => {
+        scrollInventoryItemIntoView(mapping.id);
+      });
+    },
+    [scrollInventoryItemIntoView],
+  );
+
+  const selectMappingFromInventory = useCallback(
+    (mapping: PlacedPdfField) => {
+      setSelectedMappingId(mapping.id);
+      afterLayoutSettled(() => {
+        scrollPdfPageIntoView(mapping.page_number);
+      });
+    },
+    [scrollPdfPageIntoView],
+  );
+
   const openEditDialog = (mapping: PlacedPdfField) => {
     setSelectedMappingId(mapping.id);
     setEditingMapping(mapping);
     setEditValue(placedPdfFieldToMappingInput(mapping));
+    const catalogField = catalogFields.find((field) => field.id === mapping.field_id);
+    setEditFieldValue(
+      catalogField ? fieldToInput(catalogField) : emptyFieldInput(),
+    );
     setEditError(null);
-  };
-
-  const selectMapping = (mapping: PlacedPdfField) => {
-    setSelectedMappingId(mapping.id);
-    pageRefs.current[mapping.page_number]?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
   };
 
   const closeEditDialog = () => {
@@ -550,46 +702,59 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     setEditingMapping(null);
     setEditError(null);
     setEditValue(emptyPdfMappingEditorInput());
+    setEditFieldValue(emptyFieldInput());
   };
 
   const handleSaveEdit = async () => {
     if (!editingMapping) return;
 
-    const validationError = validatePdfMappingEditorInput(editValue);
+    const placementValidationError = validatePdfPlacementInput(editValue);
+    const fieldValidationError = validateFieldInput(editFieldValue);
+    const validationError = placementValidationError ?? fieldValidationError;
     if (validationError) {
       setEditError(validationError);
       return;
     }
 
-    const normalized = normalizePdfMappingEditorInput(editValue);
+    const normalizedPlacement = normalizePdfMappingEditorInput(editValue);
+    const normalizedField = normalizeFieldInput(editFieldValue);
     setIsEditing(true);
     setEditError(null);
 
     const supabase = createClient();
 
     try {
-      const fieldId = await resolveFieldId(supabase, normalized);
-
-      const { data, error } = await supabase
+      const { data: mappingData, error: mappingError } = await supabase
         .from("form_field_mappings")
         .update({
-          field_id: fieldId,
-          ...normalized.mapping,
+          ...normalizedPlacement.mapping,
         })
         .eq("id", editingMapping.id)
         .eq("status", "ACTIVE")
         .select(FORM_FIELD_MAPPING_SELECT)
         .single();
 
+      if (mappingError) {
+        setIsEditing(false);
+        setEditError(mappingError.message);
+        return;
+      }
+
+      const { error: fieldError } = await supabase
+        .from("fields")
+        .update(normalizedField)
+        .eq("id", editingMapping.field_id)
+        .eq("status", "ACTIVE");
+
       setIsEditing(false);
 
-      if (error) {
-        setEditError(error.message);
+      if (fieldError) {
+        setEditError(formatFieldSourceSaveError(fieldError.message));
         return;
       }
 
       const updatedMapping = formFieldMappingToPlacedPdfField(
-        data as FormFieldMapping,
+        mappingData as FormFieldMapping,
       );
       setMappings((current) =>
         current.map((item) =>
@@ -643,6 +808,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       page_height: number;
     },
   ) => {
+    if (mappingLayoutMatches(mapping, updates)) {
+      return;
+    }
+
     setUpdatingMappingId(mapping.id);
     setUpdateLayoutError(null);
     updateMappingInState(mapping.id, {
@@ -714,6 +883,103 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     });
   };
 
+  const moveMappingToPage = useCallback(
+    async (mapping: PlacedPdfField, newPageNumber: number) => {
+      if (
+        !Number.isInteger(newPageNumber) ||
+        newPageNumber < 1 ||
+        newPageNumber > numPages ||
+        newPageNumber === mapping.page_number
+      ) {
+        return;
+      }
+
+      const targetMetrics = pageMetrics[newPageNumber];
+      const pageWidth =
+        targetMetrics?.originalWidth ??
+        basePageWidth ??
+        mapping.page_width ??
+        612;
+      const pageHeight =
+        targetMetrics?.originalHeight ??
+        basePageHeight ??
+        mapping.page_height ??
+        792;
+
+      const defaults = getDefaultFieldDimensions(mapping.field_type);
+      const width = mapping.width ?? defaults.width;
+      const height = mapping.height ?? defaults.height;
+      const clamped = clampPdfPlacementToPage({
+        x: mapping.x_position,
+        y: mapping.y_position,
+        width,
+        height,
+        page_width: pageWidth,
+        page_height: pageHeight,
+      });
+
+      const updates = {
+        page_number: newPageNumber,
+        x: clamped.x,
+        y: clamped.y,
+        width: clamped.width,
+        height: clamped.height,
+        page_width: pageWidth,
+        page_height: pageHeight,
+      };
+
+      setUpdatingMappingId(mapping.id);
+      setUpdateLayoutError(null);
+      updateMappingInState(mapping.id, {
+        page_number: newPageNumber,
+        x_position: clamped.x,
+        y_position: clamped.y,
+        width: clamped.width,
+        height: clamped.height,
+        page_width: pageWidth,
+        page_height: pageHeight,
+      });
+
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("form_field_mappings")
+        .update(updates)
+        .eq("id", mapping.id)
+        .eq("status", "ACTIVE")
+        .select(FORM_FIELD_MAPPING_SELECT)
+        .single();
+
+      setUpdatingMappingId(null);
+
+      if (error) {
+        setUpdateLayoutError(error.message);
+        await loadData();
+        return;
+      }
+
+      const updatedMapping = formFieldMappingToPlacedPdfField(
+        data as FormFieldMapping,
+      );
+      setMappings((current) =>
+        current.map((item) =>
+          item.id === updatedMapping.id ? updatedMapping : item,
+        ),
+      );
+      setSelectedMappingId(updatedMapping.id);
+      afterLayoutSettled(() => {
+        scrollPdfPageIntoView(newPageNumber);
+      });
+    },
+    [
+      numPages,
+      pageMetrics,
+      basePageWidth,
+      basePageHeight,
+      loadData,
+      scrollPdfPageIntoView,
+    ],
+  );
+
   if (isLoading) {
     return (
       <p className="text-sm text-muted-foreground">Loading PDF field mapping editor...</p>
@@ -750,9 +1016,6 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/forms/${formId}`}>Form detail</Link>
-          </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href="/forms">Back to forms</Link>
           </Button>
@@ -810,7 +1073,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
               Fit Page
             </Button>
             <p className="hidden text-xs text-muted-foreground lg:block">
-              Click the PDF to place fields. Click overlays to edit.
+              Click the PDF to place fields. Click overlays or list rows to
+              select.
             </p>
           </div>
 
@@ -921,7 +1185,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                                     isUpdating={
                                       updatingMappingId === mapping.id
                                     }
-                                    onEdit={openEditDialog}
+                                    onSelect={selectMappingFromOverlay}
                                     onDragStop={(overlayMapping, x, y) =>
                                       handleOverlayDragStop(
                                         overlayMapping,
@@ -977,7 +1241,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
               {mappings.length === 1 ? "" : "s"} on this form.
             </p>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          <div
+            ref={inventoryListRef}
+            className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+          >
             {deleteError && (
               <p className="mb-3 text-sm text-destructive">{deleteError}</p>
             )}
@@ -995,15 +1262,19 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                   return (
                     <div
                       key={mapping.id}
+                      ref={(element) => {
+                        inventoryItemRefs.current[mapping.id] = element;
+                      }}
                       className={cn(
                         "flex flex-col gap-2 p-3 text-sm transition-colors",
-                        isSelected && "bg-amber-50 dark:bg-amber-950/20",
+                        isSelected &&
+                          "bg-amber-50 ring-2 ring-inset ring-amber-400 dark:bg-amber-950/30",
                       )}
                     >
                       <button
                         type="button"
                         className="flex flex-col gap-2 text-left"
-                        onClick={() => selectMapping(mapping)}
+                        onClick={() => selectMappingFromInventory(mapping)}
                       >
                         <div className="font-medium">
                           {formatMappingOverlayLabel(mapping)}
@@ -1014,7 +1285,94 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                           <dt>Label</dt>
                           <dd>{details.field_label}</dd>
                           <dt>Page</dt>
-                          <dd>{details.page_number}</dd>
+                          {isSelected ? (
+                            <dd className="col-span-1">
+                              <div
+                                className="space-y-2"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0"
+                                    disabled={
+                                      updatingMappingId === mapping.id ||
+                                      mapping.page_number <= 1 ||
+                                      numPages < 1
+                                    }
+                                    aria-label="Move to previous page"
+                                    onClick={() =>
+                                      void moveMappingToPage(
+                                        mapping,
+                                        mapping.page_number - 1,
+                                      )
+                                    }
+                                  >
+                                    <ChevronLeft className="h-4 w-4" />
+                                  </Button>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    max={numPages || 1}
+                                    key={`${mapping.id}-${mapping.page_number}`}
+                                    defaultValue={mapping.page_number}
+                                    disabled={
+                                      updatingMappingId === mapping.id ||
+                                      numPages < 1
+                                    }
+                                    className="h-8 w-16 px-2 text-center tabular-nums"
+                                    aria-label="Page number"
+                                    onBlur={(event) => {
+                                      const nextPage = Number(
+                                        event.target.value,
+                                      );
+                                      if (
+                                        Number.isInteger(nextPage) &&
+                                        nextPage !== mapping.page_number
+                                      ) {
+                                        void moveMappingToPage(mapping, nextPage);
+                                      }
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        event.currentTarget.blur();
+                                      }
+                                    }}
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0"
+                                    disabled={
+                                      updatingMappingId === mapping.id ||
+                                      mapping.page_number >= numPages ||
+                                      numPages < 1
+                                    }
+                                    aria-label="Move to next page"
+                                    onClick={() =>
+                                      void moveMappingToPage(
+                                        mapping,
+                                        mapping.page_number + 1,
+                                      )
+                                    }
+                                  >
+                                    <ChevronRight className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                                {numPages > 0 && (
+                                  <p className="text-[11px] text-muted-foreground">
+                                    of {numPages} page
+                                    {numPages === 1 ? "" : "s"}
+                                  </p>
+                                )}
+                              </div>
+                            </dd>
+                          ) : (
+                            <dd>{details.page_number}</dd>
+                          )}
                           <dt>Mapping name</dt>
                           <dd>{details.mapping_name ?? "—"}</dd>
                           <dt>Occurrence</dt>
@@ -1066,15 +1424,16 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       <PdfFieldEditDialog
         open={editingMapping != null}
         mapping={editingMapping}
-        value={editValue}
-        onChange={setEditValue}
+        placementValue={editValue}
+        fieldValue={editFieldValue}
+        onPlacementChange={setEditValue}
+        onFieldChange={setEditFieldValue}
         onSubmit={() => void handleSaveEdit()}
         onDelete={() => void handleDeleteFromDialog()}
         onCancel={closeEditDialog}
         isSubmitting={isEditing}
         isDeleting={isDeleting}
         error={editError}
-        catalogFields={catalogFields}
       />
     </div>
   );

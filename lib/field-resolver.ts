@@ -33,6 +33,7 @@ import {
   type PacketContact,
   type PacketContactRole,
   getBuyerClientContactAtIndex,
+  getOrderedBuyerClientContacts,
   getPrimaryBuyerClientContact,
   parseBuyerClientIndexSlug,
   sortPacketContacts,
@@ -41,6 +42,7 @@ import type { Packet } from "@/lib/types/packet";
 import {
   type Property,
   formatPropertyAddress,
+  formatPropertyAddressCity,
 } from "@/lib/types/property";
 import {
   type PropertyHoa,
@@ -53,6 +55,7 @@ import {
 } from "@/lib/types/buyer-rep-agreement";
 import {
   formatBrokerageCityStateZip,
+  formatBuyerRepAgreementBetween,
   formatContactCityStateZip,
   formatContactMailingAddress,
   isBooleanBuyerRepDetailsSourcePath,
@@ -498,6 +501,26 @@ function resolveBuyerClientFieldKey(
   };
 }
 
+function resolvePropertyAddressCity(
+  context: FieldResolverContext,
+): ResolvedFieldValue | null {
+  const property = context.packet.properties;
+  if (!property) {
+    return null;
+  }
+
+  const value = formatPropertyAddressCity(property);
+  if (!value) {
+    return null;
+  }
+
+  return {
+    value,
+    value_json: null,
+    source: "property",
+  };
+}
+
 function resolvePropertySourcePath(
   sourcePath: string,
   context: FieldResolverContext,
@@ -508,6 +531,11 @@ function resolvePropertySourcePath(
   }
 
   const normalizedPath = sourcePath.trim().toLowerCase();
+
+  if (normalizedPath === "address_city") {
+    return resolvePropertyAddressCity(context);
+  }
+
   const mappedField =
     PROPERTY_FIELD_ALIASES[normalizedPath] ??
     (normalizedPath === "tax_id" ? "parcel_id" : undefined);
@@ -775,6 +803,30 @@ function resolveCustomResolverKey(
     };
   }
 
+  if (normalizedKey === "buyer_rep_agreement_between") {
+    const buyerNames = getOrderedBuyerClientContacts(context.packetContacts).map(
+      (contact) => formatContactDisplayName(contact),
+    );
+    const value = formatBuyerRepAgreementBetween(
+      buyerNames,
+      context.settings?.brokerage_name,
+    );
+
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "property_address_city") {
+    return resolvePropertyAddressCity(context);
+  }
+
   if (normalizedKey === "buyer_rep_retainer_will_not_apply") {
     const details = context.buyerRepDetails;
     if (!details) {
@@ -819,21 +871,41 @@ function resolveCustomResolverKey(
     );
   }
 
-  if (!context.settings) {
-    return null;
+  if (normalizedKey === "agent_full_name") {
+    if (!context.settings) {
+      return null;
+    }
+
+    const value = agentFullName(context.settings);
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "settings",
+    };
   }
 
-  const value = resolveBrokerageSettingsField(context.settings, normalizedKey);
+  if (normalizedKey === "broker_full_name") {
+    if (!context.settings) {
+      return null;
+    }
 
-  if (!value?.trim()) {
-    return null;
+    const value = brokerFullName(context.settings);
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "settings",
+    };
   }
 
-  return {
-    value,
-    value_json: null,
-    source: "settings",
-  };
+  return null;
 }
 
 function resolveStaticDefaultSource(field: Field): ResolvedFieldValue | null {
@@ -883,6 +955,11 @@ function resolveFromFieldSourceMapping(
         ? resolvePacketContactSourcePath(field.source_path, context)
         : null;
     case "packet_property":
+      if (
+        field.resolver_key?.trim().toLowerCase() === "property_address_city"
+      ) {
+        return resolvePropertyAddressCity(context);
+      }
       return field.source_path
         ? resolvePropertySourcePath(field.source_path, context)
         : null;
@@ -906,6 +983,8 @@ function resolveFromFieldSourceMapping(
         : null;
     case "manual_only":
       return null;
+    case "packet_instance":
+      return null;
     default:
       return null;
   }
@@ -923,6 +1002,75 @@ function isBooleanField(field: Pick<Field, "field_data_type" | "field_widget_typ
     field.field_data_type?.toLowerCase() === "boolean" ||
     isCheckboxWidgetType(field.field_widget_type)
   );
+}
+
+function resolvePacketInstanceValue(params: {
+  field: Field;
+  mapping?: FormFieldMapping | null;
+  existingInstance?: Pick<
+    FieldInstance,
+    "value" | "value_json" | "is_override"
+  > | null;
+}): ResolvedFieldValue {
+  const { field, mapping, existingInstance } = params;
+
+  if (existingInstance) {
+    const instanceValue = existingInstance.value ?? "";
+    if (instanceValue.trim() !== "") {
+      return {
+        value: instanceValue,
+        value_json: existingInstance.value_json,
+        source: "packet",
+      };
+    }
+
+    if (
+      isBooleanField(field) &&
+      existingInstance.value_json &&
+      typeof existingInstance.value_json.checked === "boolean"
+    ) {
+      const checked = existingInstance.value_json.checked === true;
+      return {
+        value: checked ? "true" : "false",
+        value_json: existingInstance.value_json,
+        source: "packet",
+      };
+    }
+  }
+
+  const fallback = field.fallback_value?.trim();
+  if (fallback) {
+    return {
+      value: fallback,
+      value_json: null,
+      source: "fallback",
+    };
+  }
+
+  if (isBooleanField(field)) {
+    const checked = field.default_checked === true;
+    return {
+      value: checked ? "true" : "false",
+      value_json: { checked },
+      source: "field_default_checked",
+    };
+  }
+
+  const defaultValue =
+    field.default_value?.trim() || mapping?.default_value_override?.trim() || "";
+  if (defaultValue) {
+    return {
+      value: defaultValue,
+      value_json: null,
+      source: "field_default",
+    };
+  }
+
+  return {
+    value: "",
+    value_json: null,
+    source: "empty",
+  };
 }
 
 function formatPropertyFieldValue(
@@ -1010,6 +1158,11 @@ function resolvePropertyFieldKey(
   }
 
   const propertyField = normalized.slice("property_".length);
+
+  if (propertyField === "address_city") {
+    return resolvePropertyAddressCity(context);
+  }
+
   const mappedField = PROPERTY_FIELD_ALIASES[propertyField];
 
   if (!mappedField) {
@@ -1196,6 +1349,13 @@ export function resolveFieldValueFromContext(params: {
   if (field.source_type === "manual_only") {
     return finalizeResolvedValue(
       resolveDefaultChain({ field, mapping }),
+      field,
+    );
+  }
+
+  if (field.source_type === "packet_instance") {
+    return finalizeResolvedValue(
+      resolvePacketInstanceValue({ field, mapping, existingInstance }),
       field,
     );
   }
