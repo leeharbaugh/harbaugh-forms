@@ -1882,6 +1882,79 @@ function shouldRefreshInstance(
   );
 }
 
+function isUniqueFieldInstanceViolation(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === "23505" ||
+    (error.message?.includes("field_instances_packet_form_field_active_uidx") ?? false)
+  );
+}
+
+async function insertFieldInstancesForPacketForm(
+  supabase: SupabaseClient,
+  packetFormId: number,
+  inserts: ReturnType<typeof buildFieldInstancePersistenceRow>[],
+): Promise<FieldInstanceWithField[]> {
+  if (inserts.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("field_instances")
+    .insert(inserts)
+    .select(FIELD_INSTANCE_SELECT);
+
+  if (!error) {
+    return (data as FieldInstanceWithField[]) ?? [];
+  }
+
+  if (!isUniqueFieldInstanceViolation(error)) {
+    throw new Error(error.message);
+  }
+
+  const inserted: FieldInstanceWithField[] = [];
+  const missingInserts = [...inserts];
+
+  for (const row of missingInserts) {
+    const { data: rowData, error: rowError } = await supabase
+      .from("field_instances")
+      .insert(row)
+      .select(FIELD_INSTANCE_SELECT)
+      .maybeSingle();
+
+    if (!rowError && rowData) {
+      inserted.push(rowData as FieldInstanceWithField);
+      continue;
+    }
+
+    if (rowError && !isUniqueFieldInstanceViolation(rowError)) {
+      throw new Error(rowError.message);
+    }
+
+    const { data: existing, error: existingError } = await supabase
+      .from("field_instances")
+      .select(FIELD_INSTANCE_SELECT)
+      .eq("packet_form_id", packetFormId)
+      .eq("field_id", row.field_id)
+      .eq("status", "ACTIVE")
+      .maybeSingle();
+
+    if (existingError) {
+      throw new Error(existingError.message);
+    }
+
+    if (existing) {
+      inserted.push(existing as FieldInstanceWithField);
+    }
+  }
+
+  return inserted;
+}
+
+const syncFieldInstancesInFlight = new Map<
+  number,
+  Promise<FieldInstanceWithField[]>
+>();
+
 export async function resolvePacketFormFieldValues(
   supabase: SupabaseClient,
   packetFormId: number,
@@ -1949,16 +2022,13 @@ export async function resolvePacketFormFieldValues(
   }
 
   if (inserts.length > 0) {
-    const { data, error } = await supabase
-      .from("field_instances")
-      .insert(inserts)
-      .select(FIELD_INSTANCE_SELECT);
+    const inserted = await insertFieldInstancesForPacketForm(
+      supabase,
+      packetFormId,
+      inserts,
+    );
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    for (const instance of (data as FieldInstanceWithField[]) ?? []) {
+    for (const instance of inserted) {
       instancesByFieldId.set(instance.field_id, instance);
     }
   }
@@ -1995,5 +2065,15 @@ export async function syncFieldInstancesForPacketForm(
   supabase: SupabaseClient,
   packetFormId: number,
 ): Promise<FieldInstanceWithField[]> {
-  return resolvePacketFormFieldValues(supabase, packetFormId);
+  const inFlight = syncFieldInstancesInFlight.get(packetFormId);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const promise = resolvePacketFormFieldValues(supabase, packetFormId).finally(() => {
+    syncFieldInstancesInFlight.delete(packetFormId);
+  });
+
+  syncFieldInstancesInFlight.set(packetFormId, promise);
+  return promise;
 }
