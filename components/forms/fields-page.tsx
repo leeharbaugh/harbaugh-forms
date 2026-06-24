@@ -1,8 +1,10 @@
 "use client";
 
+import { FieldCatalogMergeDialog } from "@/components/forms/field-catalog-merge-dialog";
 import { FieldDetailDialog } from "@/components/forms/field-detail-dialog";
 import { FieldFormDialog } from "@/components/forms/field-form-dialog";
 import { FieldRetireConfirmDialog } from "@/components/forms/field-retire-confirm-dialog";
+import { FieldsNav } from "@/components/forms/fields-nav";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import type { FieldMergeResult } from "@/lib/field-merge";
 import { getFieldUsageCounts, type FieldUsageCounts } from "@/lib/field-retire";
 import {
   type Field,
@@ -47,6 +50,28 @@ function formatFieldDisplayLabel(field: Field): string {
   );
 }
 
+function formatMergeSuccessMessage(result: FieldMergeResult): string {
+  const parts = [
+    `Merged into ${result.canonicalFieldKey}.`,
+    `${result.remappedFormFieldMappings} form field mapping(s) remapped.`,
+    `${result.remappedFieldInstances} field instance(s) remapped.`,
+    `${result.remappedFieldInstanceMappings} field instance mapping(s) remapped.`,
+  ];
+
+  const inactivatedTotal =
+    result.inactivatedFormFieldMappings +
+    result.inactivatedFieldInstances +
+    result.inactivatedFieldInstanceMappings;
+
+  if (inactivatedTotal > 0) {
+    parts.push(
+      `${inactivatedTotal} conflicting record(s) set to inactive for review.`,
+    );
+  }
+
+  return parts.join(" ");
+}
+
 export function FieldsPage() {
   const [fields, setFields] = useState<Field[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -65,6 +90,8 @@ export function FieldsPage() {
   const [fieldToRetire, setFieldToRetire] = useState<Field | null>(null);
   const [retireUsage, setRetireUsage] = useState<FieldUsageCounts | null>(null);
   const [isLoadingRetireUsage, setIsLoadingRetireUsage] = useState(false);
+  const [mergeSourceField, setMergeSourceField] = useState<Field | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const loadFields = useCallback(async () => {
     const supabase = createClient();
@@ -230,6 +257,30 @@ export function FieldsPage() {
     }
   };
 
+  const closeMergeDialog = () => {
+    setMergeSourceField(null);
+  };
+
+  const openMergeField = (field: Field) => {
+    setSuccessMessage(null);
+    setListError(null);
+    setMergeSourceField(field);
+  };
+
+  const handleMerged = async (result: FieldMergeResult) => {
+    setSuccessMessage(formatMergeSuccessMessage(result));
+
+    if (editingFieldId === mergeSourceField?.id) {
+      closeFormPanel();
+    }
+
+    if (viewField?.id === mergeSourceField?.id) {
+      closeViewField();
+    }
+
+    await loadFields();
+  };
+
   const handleConfirmRetire = async () => {
     if (!fieldToRetire) {
       return;
@@ -284,14 +335,17 @@ export function FieldsPage() {
 
   return (
     <div className="flex w-full min-w-0 max-w-full flex-col gap-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Fields</h1>
-          <p className="text-sm text-muted-foreground">
-            Reusable business field definitions used across forms and packets.
-          </p>
+      <div className="space-y-4">
+        <FieldsNav active="catalog" />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Fields</h1>
+            <p className="text-sm text-muted-foreground">
+              Reusable business field definitions used across forms and packets.
+            </p>
+          </div>
+          <Button onClick={openCreateForm}>Add field</Button>
         </div>
-        <Button onClick={openCreateForm}>Add field</Button>
       </div>
 
       <Card className="min-w-0 overflow-hidden">
@@ -320,6 +374,11 @@ export function FieldsPage() {
           </div>
 
           {listError && <p className="text-sm text-destructive">{listError}</p>}
+          {successMessage && (
+            <p className="text-sm text-green-700 dark:text-green-400">
+              {successMessage}
+            </p>
+          )}
 
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading fields...</p>
@@ -335,7 +394,7 @@ export function FieldsPage() {
                   <col className="hidden sm:table-column sm:w-24" />
                   <col className="hidden sm:table-column sm:w-24" />
                   <col className="hidden sm:table-column sm:w-[26%]" />
-                  <col className="w-36 sm:w-44" />
+                  <col className="w-44 sm:w-56" />
                 </colgroup>
                 <thead>
                   <tr className="border-b bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -447,6 +506,15 @@ export function FieldsPage() {
                                 Edit
                               </Button>
                             )}
+                            {!deleted && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openMergeField(field)}
+                              >
+                                Merge
+                              </Button>
+                            )}
                             {deleted ? (
                               <Button
                                 variant="outline"
@@ -512,6 +580,13 @@ export function FieldsPage() {
         error={formError}
         fieldId={editingFieldId}
         existingFields={fields}
+      />
+
+      <FieldCatalogMergeDialog
+        open={mergeSourceField != null}
+        sourceField={mergeSourceField}
+        onClose={closeMergeDialog}
+        onMerged={(result) => void handleMerged(result)}
       />
 
       <FieldRetireConfirmDialog

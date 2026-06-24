@@ -32,6 +32,51 @@ async function countActiveRows(
   return count ?? 0;
 }
 
+export async function getBulkFieldUsageCounts(
+  supabase: SupabaseClient,
+  fieldIds: string[],
+): Promise<Record<string, FieldUsageCounts>> {
+  const counts: Record<string, FieldUsageCounts> = {};
+  for (const fieldId of fieldIds) {
+    counts[fieldId] = {
+      formFieldMappings: 0,
+      fieldInstances: 0,
+      fieldInstanceMappings: 0,
+    };
+  }
+
+  if (fieldIds.length === 0) {
+    return counts;
+  }
+
+  const tables = [
+    ["formFieldMappings", "form_field_mappings"],
+    ["fieldInstances", "field_instances"],
+    ["fieldInstanceMappings", "field_instance_mappings"],
+  ] as const;
+
+  for (const [countKey, table] of tables) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("field_id")
+      .in("field_id", fieldIds)
+      .eq("status", "ACTIVE");
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    for (const row of data ?? []) {
+      const fieldId = row.field_id as string;
+      if (counts[fieldId]) {
+        counts[fieldId][countKey] += 1;
+      }
+    }
+  }
+
+  return counts;
+}
+
 export async function getFieldUsageCounts(
   supabase: SupabaseClient,
   fieldId: string,

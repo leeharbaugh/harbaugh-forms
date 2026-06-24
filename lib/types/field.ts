@@ -181,7 +181,7 @@ function normalizeFieldSimilarityValue(value: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
-function fieldKeysAreSimilar(left: string, right: string): boolean {
+export function fieldKeysAreSimilar(left: string, right: string): boolean {
   const normalizedLeft = normalizeFieldSimilarityValue(left);
   const normalizedRight = normalizeFieldSimilarityValue(right);
 
@@ -205,7 +205,7 @@ function fieldKeysAreSimilar(left: string, right: string): boolean {
   return shorter.length >= 8 && longer.includes(shorter);
 }
 
-function fieldLabelsAreSimilar(left: string, right: string): boolean {
+export function fieldLabelsAreSimilar(left: string, right: string): boolean {
   const normalizedLeft = normalizeFieldSimilarityValue(left);
   const normalizedRight = normalizeFieldSimilarityValue(right);
 

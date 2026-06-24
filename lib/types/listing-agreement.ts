@@ -63,6 +63,7 @@ export type ListingAgreementDetails = {
   preferred_title_company: string | null;
   occupancy_status: string | null;
   access_notes: string;
+  seller_is_foreign_person?: boolean | null;
   create_date: string;
   update_date: string;
   status: string;
