@@ -8,7 +8,8 @@ import {
   FIELD_SOURCE_TYPES,
   formatFieldSourceStatusDisplay,
   formatFieldSourceType,
-  sourcePathsForType,
+  formatSourcePathDisplay,
+  sourcePathDropdownOptionsForType,
   sourceTypeAllowsFallbackValue,
   sourceTypeRequiresPath,
   sourceTypeRequiresResolverKey,
@@ -30,12 +31,18 @@ export function FieldSourceFormFields({
   readOnly,
 }: FieldSourceFormFieldsProps) {
   const sourceType = value.source_type;
-  const pathOptions = sourceType ? sourcePathsForType(sourceType) : [];
+  const pathOptions = sourceType
+    ? sourcePathDropdownOptionsForType(sourceType, value.source_path)
+    : [];
   const showSourcePath = sourceType && sourceTypeRequiresPath(sourceType);
   const showResolverKey =
     sourceType && sourceTypeRequiresResolverKey(sourceType);
   const showFallbackValue =
     sourceType && sourceTypeAllowsFallbackValue(sourceType);
+  const sourcePathDisplay = formatSourcePathDisplay(
+    sourceType,
+    value.source_path,
+  );
 
   const sourceStatus = formatFieldSourceStatusDisplay(value);
 
@@ -91,24 +98,59 @@ export function FieldSourceFormFields({
         </div>
 
         {showSourcePath && (
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="source_path">Source path</Label>
-            <select
-              id="source_path"
-              className={fieldClassName}
-              value={value.source_path}
-              onChange={(event) =>
-                onChange({ ...value, source_path: event.target.value })
-              }
-              disabled={readOnly}
-            >
-              <option value="">Select source path...</option>
-              {pathOptions.map((path) => (
-                <option key={path} value={path}>
-                  {path}
-                </option>
-              ))}
-            </select>
+          <div className="space-y-3 sm:col-span-2">
+            {pathOptions.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="source_path_preset">Source path preset</Label>
+                <select
+                  id="source_path_preset"
+                  className={fieldClassName}
+                  value=""
+                  onChange={(event) => {
+                    const nextPath = event.target.value;
+                    if (nextPath) {
+                      onChange({ ...value, source_path: nextPath });
+                    }
+                  }}
+                  disabled={readOnly}
+                >
+                  <option value="">
+                    Choose a preset to fill source path...
+                  </option>
+                  {pathOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="source_path">Source path</Label>
+              <Input
+                id="source_path"
+                className="font-mono text-sm"
+                value={value.source_path}
+                onChange={(event) =>
+                  onChange({ ...value, source_path: event.target.value })
+                }
+                disabled={readOnly}
+                placeholder={
+                  sourceType === "packet_property"
+                    ? "e.g. full_address, street_address, city"
+                    : "Enter source path"
+                }
+              />
+              {sourcePathDisplay.friendlyLabel && (
+                <p className="text-xs text-muted-foreground">
+                  {sourcePathDisplay.friendlyLabel}
+                  {sourcePathDisplay.example
+                    ? ` — ${sourcePathDisplay.example}`
+                    : ""}
+                </p>
+              )}
+            </div>
           </div>
         )}
 

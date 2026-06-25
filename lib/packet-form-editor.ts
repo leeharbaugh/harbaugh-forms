@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { revertFieldInstanceToResolvedValue } from "@/lib/field-resolver";
+import {
+  buildFieldResolutionDiagnostics,
+  loadFieldResolverContext,
+  revertFieldInstanceToResolvedValue,
+  type FieldResolutionDiagnostic,
+} from "@/lib/field-resolver";
 import { createPacketFormDownloadUrl } from "@/lib/packet-form-storage";
 import {
   ensureFieldInstancesForPacketForm,
@@ -37,10 +42,17 @@ export async function loadActiveFieldInstanceMappingsForPacketForm(
   return (data as FieldInstanceMapping[]) ?? [];
 }
 
+export type PacketFormEditorLoadResult = PacketFormEditorData & {
+  pdfUrl: string | null;
+  propertyId: number | null;
+  hasPacketProperty: boolean;
+  fieldResolutionDiagnostics: FieldResolutionDiagnostic[] | null;
+};
+
 export async function loadPacketFormEditorData(
   supabase: SupabaseClient,
   packetFormId: number,
-): Promise<PacketFormEditorData & { pdfUrl: string | null }> {
+): Promise<PacketFormEditorLoadResult> {
   const { data: packetFormData, error: packetFormError } = await supabase
     .from("packet_forms")
     .select(
@@ -101,6 +113,23 @@ export async function loadPacketFormEditorData(
     placementOverrides,
   });
 
+  const resolverContext = await loadFieldResolverContext(
+    supabase,
+    packetForm.packet_id,
+    packetFormId,
+  );
+
+  const fieldResolutionDiagnostics =
+    process.env.NODE_ENV === "development"
+      ? buildFieldResolutionDiagnostics({
+          context: resolverContext,
+          fields: fields.map((fieldView) => ({
+            mapping: fieldView.mapping,
+            instance: fieldView.instance,
+          })),
+        })
+      : null;
+
   let pdfUrl: string | null = null;
   if (packetForm.storage_path) {
     pdfUrl = await createPacketFormDownloadUrl(supabase, packetForm.storage_path);
@@ -110,6 +139,9 @@ export async function loadPacketFormEditorData(
     packetForm,
     fields,
     pdfUrl,
+    propertyId: resolverContext.packet.property_id,
+    hasPacketProperty: resolverContext.packet.properties != null,
+    fieldResolutionDiagnostics,
   };
 }
 

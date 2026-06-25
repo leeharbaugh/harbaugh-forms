@@ -18,6 +18,7 @@ import {
   saveFieldInstanceValues,
   upsertFieldInstanceMappingPlacement,
 } from "@/lib/packet-form-editor";
+import type { FieldResolutionDiagnostic } from "@/lib/field-resolver";
 import {
   PDF_EDITOR_SIDEBAR_WIDTH,
   PDF_MIN_PAGE_WIDTH,
@@ -91,6 +92,13 @@ export function PacketFormEditor({
     null,
   );
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [propertyId, setPropertyId] = useState<number | null>(null);
+  const [hasPacketProperty, setHasPacketProperty] = useState(false);
+  const [fieldResolutionDiagnostics, setFieldResolutionDiagnostics] = useState<
+    FieldResolutionDiagnostic[] | null
+  >(null);
+  const [showResolutionDiagnostics, setShowResolutionDiagnostics] =
+    useState(false);
   const [selectedMappingId, setSelectedMappingId] = useState<string | null>(
     null,
   );
@@ -220,6 +228,9 @@ export function PacketFormEditor({
       setDraftValuesByInstanceId(valueState);
       setSavedValuesByInstanceId(valueState);
       setPdfUrl(data.pdfUrl);
+      setPropertyId(data.propertyId);
+      setHasPacketProperty(data.hasPacketProperty);
+      setFieldResolutionDiagnostics(data.fieldResolutionDiagnostics);
     } catch (error) {
       setLoadError(
         error instanceof Error
@@ -228,6 +239,9 @@ export function PacketFormEditor({
       );
       setFields([]);
       setPdfUrl(null);
+      setPropertyId(null);
+      setHasPacketProperty(false);
+      setFieldResolutionDiagnostics(null);
     }
 
     setIsLoading(false);
@@ -581,6 +595,14 @@ export function PacketFormEditor({
     });
   };
 
+  const isDevelopment = process.env.NODE_ENV === "development";
+  const propertyResolutionWarning =
+    propertyId == null
+      ? "This packet has no property selected, so property fields cannot be resolved."
+      : !hasPacketProperty
+        ? "This packet has a property ID but the property record could not be loaded."
+        : null;
+
   if (isLoading) {
     return (
       <p className="p-4 text-sm text-muted-foreground">
@@ -624,6 +646,57 @@ export function PacketFormEditor({
           )}
         </div>
       </div>
+
+      {propertyResolutionWarning && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+          {propertyResolutionWarning}
+        </div>
+      )}
+
+      {isDevelopment && fieldResolutionDiagnostics && (
+        <div className="border-b bg-muted/20 px-4 py-2">
+          <button
+            type="button"
+            className="text-left text-sm font-medium text-muted-foreground hover:text-foreground"
+            onClick={() => setShowResolutionDiagnostics((current) => !current)}
+          >
+            {showResolutionDiagnostics ? "Hide" : "Show"} field resolution
+            diagnostics ({fieldResolutionDiagnostics.length})
+          </button>
+          {showResolutionDiagnostics && (
+            <div className="mt-2 max-h-64 overflow-auto rounded-md border bg-background">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 bg-muted/80">
+                  <tr>
+                    <th className="px-2 py-1 font-medium">field_key</th>
+                    <th className="px-2 py-1 font-medium">source_type</th>
+                    <th className="px-2 py-1 font-medium">source_path</th>
+                    <th className="px-2 py-1 font-medium">resolved value</th>
+                    <th className="px-2 py-1 font-medium">resolver source</th>
+                    <th className="px-2 py-1 font-medium">packet.property</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fieldResolutionDiagnostics.map((row) => (
+                    <tr key={row.field_key} className="border-t align-top">
+                      <td className="px-2 py-1 font-mono">{row.field_key}</td>
+                      <td className="px-2 py-1">{row.source_type ?? "—"}</td>
+                      <td className="px-2 py-1">{row.source_path ?? "—"}</td>
+                      <td className="px-2 py-1">
+                        {row.resolved_value.trim() || "—"}
+                      </td>
+                      <td className="px-2 py-1">{row.resolver_source}</td>
+                      <td className="px-2 py-1">
+                        {row.packet_property_exists ? "yes" : "no"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       <div
         className="grid min-h-0 flex-1"

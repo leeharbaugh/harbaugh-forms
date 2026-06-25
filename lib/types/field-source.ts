@@ -2,8 +2,26 @@ import {
   BUYER_REP_DETAILS_SOURCE_PATHS,
   REPRESENTATION_AGREEMENT_SOURCE_PATHS,
 } from "@/lib/types/buyer-rep-field-resolution";
+import {
+  formatPacketPropertySourcePathMappingLabel,
+  getPacketPropertySourcePathMeta,
+  getPacketPropertySourcePathOptions,
+  isValidPacketPropertySourcePath,
+  PACKET_PROPERTY_SOURCE_PATHS,
+  formatPacketPropertySourcePathOptionLabel,
+} from "@/lib/types/packet-property-source-paths";
 
 export { BUYER_REP_DETAILS_SOURCE_PATHS, REPRESENTATION_AGREEMENT_SOURCE_PATHS };
+export {
+  formatPacketPropertySourcePathLabel,
+  formatPacketPropertySourcePathMappingLabel,
+  formatPacketPropertySourcePathOptionLabel,
+  getPacketPropertySourcePathMeta,
+  getPacketPropertySourcePathOptions,
+  isValidPacketPropertySourcePath,
+  PACKET_PROPERTY_CANONICAL_SOURCE_PATHS,
+  PACKET_PROPERTY_SOURCE_PATHS,
+} from "@/lib/types/packet-property-source-paths";
 
 export const FIELD_SOURCE_TYPES = [
   "settings_agent",
@@ -117,22 +135,6 @@ export const PACKET_CONTACT_SOURCE_PATHS = [
   ),
   ...BUYER_CLIENT_CONTACT_SOURCE_PATHS,
 ];
-
-export const PACKET_PROPERTY_SOURCE_PATHS = [
-  "address",
-  "address_city",
-  "street_address",
-  "city",
-  "state",
-  "zip",
-  "county",
-  "legal_description",
-  "subdivision",
-  "lot",
-  "block",
-  "tax_id",
-  "mls_number",
-] as const;
 
 export const PACKET_SOURCE_PATHS = [
   "packet_name",
@@ -357,12 +359,17 @@ export function validateFieldSourceInput(input: FieldSourceInput): string | null
       return "Source path is required for the selected value source.";
     }
 
-    const allowed = sourcePathsForType(input.source_type);
-    if (
-      allowed.length > 0 &&
-      !allowed.includes(input.source_path.trim())
-    ) {
-      return "Select a valid source path for the selected value source.";
+    const trimmedPath = input.source_path.trim();
+
+    if (input.source_type === "packet_property") {
+      if (!isValidPacketPropertySourcePath(trimmedPath)) {
+        return "Enter a valid packet property source path (for example, full_address or street_address).";
+      }
+    } else {
+      const allowed = sourcePathsForType(input.source_type);
+      if (allowed.length > 0 && !allowed.includes(trimmedPath)) {
+        return "Select a valid source path for the selected value source.";
+      }
     }
   }
 
@@ -429,6 +436,10 @@ export function formatFieldSourceSummary(field: {
   }
 
   if (field.source_path) {
+    if (field.source_type === "packet_property") {
+      return `${typeLabel} → ${formatPacketPropertySourcePathMappingLabel(field.source_path)}`;
+    }
+
     return `${typeLabel} · ${field.source_path}`;
   }
 
@@ -473,7 +484,63 @@ export function formatFieldSourceMappingCatalog(field: {
   }
 
   const sourcePath = field.source_path?.trim();
-  return sourcePath ? `${sourceType} → ${sourcePath}` : sourceType;
+  if (!sourcePath) {
+    return sourceType;
+  }
+
+  if (sourceType === "packet_property") {
+    return `${sourceType} → ${formatPacketPropertySourcePathMappingLabel(sourcePath)}`;
+  }
+
+  return `${sourceType} → ${sourcePath}`;
+}
+
+export function sourcePathDropdownOptionsForType(
+  sourceType: FieldSourceType | "",
+  currentValue?: string | null,
+): Array<{ value: string; label: string }> {
+  if (sourceType === "packet_property") {
+    return getPacketPropertySourcePathOptions(currentValue).map((option) => ({
+      value: option.value,
+      label: formatPacketPropertySourcePathOptionLabel(option),
+    }));
+  }
+
+  return sourcePathsForType(sourceType).map((path) => ({
+    value: path,
+    label: path,
+  }));
+}
+
+export function formatSourcePathDisplay(
+  sourceType: string | null | undefined,
+  sourcePath: string | null | undefined,
+): {
+  rawPath: string;
+  friendlyLabel: string | null;
+  example: string | null;
+} {
+  const rawPath = sourcePath?.trim() ?? "";
+  if (!rawPath) {
+    return { rawPath: "", friendlyLabel: null, example: null };
+  }
+
+  if (sourceType === "packet_property") {
+    const meta = getPacketPropertySourcePathMeta(rawPath);
+    return {
+      rawPath,
+      friendlyLabel: meta
+        ? formatPacketPropertySourcePathMappingLabel(rawPath)
+        : rawPath,
+      example: meta?.example ?? null,
+    };
+  }
+
+  return {
+    rawPath,
+    friendlyLabel: rawPath,
+    example: null,
+  };
 }
 
 export const FIELD_SOURCE_MAPPING_MIGRATION =

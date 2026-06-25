@@ -40,10 +40,11 @@ import {
 } from "@/lib/types/packet-contact";
 import type { Packet } from "@/lib/types/packet";
 import {
-  type Property,
-  formatPropertyAddress,
-  formatPropertyAddressCity,
-} from "@/lib/types/property";
+  formatPropertyResolvedFieldValue,
+  normalizePacketPropertySourcePath,
+} from "@/lib/types/packet-property-source-paths";
+import type { Property } from "@/lib/types/property";
+import { formatPropertyAddressCity } from "@/lib/types/property";
 import {
   type PropertyHoa,
   isPropertyHoaResolverKey,
@@ -151,23 +152,27 @@ const CONTACT_FIELD_KEYS = new Set([
   "mailing_zip",
 ]);
 
-const PROPERTY_FIELD_ALIASES: Record<string, keyof Property | "address"> = {
-  address: "address",
-  street_address: "street_address",
-  unit: "unit",
-  city: "city",
-  state: "state",
-  zip: "zip",
-  county: "county",
-  parcel_id: "parcel_id",
-  legal_description: "legal_description",
-  mls_number: "mls_number",
-  property_type: "property_type",
-  bedrooms: "bedrooms",
-  bathrooms: "bathrooms",
-  sqft: "sqft",
-  lot_sqft: "lot_sqft",
-  year_built: "year_built",
+const isPropertyResolverDebugEnabled =
+  process.env.NODE_ENV === "development";
+
+function logPropertyResolutionDebug(
+  message: string,
+  details: Record<string, unknown>,
+): void {
+  if (!isPropertyResolverDebugEnabled) {
+    return;
+  }
+
+  console.debug(`[field-resolver:property] ${message}`, details);
+}
+
+export type FieldResolutionDiagnostic = {
+  field_key: string;
+  source_type: string | null;
+  source_path: string | null;
+  resolved_value: string;
+  resolver_source: FieldResolverSource;
+  packet_property_exists: boolean;
 };
 
 const PACKET_RESOLVER_SELECT = `
@@ -181,6 +186,7 @@ const PACKET_RESOLVER_SELECT = `
   representation_agreements(
     effective_date,
     expiration_date,
+    property_id,
     buyer_rep_details(*),
     listing_agreement_details(*)
   ),
@@ -537,30 +543,35 @@ function resolvePropertySourcePath(
   context: FieldResolverContext,
 ): ResolvedFieldValue | null {
   const property = context.packet.properties;
-  if (!property) {
-    return null;
-  }
-
   const normalizedPath = sourcePath.trim().toLowerCase();
 
-  if (normalizedPath === "address_city") {
-    return resolvePropertyAddressCity(context);
-  }
-
-  const mappedField =
-    PROPERTY_FIELD_ALIASES[normalizedPath] ??
-    (normalizedPath === "tax_id" ? "parcel_id" : undefined);
-
-  if (!mappedField) {
+  if (!property) {
+    logPropertyResolutionDebug("no packet property for source_path", {
+      source_path: normalizedPath,
+      property_id: context.packet.property_id,
+      packet_id: context.packetId,
+    });
     return null;
   }
 
-  const value = formatPropertyFieldValue(
-    property,
-    mappedField as keyof Property | "address",
-  );
+  const mappedField = normalizePacketPropertySourcePath(sourcePath);
+
+  if (!mappedField) {
+    logPropertyResolutionDebug("unmapped property source_path", {
+      source_path: normalizedPath,
+      property_id: property.id,
+    });
+    return null;
+  }
+
+  const value = formatPropertyResolvedFieldValue(property, mappedField);
 
   if (!value) {
+    logPropertyResolutionDebug("empty property field value", {
+      source_path: normalizedPath,
+      mapped_field: mappedField,
+      property_id: property.id,
+    });
     return null;
   }
 
@@ -1150,23 +1161,6 @@ function resolvePacketInstanceValue(params: {
   };
 }
 
-function formatPropertyFieldValue(
-  property: Property,
-  fieldName: keyof Property | "address",
-): string {
-  if (fieldName === "address") {
-    return formatPropertyAddress(property);
-  }
-
-  const value = property[fieldName];
-
-  if (value == null) {
-    return "";
-  }
-
-  return String(value);
-}
-
 function resolveContactFieldValue(
   contact: Contact,
   contactField: string,
@@ -1236,17 +1230,13 @@ function resolvePropertyFieldKey(
 
   const propertyField = normalized.slice("property_".length);
 
-  if (propertyField === "address_city") {
-    return resolvePropertyAddressCity(context);
-  }
-
-  const mappedField = PROPERTY_FIELD_ALIASES[propertyField];
+  const mappedField = normalizePacketPropertySourcePath(propertyField);
 
   if (!mappedField) {
     return null;
   }
 
-  const value = formatPropertyFieldValue(property, mappedField);
+  const value = formatPropertyResolvedFieldValue(property, mappedField);
   if (!value) {
     return null;
   }
@@ -1474,6 +1464,140 @@ function normalizePropertyJoin(
   return Array.isArray(raw) ? (raw[0] ?? null) : raw;
 }
 
+async function loadActivePropertyById(
+  supabase: SupabaseClient,
+  propertyId: number,
+): Promise<Property | null> {
+  const { data, error } = await supabase
+    .from("properties")
+    .select("*")
+    .eq("id", propertyId)
+    .eq("status", "ACTIVE")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as Property) ?? null;
+}
+
+async function resolvePacketPropertyForContext(
+  supabase: SupabaseClient,
+  packetRow: {
+    property_id: number | null;
+    representation_agreement_id: number | null;
+    properties?: Property | Property[] | null;
+    representation_agreements?:
+      | { property_id?: number | null }
+      | Array<{ property_id?: number | null }>
+      | null;
+  },
+): Promise<Property | null> {
+  const joinedProperty = normalizePropertyJoin(packetRow.properties);
+  if (joinedProperty) {
+    return joinedProperty;
+  }
+
+  if (packetRow.property_id != null) {
+    const property = await loadActivePropertyById(
+      supabase,
+      packetRow.property_id,
+    );
+    if (property) {
+      logPropertyResolutionDebug("loaded property by packet.property_id", {
+        property_id: packetRow.property_id,
+      });
+      return property;
+    }
+  }
+
+  const agreement = normalizeRepresentationAgreementPropertyJoin(
+    packetRow.representation_agreements,
+  );
+  if (agreement?.property_id != null) {
+    const property = await loadActivePropertyById(
+      supabase,
+      agreement.property_id,
+    );
+    if (property) {
+      logPropertyResolutionDebug(
+        "loaded property by representation_agreement.property_id",
+        {
+          property_id: agreement.property_id,
+          representation_agreement_id: packetRow.representation_agreement_id,
+        },
+      );
+      return property;
+    }
+  }
+
+  return null;
+}
+
+function normalizeRepresentationAgreementPropertyJoin(
+  raw:
+    | { property_id?: number | null }
+    | Array<{ property_id?: number | null }>
+    | null
+    | undefined,
+): { property_id: number | null } | null {
+  if (!raw) {
+    return null;
+  }
+
+  const agreement = Array.isArray(raw) ? (raw[0] ?? null) : raw;
+  if (!agreement) {
+    return null;
+  }
+
+  return {
+    property_id: agreement.property_id ?? null,
+  };
+}
+
+export function buildFieldResolutionDiagnostics(params: {
+  context: FieldResolverContext;
+  fields: Array<{
+    mapping: FormFieldMapping;
+    instance: FieldInstanceWithField;
+  }>;
+}): FieldResolutionDiagnostic[] {
+  const packetPropertyExists = params.context.packet.properties != null;
+
+  return params.fields.map(({ mapping, instance }) => {
+    const field = instance.fields;
+    const fieldKey = field?.field_key ?? mapping.field_id;
+
+    if (!field) {
+      return {
+        field_key: fieldKey,
+        source_type: null,
+        source_path: null,
+        resolved_value: instance.value ?? "",
+        resolver_source: (instance.source as FieldResolverSource) ?? "empty",
+        packet_property_exists: packetPropertyExists,
+      };
+    }
+
+    const resolved = resolveFieldValueFromContext({
+      field,
+      mapping,
+      context: params.context,
+      existingInstance: null,
+    });
+
+    return {
+      field_key: field.field_key,
+      source_type: field.source_type,
+      source_path: field.source_path,
+      resolved_value: resolved.value,
+      resolver_source: resolved.source,
+      packet_property_exists: packetPropertyExists,
+    };
+  });
+}
+
 function normalizeContactJoin(
   raw: Contact | Contact[] | null | undefined,
 ): Contact | null {
@@ -1578,6 +1702,7 @@ export async function loadFieldResolverContext(
       | {
           effective_date: string | null;
           expiration_date: string | null;
+          property_id?: number | null;
           buyer_rep_details?:
             | BuyerRepDetails
             | BuyerRepDetails[]
@@ -1590,6 +1715,7 @@ export async function loadFieldResolverContext(
       | Array<{
           effective_date: string | null;
           expiration_date: string | null;
+          property_id?: number | null;
           buyer_rep_details?:
             | BuyerRepDetails
             | BuyerRepDetails[]
@@ -1602,10 +1728,26 @@ export async function loadFieldResolverContext(
       | null;
   };
 
+  const property = await resolvePacketPropertyForContext(supabase, packetRow);
+
   const propertyHoas = await loadActivePropertyHoasForProperty(
     supabase,
-    packetRow.property_id,
+    property?.id ?? packetRow.property_id,
   );
+
+  if (
+    packetRow.property_id != null &&
+    !property &&
+    isPropertyResolverDebugEnabled
+  ) {
+    console.debug(
+      "[field-resolver:property] packet has property_id but property record was not found",
+      {
+        packet_id: packetRow.id,
+        property_id: packetRow.property_id,
+      },
+    );
+  }
 
   return {
     packetId,
@@ -1617,7 +1759,7 @@ export async function loadFieldResolverContext(
       packet_type: packetRow.packet_type,
       create_date: packetRow.create_date,
       representation_agreement_id: packetRow.representation_agreement_id,
-      properties: normalizePropertyJoin(packetRow.properties),
+      properties: property,
     },
     packetContacts: normalizePacketContactsJoin(packetRow.packet_contacts),
     settings,

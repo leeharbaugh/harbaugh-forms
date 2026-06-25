@@ -19,6 +19,7 @@ import {
 import {
   formatFieldSourceStatusDisplay,
   formatFieldSourceType,
+  formatSourcePathDisplay,
   isFieldSourceType,
 } from "@/lib/types/field-source";
 
@@ -79,6 +80,10 @@ export function FieldDetailDialog({
 
   const showDefaultChecked = isBooleanField(field);
   const sourceStatus = formatFieldSourceStatusDisplay(field);
+  const sourcePathDisplay = formatSourcePathDisplay(
+    field.source_type,
+    field.source_path,
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -131,7 +136,20 @@ export function FieldDetailDialog({
                   : "—"
               }
             />
-            <DetailRow label="Source path" value={field.source_path ?? ""} mono />
+            <DetailRow label="Source path" value={sourcePathDisplay.rawPath} mono />
+            {sourcePathDisplay.friendlyLabel &&
+              sourcePathDisplay.friendlyLabel !== sourcePathDisplay.rawPath && (
+                <DetailRow
+                  label="Source path label"
+                  value={sourcePathDisplay.friendlyLabel}
+                />
+              )}
+            {sourcePathDisplay.example && (
+              <DetailRow
+                label="Example value"
+                value={sourcePathDisplay.example}
+              />
+            )}
             <DetailRow
               label="Resolver key"
               value={field.resolver_key ?? ""}

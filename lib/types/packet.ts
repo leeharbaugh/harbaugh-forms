@@ -681,6 +681,13 @@ export async function generatePacketFromAgreement(
     .insert({
       collection_id: collectionId,
       representation_agreement_id: agreementId,
+      packet_type:
+        agreement.agreement_type === "LISTING"
+          ? "listing"
+          : agreement.agreement_type === "BUYER_REP"
+            ? "buyer_rep"
+            : null,
+      property_id: agreement.property_id ?? null,
       label: packetLabel,
       generated_by_user_id: user?.id ?? null,
     })
