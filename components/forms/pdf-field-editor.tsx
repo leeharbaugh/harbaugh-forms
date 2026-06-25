@@ -1249,10 +1249,17 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                           "bg-amber-50 ring-2 ring-inset ring-amber-400 dark:bg-amber-950/30",
                       )}
                     >
-                      <button
-                        type="button"
-                        className="flex flex-col gap-2 text-left"
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        className="flex cursor-pointer flex-col gap-2 text-left"
                         onClick={() => selectMappingFromInventory(mapping)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            selectMappingFromInventory(mapping);
+                          }
+                        }}
                       >
                         <div className="font-medium">
                           {formatMappingOverlayLabel(mapping)}
@@ -1356,7 +1363,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                           <dt>Occurrence</dt>
                           <dd>{details.occurrence_index ?? 0}</dd>
                         </dl>
-                      </button>
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         <Button
                           variant="outline"
