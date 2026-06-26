@@ -32,6 +32,7 @@ import {
   type FieldInput,
 } from "@/lib/types/field";
 import { formatFieldSourceSaveError, emptyFieldSourceInput } from "@/lib/types/field-source";
+import { FIELD_VALUE_MAPPING_GUIDANCE } from "@/lib/types/field-resolver-catalog";
 import {
   formatMappingOverlayLabel,
   emptyPdfMappingEditorInput,
@@ -991,6 +992,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           <p className="truncate text-xs text-muted-foreground">
             {template.form_name} ({formatFormReference(template.id)}) · template
             placements only
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {FIELD_VALUE_MAPPING_GUIDANCE}
           </p>
         </div>
         <div className="flex shrink-0 gap-2">

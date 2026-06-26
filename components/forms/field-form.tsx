@@ -290,6 +290,7 @@ export function FieldForm({
         value={value}
         onChange={onChange}
         readOnly={readOnly}
+        showValueMappingGuidance={false}
       />
 
       {(error || validationError) && (

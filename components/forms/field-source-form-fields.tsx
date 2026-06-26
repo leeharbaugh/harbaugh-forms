@@ -15,11 +15,14 @@ import {
   sourceTypeRequiresResolverKey,
   type FieldSourceType,
 } from "@/lib/types/field-source";
+import { FIELD_VALUE_MAPPING_GUIDANCE } from "@/lib/types/field-resolver-catalog";
 
 type FieldSourceFormFieldsProps = {
   value: FieldAdminInput;
   onChange: (value: FieldAdminInput) => void;
   readOnly: boolean;
+  /** When false, omit atomic-field guidance (e.g. catalog page subtitle already shows it). */
+  showValueMappingGuidance?: boolean;
 };
 
 const fieldClassName =
@@ -29,6 +32,7 @@ export function FieldSourceFormFields({
   value,
   onChange,
   readOnly,
+  showValueMappingGuidance = true,
 }: FieldSourceFormFieldsProps) {
   const sourceType = value.source_type;
   const pathOptions = sourceType
@@ -66,8 +70,9 @@ export function FieldSourceFormFields({
       <div>
         <h3 className="text-sm font-semibold">Value source</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Defines where this field resolves its value in packets. The same
-          mapping applies wherever the field is placed.
+          {showValueMappingGuidance ? `${FIELD_VALUE_MAPPING_GUIDANCE} ` : ""}
+          Defines where this field resolves its value in packets; the same mapping
+          applies wherever the field is placed.
         </p>
       </div>
 
@@ -174,7 +179,11 @@ export function FieldSourceFormFields({
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
-              Used for computed values such as full names.
+              Combined computed values only — e.g. when one PDF blank must show a
+              full name. Prefer{" "}
+              <code className="text-xs">settings_agent</code> paths such as{" "}
+              <code className="text-xs">agent_first_name</code> when the form has
+              separate blanks.
             </p>
           </div>
         )}

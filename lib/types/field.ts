@@ -23,6 +23,8 @@ export type Field = {
   source_path: string | null;
   resolver_key: string | null;
   fallback_value: string | null;
+  /** Optional link to field_resolvers catalog; runtime still uses source_* columns. */
+  field_resolver_id: string | null;
   create_date: string;
   update_date: string;
   status: string;

@@ -37,6 +37,7 @@ import {
   formatFieldSourceSaveError,
   formatFieldSourceStatusDisplay,
 } from "@/lib/types/field-source";
+import { FIELDS_CATALOG_PAGE_DESCRIPTION } from "@/lib/types/field-resolver-catalog";
 import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useState } from "react";
 
@@ -341,7 +342,7 @@ export function FieldsPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Fields</h1>
             <p className="text-sm text-muted-foreground">
-              Reusable business field definitions used across forms and packets.
+              {FIELDS_CATALOG_PAGE_DESCRIPTION}
             </p>
           </div>
           <Button onClick={openCreateForm}>Add field</Button>
