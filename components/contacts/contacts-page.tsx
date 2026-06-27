@@ -1,6 +1,7 @@
 "use client";
 
 import { ContactForm } from "@/components/contacts/contact-form";
+import { ListRowActions } from "@/components/list-row-actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -264,7 +265,7 @@ export function ContactsPage() {
                       </p>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <ListRowActions align="start" className="sm:justify-end">
                     <Button variant="outline" size="sm" asChild>
                       <Link href={`/contacts/${contact.id}`}>View</Link>
                     </Button>
@@ -282,7 +283,7 @@ export function ContactsPage() {
                     >
                       Delete
                     </Button>
-                  </div>
+                  </ListRowActions>
                 </div>
               ))}
             </div>

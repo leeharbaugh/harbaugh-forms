@@ -1,6 +1,7 @@
 "use client";
 
 import { PropertyForm } from "@/components/properties/property-form";
+import { ListRowActions } from "@/components/list-row-actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -289,7 +290,7 @@ export function PropertiesPage() {
                         <span>{formatPropertyType(property.property_type)}</span>
                         <span>{property.mls_number ?? "—"}</span>
                       </div>
-                      <div className="flex flex-wrap gap-2 lg:justify-end">
+                      <ListRowActions>
                         <Button
                           variant="outline"
                           size="sm"
@@ -311,7 +312,7 @@ export function PropertiesPage() {
                         >
                           Delete
                         </Button>
-                      </div>
+                      </ListRowActions>
                     </div>
                   ))}
                 </div>

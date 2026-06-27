@@ -5,6 +5,7 @@ import { FieldDetailDialog } from "@/components/forms/field-detail-dialog";
 import { FieldFormDialog } from "@/components/forms/field-form-dialog";
 import { FieldRetireConfirmDialog } from "@/components/forms/field-retire-confirm-dialog";
 import { FieldsNav } from "@/components/forms/fields-nav";
+import { ListRowActions, listTableActionsCellClass, listTableActionsHeaderClass } from "@/components/list-row-actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -389,13 +390,13 @@ export function FieldsPage() {
             </p>
           ) : (
             <div className="max-w-full overflow-x-auto rounded-md border">
-              <table className="w-full table-fixed border-collapse">
+              <table className="w-full table-auto border-collapse">
                 <colgroup>
                   <col className="min-w-0" />
                   <col className="hidden sm:table-column sm:w-24" />
                   <col className="hidden sm:table-column sm:w-24" />
-                  <col className="hidden sm:table-column sm:w-[26%]" />
-                  <col className="w-44 sm:w-56" />
+                  <col className="hidden sm:table-column" />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr className="border-b bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -405,9 +406,7 @@ export function FieldsPage() {
                     <th className="hidden min-w-0 px-4 py-3 sm:table-cell">
                       Source mapping
                     </th>
-                    <th className="whitespace-nowrap px-4 py-3 text-right">
-                      Actions
-                    </th>
+                    <th className={listTableActionsHeaderClass}>Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -489,8 +488,8 @@ export function FieldsPage() {
                             </span>
                           )}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-3 align-middle text-right">
-                          <div className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
+                        <td className={listTableActionsCellClass}>
+                          <ListRowActions>
                             <Button
                               variant="outline"
                               size="sm"
@@ -535,7 +534,7 @@ export function FieldsPage() {
                                 Delete
                               </Button>
                             )}
-                          </div>
+                          </ListRowActions>
                         </td>
                       </tr>
                     );

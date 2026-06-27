@@ -1,6 +1,7 @@
 "use client";
 
 import { FormForm } from "@/components/forms/form-form";
+import { ListRowActions, listTableActionsCellClass, listTableActionsHeaderClass } from "@/components/list-row-actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -322,16 +323,16 @@ export function FormsPage() {
             </p>
           ) : (
             <div className="overflow-x-auto rounded-md border">
-              <table className="w-full min-w-[52rem] table-fixed border-collapse">
+              <table className="w-full table-auto border-collapse">
                 <thead>
                   <tr className="border-b bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <th className="w-[4rem] px-4 py-3">ID</th>
-                    <th className="min-w-0 px-4 py-3">Template name</th>
-                    <th className="min-w-0 px-4 py-3">Template code</th>
-                    <th className="w-[9rem] px-4 py-3">Category</th>
-                    <th className="w-[6rem] px-4 py-3">Version</th>
-                    <th className="min-w-0 px-4 py-3">Storage path</th>
-                    <th className="w-[11rem] px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-3">ID</th>
+                    <th className="min-w-[8rem] px-4 py-3">Template name</th>
+                    <th className="min-w-[6rem] px-4 py-3">Template code</th>
+                    <th className="px-4 py-3">Category</th>
+                    <th className="px-4 py-3">Version</th>
+                    <th className="min-w-[8rem] px-4 py-3">Storage path</th>
+                    <th className={listTableActionsHeaderClass}>Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -370,8 +371,8 @@ export function FormsPage() {
                           {template.source_storage_path}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 align-middle text-right">
-                        <div className="flex flex-wrap items-center justify-end gap-2">
+                      <td className={listTableActionsCellClass}>
+                        <ListRowActions>
                           <Button variant="outline" size="sm" asChild>
                             <Link href={`/forms/${template.id}/editor`}>
                               Map fields
@@ -391,7 +392,7 @@ export function FormsPage() {
                           >
                             Delete
                           </Button>
-                        </div>
+                        </ListRowActions>
                       </td>
                     </tr>
                   ))}

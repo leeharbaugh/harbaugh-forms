@@ -1,6 +1,7 @@
 "use client";
 
 import { CreatePacketWizard } from "@/components/packets/create-packet-wizard";
+import { ListRowActions } from "@/components/list-row-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -338,7 +339,7 @@ function PacketsPageContent() {
                           <span>{formatDateTime(packet.create_date)}</span>
                           <span>{getActivePacketFormCount(packet)}</span>
                         </div>
-                        <div className="flex flex-wrap gap-2 lg:justify-end">
+                        <ListRowActions>
                           <Button variant="outline" size="sm" asChild>
                             <Link href={`/packets/${packet.id}`}>View</Link>
                           </Button>
@@ -370,7 +371,7 @@ function PacketsPageContent() {
                               Delete
                             </Button>
                           )}
-                        </div>
+                        </ListRowActions>
                       </div>
                     );
                   })}

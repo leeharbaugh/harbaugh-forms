@@ -1,6 +1,7 @@
 "use client";
 
 import { CollectionForm } from "@/components/collections/collection-form";
+import { ListRowActions } from "@/components/list-row-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -541,7 +542,7 @@ export function CollectionsPage() {
                           </span>
                           <span>{getActiveFormLinkCount(packet)}</span>
                         </div>
-                        <div className="flex flex-wrap gap-2 lg:justify-end">
+                        <ListRowActions>
                           <Button
                             variant="outline"
                             size="sm"
@@ -569,7 +570,7 @@ export function CollectionsPage() {
                               </Button>
                             </>
                           )}
-                        </div>
+                        </ListRowActions>
                       </div>
                     );
                   })}
