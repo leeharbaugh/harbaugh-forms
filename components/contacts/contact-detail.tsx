@@ -258,39 +258,13 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
           <CardHeader>
             <CardTitle>Contact details</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <p className="text-muted-foreground">Email</p>
-              <p>{contact.email ?? "—"}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Primary phone</p>
-              <p>{contact.phone_primary ?? "—"}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Secondary phone</p>
-              <p>{contact.phone_secondary ?? "—"}</p>
-            </div>
-            <div className="sm:col-span-2">
-              <p className="text-muted-foreground">Mailing address</p>
-              <p>
-                {[
-                  contact.mailing_address_line_1,
-                  contact.mailing_address_line_2,
-                  [contact.mailing_city, contact.mailing_state, contact.mailing_zip]
-                    .filter(Boolean)
-                    .join(", "),
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || "—"}
-              </p>
-            </div>
-            {contact.notes && (
-              <div className="sm:col-span-2">
-                <p className="text-muted-foreground">Notes</p>
-                <p>{contact.notes}</p>
-              </div>
-            )}
+          <CardContent>
+            <ContactForm
+              value={contactToInput(contact)}
+              onChange={() => {}}
+              mode="view"
+              showActions={false}
+            />
           </CardContent>
         </Card>
       )}

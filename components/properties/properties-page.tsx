@@ -62,6 +62,8 @@ export function PropertiesPage() {
           `zip.ilike.${term}`,
           `county.ilike.${term}`,
           `mls_number.ilike.${term}`,
+          `tax_id.ilike.${term}`,
+          `subdivision.ilike.${term}`,
         ].join(","),
       );
     }
@@ -231,7 +233,8 @@ export function PropertiesPage() {
         <CardHeader>
           <CardTitle>Active properties</CardTitle>
           <CardDescription>
-            Search by street address, city, ZIP, county, or MLS number.
+            Search by street address, city, ZIP, county, MLS number, tax ID, or
+            subdivision.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

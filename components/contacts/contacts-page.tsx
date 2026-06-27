@@ -54,7 +54,10 @@ export function ContactsPage() {
         [
           `first_name.ilike.${term}`,
           `last_name.ilike.${term}`,
+          `preferred_name.ilike.${term}`,
           `entity_name.ilike.${term}`,
+          `company_name.ilike.${term}`,
+          `trec_license_number.ilike.${term}`,
           `email.ilike.${term}`,
           `phone_primary.ilike.${term}`,
           `phone_secondary.ilike.${term}`,

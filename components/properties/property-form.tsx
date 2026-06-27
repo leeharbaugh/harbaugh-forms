@@ -2,9 +2,13 @@
 
 import { CadSearchButton } from "@/components/properties/cad-search-button";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  PROPERTY_BOOLEAN_FIELDS,
+  PROPERTY_BOOLEAN_FIELD_LABELS,
+  type PropertyBooleanField,
   type PropertyInput,
   type PropertyType,
   formatPropertyReference,
@@ -12,6 +16,7 @@ import {
   validatePropertyInput,
 } from "@/lib/types/property";
 import { cn } from "@/lib/utils";
+import type { ReactNode } from "react";
 
 type PropertyFormProps = {
   value: PropertyInput;
@@ -38,6 +43,44 @@ const propertyTypes: PropertyType[] = [
   "OTHER",
 ];
 
+const OCCUPANCY_STATUS_OPTIONS = [
+  "",
+  "Owner Occupied",
+  "Tenant Occupied",
+  "Vacant",
+  "Under Construction",
+] as const;
+
+const HOA_DUES_FREQUENCY_OPTIONS = [
+  "",
+  "Monthly",
+  "Quarterly",
+  "Semi-Annually",
+  "Annually",
+] as const;
+
+function PropertySection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-4 border-t pt-6 first:border-t-0 first:pt-0">
+      <div>
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {description && (
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+        )}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
 export function PropertyForm({
   value,
   onChange,
@@ -58,6 +101,10 @@ export function PropertyForm({
     onChange({ ...value, [key]: fieldValue });
   };
 
+  const setBooleanField = (key: PropertyBooleanField, checked: boolean) => {
+    onChange({ ...value, [key]: checked });
+  };
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (readOnly || !onSubmit) return;
@@ -74,9 +121,9 @@ export function PropertyForm({
       {...(showActions
         ? { onSubmit: handleSubmit }
         : { role: "group", "aria-label": "Property details" })}
-      className="space-y-6"
+      className="space-y-2"
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <PropertySection title="Address">
         {propertyId != null && (
           <div className="space-y-2">
             <Label htmlFor="property_reference_id">ID</Label>
@@ -177,11 +224,110 @@ export function PropertyForm({
         <CadSearchButton county={value.county} />
 
         <div className="space-y-2">
+          <Label htmlFor="municipality">Municipality</Label>
+          <Input
+            id="municipality"
+            value={value.municipality}
+            onChange={(event) => setField("municipality", event.target.value)}
+            disabled={readOnly}
+            placeholder="City of Arlington"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="etj">ETJ</Label>
+          <Input
+            id="etj"
+            value={value.etj}
+            onChange={(event) => setField("etj", event.target.value)}
+            disabled={readOnly}
+            placeholder="Extraterritorial jurisdiction"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="school_district">School district</Label>
+          <Input
+            id="school_district"
+            value={value.school_district}
+            onChange={(event) =>
+              setField("school_district", event.target.value)
+            }
+            disabled={readOnly}
+          />
+        </div>
+      </PropertySection>
+
+      <PropertySection
+        title="Legal & identifiers"
+        description="Plat references, tax identifiers, and legal description."
+      >
+        <div className="space-y-2">
+          <Label htmlFor="lot">Lot</Label>
+          <Input
+            id="lot"
+            value={value.lot}
+            onChange={(event) => setField("lot", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="block">Block</Label>
+          <Input
+            id="block"
+            value={value.block}
+            onChange={(event) => setField("block", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="addition">Addition</Label>
+          <Input
+            id="addition"
+            value={value.addition}
+            onChange={(event) => setField("addition", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="subdivision">Subdivision</Label>
+          <Input
+            id="subdivision"
+            value={value.subdivision}
+            onChange={(event) => setField("subdivision", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="parcel_id">Parcel ID</Label>
           <Input
             id="parcel_id"
             value={value.parcel_id}
             onChange={(event) => setField("parcel_id", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="tax_id">Tax ID</Label>
+          <Input
+            id="tax_id"
+            value={value.tax_id}
+            onChange={(event) => setField("tax_id", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="geo_id">Geo ID</Label>
+          <Input
+            id="geo_id"
+            value={value.geo_id}
+            onChange={(event) => setField("geo_id", event.target.value)}
             disabled={readOnly}
           />
         </div>
@@ -196,6 +342,22 @@ export function PropertyForm({
           />
         </div>
 
+        <div className="space-y-2 sm:col-span-2">
+          <Label htmlFor="legal_description">Legal description</Label>
+          <textarea
+            id="legal_description"
+            rows={3}
+            className={cn(fieldClassName, "min-h-24 py-2")}
+            value={value.legal_description}
+            onChange={(event) =>
+              setField("legal_description", event.target.value)
+            }
+            disabled={readOnly}
+          />
+        </div>
+      </PropertySection>
+
+      <PropertySection title="Structure & size">
         <div className="space-y-2">
           <Label htmlFor="bedrooms">Bedrooms</Label>
           <Input
@@ -261,20 +423,248 @@ export function PropertyForm({
           />
         </div>
 
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="legal_description">Legal description</Label>
-          <textarea
-            id="legal_description"
-            rows={3}
-            className={cn(fieldClassName, "min-h-24 py-2")}
-            value={value.legal_description}
+        <div className="space-y-2">
+          <Label htmlFor="stories">Stories</Label>
+          <Input
+            id="stories"
+            type="number"
+            min="0"
+            step="1"
+            value={value.stories}
+            onChange={(event) => setField("stories", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="garage_spaces">Garage spaces</Label>
+          <Input
+            id="garage_spaces"
+            type="number"
+            min="0"
+            step="1"
+            value={value.garage_spaces}
+            onChange={(event) => setField("garage_spaces", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="garage_type">Garage type</Label>
+          <Input
+            id="garage_type"
+            value={value.garage_type}
+            onChange={(event) => setField("garage_type", event.target.value)}
+            disabled={readOnly}
+            placeholder="Attached, Detached, Carport"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="occupancy_status">Occupancy status</Label>
+          <select
+            id="occupancy_status"
+            className={fieldClassName}
+            value={value.occupancy_status}
             onChange={(event) =>
-              setField("legal_description", event.target.value)
+              setField("occupancy_status", event.target.value)
+            }
+            disabled={readOnly}
+          >
+            {OCCUPANCY_STATUS_OPTIONS.map((option) => (
+              <option key={option || "unset"} value={option}>
+                {option || "—"}
+              </option>
+            ))}
+          </select>
+        </div>
+      </PropertySection>
+
+      <PropertySection
+        title="Features"
+        description="Property characteristics commonly referenced on Texas forms."
+      >
+        {PROPERTY_BOOLEAN_FIELDS.filter((key) => key !== "has_hoa").map((key) => (
+          <div key={key} className="flex items-center gap-2 sm:col-span-1">
+            <Checkbox
+              id={`property_${key}`}
+              checked={value[key]}
+              onCheckedChange={(checked) =>
+                setBooleanField(key, checked === true)
+              }
+              disabled={readOnly}
+            />
+            <Label htmlFor={`property_${key}`} className="font-normal">
+              {PROPERTY_BOOLEAN_FIELD_LABELS[key]}
+            </Label>
+          </div>
+        ))}
+      </PropertySection>
+
+      <PropertySection title="Utilities">
+        <div className="space-y-2">
+          <Label htmlFor="electric_provider">Electric provider</Label>
+          <Input
+            id="electric_provider"
+            value={value.electric_provider}
+            onChange={(event) =>
+              setField("electric_provider", event.target.value)
             }
             disabled={readOnly}
           />
         </div>
 
+        <div className="space-y-2">
+          <Label htmlFor="gas_provider">Gas provider</Label>
+          <Input
+            id="gas_provider"
+            value={value.gas_provider}
+            onChange={(event) => setField("gas_provider", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="water_provider">Water provider</Label>
+          <Input
+            id="water_provider"
+            value={value.water_provider}
+            onChange={(event) =>
+              setField("water_provider", event.target.value)
+            }
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="sewer_provider">Sewer provider</Label>
+          <Input
+            id="sewer_provider"
+            value={value.sewer_provider}
+            onChange={(event) =>
+              setField("sewer_provider", event.target.value)
+            }
+            disabled={readOnly}
+          />
+        </div>
+      </PropertySection>
+
+      <PropertySection title="HOA">
+        <div className="flex items-center gap-2 sm:col-span-2">
+          <Checkbox
+            id="property_has_hoa"
+            checked={value.has_hoa}
+            onCheckedChange={(checked) =>
+              setBooleanField("has_hoa", checked === true)
+            }
+            disabled={readOnly}
+          />
+          <Label htmlFor="property_has_hoa" className="font-normal">
+            {PROPERTY_BOOLEAN_FIELD_LABELS.has_hoa}
+          </Label>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="hoa_name">HOA name</Label>
+          <Input
+            id="hoa_name"
+            value={value.hoa_name}
+            onChange={(event) => setField("hoa_name", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="hoa_management_company">Management company</Label>
+          <Input
+            id="hoa_management_company"
+            value={value.hoa_management_company}
+            onChange={(event) =>
+              setField("hoa_management_company", event.target.value)
+            }
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="hoa_contact_name">Contact name</Label>
+          <Input
+            id="hoa_contact_name"
+            value={value.hoa_contact_name}
+            onChange={(event) =>
+              setField("hoa_contact_name", event.target.value)
+            }
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="hoa_phone">Phone</Label>
+          <Input
+            id="hoa_phone"
+            value={value.hoa_phone}
+            onChange={(event) => setField("hoa_phone", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="hoa_email">Email</Label>
+          <Input
+            id="hoa_email"
+            type="email"
+            value={value.hoa_email}
+            onChange={(event) => setField("hoa_email", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="hoa_website">Website</Label>
+          <Input
+            id="hoa_website"
+            value={value.hoa_website}
+            onChange={(event) => setField("hoa_website", event.target.value)}
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="hoa_dues_amount">Dues amount</Label>
+          <Input
+            id="hoa_dues_amount"
+            type="number"
+            min="0"
+            step="0.01"
+            value={value.hoa_dues_amount}
+            onChange={(event) =>
+              setField("hoa_dues_amount", event.target.value)
+            }
+            disabled={readOnly}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="hoa_dues_frequency">Dues frequency</Label>
+          <select
+            id="hoa_dues_frequency"
+            className={fieldClassName}
+            value={value.hoa_dues_frequency}
+            onChange={(event) =>
+              setField("hoa_dues_frequency", event.target.value)
+            }
+            disabled={readOnly}
+          >
+            {HOA_DUES_FREQUENCY_OPTIONS.map((option) => (
+              <option key={option || "unset"} value={option}>
+                {option || "—"}
+              </option>
+            ))}
+          </select>
+        </div>
+      </PropertySection>
+
+      <PropertySection title="Notes">
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="notes">Notes</Label>
           <textarea
@@ -286,14 +676,14 @@ export function PropertyForm({
             disabled={readOnly}
           />
         </div>
-      </div>
+      </PropertySection>
 
       {(error || validationError) && (
-        <p className="text-sm text-destructive">{error ?? validationError}</p>
+        <p className="pt-2 text-sm text-destructive">{error ?? validationError}</p>
       )}
 
       {showActions && onCancel && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 pt-4">
           {!readOnly && onSubmit && (
             <Button
               type="submit"

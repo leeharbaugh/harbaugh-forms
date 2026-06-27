@@ -31,6 +31,7 @@ import {
 import {
   emptyPropertyInput,
   formatPropertyAddress,
+  propertyToInput,
   type PropertyInput,
   type PropertySelectionMode,
 } from "@/lib/types/property";
@@ -103,37 +104,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
     setStatus(detail.status);
     setPropertyId(detail.property_id);
     if (detail.properties) {
-      setProperty({
-        street_address: detail.properties.street_address,
-        unit: detail.properties.unit ?? "",
-        city: detail.properties.city,
-        state: detail.properties.state ?? "TX",
-        zip: detail.properties.zip,
-        county: detail.properties.county ?? "",
-        parcel_id: detail.properties.parcel_id ?? "",
-        legal_description: detail.properties.legal_description ?? "",
-        property_type: detail.properties.property_type,
-        bedrooms:
-          detail.properties.bedrooms != null
-            ? String(detail.properties.bedrooms)
-            : "",
-        bathrooms:
-          detail.properties.bathrooms != null
-            ? String(detail.properties.bathrooms)
-            : "",
-        sqft:
-          detail.properties.sqft != null ? String(detail.properties.sqft) : "",
-        lot_sqft:
-          detail.properties.lot_sqft != null
-            ? String(detail.properties.lot_sqft)
-            : "",
-        year_built:
-          detail.properties.year_built != null
-            ? String(detail.properties.year_built)
-            : "",
-        mls_number: detail.properties.mls_number ?? "",
-        notes: detail.properties.notes ?? "",
-      });
+      setProperty(propertyToInput(detail.properties));
     }
     setIsLoading(false);
   }, [packetId]);

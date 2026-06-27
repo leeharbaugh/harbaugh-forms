@@ -1,4 +1,5 @@
 import { AuthButton } from "@/components/auth-button";
+import { EnsureProfile } from "@/components/ensure-profile";
 import { EnvVarWarning } from "@/components/env-var-warning";
 import { hasEnvVars } from "@/lib/utils";
 import Link from "next/link";
@@ -19,7 +20,9 @@ export function AppNav({ active }: AppNavProps) {
     section === active ? "font-medium text-foreground" : "text-muted-foreground";
 
   return (
-    <nav className="border-b border-b-foreground/10">
+    <>
+      {hasEnvVars && <EnsureProfile />}
+      <nav className="border-b border-b-foreground/10">
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-5 text-sm">
         <div className="flex items-center gap-6">
           <Link href="/" className="font-semibold">
@@ -55,5 +58,6 @@ export function AppNav({ active }: AppNavProps) {
         )}
       </div>
     </nav>
+    </>
   );
 }

@@ -3,6 +3,13 @@ import {
   REPRESENTATION_AGREEMENT_SOURCE_PATHS,
 } from "@/lib/types/buyer-rep-field-resolution";
 import {
+  formatPacketContactSourcePathMappingLabel,
+  formatPacketContactSourcePathOptionLabel,
+  getPacketContactSourcePathMeta,
+  getPacketContactSourcePathOptions,
+  PACKET_CONTACT_SOURCE_PATHS,
+} from "@/lib/types/packet-contact-source-paths";
+import {
   formatPacketPropertySourcePathMappingLabel,
   getPacketPropertySourcePathMeta,
   getPacketPropertySourcePathOptions,
@@ -12,6 +19,14 @@ import {
 } from "@/lib/types/packet-property-source-paths";
 
 export { BUYER_REP_DETAILS_SOURCE_PATHS, REPRESENTATION_AGREEMENT_SOURCE_PATHS };
+export {
+  formatPacketContactSourcePathMappingLabel,
+  formatPacketContactSourcePathOptionLabel,
+  getPacketContactSourcePathMeta,
+  getPacketContactSourcePathOptions,
+  isValidPacketContactSourcePath,
+  PACKET_CONTACT_SOURCE_PATHS,
+} from "@/lib/types/packet-contact-source-paths";
 export {
   formatPacketPropertySourcePathLabel,
   formatPacketPropertySourcePathMappingLabel,
@@ -94,47 +109,7 @@ export const SETTINGS_BROKERAGE_SOURCE_PATHS = [
   "broker_email",
 ] as const;
 
-const CONTACT_ROLE_PREFIXES = ["buyer", "seller"] as const;
-const CONTACT_ROLE_INDICES = [1, 2] as const;
-const CONTACT_FIELD_SUFFIXES = [
-  "first_name",
-  "middle_name",
-  "last_name",
-  "full_name",
-  "email",
-  "phone",
-] as const;
-
-const BUYER_CLIENT_CONTACT_FIELD_SUFFIXES = [
-  ...CONTACT_FIELD_SUFFIXES,
-  "phone_primary",
-  "phone_secondary",
-  "mailing_address_line_1",
-  "mailing_address_line_2",
-  "mailing_city",
-  "mailing_state",
-  "mailing_zip",
-] as const;
-
-const BUYER_CLIENT_CONTACT_INDICES = [1, 2] as const;
-
-export const BUYER_CLIENT_CONTACT_SOURCE_PATHS =
-  BUYER_CLIENT_CONTACT_INDICES.flatMap((index) =>
-    BUYER_CLIENT_CONTACT_FIELD_SUFFIXES.map(
-      (field) => `buyer_client_${index}.${field}` as const,
-    ),
-  );
-
-export const PACKET_CONTACT_SOURCE_PATHS = [
-  ...CONTACT_ROLE_PREFIXES.flatMap((role) =>
-    CONTACT_ROLE_INDICES.flatMap((index) =>
-      CONTACT_FIELD_SUFFIXES.map(
-        (field) => `${role}_${index}.${field}` as const,
-      ),
-    ),
-  ),
-  ...BUYER_CLIENT_CONTACT_SOURCE_PATHS,
-];
+export { BUYER_CLIENT_CONTACT_SOURCE_PATHS } from "@/lib/types/packet-contact-source-paths";
 
 export const PACKET_SOURCE_PATHS = [
   "packet_name",
@@ -492,6 +467,10 @@ export function formatFieldSourceMappingCatalog(field: {
     return `${sourceType} → ${formatPacketPropertySourcePathMappingLabel(sourcePath)}`;
   }
 
+  if (sourceType === "packet_contact") {
+    return `${sourceType} → ${formatPacketContactSourcePathMappingLabel(sourcePath)}`;
+  }
+
   return `${sourceType} → ${sourcePath}`;
 }
 
@@ -503,6 +482,13 @@ export function sourcePathDropdownOptionsForType(
     return getPacketPropertySourcePathOptions(currentValue).map((option) => ({
       value: option.value,
       label: formatPacketPropertySourcePathOptionLabel(option),
+    }));
+  }
+
+  if (sourceType === "packet_contact") {
+    return getPacketContactSourcePathOptions(currentValue).map((option) => ({
+      value: option.value,
+      label: formatPacketContactSourcePathOptionLabel(option),
     }));
   }
 
@@ -531,6 +517,17 @@ export function formatSourcePathDisplay(
       rawPath,
       friendlyLabel: meta
         ? formatPacketPropertySourcePathMappingLabel(rawPath)
+        : rawPath,
+      example: meta?.example ?? null,
+    };
+  }
+
+  if (sourceType === "packet_contact") {
+    const meta = getPacketContactSourcePathMeta(rawPath);
+    return {
+      rawPath,
+      friendlyLabel: meta
+        ? formatPacketContactSourcePathMappingLabel(rawPath)
         : rawPath,
       example: meta?.example ?? null,
     };

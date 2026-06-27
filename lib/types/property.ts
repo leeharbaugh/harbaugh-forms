@@ -7,6 +7,63 @@ export type PropertyType =
   | "LAND"
   | "OTHER";
 
+export type PropertyBooleanField =
+  | "pool"
+  | "spa"
+  | "fireplace"
+  | "basement"
+  | "sprinkler_system"
+  | "waterfront"
+  | "water_view"
+  | "corner_lot"
+  | "cul_de_sac"
+  | "gated"
+  | "new_construction"
+  | "well"
+  | "septic"
+  | "solar"
+  | "propane"
+  | "has_hoa";
+
+export const PROPERTY_BOOLEAN_FIELDS: PropertyBooleanField[] = [
+  "pool",
+  "spa",
+  "fireplace",
+  "basement",
+  "sprinkler_system",
+  "waterfront",
+  "water_view",
+  "corner_lot",
+  "cul_de_sac",
+  "gated",
+  "new_construction",
+  "well",
+  "septic",
+  "solar",
+  "propane",
+  "has_hoa",
+];
+
+export const PROPERTY_BOOLEAN_FIELD_LABELS: Record<PropertyBooleanField, string> =
+  {
+    pool: "Pool",
+    spa: "Spa",
+    fireplace: "Fireplace",
+    basement: "Basement",
+    sprinkler_system: "Sprinkler system",
+    waterfront: "Waterfront",
+    water_view: "Water view",
+    corner_lot: "Corner lot",
+    cul_de_sac: "Cul-de-sac",
+    gated: "Gated",
+    new_construction: "New construction",
+    well: "Well",
+    septic: "Septic",
+    solar: "Solar",
+    propane: "Propane",
+    has_hoa: "Has HOA",
+  };
+
 export type Property = {
   id: number;
   street_address: string;
@@ -25,6 +82,47 @@ export type Property = {
   year_built: number | null;
   mls_number: string | null;
   notes: string | null;
+  lot: string | null;
+  block: string | null;
+  addition: string | null;
+  subdivision: string | null;
+  tax_id: string | null;
+  geo_id: string | null;
+  school_district: string | null;
+  municipality: string | null;
+  etj: string | null;
+  stories: number | null;
+  garage_spaces: number | null;
+  garage_type: string | null;
+  pool: boolean;
+  spa: boolean;
+  fireplace: boolean;
+  basement: boolean;
+  sprinkler_system: boolean;
+  waterfront: boolean;
+  water_view: boolean;
+  corner_lot: boolean;
+  cul_de_sac: boolean;
+  gated: boolean;
+  new_construction: boolean;
+  well: boolean;
+  septic: boolean;
+  solar: boolean;
+  propane: boolean;
+  electric_provider: string | null;
+  gas_provider: string | null;
+  water_provider: string | null;
+  sewer_provider: string | null;
+  has_hoa: boolean;
+  hoa_name: string | null;
+  hoa_management_company: string | null;
+  hoa_contact_name: string | null;
+  hoa_phone: string | null;
+  hoa_email: string | null;
+  hoa_website: string | null;
+  hoa_dues_amount: number | null;
+  hoa_dues_frequency: string | null;
+  occupancy_status: string | null;
   create_date: string;
   update_date: string;
   status: string;
@@ -49,7 +147,70 @@ export type PropertyInput = {
   year_built: string;
   mls_number: string;
   notes: string;
+  lot: string;
+  block: string;
+  addition: string;
+  subdivision: string;
+  tax_id: string;
+  geo_id: string;
+  school_district: string;
+  municipality: string;
+  etj: string;
+  stories: string;
+  garage_spaces: string;
+  garage_type: string;
+  pool: boolean;
+  spa: boolean;
+  fireplace: boolean;
+  basement: boolean;
+  sprinkler_system: boolean;
+  waterfront: boolean;
+  water_view: boolean;
+  corner_lot: boolean;
+  cul_de_sac: boolean;
+  gated: boolean;
+  new_construction: boolean;
+  well: boolean;
+  septic: boolean;
+  solar: boolean;
+  propane: boolean;
+  electric_provider: string;
+  gas_provider: string;
+  water_provider: string;
+  sewer_provider: string;
+  has_hoa: boolean;
+  hoa_name: string;
+  hoa_management_company: string;
+  hoa_contact_name: string;
+  hoa_phone: string;
+  hoa_email: string;
+  hoa_website: string;
+  hoa_dues_amount: string;
+  hoa_dues_frequency: string;
+  occupancy_status: string;
 };
+
+const DEFAULT_PROPERTY_BOOLEANS = (): Pick<
+  PropertyInput,
+  PropertyBooleanField
+> => ({
+  pool: false,
+  spa: false,
+  fireplace: false,
+  basement: false,
+  sprinkler_system: false,
+  waterfront: false,
+  water_view: false,
+  corner_lot: false,
+  cul_de_sac: false,
+  gated: false,
+  new_construction: false,
+  well: false,
+  septic: false,
+  solar: false,
+  propane: false,
+  has_hoa: false,
+});
 
 export const emptyPropertyInput = (): PropertyInput => ({
   street_address: "",
@@ -68,26 +229,96 @@ export const emptyPropertyInput = (): PropertyInput => ({
   year_built: "",
   mls_number: "",
   notes: "",
+  lot: "",
+  block: "",
+  addition: "",
+  subdivision: "",
+  tax_id: "",
+  geo_id: "",
+  school_district: "",
+  municipality: "",
+  etj: "",
+  stories: "",
+  garage_spaces: "",
+  garage_type: "",
+  ...DEFAULT_PROPERTY_BOOLEANS(),
+  electric_provider: "",
+  gas_provider: "",
+  water_provider: "",
+  sewer_provider: "",
+  hoa_name: "",
+  hoa_management_company: "",
+  hoa_contact_name: "",
+  hoa_phone: "",
+  hoa_email: "",
+  hoa_website: "",
+  hoa_dues_amount: "",
+  hoa_dues_frequency: "",
+  occupancy_status: "",
 });
+
+function optionalString(value: string | null | undefined): string {
+  return value ?? "";
+}
+
+function optionalNumberString(value: number | null | undefined): string {
+  return value != null ? String(value) : "";
+}
+
+function readPropertyBooleans(
+  property: Property,
+): Pick<PropertyInput, PropertyBooleanField> {
+  const values = {} as Pick<PropertyInput, PropertyBooleanField>;
+  for (const key of PROPERTY_BOOLEAN_FIELDS) {
+    values[key] = property[key] ?? false;
+  }
+  return values;
+}
 
 export function propertyToInput(property: Property): PropertyInput {
   return {
     street_address: property.street_address,
-    unit: property.unit ?? "",
+    unit: optionalString(property.unit),
     city: property.city,
     state: property.state ?? "TX",
     zip: property.zip,
-    county: property.county ?? "",
-    parcel_id: property.parcel_id ?? "",
-    legal_description: property.legal_description ?? "",
+    county: optionalString(property.county),
+    parcel_id: optionalString(property.parcel_id),
+    legal_description: optionalString(property.legal_description),
     property_type: property.property_type,
-    bedrooms: property.bedrooms != null ? String(property.bedrooms) : "",
-    bathrooms: property.bathrooms != null ? String(property.bathrooms) : "",
-    sqft: property.sqft != null ? String(property.sqft) : "",
-    lot_sqft: property.lot_sqft != null ? String(property.lot_sqft) : "",
-    year_built: property.year_built != null ? String(property.year_built) : "",
-    mls_number: property.mls_number ?? "",
-    notes: property.notes ?? "",
+    bedrooms: optionalNumberString(property.bedrooms),
+    bathrooms: optionalNumberString(property.bathrooms),
+    sqft: optionalNumberString(property.sqft),
+    lot_sqft: optionalNumberString(property.lot_sqft),
+    year_built: optionalNumberString(property.year_built),
+    mls_number: optionalString(property.mls_number),
+    notes: optionalString(property.notes),
+    lot: optionalString(property.lot),
+    block: optionalString(property.block),
+    addition: optionalString(property.addition),
+    subdivision: optionalString(property.subdivision),
+    tax_id: optionalString(property.tax_id),
+    geo_id: optionalString(property.geo_id),
+    school_district: optionalString(property.school_district),
+    municipality: optionalString(property.municipality),
+    etj: optionalString(property.etj),
+    stories: optionalNumberString(property.stories),
+    garage_spaces: optionalNumberString(property.garage_spaces),
+    garage_type: optionalString(property.garage_type),
+    ...readPropertyBooleans(property),
+    electric_provider: optionalString(property.electric_provider),
+    gas_provider: optionalString(property.gas_provider),
+    water_provider: optionalString(property.water_provider),
+    sewer_provider: optionalString(property.sewer_provider),
+    hoa_name: optionalString(property.hoa_name),
+    hoa_management_company: optionalString(property.hoa_management_company),
+    hoa_contact_name: optionalString(property.hoa_contact_name),
+    hoa_phone: optionalString(property.hoa_phone),
+    hoa_email: optionalString(property.hoa_email),
+    hoa_website: optionalString(property.hoa_website),
+    hoa_dues_amount: optionalNumberString(property.hoa_dues_amount),
+    hoa_dues_frequency: optionalString(property.hoa_dues_frequency),
+    occupancy_status: optionalString(property.occupancy_status),
   };
 }
 
@@ -139,6 +370,10 @@ export function formatPropertyAddressCity(
   return `${street}, ${city}`;
 }
 
+export function formatPropertyBooleanValue(value: boolean): string {
+  return value ? "Yes" : "No";
+}
+
 function parseOptionalInteger(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -159,6 +394,34 @@ function parseOptionalNumber(value: string): number | null {
   return parsed;
 }
 
+function validateOptionalNonNegativeInteger(
+  value: string,
+  label: string,
+): string | null {
+  if (!value.trim()) {
+    return null;
+  }
+  const parsed = parseOptionalInteger(value);
+  if (parsed == null || parsed < 0) {
+    return `${label} must be a whole number of 0 or more.`;
+  }
+  return null;
+}
+
+function validateOptionalNonNegativeNumber(
+  value: string,
+  label: string,
+): string | null {
+  if (!value.trim()) {
+    return null;
+  }
+  const parsed = parseOptionalNumber(value);
+  if (parsed == null || parsed < 0) {
+    return `${label} must be a valid number of 0 or more.`;
+  }
+  return null;
+}
+
 export function validatePropertyInput(input: PropertyInput): string | null {
   if (!input.street_address.trim()) {
     return "Street address is required.";
@@ -176,42 +439,16 @@ export function validatePropertyInput(input: PropertyInput): string | null {
     return "Property type is required.";
   }
 
-  if (input.bedrooms.trim()) {
-    const bedrooms = parseOptionalInteger(input.bedrooms);
-    if (bedrooms == null || bedrooms < 0) {
-      return "Bedrooms must be a whole number of 0 or more.";
-    }
-  }
-
-  if (input.bathrooms.trim()) {
-    const bathrooms = parseOptionalNumber(input.bathrooms);
-    if (bathrooms == null || bathrooms < 0) {
-      return "Bathrooms must be a valid number of 0 or more.";
-    }
-  }
-
-  if (input.sqft.trim()) {
-    const sqft = parseOptionalInteger(input.sqft);
-    if (sqft == null || sqft < 0) {
-      return "Square feet must be a whole number of 0 or more.";
-    }
-  }
-
-  if (input.lot_sqft.trim()) {
-    const lotSqft = parseOptionalInteger(input.lot_sqft);
-    if (lotSqft == null || lotSqft < 0) {
-      return "Lot square feet must be a whole number of 0 or more.";
-    }
-  }
-
-  if (input.year_built.trim()) {
-    const yearBuilt = parseOptionalInteger(input.year_built);
-    if (yearBuilt == null || yearBuilt < 0) {
-      return "Year built must be a valid whole number.";
-    }
-  }
-
-  return null;
+  return (
+    validateOptionalNonNegativeInteger(input.bedrooms, "Bedrooms") ??
+    validateOptionalNonNegativeNumber(input.bathrooms, "Bathrooms") ??
+    validateOptionalNonNegativeInteger(input.sqft, "Square feet") ??
+    validateOptionalNonNegativeInteger(input.lot_sqft, "Lot square feet") ??
+    validateOptionalNonNegativeInteger(input.year_built, "Year built") ??
+    validateOptionalNonNegativeNumber(input.stories, "Stories") ??
+    validateOptionalNonNegativeNumber(input.garage_spaces, "Garage spaces") ??
+    validateOptionalNonNegativeNumber(input.hoa_dues_amount, "HOA dues amount")
+  );
 }
 
 export function normalizePropertyInput(input: PropertyInput) {
@@ -234,5 +471,46 @@ export function normalizePropertyInput(input: PropertyInput) {
     year_built: parseOptionalInteger(input.year_built),
     mls_number: trim(input.mls_number) || null,
     notes: trim(input.notes) || null,
+    lot: trim(input.lot) || null,
+    block: trim(input.block) || null,
+    addition: trim(input.addition) || null,
+    subdivision: trim(input.subdivision) || null,
+    tax_id: trim(input.tax_id) || null,
+    geo_id: trim(input.geo_id) || null,
+    school_district: trim(input.school_district) || null,
+    municipality: trim(input.municipality) || null,
+    etj: trim(input.etj) || null,
+    stories: parseOptionalNumber(input.stories),
+    garage_spaces: parseOptionalNumber(input.garage_spaces),
+    garage_type: trim(input.garage_type) || null,
+    pool: input.pool,
+    spa: input.spa,
+    fireplace: input.fireplace,
+    basement: input.basement,
+    sprinkler_system: input.sprinkler_system,
+    waterfront: input.waterfront,
+    water_view: input.water_view,
+    corner_lot: input.corner_lot,
+    cul_de_sac: input.cul_de_sac,
+    gated: input.gated,
+    new_construction: input.new_construction,
+    well: input.well,
+    septic: input.septic,
+    solar: input.solar,
+    propane: input.propane,
+    electric_provider: trim(input.electric_provider) || null,
+    gas_provider: trim(input.gas_provider) || null,
+    water_provider: trim(input.water_provider) || null,
+    sewer_provider: trim(input.sewer_provider) || null,
+    has_hoa: input.has_hoa,
+    hoa_name: trim(input.hoa_name) || null,
+    hoa_management_company: trim(input.hoa_management_company) || null,
+    hoa_contact_name: trim(input.hoa_contact_name) || null,
+    hoa_phone: trim(input.hoa_phone) || null,
+    hoa_email: trim(input.hoa_email) || null,
+    hoa_website: trim(input.hoa_website) || null,
+    hoa_dues_amount: parseOptionalNumber(input.hoa_dues_amount),
+    hoa_dues_frequency: trim(input.hoa_dues_frequency) || null,
+    occupancy_status: trim(input.occupancy_status) || null,
   };
 }

@@ -30,6 +30,10 @@ import {
   formatContactDisplayName,
 } from "@/lib/types/contact";
 import {
+  formatPacketContactResolvedFieldValue,
+  normalizePacketContactFieldSuffix,
+} from "@/lib/types/packet-contact-source-paths";
+import {
   type PacketContact,
   type PacketContactRole,
   getBuyerClientContactAtIndex,
@@ -57,8 +61,6 @@ import {
 import {
   formatBrokerageCityStateZip,
   formatBuyerRepAgreementBetween,
-  formatContactCityStateZip,
-  formatContactMailingAddress,
   isBooleanBuyerRepDetailsSourcePath,
   isBuyerRepDetailsSourcePath,
   isRepresentationAgreementSourcePath,
@@ -135,22 +137,26 @@ const ROLE_PREFIX_TO_PACKET_ROLE: Record<
   landlord: "LANDLORD",
 };
 
-const CONTACT_FIELD_KEYS = new Set([
-  "full_name",
-  "first_name",
-  "middle_name",
-  "last_name",
-  "suffix",
-  "entity_name",
-  "email",
-  "phone_primary",
-  "phone_secondary",
-  "mailing_address_line_1",
-  "mailing_address_line_2",
-  "mailing_city",
-  "mailing_state",
-  "mailing_zip",
-]);
+function normalizeContactFieldName(contactField: string): string {
+  if (contactField === "phone") {
+    return "phone_primary";
+  }
+
+  return contactField;
+}
+
+function resolveContactFieldValue(
+  contact: Contact,
+  contactField: string,
+): string {
+  const normalized = normalizeContactFieldName(contactField);
+  const suffix = normalizePacketContactFieldSuffix(normalized);
+  if (!suffix) {
+    return "";
+  }
+
+  return formatPacketContactResolvedFieldValue(contact, suffix);
+}
 
 const isPropertyResolverDebugEnabled =
   process.env.NODE_ENV === "development";
@@ -294,14 +300,6 @@ function parseNumberedContactRoleSlug(role: string): {
   };
 }
 
-function normalizeContactFieldName(contactField: string): string {
-  if (contactField === "phone") {
-    return "phone_primary";
-  }
-
-  return contactField;
-}
-
 type ParsedPacketContactSourcePath =
   | {
       kind: "buyer_client";
@@ -401,20 +399,14 @@ function resolveBuyerClientContactField(
   contact: Contact,
   fieldSuffix: string,
 ): string | null {
-  if (fieldSuffix === "address") {
-    const value = formatContactMailingAddress(contact);
-    return value || null;
-  }
-
-  if (fieldSuffix === "city_state_zip") {
-    const value = formatContactCityStateZip(contact);
-    return value || null;
-  }
-
-  const value = resolveContactFieldValue(
-    contact,
+  const suffix = normalizePacketContactFieldSuffix(
     normalizeContactFieldName(fieldSuffix),
   );
+  if (!suffix) {
+    return null;
+  }
+
+  const value = formatPacketContactResolvedFieldValue(contact, suffix);
   return value || null;
 }
 
@@ -1159,22 +1151,6 @@ function resolvePacketInstanceValue(params: {
     value_json: null,
     source: "empty",
   };
-}
-
-function resolveContactFieldValue(
-  contact: Contact,
-  contactField: string,
-): string {
-  if (contactField === "full_name") {
-    return formatContactDisplayName(contact);
-  }
-
-  if (!CONTACT_FIELD_KEYS.has(contactField)) {
-    return "";
-  }
-
-  const value = contact[contactField as keyof Contact];
-  return value == null ? "" : String(value);
 }
 
 function resolveContactRoleFieldKey(

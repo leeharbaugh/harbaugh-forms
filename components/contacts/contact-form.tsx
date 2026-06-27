@@ -6,217 +6,610 @@ import { Label } from "@/components/ui/label";
 import {
   type ContactInput,
   type ContactType,
+  formatContactDateOfBirth,
   validateContactInput,
 } from "@/lib/types/contact";
 import { cn } from "@/lib/utils";
+import type { ReactNode } from "react";
 
 type ContactFormProps = {
   value: ContactInput;
   onChange: (value: ContactInput) => void;
-  onSubmit: () => void;
-  onCancel: () => void;
-  isSubmitting: boolean;
-  error: string | null;
-  mode: "create" | "edit";
+  onSubmit?: () => void;
+  onCancel?: () => void;
+  isSubmitting?: boolean;
+  error?: string | null;
+  mode: "create" | "edit" | "view";
+  showActions?: boolean;
 };
 
 const fieldClassName =
   "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
+
+const PREFERRED_CONTACT_METHOD_OPTIONS = [
+  "",
+  "Email",
+  "Phone",
+  "Text",
+  "Mail",
+] as const;
+
+function ContactSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-4 border-t pt-6 first:border-t-0 first:pt-0">
+      <div>
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {description && (
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+        )}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
+function ViewField({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string | null | undefined;
+  className?: string;
+}) {
+  const display = value?.trim() ? value : "—";
+  return (
+    <div className={className}>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-sm">{display}</p>
+    </div>
+  );
+}
 
 export function ContactForm({
   value,
   onChange,
   onSubmit,
   onCancel,
-  isSubmitting,
-  error,
+  isSubmitting = false,
+  error = null,
   mode,
+  showActions = true,
 }: ContactFormProps) {
-  const setField = <K extends keyof ContactInput>(key: K, fieldValue: ContactInput[K]) => {
+  const readOnly = mode === "view";
+
+  const setField = <K extends keyof ContactInput>(
+    key: K,
+    fieldValue: ContactInput[K],
+  ) => {
     onChange({ ...value, [key]: fieldValue });
   };
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+    if (readOnly || !onSubmit) return;
     const validationError = validateContactInput(value);
-    if (validationError) {
-      return;
-    }
+    if (validationError) return;
     onSubmit();
   };
 
-  const validationError = validateContactInput(value);
+  const validationError = readOnly ? null : validateContactInput(value);
   const isIndividual = value.contact_type === "INDIVIDUAL";
+  const FormWrapper = showActions ? "form" : "div";
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="contact_type">Contact type</Label>
-          <select
-            id="contact_type"
-            className={fieldClassName}
-            value={value.contact_type}
-            onChange={(event) =>
-              setField("contact_type", event.target.value as ContactType)
-            }
-          >
-            <option value="INDIVIDUAL">Individual</option>
-            <option value="ENTITY">Entity</option>
-          </select>
-        </div>
+    <FormWrapper
+      {...(showActions ? { onSubmit: handleSubmit } : {})}
+      className="space-y-6"
+    >
+      <ContactSection title="Identity">
+        {readOnly ? (
+          <>
+            <ViewField
+              label="Contact type"
+              value={value.contact_type === "ENTITY" ? "Entity" : "Individual"}
+            />
+            {isIndividual ? (
+              <>
+                <ViewField label="First name" value={value.first_name} />
+                <ViewField label="Middle name" value={value.middle_name} />
+                <ViewField label="Last name" value={value.last_name} />
+                <ViewField label="Suffix" value={value.suffix} />
+                <ViewField label="Preferred name" value={value.preferred_name} />
+                <ViewField label="Title" value={value.title} />
+              </>
+            ) : (
+              <>
+                <ViewField
+                  label="Entity name"
+                  value={value.entity_name}
+                  className="sm:col-span-2"
+                />
+                <ViewField label="Entity type" value={value.entity_type} />
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="contact_type">Contact type</Label>
+              <select
+                id="contact_type"
+                className={fieldClassName}
+                value={value.contact_type}
+                onChange={(event) =>
+                  setField("contact_type", event.target.value as ContactType)
+                }
+              >
+                <option value="INDIVIDUAL">Individual</option>
+                <option value="ENTITY">Entity</option>
+              </select>
+            </div>
 
-        {isIndividual ? (
+            {isIndividual ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="first_name">First name *</Label>
+                  <Input
+                    id="first_name"
+                    value={value.first_name ?? ""}
+                    onChange={(event) =>
+                      setField("first_name", event.target.value)
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="middle_name">Middle name</Label>
+                  <Input
+                    id="middle_name"
+                    value={value.middle_name ?? ""}
+                    onChange={(event) =>
+                      setField("middle_name", event.target.value)
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="last_name">Last name *</Label>
+                  <Input
+                    id="last_name"
+                    value={value.last_name ?? ""}
+                    onChange={(event) =>
+                      setField("last_name", event.target.value)
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="suffix">Suffix</Label>
+                  <Input
+                    id="suffix"
+                    value={value.suffix ?? ""}
+                    onChange={(event) => setField("suffix", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="preferred_name">Preferred name</Label>
+                  <Input
+                    id="preferred_name"
+                    value={value.preferred_name ?? ""}
+                    onChange={(event) =>
+                      setField("preferred_name", event.target.value)
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="title">Title</Label>
+                  <Input
+                    id="title"
+                    value={value.title ?? ""}
+                    onChange={(event) => setField("title", event.target.value)}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="entity_name">Entity name *</Label>
+                  <Input
+                    id="entity_name"
+                    value={value.entity_name ?? ""}
+                    onChange={(event) =>
+                      setField("entity_name", event.target.value)
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="entity_type">Entity type</Label>
+                  <Input
+                    id="entity_type"
+                    value={value.entity_type ?? ""}
+                    onChange={(event) =>
+                      setField("entity_type", event.target.value)
+                    }
+                    placeholder="LLC, Corporation, Trust, etc."
+                  />
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </ContactSection>
+
+      <ContactSection title="Contact methods">
+        {readOnly ? (
+          <>
+            <ViewField label="Email" value={value.email} />
+            <ViewField label="Secondary email" value={value.email_secondary} />
+            <ViewField label="Primary phone" value={value.phone_primary} />
+            <ViewField label="Secondary phone" value={value.phone_secondary} />
+            <ViewField
+              label="Preferred contact method"
+              value={value.preferred_contact_method}
+            />
+          </>
+        ) : (
           <>
             <div className="space-y-2">
-              <Label htmlFor="first_name">First name *</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="first_name"
-                value={value.first_name ?? ""}
-                onChange={(event) => setField("first_name", event.target.value)}
-                required
+                id="email"
+                type="email"
+                value={value.email ?? ""}
+                onChange={(event) => setField("email", event.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="middle_name">Middle name</Label>
+              <Label htmlFor="email_secondary">Secondary email</Label>
               <Input
-                id="middle_name"
-                value={value.middle_name ?? ""}
-                onChange={(event) => setField("middle_name", event.target.value)}
+                id="email_secondary"
+                type="email"
+                value={value.email_secondary ?? ""}
+                onChange={(event) =>
+                  setField("email_secondary", event.target.value)
+                }
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="last_name">Last name *</Label>
+              <Label htmlFor="phone_primary">Primary phone</Label>
               <Input
-                id="last_name"
-                value={value.last_name ?? ""}
-                onChange={(event) => setField("last_name", event.target.value)}
-                required
+                id="phone_primary"
+                type="tel"
+                value={value.phone_primary ?? ""}
+                onChange={(event) =>
+                  setField("phone_primary", event.target.value)
+                }
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="suffix">Suffix</Label>
+              <Label htmlFor="phone_secondary">Secondary phone</Label>
               <Input
-                id="suffix"
-                value={value.suffix ?? ""}
-                onChange={(event) => setField("suffix", event.target.value)}
+                id="phone_secondary"
+                type="tel"
+                value={value.phone_secondary ?? ""}
+                onChange={(event) =>
+                  setField("phone_secondary", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="preferred_contact_method">
+                Preferred contact method
+              </Label>
+              <select
+                id="preferred_contact_method"
+                className={fieldClassName}
+                value={value.preferred_contact_method ?? ""}
+                onChange={(event) =>
+                  setField(
+                    "preferred_contact_method",
+                    event.target.value || null,
+                  )
+                }
+              >
+                {PREFERRED_CONTACT_METHOD_OPTIONS.map((option) => (
+                  <option key={option || "none"} value={option}>
+                    {option || "—"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+      </ContactSection>
+
+      <ContactSection
+        title="Mailing address"
+        description="Used for correspondence and many form mappings."
+      >
+        {readOnly ? (
+          <>
+            <ViewField
+              label="Address line 1"
+              value={value.mailing_address_line_1}
+              className="sm:col-span-2"
+            />
+            <ViewField
+              label="Address line 2"
+              value={value.mailing_address_line_2}
+              className="sm:col-span-2"
+            />
+            <ViewField label="City" value={value.mailing_city} />
+            <ViewField label="State" value={value.mailing_state} />
+            <ViewField label="ZIP" value={value.mailing_zip} />
+            <ViewField label="County" value={value.county} />
+          </>
+        ) : (
+          <>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="mailing_address_line_1">Address line 1</Label>
+              <Input
+                id="mailing_address_line_1"
+                value={value.mailing_address_line_1 ?? ""}
+                onChange={(event) =>
+                  setField("mailing_address_line_1", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="mailing_address_line_2">Address line 2</Label>
+              <Input
+                id="mailing_address_line_2"
+                value={value.mailing_address_line_2 ?? ""}
+                onChange={(event) =>
+                  setField("mailing_address_line_2", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mailing_city">City</Label>
+              <Input
+                id="mailing_city"
+                value={value.mailing_city ?? ""}
+                onChange={(event) =>
+                  setField("mailing_city", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mailing_state">State</Label>
+              <Input
+                id="mailing_state"
+                value={value.mailing_state ?? "TX"}
+                onChange={(event) =>
+                  setField("mailing_state", event.target.value)
+                }
+                maxLength={2}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mailing_zip">ZIP</Label>
+              <Input
+                id="mailing_zip"
+                value={value.mailing_zip ?? ""}
+                onChange={(event) =>
+                  setField("mailing_zip", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="county">County</Label>
+              <Input
+                id="county"
+                value={value.county ?? ""}
+                onChange={(event) => setField("county", event.target.value)}
               />
             </div>
           </>
+        )}
+      </ContactSection>
+
+      <ContactSection
+        title="Street address"
+        description="Physical or property-related address when different from mailing."
+      >
+        {readOnly ? (
+          <>
+            <ViewField
+              label="Address line 1"
+              value={value.street_address_line_1}
+              className="sm:col-span-2"
+            />
+            <ViewField
+              label="Address line 2"
+              value={value.street_address_line_2}
+              className="sm:col-span-2"
+            />
+            <ViewField label="City" value={value.street_city} />
+            <ViewField label="State" value={value.street_state} />
+            <ViewField label="ZIP" value={value.street_zip} />
+          </>
+        ) : (
+          <>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="street_address_line_1">Address line 1</Label>
+              <Input
+                id="street_address_line_1"
+                value={value.street_address_line_1 ?? ""}
+                onChange={(event) =>
+                  setField("street_address_line_1", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="street_address_line_2">Address line 2</Label>
+              <Input
+                id="street_address_line_2"
+                value={value.street_address_line_2 ?? ""}
+                onChange={(event) =>
+                  setField("street_address_line_2", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="street_city">City</Label>
+              <Input
+                id="street_city"
+                value={value.street_city ?? ""}
+                onChange={(event) =>
+                  setField("street_city", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="street_state">State</Label>
+              <Input
+                id="street_state"
+                value={value.street_state ?? "TX"}
+                onChange={(event) =>
+                  setField("street_state", event.target.value)
+                }
+                maxLength={2}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="street_zip">ZIP</Label>
+              <Input
+                id="street_zip"
+                value={value.street_zip ?? ""}
+                onChange={(event) => setField("street_zip", event.target.value)}
+              />
+            </div>
+          </>
+        )}
+      </ContactSection>
+
+      <ContactSection title="Professional & personal">
+        {readOnly ? (
+          <>
+            <ViewField label="Company name" value={value.company_name} />
+            <ViewField label="Brokerage name" value={value.brokerage_name} />
+            <ViewField
+              label="TREC license number"
+              value={value.trec_license_number}
+            />
+            <ViewField
+              label="Date of birth"
+              value={
+                value.date_of_birth
+                  ? formatContactDateOfBirth(value.date_of_birth)
+                  : null
+              }
+            />
+            <ViewField label="Occupation" value={value.occupation} />
+          </>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="company_name">Company name</Label>
+              <Input
+                id="company_name"
+                value={value.company_name ?? ""}
+                onChange={(event) =>
+                  setField("company_name", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="brokerage_name">Brokerage name</Label>
+              <Input
+                id="brokerage_name"
+                value={value.brokerage_name ?? ""}
+                onChange={(event) =>
+                  setField("brokerage_name", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="trec_license_number">TREC license number</Label>
+              <Input
+                id="trec_license_number"
+                value={value.trec_license_number ?? ""}
+                onChange={(event) =>
+                  setField("trec_license_number", event.target.value)
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="date_of_birth">Date of birth</Label>
+              <Input
+                id="date_of_birth"
+                type="date"
+                value={value.date_of_birth ?? ""}
+                onChange={(event) =>
+                  setField("date_of_birth", event.target.value || null)
+                }
+              />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="occupation">Occupation</Label>
+              <Input
+                id="occupation"
+                value={value.occupation ?? ""}
+                onChange={(event) =>
+                  setField("occupation", event.target.value)
+                }
+              />
+            </div>
+          </>
+        )}
+      </ContactSection>
+
+      <ContactSection title="Notes">
+        {readOnly ? (
+          <ViewField
+            label="Notes"
+            value={value.notes}
+            className="sm:col-span-2"
+          />
         ) : (
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="entity_name">Entity name *</Label>
-            <Input
-              id="entity_name"
-              value={value.entity_name ?? ""}
-              onChange={(event) => setField("entity_name", event.target.value)}
-              required
+            <Label htmlFor="notes">Notes</Label>
+            <textarea
+              id="notes"
+              rows={3}
+              className={cn(fieldClassName, "min-h-24 py-2")}
+              value={value.notes ?? ""}
+              onChange={(event) => setField("notes", event.target.value)}
             />
           </div>
         )}
+      </ContactSection>
 
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            value={value.email ?? ""}
-            onChange={(event) => setField("email", event.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="phone_primary">Primary phone</Label>
-          <Input
-            id="phone_primary"
-            type="tel"
-            value={value.phone_primary ?? ""}
-            onChange={(event) => setField("phone_primary", event.target.value)}
-          />
-        </div>
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="phone_secondary">Secondary phone</Label>
-          <Input
-            id="phone_secondary"
-            type="tel"
-            value={value.phone_secondary ?? ""}
-            onChange={(event) => setField("phone_secondary", event.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="mailing_address_line_1">Mailing address line 1</Label>
-          <Input
-            id="mailing_address_line_1"
-            value={value.mailing_address_line_1 ?? ""}
-            onChange={(event) =>
-              setField("mailing_address_line_1", event.target.value)
-            }
-          />
-        </div>
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="mailing_address_line_2">Mailing address line 2</Label>
-          <Input
-            id="mailing_address_line_2"
-            value={value.mailing_address_line_2 ?? ""}
-            onChange={(event) =>
-              setField("mailing_address_line_2", event.target.value)
-            }
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="mailing_city">City</Label>
-          <Input
-            id="mailing_city"
-            value={value.mailing_city ?? ""}
-            onChange={(event) => setField("mailing_city", event.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="mailing_state">State</Label>
-          <Input
-            id="mailing_state"
-            value={value.mailing_state ?? "TX"}
-            onChange={(event) => setField("mailing_state", event.target.value)}
-            maxLength={2}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="mailing_zip">ZIP</Label>
-          <Input
-            id="mailing_zip"
-            value={value.mailing_zip ?? ""}
-            onChange={(event) => setField("mailing_zip", event.target.value)}
-          />
-        </div>
-
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="notes">Notes</Label>
-          <textarea
-            id="notes"
-            rows={3}
-            className={cn(fieldClassName, "min-h-24 py-2")}
-            value={value.notes ?? ""}
-            onChange={(event) => setField("notes", event.target.value)}
-          />
-        </div>
-      </div>
-
-      {(error || validationError) && (
+      {!readOnly && (error || validationError) && (
         <p className="text-sm text-destructive">{error ?? validationError}</p>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={isSubmitting || !!validationError}>
-          {isSubmitting
-            ? "Saving..."
-            : mode === "create"
-              ? "Add Contact"
-              : "Save changes"}
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+      {showActions && !readOnly && (
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={isSubmitting || !!validationError}>
+            {isSubmitting
+              ? "Saving..."
+              : mode === "create"
+                ? "Add Contact"
+                : "Save changes"}
+          </Button>
+          {onCancel && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+          )}
+        </div>
+      )}
+    </FormWrapper>
   );
 }
