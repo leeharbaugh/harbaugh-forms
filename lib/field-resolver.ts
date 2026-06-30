@@ -34,6 +34,9 @@ import {
   normalizePacketContactFieldSuffix,
 } from "@/lib/types/packet-contact-source-paths";
 import {
+  formatJoinedContactNames,
+  getOrderedBuyerContacts,
+  getOrderedSellerContacts,
   type PacketContact,
   type PacketContactRole,
   getBuyerClientContactAtIndex,
@@ -48,7 +51,10 @@ import {
   normalizePacketPropertySourcePath,
 } from "@/lib/types/packet-property-source-paths";
 import type { Property } from "@/lib/types/property";
-import { formatPropertyAddressCity } from "@/lib/types/property";
+import {
+  formatPropertyAddressCity,
+  formatPropertyStreetAddressZip,
+} from "@/lib/types/property";
 import {
   type PropertyHoa,
   isPropertyHoaResolverKey,
@@ -76,6 +82,20 @@ import {
   resolveSellerIsNotForeignPerson,
   type ListingAgreementDetailsRow,
 } from "@/lib/types/listing-agreement-field-resolution";
+import {
+  formatJoinedContactMailingAddresses,
+  getFirstContactEmail,
+  getFirstContactPhone,
+  isBooleanContractDetailsSourcePath,
+  isContractDetailsSourcePath,
+  isDateContractDetailsSourcePath,
+  resolveContractDetailsFieldValue,
+  resolveContractEffectiveDay,
+  resolveContractEffectiveMonth,
+  resolveContractEffectiveYear,
+  resolveContractSurveyOptionSelected,
+  type ContractDetailsRow,
+} from "@/lib/types/contract-field-resolution";
 
 export type FieldResolverSource =
   | "manual_override"
@@ -117,6 +137,7 @@ export type FieldResolverContext = {
   } | null;
   buyerRepDetails: BuyerRepDetails | null;
   listingAgreementDetails: ListingAgreementDetailsRow | null;
+  contractDetails: ContractDetailsRow | null;
   propertyHoas: PropertyHoa[];
 };
 
@@ -759,6 +780,45 @@ function resolveListingAgreementDetailsSourcePath(
   };
 }
 
+function resolveContractDetailsSourcePath(
+  sourcePath: string,
+  context: FieldResolverContext,
+): ResolvedFieldValue | null {
+  const details = context.contractDetails;
+  if (!details) {
+    return null;
+  }
+
+  const normalizedPath = sourcePath.trim().toLowerCase();
+  if (!isContractDetailsSourcePath(normalizedPath)) {
+    return null;
+  }
+
+  if (isBooleanContractDetailsSourcePath(normalizedPath)) {
+    const value = resolveContractDetailsFieldValue(details, normalizedPath);
+    return resolveBuyerRepCheckboxValue(value === "true");
+  }
+
+  const value = resolveContractDetailsFieldValue(details, normalizedPath);
+  if (!value) {
+    return null;
+  }
+
+  const displayValue = isDateContractDetailsSourcePath(normalizedPath)
+    ? normalizeDateDisplay(value.split("T")[0])
+    : value;
+
+  if (!displayValue) {
+    return null;
+  }
+
+  return {
+    value: displayValue,
+    value_json: null,
+    source: "packet",
+  };
+}
+
 function resolveRepresentationAgreementSourcePath(
   sourcePath: string,
   context: FieldResolverContext,
@@ -880,6 +940,213 @@ function resolveCustomResolverKey(
 
   if (normalizedKey === "property_address_city") {
     return resolvePropertyAddressCity(context);
+  }
+
+  if (normalizedKey === "property_address_street_zip") {
+    const property = context.packet.properties;
+    if (!property) {
+      return null;
+    }
+
+    const value = formatPropertyStreetAddressZip(property);
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "property",
+    };
+  }
+
+  if (normalizedKey === "seller_names") {
+    const value = formatJoinedContactNames(
+      getOrderedSellerContacts(context.packetContacts),
+    );
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "buyer_names") {
+    const value = formatJoinedContactNames(
+      getOrderedBuyerContacts(context.packetContacts),
+    );
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "buyer_notice_address") {
+    const value = formatJoinedContactMailingAddresses(
+      getOrderedBuyerContacts(context.packetContacts),
+    );
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "seller_notice_address") {
+    const value = formatJoinedContactMailingAddresses(
+      getOrderedSellerContacts(context.packetContacts),
+    );
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "buyer_notice_phone") {
+    const value = getFirstContactPhone(
+      getOrderedBuyerContacts(context.packetContacts),
+    );
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "seller_notice_phone") {
+    const value = getFirstContactPhone(
+      getOrderedSellerContacts(context.packetContacts),
+    );
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "buyer_notice_email") {
+    const value = getFirstContactEmail(
+      getOrderedBuyerContacts(context.packetContacts),
+    );
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "seller_notice_email") {
+    const value = getFirstContactEmail(
+      getOrderedSellerContacts(context.packetContacts),
+    );
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  const contractDetails = context.contractDetails;
+  if (contractDetails) {
+    if (normalizedKey === "contract_survey_option_seller_existing") {
+      return resolveBuyerRepCheckboxValue(
+        resolveContractSurveyOptionSelected(
+          contractDetails,
+          "SELLER_EXISTING_SURVEY",
+        ),
+      );
+    }
+
+    if (normalizedKey === "contract_survey_option_buyer_new") {
+      return resolveBuyerRepCheckboxValue(
+        resolveContractSurveyOptionSelected(
+          contractDetails,
+          "BUYER_NEW_SURVEY",
+        ),
+      );
+    }
+
+    if (normalizedKey === "contract_survey_option_seller_new") {
+      return resolveBuyerRepCheckboxValue(
+        resolveContractSurveyOptionSelected(
+          contractDetails,
+          "SELLER_NEW_SURVEY",
+        ),
+      );
+    }
+
+    if (normalizedKey === "contract_effective_day") {
+      const value = resolveContractEffectiveDay(contractDetails);
+      if (!value) {
+        return null;
+      }
+
+      return {
+        value,
+        value_json: null,
+        source: "packet",
+      };
+    }
+
+    if (normalizedKey === "contract_effective_month") {
+      const value = resolveContractEffectiveMonth(contractDetails);
+      if (!value) {
+        return null;
+      }
+
+      return {
+        value,
+        value_json: null,
+        source: "packet",
+      };
+    }
+
+    if (normalizedKey === "contract_effective_year") {
+      const value = resolveContractEffectiveYear(contractDetails);
+      if (!value) {
+        return null;
+      }
+
+      return {
+        value,
+        value_json: null,
+        source: "packet",
+      };
+    }
   }
 
   if (normalizedKey === "buyer_rep_retainer_will_not_apply") {
@@ -1050,6 +1317,10 @@ function resolveFromFieldSourceMapping(
     case "listing_agreement_details":
       return field.source_path
         ? resolveListingAgreementDetailsSourcePath(field.source_path, context)
+        : null;
+    case "contract_details":
+      return field.source_path
+        ? resolveContractDetailsSourcePath(field.source_path, context)
         : null;
     case "representation_agreement":
       return field.source_path
@@ -1644,6 +1915,24 @@ async function loadActivePropertyHoasForProperty(
   return (data as PropertyHoa[]) ?? [];
 }
 
+async function loadActiveContractDetailsForPacket(
+  supabase: SupabaseClient,
+  packetId: number,
+): Promise<ContractDetailsRow | null> {
+  const { data, error } = await supabase
+    .from("contract_details")
+    .select("*")
+    .eq("packet_id", packetId)
+    .eq("status", "ACTIVE")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as ContractDetailsRow | null) ?? null;
+}
+
 export async function loadFieldResolverContext(
   supabase: SupabaseClient,
   packetId: number,
@@ -1711,6 +2000,11 @@ export async function loadFieldResolverContext(
     property?.id ?? packetRow.property_id,
   );
 
+  const contractDetails = await loadActiveContractDetailsForPacket(
+    supabase,
+    packetId,
+  );
+
   if (
     packetRow.property_id != null &&
     !property &&
@@ -1746,6 +2040,7 @@ export async function loadFieldResolverContext(
     listingAgreementDetails: normalizeListingAgreementDetailsJoin(
       packetRow.representation_agreements,
     ),
+    contractDetails,
     propertyHoas,
   };
 }

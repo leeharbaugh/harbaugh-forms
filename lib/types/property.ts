@@ -342,6 +342,30 @@ export function formatPropertyAddress(property: Property | PropertyInput): strin
   return line2 ? `${line1}, ${line2}` : line1;
 }
 
+/** Street address, optional unit, and ZIP (no city/state). */
+export function formatPropertyStreetAddressZip(
+  property: Pick<Property, "street_address" | "unit" | "zip">,
+): string {
+  const street = [property.street_address?.trim(), property.unit?.trim()]
+    .filter(Boolean)
+    .join(property.unit?.trim() ? " " : "");
+  const zip = property.zip?.trim() ?? "";
+
+  if (!street && !zip) {
+    return "";
+  }
+
+  if (!street) {
+    return zip;
+  }
+
+  if (!zip) {
+    return street;
+  }
+
+  return `${street}, ${zip}`;
+}
+
 /** Street address, optional unit, and city only (no state/ZIP). */
 export function formatPropertyAddressCity(
   property: Pick<Property, "street_address" | "unit" | "city">,

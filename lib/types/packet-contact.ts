@@ -113,6 +113,64 @@ export function buildPacketContactAssignments(
   }));
 }
 
+/** Roles commonly used for seller-side parties on residential contracts. */
+export const SELLER_SIDE_PACKET_ROLES: PacketContactRole[] = [
+  "SELLER",
+  "CO_CLIENT",
+  "SPOUSE",
+  "LANDLORD",
+];
+
+/** Roles commonly used for buyer-side parties on residential contracts. */
+export const BUYER_SIDE_PACKET_ROLES: PacketContactRole[] = [
+  "BUYER",
+  "CO_CLIENT",
+  "SPOUSE",
+  "TENANT",
+  "PRIMARY",
+];
+
+export function getOrderedContactsByPacketRoles(
+  packetContacts: PacketContact[],
+  roles: PacketContactRole[],
+): Contact[] {
+  const roleSet = new Set(roles);
+
+  return sortPacketContacts(
+    packetContacts.filter(
+      (row) =>
+        row.status === "ACTIVE" &&
+        row.contacts &&
+        roleSet.has(row.packet_role),
+    ),
+  ).map((row) => row.contacts as Contact);
+}
+
+export function getOrderedSellerContacts(
+  packetContacts: PacketContact[],
+): Contact[] {
+  return getOrderedContactsByPacketRoles(
+    packetContacts,
+    SELLER_SIDE_PACKET_ROLES,
+  );
+}
+
+export function getOrderedBuyerContacts(
+  packetContacts: PacketContact[],
+): Contact[] {
+  return getOrderedContactsByPacketRoles(
+    packetContacts,
+    BUYER_SIDE_PACKET_ROLES,
+  );
+}
+
+export function formatJoinedContactNames(contacts: Contact[]): string {
+  return contacts
+    .map((contact) => formatContactDisplayName(contact))
+    .filter(Boolean)
+    .join(", ");
+}
+
 export function getOrderedPacketContactNames(
   packetContacts: Pick<PacketContact, "sort_order" | "status" | "contacts">[],
 ): string {

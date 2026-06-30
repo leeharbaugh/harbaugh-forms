@@ -33,6 +33,11 @@ export type BrokerageSettings = {
   broker_license_number: string | null;
   broker_phone: string | null;
   broker_email: string | null;
+
+  supervisor_name: string | null;
+  supervisor_license_number: string | null;
+  supervisor_phone: string | null;
+  supervisor_email: string | null;
 };
 
 export type AgentProfileInput = {
