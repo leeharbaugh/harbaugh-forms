@@ -46,6 +46,7 @@ export const FIELD_SOURCE_TYPES = [
   "packet",
   "buyer_rep_details",
   "listing_agreement_details",
+  "contract_details",
   "representation_agreement",
   "static_default",
   "custom_resolver",
@@ -75,6 +76,14 @@ export const PACKET_INSTANCE_BACKFILL_FIELD_KEYS = [
 
 /** @deprecated Use PACKET_INSTANCE_BACKFILL_FIELD_KEYS. Kept for migration references only. */
 export const PACKET_INSTANCE_FIELD_KEY_HINTS = PACKET_INSTANCE_BACKFILL_FIELD_KEYS;
+
+export const CONTRACT_DETAILS_SOURCE_PATHS = [
+  "natural_resource_leases_delivered",
+  "natural_resource_leases_not_delivered",
+  "natural_resource_lease_termination_days",
+  "title_exception_amended_paid_by_buyer",
+  "title_exception_amended_paid_by_seller",
+] as const;
 
 export const SETTINGS_AGENT_SOURCE_PATHS = [
   "agent_first_name",
@@ -143,6 +152,7 @@ const SOURCE_TYPE_LABELS: Record<FieldSourceType, string> = {
   packet: "Packet metadata",
   buyer_rep_details: "Buyer rep details",
   listing_agreement_details: "Listing agreement details",
+  contract_details: "Contract details",
   representation_agreement: "Representation agreement",
   static_default: "Static default",
   custom_resolver: "Custom resolver",
@@ -250,6 +260,8 @@ export function sourcePathsForType(
       return PACKET_SOURCE_PATHS;
     case "buyer_rep_details":
       return BUYER_REP_DETAILS_SOURCE_PATHS;
+    case "contract_details":
+      return CONTRACT_DETAILS_SOURCE_PATHS;
     case "representation_agreement":
       return REPRESENTATION_AGREEMENT_SOURCE_PATHS;
     case "static_default":
@@ -269,6 +281,7 @@ export function sourceTypeRequiresPath(sourceType: FieldSourceType | ""): boolea
     sourceType === "packet_property" ||
     sourceType === "packet" ||
     sourceType === "buyer_rep_details" ||
+    sourceType === "contract_details" ||
     sourceType === "representation_agreement" ||
     sourceType === "static_default"
   );
