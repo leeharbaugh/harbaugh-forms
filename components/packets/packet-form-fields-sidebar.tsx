@@ -4,6 +4,7 @@ import { PacketFormFieldValueInput } from "@/components/packets/packet-form-fiel
 import { Button } from "@/components/ui/button";
 import {
   getDirtyFieldInstanceIds,
+  getPacketFormFieldSelectionKey,
   isManualFieldValueOverride,
   packetFieldSidebarLabel,
   type PacketFormFieldView,
@@ -14,7 +15,7 @@ type PacketFormFieldsSidebarProps = {
   fields: PacketFormFieldView[];
   draftValuesByInstanceId: Record<string, string>;
   savedValuesByInstanceId: Record<string, string>;
-  selectedMappingId: string | null;
+  selectedFieldKey: string | null;
   isSaving: boolean;
   isResettingPlacementId: string | null;
   isRevertingInstanceId: string | null;
@@ -24,14 +25,15 @@ type PacketFormFieldsSidebarProps = {
   onSaveChanges: () => void;
   onResetPlacement: (fieldView: PacketFormFieldView) => void;
   onRevertToDefault: (fieldView: PacketFormFieldView) => void;
-  itemRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
+  fieldRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
+  listRef: React.RefObject<HTMLDivElement | null>;
 };
 
 export function PacketFormFieldsSidebar({
   fields,
   draftValuesByInstanceId,
   savedValuesByInstanceId,
-  selectedMappingId,
+  selectedFieldKey,
   isSaving,
   isResettingPlacementId,
   isRevertingInstanceId,
@@ -41,7 +43,8 @@ export function PacketFormFieldsSidebar({
   onSaveChanges,
   onResetPlacement,
   onRevertToDefault,
-  itemRefs,
+  fieldRefs,
+  listRef,
 }: PacketFormFieldsSidebarProps) {
   const dirtyInstanceIds = getDirtyFieldInstanceIds(
     draftValuesByInstanceId,
@@ -79,7 +82,10 @@ export function PacketFormFieldsSidebar({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div
+        ref={listRef}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+      >
         {fields.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No template placements found for this form.
@@ -88,7 +94,8 @@ export function PacketFormFieldsSidebar({
           <div className="divide-y rounded-md border">
             {fields.map((fieldView) => {
               const field = fieldView.instance.fields;
-              const isSelected = selectedMappingId === fieldView.mapping.id;
+              const selectionKey = getPacketFormFieldSelectionKey(fieldView);
+              const isSelected = selectedFieldKey === selectionKey;
               const label = packetFieldSidebarLabel(fieldView);
               const instanceId = fieldView.instance.id;
               const draftValue = draftValuesByInstanceId[instanceId] ?? "";
@@ -100,21 +107,33 @@ export function PacketFormFieldsSidebar({
 
               return (
                 <div
-                  key={fieldView.mapping.id}
+                  key={selectionKey}
                   ref={(element) => {
-                    itemRefs.current[fieldView.mapping.id] = element;
+                    fieldRefs.current[selectionKey] = element;
                   }}
                   className={cn(
                     "flex flex-col gap-2 p-3 text-sm transition-colors",
-                    isSelected && "bg-amber-50 dark:bg-amber-950/20",
+                    isSelected &&
+                      "bg-amber-50 ring-2 ring-inset ring-amber-400 dark:bg-amber-950/30",
                     isDirty &&
+                      !isSelected &&
+                      "border-l-2 border-l-sky-500 pl-[calc(0.75rem-2px)]",
+                    isDirty &&
+                      isSelected &&
                       "border-l-2 border-l-sky-500 pl-[calc(0.75rem-2px)]",
                   )}
                 >
-                  <button
-                    type="button"
-                    className="flex flex-col gap-1 text-left"
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className="flex cursor-pointer flex-col gap-1 text-left"
                     onClick={() => onSelectField(fieldView)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelectField(fieldView);
+                      }
+                    }}
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{label}</span>
@@ -138,7 +157,7 @@ export function PacketFormFieldsSidebar({
                       {field?.field_key ?? "—"} · Page{" "}
                       {fieldView.placement.page_number}
                     </p>
-                  </button>
+                  </div>
 
                   <div
                     onClick={(event) => event.stopPropagation()}

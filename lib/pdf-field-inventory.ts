@@ -11,6 +11,8 @@ import {
   type FormFieldMapping,
 } from "@/lib/types/form-field-mapping";
 import type { PdfFieldInventoryItem } from "@/lib/pdf-field-extract";
+import { isCheckboxWidgetType } from "@/lib/field-instances";
+import { CHECKBOX_MAPPING_SIZE_PX } from "@/lib/checkbox-constants";
 
 export type ApplyPdfFieldInventoryResult = {
   createdFields: number;
@@ -120,8 +122,12 @@ export async function applyPdfFieldInventory(
       page_number: item.pageNumber,
       x: item.x,
       y: item.y,
-      width: item.width,
-      height: item.height,
+      width: isCheckboxWidgetType(item.fieldWidgetType)
+        ? CHECKBOX_MAPPING_SIZE_PX
+        : item.width,
+      height: isCheckboxWidgetType(item.fieldWidgetType)
+        ? CHECKBOX_MAPPING_SIZE_PX
+        : item.height,
       page_width: item.pageWidth,
       page_height: item.pageHeight,
       font_size: 10,

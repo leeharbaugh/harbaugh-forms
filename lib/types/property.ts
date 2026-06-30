@@ -85,7 +85,6 @@ export type Property = {
   lot: string | null;
   block: string | null;
   addition: string | null;
-  subdivision: string | null;
   tax_id: string | null;
   geo_id: string | null;
   school_district: string | null;
@@ -150,7 +149,6 @@ export type PropertyInput = {
   lot: string;
   block: string;
   addition: string;
-  subdivision: string;
   tax_id: string;
   geo_id: string;
   school_district: string;
@@ -232,7 +230,6 @@ export const emptyPropertyInput = (): PropertyInput => ({
   lot: "",
   block: "",
   addition: "",
-  subdivision: "",
   tax_id: "",
   geo_id: "",
   school_district: "",
@@ -296,7 +293,6 @@ export function propertyToInput(property: Property): PropertyInput {
     lot: optionalString(property.lot),
     block: optionalString(property.block),
     addition: optionalString(property.addition),
-    subdivision: optionalString(property.subdivision),
     tax_id: optionalString(property.tax_id),
     geo_id: optionalString(property.geo_id),
     school_district: optionalString(property.school_district),
@@ -474,7 +470,6 @@ export function normalizePropertyInput(input: PropertyInput) {
     lot: trim(input.lot) || null,
     block: trim(input.block) || null,
     addition: trim(input.addition) || null,
-    subdivision: trim(input.subdivision) || null,
     tax_id: trim(input.tax_id) || null,
     geo_id: trim(input.geo_id) || null,
     school_district: trim(input.school_district) || null,
@@ -514,3 +509,11 @@ export function normalizePropertyInput(input: PropertyInput) {
     occupancy_status: trim(input.occupancy_status) || null,
   };
 }
+
+/** MLS feed column names mapped to canonical property fields (future import). */
+export const MLS_PROPERTY_FIELD_ALIASES: Record<string, keyof PropertyInput> = {
+  Subdivision: "addition",
+  subdivision: "addition",
+  Addition: "addition",
+  addition: "addition",
+};

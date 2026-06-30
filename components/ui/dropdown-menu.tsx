@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
+import { AppCheckboxVisual, APP_CHECKBOX_SIZE_CLASS } from "@/components/ui/app-checkbox";
 import { Check, ChevronRight, Circle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -106,10 +107,13 @@ const DropdownMenuCheckboxItem = React.forwardRef<
     checked={checked}
     {...props}
   >
-    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-      <DropdownMenuPrimitive.ItemIndicator>
-        <Check className="h-4 w-4" />
-      </DropdownMenuPrimitive.ItemIndicator>
+    <span
+      className={cn(
+        "absolute left-2 flex items-center justify-center",
+        APP_CHECKBOX_SIZE_CLASS,
+      )}
+    >
+      <AppCheckboxVisual checked={checked === true} />
     </span>
     {children}
   </DropdownMenuPrimitive.CheckboxItem>

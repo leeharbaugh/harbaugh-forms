@@ -1,6 +1,6 @@
 "use client";
 
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -10,6 +10,7 @@ import {
   applyWidgetTypeDefaults,
   formatFieldWidgetType,
 } from "@/lib/types/pdf-field-mapping-editor";
+import { CHECKBOX_MAPPING_SIZE_PX, CHECKBOX_VISUAL_SIZE_PX } from "@/lib/checkbox-constants";
 import { cn } from "@/lib/utils";
 
 type PdfPlacementFormFieldsProps = {
@@ -30,6 +31,7 @@ export function PdfPlacementFormFields({
   showLayoutFields = true,
   layoutReadOnly = false,
 }: PdfPlacementFormFieldsProps) {
+  const isCheckboxMapping = value.field_widget_type === "checkbox";
   const setField = <K extends keyof PdfMappingEditorInput>(
     key: K,
     fieldValue: PdfMappingEditorInput[K],
@@ -150,9 +152,13 @@ export function PdfPlacementFormFields({
             <Label htmlFor="mapping_width">Width *</Label>
             <Input
               id="mapping_width"
-              value={value.width}
+              value={
+                isCheckboxMapping
+                  ? String(CHECKBOX_MAPPING_SIZE_PX)
+                  : value.width
+              }
               onChange={(event) => setField("width", event.target.value)}
-              disabled={readOnly || layoutReadOnly}
+              disabled={readOnly || layoutReadOnly || isCheckboxMapping}
               required
             />
           </div>
@@ -160,11 +166,21 @@ export function PdfPlacementFormFields({
             <Label htmlFor="mapping_height">Height *</Label>
             <Input
               id="mapping_height"
-              value={value.height}
+              value={
+                isCheckboxMapping
+                  ? String(CHECKBOX_MAPPING_SIZE_PX)
+                  : value.height
+              }
               onChange={(event) => setField("height", event.target.value)}
-              disabled={readOnly || layoutReadOnly}
+              disabled={readOnly || layoutReadOnly || isCheckboxMapping}
               required
             />
+            {isCheckboxMapping && (
+              <p className="text-xs text-muted-foreground">
+                Checkbox placements render at {CHECKBOX_VISUAL_SIZE_PX}×
+                {CHECKBOX_VISUAL_SIZE_PX}px on the PDF.
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="mapping_font_size">Font size *</Label>
@@ -180,7 +196,7 @@ export function PdfPlacementFormFields({
       )}
 
       <div className="flex items-center gap-2 sm:col-span-2">
-        <Checkbox
+        <AppCheckbox
           id="mapping_required"
           checked={value.required}
           onCheckedChange={(checked) => setField("required", checked === true)}

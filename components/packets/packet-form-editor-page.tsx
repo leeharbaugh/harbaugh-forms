@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { useId } from "react";
 
 const PacketFormEditor = dynamic(
   () =>
@@ -28,6 +29,8 @@ export function PacketFormEditorPage({
   packetId,
   packetFormId,
 }: PacketFormEditorPageProps) {
+  const editorInstanceId = useId();
+
   if (!Number.isFinite(packetId) || !Number.isFinite(packetFormId)) {
     return (
       <div className="space-y-4">
@@ -40,6 +43,10 @@ export function PacketFormEditorPage({
   }
 
   return (
-    <PacketFormEditor packetId={packetId} packetFormId={packetFormId} />
+    <PacketFormEditor
+      key={editorInstanceId}
+      packetId={packetId}
+      packetFormId={packetFormId}
+    />
   );
 }

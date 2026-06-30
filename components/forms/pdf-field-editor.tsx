@@ -1,6 +1,5 @@
 "use client";
 
-import "@/lib/pdfjs-setup";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
@@ -9,6 +8,7 @@ import { PdfFieldInventoryPanel } from "@/components/forms/pdf-field-inventory-p
 import { PdfFieldOverlay } from "@/components/forms/pdf-field-overlay";
 import { PdfFieldPlacementDialog } from "@/components/forms/pdf-field-placement-dialog";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { createActiveField } from "@/lib/field-catalog";
 import { getFormPdfSignedUrl } from "@/lib/form-storage";
@@ -52,17 +52,24 @@ import {
   clickToPdfCoordinates,
   formFieldMappingToPlacedPdfField,
   getDefaultFieldDimensions,
+  getEffectivePdfFieldDimensions,
+  normalizeCheckboxPdfPlacement,
   pdfToRenderRect,
-  renderRectToPdfPlacement,
+  renderRectToPdfPlacementForField,
 } from "@/lib/types/template-pdf-field";
 import { cn } from "@/lib/utils";
+import { usePdfEditorSession } from "@/lib/use-pdf-editor-session";
 import {
   PDF_EDITOR_SIDEBAR_WIDTH,
   PDF_MIN_PAGE_WIDTH,
+  type PdfWorkspaceScrollSnapshot,
   type PdfZoomMode,
   afterLayoutSettled,
+  capturePdfWorkspaceScroll,
   computePdfPageWidth,
   displayZoomPercent,
+  restorePdfWorkspaceScroll,
+  restorePdfWorkspaceScrollWhenReady,
   scrollElementIntoContainer,
   stepZoomPercent,
 } from "@/lib/pdf-editor-zoom";
@@ -79,6 +86,19 @@ type PdfFieldEditorProps = {
 type PartialPageMetrics = Partial<PageMetrics>;
 
 const PLACEMENT_EPSILON = 0.5;
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName;
+  if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") {
+    return true;
+  }
+
+  return target.isContentEditable;
+}
 
 function mappingLayoutMatches(
   mapping: PlacedPdfField,
@@ -182,16 +202,27 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   const [selectedMappingId, setSelectedMappingId] = useState<string | null>(
     null,
   );
+  const [mappingPendingDelete, setMappingPendingDelete] =
+    useState<PlacedPdfField | null>(null);
   const pdfWorkspaceRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const inventoryListRef = useRef<HTMLDivElement>(null);
   const inventoryItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const pendingScrollRestoreRef = useRef<PdfWorkspaceScrollSnapshot | null>(
+    null,
+  );
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 });
   const [basePageWidth, setBasePageWidth] = useState<number | null>(null);
   const [basePageHeight, setBasePageHeight] = useState<number | null>(null);
   const [zoomMode, setZoomMode] = useState<PdfZoomMode>("fit-width");
   const [zoomPercent, setZoomPercent] = useState(100);
   const [useComfortableDefault, setUseComfortableDefault] = useState(true);
+  const {
+    beginLoadRequest,
+    prepareFullScreenLoad,
+    isPdfRenderReady,
+    documentKey,
+  } = usePdfEditorSession(pdfUrl, isLoading);
 
   useEffect(() => {
     const element = pdfWorkspaceRef.current;
@@ -291,79 +322,205 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   const loadData = useCallback(
     async (options?: { showFullScreenLoading?: boolean }) => {
       const showFullScreenLoading = options?.showFullScreenLoading ?? false;
+      const request = beginLoadRequest();
+
       if (showFullScreenLoading) {
         setIsLoading(true);
+        prepareFullScreenLoad();
+        setPdfUrl(null);
+        setNumPages(0);
+        setPageMetrics({});
+        setBasePageWidth(null);
+        setBasePageHeight(null);
       }
       setLoadError(null);
 
-    const supabase = createClient();
+      const supabase = createClient();
 
-    const [templateResult, mappingsResult, catalogResult] = await Promise.all([
-      supabase
-        .from("forms")
-        .select("*")
-        .eq("id", formId)
-        .eq("status", "ACTIVE")
-        .single(),
-      supabase
-        .from("form_field_mappings")
-        .select(FORM_FIELD_MAPPING_SELECT)
-        .eq("form_id", formId)
-        .eq("status", "ACTIVE")
-        .order("page_number", { ascending: true })
-        .order("occurrence_index", { ascending: true }),
-      supabase
-        .from("fields")
-        .select("*")
-        .in("status", ["ACTIVE", "INACTIVE"])
-        .order("field_key", { ascending: true }),
-    ]);
+      const [templateResult, mappingsResult, catalogResult] = await Promise.all([
+        supabase
+          .from("forms")
+          .select("*")
+          .eq("id", formId)
+          .eq("status", "ACTIVE")
+          .single(),
+        supabase
+          .from("form_field_mappings")
+          .select(FORM_FIELD_MAPPING_SELECT)
+          .eq("form_id", formId)
+          .eq("status", "ACTIVE")
+          .order("page_number", { ascending: true })
+          .order("occurrence_index", { ascending: true }),
+        supabase
+          .from("fields")
+          .select("*")
+          .in("status", ["ACTIVE", "INACTIVE"])
+          .order("field_key", { ascending: true }),
+      ]);
 
-    if (templateResult.error || !templateResult.data) {
-      setLoadError(templateResult.error?.message ?? "Form template not found.");
-      setTemplate(null);
-      setMappings([]);
-      setCatalogFields([]);
-      setPdfUrl(null);
-      setIsLoading(false);
+      if (!request.isCurrent()) {
+        return;
+      }
+
+      if (templateResult.error || !templateResult.data) {
+        setLoadError(templateResult.error?.message ?? "Form template not found.");
+        setTemplate(null);
+        setMappings([]);
+        setCatalogFields([]);
+        setPdfUrl(null);
+        if (showFullScreenLoading) {
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      const nextTemplate = templateResult.data as Form;
+      setTemplate(nextTemplate);
+
+      if (mappingsResult.error) {
+        setLoadError(mappingsResult.error.message);
+        setMappings([]);
+      } else {
+        const rows = (mappingsResult.data as FormFieldMapping[]) ?? [];
+        setMappings(rows.map((row) => formFieldMappingToPlacedPdfField(row)));
+      }
+
+      if (catalogResult.error) {
+        setLoadError(catalogResult.error.message);
+        setCatalogFields([]);
+      } else {
+        setCatalogFields((catalogResult.data as Field[]) ?? []);
+      }
+
+      if (showFullScreenLoading) {
+        try {
+          const signedUrl = await getFormPdfSignedUrl(
+            supabase,
+            nextTemplate.source_storage_path,
+          );
+
+          if (!request.isCurrent()) {
+            return;
+          }
+
+          setPdfUrl(signedUrl);
+        } catch (urlError) {
+          if (!request.isCurrent()) {
+            return;
+          }
+
+          setLoadError(
+            urlError instanceof Error
+              ? urlError.message
+              : "Failed to load the template PDF.",
+          );
+          setPdfUrl(null);
+        }
+      }
+
+      if (request.isCurrent() && showFullScreenLoading) {
+        setIsLoading(false);
+      }
+    },
+    [formId, beginLoadRequest, prepareFullScreenLoad],
+  );
+
+  const captureWorkspaceScroll = useCallback((): PdfWorkspaceScrollSnapshot => {
+    return capturePdfWorkspaceScroll({
+      workspace: pdfWorkspaceRef.current,
+      pageRefs: pageRefs.current,
+      selectedMappingId,
+      mappings,
+    });
+  }, [selectedMappingId, mappings]);
+
+  const queueWorkspaceScrollRestore = useCallback(
+    (snapshot?: PdfWorkspaceScrollSnapshot) => {
+      pendingScrollRestoreRef.current = snapshot ?? captureWorkspaceScroll();
+    },
+    [captureWorkspaceScroll],
+  );
+
+  const applyPendingWorkspaceScrollRestore = useCallback(() => {
+    const snapshot = pendingScrollRestoreRef.current;
+    if (!snapshot) {
       return;
     }
 
-    const nextTemplate = templateResult.data as Form;
-    setTemplate(nextTemplate);
+    pendingScrollRestoreRef.current = null;
+    restorePdfWorkspaceScrollWhenReady({
+      snapshot,
+      workspace: pdfWorkspaceRef.current,
+      pageRefs: pageRefs.current,
+      inventoryList: inventoryListRef.current,
+      inventoryItemRefs: inventoryItemRefs.current,
+      isReady: () => isPdfRenderReady && numPages > 0,
+    });
+  }, [isPdfRenderReady, numPages]);
 
-    if (mappingsResult.error) {
-      setLoadError(mappingsResult.error.message);
-      setMappings([]);
-    } else {
-      const rows = (mappingsResult.data as FormFieldMapping[]) ?? [];
-      setMappings(rows.map((row) => formFieldMappingToPlacedPdfField(row)));
+  const restoreWorkspaceScroll = useCallback(
+    (snapshot: PdfWorkspaceScrollSnapshot) => {
+      restorePdfWorkspaceScroll({
+        snapshot,
+        workspace: pdfWorkspaceRef.current,
+        inventoryList: inventoryListRef.current,
+        inventoryItemRefs: inventoryItemRefs.current,
+      });
+    },
+    [],
+  );
+
+  const refreshEditorData = useCallback(
+    async (options?: { preserveScroll?: boolean }) => {
+      if (options?.preserveScroll) {
+        queueWorkspaceScrollRestore();
+      }
+
+      const supabase = createClient();
+      const [mappingsResult, catalogResult] = await Promise.all([
+        supabase
+          .from("form_field_mappings")
+          .select(FORM_FIELD_MAPPING_SELECT)
+          .eq("form_id", formId)
+          .eq("status", "ACTIVE")
+          .order("page_number", { ascending: true })
+          .order("occurrence_index", { ascending: true }),
+        supabase
+          .from("fields")
+          .select("*")
+          .in("status", ["ACTIVE", "INACTIVE"])
+          .order("field_key", { ascending: true }),
+      ]);
+
+      if (mappingsResult.error) {
+        setLoadError(mappingsResult.error.message);
+      } else {
+        const rows = (mappingsResult.data as FormFieldMapping[]) ?? [];
+        setMappings(rows.map((row) => formFieldMappingToPlacedPdfField(row)));
+      }
+
+      if (catalogResult.error) {
+        setLoadError(catalogResult.error.message);
+      } else {
+        setCatalogFields((catalogResult.data as Field[]) ?? []);
+      }
+    },
+    [formId, queueWorkspaceScrollRestore],
+  );
+
+  useEffect(() => {
+    if (!pendingScrollRestoreRef.current) {
+      return;
     }
 
-    if (catalogResult.error) {
-      setLoadError(catalogResult.error.message);
-      setCatalogFields([]);
-    } else {
-      setCatalogFields((catalogResult.data as Field[]) ?? []);
-    }
-
-    try {
-      const signedUrl = await getFormPdfSignedUrl(
-        supabase,
-        nextTemplate.source_storage_path,
-      );
-      setPdfUrl(signedUrl);
-    } catch (urlError) {
-      setLoadError(
-        urlError instanceof Error
-          ? urlError.message
-          : "Failed to load the template PDF.",
-      );
-      setPdfUrl(null);
-    }
-
-    setIsLoading(false);
-  }, [formId]);
+    applyPendingWorkspaceScrollRestore();
+  }, [
+    mappings,
+    catalogFields,
+    isPdfRenderReady,
+    numPages,
+    applyPendingWorkspaceScrollRestore,
+  ]);
 
   useEffect(() => {
     void loadData({ showFullScreenLoading: true });
@@ -410,7 +567,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         inventory.items,
       );
       setInventoryApplyResult(result);
-      await loadData();
+      await refreshEditorData({ preserveScroll: true });
     } catch (error) {
       setInventoryError(
         error instanceof Error
@@ -472,17 +629,21 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   }, []);
 
   const restorePdfViewerAfterPlacement = useCallback(
-    (pageNumber: number, mappingId: string, scrollTop: number) => {
-      afterLayoutSettled(() => {
-        const workspace = pdfWorkspaceRef.current;
-        if (workspace) {
-          workspace.scrollTop = scrollTop;
-        }
-        scrollPdfPageIntoView(pageNumber);
-        scrollInventoryItemIntoView(mappingId);
+    (pageNumber: number, mappingId: string, snapshot: PdfWorkspaceScrollSnapshot) => {
+      restorePdfWorkspaceScrollWhenReady({
+        snapshot: {
+          ...snapshot,
+          pageNumber,
+          mappingId,
+        },
+        workspace: pdfWorkspaceRef.current,
+        pageRefs: pageRefs.current,
+        inventoryList: inventoryListRef.current,
+        inventoryItemRefs: inventoryItemRefs.current,
+        isReady: () => isPdfRenderReady && numPages > 0,
       });
     },
-    [scrollInventoryItemIntoView, scrollPdfPageIntoView],
+    [isPdfRenderReady, numPages],
   );
 
   const updatePageMetrics = (
@@ -543,7 +704,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     const normalized = normalizePdfMappingEditorInput(placementValue);
     const metrics = pageMetrics[pendingPlacement.pageNumber];
     const placementPageNumber = pendingPlacement.pageNumber;
-    const workspaceScrollTop = pdfWorkspaceRef.current?.scrollTop ?? 0;
+    const scrollSnapshot = captureWorkspaceScroll();
     setIsSaving(true);
     setSaveError(null);
 
@@ -596,7 +757,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       restorePdfViewerAfterPlacement(
         placementPageNumber,
         newMapping.id,
-        workspaceScrollTop,
+        scrollSnapshot,
       );
     } catch (placementError) {
       setSaveError(
@@ -617,6 +778,11 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       return;
     }
 
+    await executeDeleteMapping(mapping);
+  };
+
+  const executeDeleteMapping = async (mapping: PlacedPdfField) => {
+    const scrollSnapshot = captureWorkspaceScroll();
     setDeleteError(null);
     setIsDeletingId(mapping.id);
 
@@ -635,15 +801,79 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     }
 
     if (editingMapping?.id === mapping.id) {
-      closeEditDialog();
+      setEditingMapping(null);
+      setEditError(null);
+      setEditValue(emptyPdfMappingEditorInput());
+      setEditFieldValue(emptyFieldInput());
     }
 
     if (selectedMappingId === mapping.id) {
       setSelectedMappingId(null);
     }
 
-    await loadData();
+    setMappings((current) => current.filter((item) => item.id !== mapping.id));
+    restoreWorkspaceScroll({
+      ...scrollSnapshot,
+      mappingId:
+        scrollSnapshot.mappingId === mapping.id
+          ? null
+          : scrollSnapshot.mappingId,
+    });
   };
+
+  const handleConfirmKeyboardDelete = async () => {
+    if (!mappingPendingDelete) {
+      return;
+    }
+
+    const mapping = mappingPendingDelete;
+    setMappingPendingDelete(null);
+    await executeDeleteMapping(mapping);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") {
+        return;
+      }
+
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+
+      if (
+        !selectedMappingId ||
+        editingMapping ||
+        pendingPlacement ||
+        mappingPendingDelete
+      ) {
+        return;
+      }
+
+      if (isDeletingId || isDeleting) {
+        return;
+      }
+
+      const mapping = mappings.find((item) => item.id === selectedMappingId);
+      if (!mapping) {
+        return;
+      }
+
+      event.preventDefault();
+      setMappingPendingDelete(mapping);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    selectedMappingId,
+    mappings,
+    editingMapping,
+    pendingPlacement,
+    mappingPendingDelete,
+    isDeletingId,
+    isDeleting,
+  ]);
 
   const selectMappingFromOverlay = useCallback(
     (mapping: PlacedPdfField) => {
@@ -697,6 +927,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
     const normalizedPlacement = normalizePdfMappingEditorInput(editValue);
     const normalizedField = normalizeFieldInput(editFieldValue);
+    const scrollSnapshot = captureWorkspaceScroll();
+    const preservedMappingId = editingMapping.id;
     setIsEditing(true);
     setEditError(null);
 
@@ -736,12 +968,34 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         mappingData as FormFieldMapping,
       );
       setMappings((current) =>
-        current.map((item) =>
-          item.id === updatedMapping.id ? updatedMapping : item,
+        sortPlacedPdfFields(
+          current.map((item) =>
+            item.id === updatedMapping.id ? updatedMapping : item,
+          ),
         ),
       );
+
+      const { data: fieldData, error: fieldFetchError } = await supabase
+        .from("fields")
+        .select("*")
+        .eq("id", editingMapping.field_id)
+        .single();
+
+      if (!fieldFetchError && fieldData) {
+        setCatalogFields((current) =>
+          current.map((field) =>
+            field.id === fieldData.id ? (fieldData as Field) : field,
+          ),
+        );
+      }
+
+      setSelectedMappingId(preservedMappingId);
       closeEditDialog();
-      await loadData();
+      restoreWorkspaceScroll({
+        ...scrollSnapshot,
+        pageNumber: updatedMapping.page_number,
+        mappingId: preservedMappingId,
+      });
     } catch (editSaveError) {
       setIsEditing(false);
       setEditError(
@@ -791,21 +1045,23 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       return;
     }
 
+    const scrollSnapshot = captureWorkspaceScroll();
+    const normalizedUpdates = normalizeCheckboxPdfPlacement(mapping, updates);
     setUpdatingMappingId(mapping.id);
     setUpdateLayoutError(null);
     updateMappingInState(mapping.id, {
-      x_position: updates.x,
-      y_position: updates.y,
-      width: updates.width ?? mapping.width,
-      height: updates.height ?? mapping.height,
-      page_width: updates.page_width,
-      page_height: updates.page_height,
+      x_position: normalizedUpdates.x,
+      y_position: normalizedUpdates.y,
+      width: normalizedUpdates.width ?? mapping.width,
+      height: normalizedUpdates.height ?? mapping.height,
+      page_width: normalizedUpdates.page_width,
+      page_height: normalizedUpdates.page_height,
     });
 
     const supabase = createClient();
     const { error } = await supabase
       .from("form_field_mappings")
-      .update(updates)
+      .update(normalizedUpdates)
       .eq("id", mapping.id)
       .eq("status", "ACTIVE");
 
@@ -813,8 +1069,11 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
     if (error) {
       setUpdateLayoutError(error.message);
-      await loadData();
+      await refreshEditorData({ preserveScroll: true });
+      return;
     }
+
+    restoreWorkspaceScroll(scrollSnapshot);
   };
 
   const handleOverlayDragStop = (
@@ -824,7 +1083,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     y: number,
   ) => {
     const rect = pdfToRenderRect(mapping, metrics);
-    const placement = renderRectToPdfPlacement(
+    const placement = renderRectToPdfPlacementForField(
+      mapping,
       { x, y, width: rect.width, height: rect.height },
       metrics,
       mapping,
@@ -833,6 +1093,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     void persistMappingLayout(mapping, {
       x: placement.x,
       y: placement.y,
+      width: placement.width,
+      height: placement.height,
       page_width: placement.page_width,
       page_height: placement.page_height,
     });
@@ -846,7 +1108,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     width: number,
     height: number,
   ) => {
-    const placement = renderRectToPdfPlacement(
+    const placement = renderRectToPdfPlacementForField(
+      mapping,
       { x, y, width, height },
       metrics,
       mapping,
@@ -885,9 +1148,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         mapping.page_height ??
         792;
 
-      const defaults = getDefaultFieldDimensions(mapping.field_type);
-      const width = mapping.width ?? defaults.width;
-      const height = mapping.height ?? defaults.height;
+      const { width, height } = getEffectivePdfFieldDimensions(mapping);
       const clamped = clampPdfPlacementToPage({
         x: mapping.x_position,
         y: mapping.y_position,
@@ -907,6 +1168,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         page_height: pageHeight,
       };
 
+      const scrollSnapshot = captureWorkspaceScroll();
       setUpdatingMappingId(mapping.id);
       setUpdateLayoutError(null);
       updateMappingInState(mapping.id, {
@@ -932,7 +1194,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
       if (error) {
         setUpdateLayoutError(error.message);
-        await loadData();
+        await refreshEditorData({ preserveScroll: true });
         return;
       }
 
@@ -940,13 +1202,17 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         data as FormFieldMapping,
       );
       setMappings((current) =>
-        current.map((item) =>
-          item.id === updatedMapping.id ? updatedMapping : item,
+        sortPlacedPdfFields(
+          current.map((item) =>
+            item.id === updatedMapping.id ? updatedMapping : item,
+          ),
         ),
       );
       setSelectedMappingId(updatedMapping.id);
-      afterLayoutSettled(() => {
-        scrollPdfPageIntoView(newPageNumber);
+      restoreWorkspaceScroll({
+        ...scrollSnapshot,
+        pageNumber: newPageNumber,
+        mappingId: updatedMapping.id,
       });
     },
     [
@@ -954,8 +1220,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       pageMetrics,
       basePageWidth,
       basePageHeight,
-      loadData,
-      scrollPdfPageIntoView,
+      refreshEditorData,
+      captureWorkspaceScroll,
+      restoreWorkspaceScroll,
+      sortPlacedPdfFields,
     ],
   );
 
@@ -1069,11 +1337,16 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
             )}
             {!pdfUrl ? (
               <p className="p-4 text-sm text-muted-foreground">
-                No PDF preview available for this template.
+                {isLoading
+                  ? "Loading PDF..."
+                  : "No PDF preview available for this template."}
               </p>
+            ) : !isPdfRenderReady ? (
+              <p className="p-4 text-sm text-muted-foreground">Loading PDF...</p>
             ) : (
               <div className="flex min-h-full flex-col items-center gap-8 p-6">
                 <Document
+                  key={`${documentKey}-${pdfUrl}`}
                   file={pdfUrl}
                   onLoadSuccess={({ numPages: loadedPages }) =>
                     setNumPages(loadedPages)
@@ -1423,6 +1696,18 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         isSubmitting={isEditing}
         isDeleting={isDeleting}
         error={editError}
+      />
+
+      <ConfirmDialog
+        open={mappingPendingDelete != null}
+        title="Remove field placement?"
+        message="Remove this field placement from this form? This will not delete the reusable field definition."
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        variant="destructive"
+        isConfirming={isDeletingId === mappingPendingDelete?.id}
+        onConfirm={() => void handleConfirmKeyboardDelete()}
+        onCancel={() => setMappingPendingDelete(null)}
       />
     </div>
   );

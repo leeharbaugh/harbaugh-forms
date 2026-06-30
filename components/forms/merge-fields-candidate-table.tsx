@@ -1,6 +1,6 @@
 "use client";
 
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import type { FieldMergeCandidateEntry, FieldMergeGroupSelection } from "@/lib/field-merge-candidates";
 import {
   setCanonicalFieldSelection,
@@ -509,7 +509,7 @@ export function MergeFieldsCandidateTable({
                     />
                   </td>
                   <td className="px-3 py-3 text-center align-middle">
-                    <Checkbox
+                    <AppCheckbox
                       checked={isDuplicate}
                       disabled={isCanonical}
                       onCheckedChange={() =>

@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import {
   Card,
   CardContent,
@@ -90,7 +90,7 @@ export function PacketFormFieldValueDialog({
 
             {isCheckbox ? (
               <div className="flex items-center gap-2">
-                <Checkbox
+                <AppCheckbox
                   id="packet_field_checkbox_value"
                   checked={checkboxChecked}
                   onCheckedChange={(checked) =>

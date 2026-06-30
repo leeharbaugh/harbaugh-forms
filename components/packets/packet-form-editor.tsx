@@ -1,6 +1,5 @@
 "use client";
 
-import "@/lib/pdfjs-setup";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
@@ -22,11 +21,17 @@ import type { FieldResolutionDiagnostic } from "@/lib/field-resolver";
 import {
   PDF_EDITOR_SIDEBAR_WIDTH,
   PDF_MIN_PAGE_WIDTH,
+  type PdfWorkspaceScrollSnapshot,
   type PdfZoomMode,
+  afterLayoutSettled,
+  capturePdfWorkspaceScroll,
   computePdfPageWidth,
   displayZoomPercent,
+  restorePdfWorkspaceScrollWhenReady,
+  scrollElementIntoContainer,
   stepZoomPercent,
 } from "@/lib/pdf-editor-zoom";
+import { downloadFilledPacketFormPdf } from "@/lib/packet-form-download";
 import { createClient } from "@/lib/supabase/client";
 import { formatFormReference } from "@/lib/types/form";
 import type { FieldInstanceWithField } from "@/lib/types/field-instance";
@@ -34,16 +39,18 @@ import {
   applyDraftValuesToFieldViews,
   buildDraftValuesFromFieldViews,
   getDirtyFieldInstanceIds,
+  getPacketFormFieldSelectionKey,
   packetFormFieldViewToOverlayField,
   type PacketFormFieldView,
 } from "@/lib/types/packet-form-editor";
 import {
   type PageMetrics,
   pdfToRenderRect,
-  renderRectToPdfPlacement,
+  renderRectToPdfPlacementForField,
 } from "@/lib/types/template-pdf-field";
 import { cn } from "@/lib/utils";
-import { Minus, Plus, RefreshCw } from "lucide-react";
+import { usePdfEditorSession } from "@/lib/use-pdf-editor-session";
+import { Minus, Plus, Download, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
@@ -59,7 +66,11 @@ export function PacketFormEditor({
   packetId,
   packetFormId,
 }: PacketFormEditorProps) {
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [packetFormRecordId, setPacketFormRecordId] = useState(packetFormId);
   const [documentName, setDocumentName] = useState("");
+  const [storagePath, setStoragePath] = useState<string | null>(null);
   const [formId, setFormId] = useState<number | null>(null);
   const [formName, setFormName] = useState("");
   const [fields, setFields] = useState<PacketFormFieldView[]>([]);
@@ -99,18 +110,28 @@ export function PacketFormEditor({
   >(null);
   const [showResolutionDiagnostics, setShowResolutionDiagnostics] =
     useState(false);
-  const [selectedMappingId, setSelectedMappingId] = useState<string | null>(
+  const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(
     null,
   );
   const pdfWorkspaceRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const sidebarItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const sidebarListRef = useRef<HTMLDivElement>(null);
+  const sidebarFieldRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const pendingScrollRestoreRef = useRef<PdfWorkspaceScrollSnapshot | null>(
+    null,
+  );
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 });
   const [basePageWidth, setBasePageWidth] = useState<number | null>(null);
   const [basePageHeight, setBasePageHeight] = useState<number | null>(null);
   const [zoomMode, setZoomMode] = useState<PdfZoomMode>("fit-width");
   const [zoomPercent, setZoomPercent] = useState(100);
   const [useComfortableDefault, setUseComfortableDefault] = useState(true);
+  const {
+    beginLoadRequest,
+    prepareFullScreenLoad,
+    isPdfRenderReady,
+    documentKey,
+  } = usePdfEditorSession(pdfUrl, isLoading);
 
   useEffect(() => {
     const element = pdfWorkspaceRef.current;
@@ -207,54 +228,155 @@ export function PacketFormEditor({
     setBasePageHeight(height);
   };
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError(null);
+  const loadData = useCallback(
+    async (options?: { showFullScreenLoading?: boolean }) => {
+      const showFullScreenLoading = options?.showFullScreenLoading ?? false;
+      const request = beginLoadRequest();
 
-    const supabase = createClient();
+      if (showFullScreenLoading) {
+        setIsLoading(true);
+        prepareFullScreenLoad();
+        setPdfUrl(null);
+        setNumPages(0);
+        setPageMetrics({});
+        setBasePageWidth(null);
+        setBasePageHeight(null);
+      }
+      setLoadError(null);
 
-    try {
+      const supabase = createClient();
+
+      try {
+        const data = await loadPacketFormEditorData(supabase, packetFormId);
+
+        if (!request.isCurrent()) {
+          return;
+        }
+
+        if (data.packetForm.packet_id !== packetId) {
+          throw new Error("Packet form does not belong to this packet.");
+        }
+
+        setDocumentName(data.packetForm.document_name);
+        setStoragePath(data.packetForm.storage_path);
+        setPacketFormRecordId(data.packetForm.id);
+        setFormId(data.packetForm.form_id);
+        setFormName(data.packetForm.forms?.form_name ?? "");
+        setFields(data.fields);
+        const valueState = buildDraftValuesFromFieldViews(data.fields);
+        setDraftValuesByInstanceId(valueState);
+        setSavedValuesByInstanceId(valueState);
+        if (showFullScreenLoading) {
+          setPdfUrl(data.pdfUrl);
+        }
+        setPropertyId(data.propertyId);
+        setHasPacketProperty(data.hasPacketProperty);
+        setFieldResolutionDiagnostics(data.fieldResolutionDiagnostics);
+      } catch (error) {
+        if (!request.isCurrent()) {
+          return;
+        }
+
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Failed to load packet form editor.",
+        );
+        setFields([]);
+        setPdfUrl(null);
+        setPropertyId(null);
+        setHasPacketProperty(false);
+        setFieldResolutionDiagnostics(null);
+      } finally {
+        if (request.isCurrent() && showFullScreenLoading) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [packetFormId, packetId, beginLoadRequest, prepareFullScreenLoad],
+  );
+
+  const fieldsWithDraftValues = useMemo(
+    () => applyDraftValuesToFieldViews(fields, draftValuesByInstanceId),
+    [fields, draftValuesByInstanceId],
+  );
+
+  const captureWorkspaceScroll = useCallback((): PdfWorkspaceScrollSnapshot => {
+    return capturePdfWorkspaceScroll({
+      workspace: pdfWorkspaceRef.current,
+      pageRefs: pageRefs.current,
+      selectedMappingId: selectedFieldKey,
+      mappings: fieldsWithDraftValues.map((fieldView) => ({
+        id: getPacketFormFieldSelectionKey(fieldView),
+        page_number: fieldView.placement.page_number,
+      })),
+    });
+  }, [selectedFieldKey, fieldsWithDraftValues]);
+
+  const queueWorkspaceScrollRestore = useCallback(
+    (snapshot?: PdfWorkspaceScrollSnapshot) => {
+      pendingScrollRestoreRef.current = snapshot ?? captureWorkspaceScroll();
+    },
+    [captureWorkspaceScroll],
+  );
+
+  const applyPendingWorkspaceScrollRestore = useCallback(() => {
+    const snapshot = pendingScrollRestoreRef.current;
+    if (!snapshot) {
+      return;
+    }
+
+    pendingScrollRestoreRef.current = null;
+    restorePdfWorkspaceScrollWhenReady({
+      snapshot,
+      workspace: pdfWorkspaceRef.current,
+      pageRefs: pageRefs.current,
+      inventoryList: sidebarListRef.current,
+      inventoryItemRefs: sidebarFieldRefs.current,
+      isReady: () => isPdfRenderReady && numPages > 0,
+    });
+  }, [isPdfRenderReady, numPages]);
+
+  const refreshEditorFields = useCallback(
+    async (options?: { preserveScroll?: boolean }) => {
+      if (options?.preserveScroll) {
+        queueWorkspaceScrollRestore();
+      }
+
+      const supabase = createClient();
       const data = await loadPacketFormEditorData(supabase, packetFormId);
 
       if (data.packetForm.packet_id !== packetId) {
         throw new Error("Packet form does not belong to this packet.");
       }
 
-      setDocumentName(data.packetForm.document_name);
-      setFormId(data.packetForm.form_id);
-      setFormName(data.packetForm.forms?.form_name ?? "");
       setFields(data.fields);
       const valueState = buildDraftValuesFromFieldViews(data.fields);
       setDraftValuesByInstanceId(valueState);
       setSavedValuesByInstanceId(valueState);
-      setPdfUrl(data.pdfUrl);
       setPropertyId(data.propertyId);
       setHasPacketProperty(data.hasPacketProperty);
       setFieldResolutionDiagnostics(data.fieldResolutionDiagnostics);
-    } catch (error) {
-      setLoadError(
-        error instanceof Error
-          ? error.message
-          : "Failed to load packet form editor.",
-      );
-      setFields([]);
-      setPdfUrl(null);
-      setPropertyId(null);
-      setHasPacketProperty(false);
-      setFieldResolutionDiagnostics(null);
-    }
-
-    setIsLoading(false);
-  }, [packetFormId, packetId]);
+    },
+    [packetFormId, packetId, queueWorkspaceScrollRestore],
+  );
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    if (!pendingScrollRestoreRef.current) {
+      return;
+    }
 
-  const fieldsWithDraftValues = useMemo(
-    () => applyDraftValuesToFieldViews(fields, draftValuesByInstanceId),
-    [fields, draftValuesByInstanceId],
-  );
+    applyPendingWorkspaceScrollRestore();
+  }, [
+    fields,
+    isPdfRenderReady,
+    numPages,
+    applyPendingWorkspaceScrollRestore,
+  ]);
+
+  useEffect(() => {
+    void loadData({ showFullScreenLoading: true });
+  }, [loadData]);
 
   const fieldsByPage = useMemo(() => {
     const grouped: Record<number, PacketFormOverlayField[]> = {};
@@ -325,22 +447,88 @@ export function PacketFormEditor({
     );
   };
 
-  const selectField = (fieldView: PacketFormFieldView) => {
-    setSelectedMappingId(fieldView.mapping.id);
-    pageRefs.current[fieldView.placement.page_number]?.scrollIntoView({
+  const scrollSidebarFieldIntoView = useCallback((selectionKey: string) => {
+    const sidebarRow = sidebarFieldRefs.current[selectionKey];
+    if (!sidebarRow) {
+      return;
+    }
+
+    sidebarRow.scrollIntoView({
       behavior: "smooth",
       block: "center",
     });
-    sidebarItemRefs.current[fieldView.mapping.id]?.scrollIntoView({
-      behavior: "smooth",
-      block: "nearest",
-    });
-  };
+  }, []);
 
-  const selectFieldFromOverlay = (overlayField: PacketFormOverlayField) => {
-    const fieldView = findFieldViewByMappingId(overlayField.id);
-    if (fieldView) {
-      selectField(fieldView);
+  const scrollPdfPageIntoView = useCallback((pageNumber: number) => {
+    const workspace = pdfWorkspaceRef.current;
+    const pageElement = pageRefs.current[pageNumber];
+    if (!workspace || !pageElement) {
+      return;
+    }
+
+    scrollElementIntoContainer(workspace, pageElement, 16);
+  }, []);
+
+  const selectFieldFromSidebar = useCallback(
+    (fieldView: PacketFormFieldView) => {
+      const selectionKey = getPacketFormFieldSelectionKey(fieldView);
+      setSelectedFieldKey(selectionKey);
+      afterLayoutSettled(() => {
+        scrollPdfPageIntoView(fieldView.placement.page_number);
+      });
+    },
+    [scrollPdfPageIntoView],
+  );
+
+  const selectFieldFromOverlay = useCallback(
+    (overlayField: PacketFormOverlayField) => {
+      const selectionKey = overlayField.selectionKey;
+
+      if (process.env.NODE_ENV === "development") {
+        console.log("[PacketFormEditor] PDF overlay click", {
+          selectionKey,
+          sidebarRefExists: Boolean(sidebarFieldRefs.current[selectionKey]),
+          fieldKey: overlayField.field_key || null,
+          fieldLabel: overlayField.field_label || null,
+        });
+      }
+
+      setSelectedFieldKey(selectionKey);
+      afterLayoutSettled(() => {
+        scrollSidebarFieldIntoView(selectionKey);
+      });
+    },
+    [scrollSidebarFieldIntoView],
+  );
+
+  const handleDownloadPdf = async () => {
+    if (!storagePath || formId == null) {
+      setDownloadError("No PDF is available to download for this form.");
+      return;
+    }
+
+    setIsDownloadingPdf(true);
+    setDownloadError(null);
+
+    try {
+      const supabase = createClient();
+      await downloadFilledPacketFormPdf(
+        supabase,
+        {
+          id: packetFormRecordId,
+          packet_id: packetId,
+          form_id: formId,
+          document_name: documentName,
+          storage_path: storagePath,
+        },
+        { fields: fieldsWithDraftValues },
+      );
+    } catch (error) {
+      setDownloadError(
+        error instanceof Error ? error.message : "Failed to download PDF.",
+      );
+    } finally {
+      setIsDownloadingPdf(false);
     }
   };
 
@@ -367,7 +555,33 @@ export function PacketFormEditor({
           value: draftValuesByInstanceId[instanceId] ?? "",
         })),
       );
-      await loadData();
+
+      setSavedValuesByInstanceId((current) => {
+        const next = { ...current };
+        for (const instanceId of dirtyInstanceIds) {
+          next[instanceId] = draftValuesByInstanceId[instanceId] ?? "";
+        }
+        return next;
+      });
+
+      setFields((current) =>
+        current.map((fieldView) => {
+          if (!dirtyInstanceIds.includes(fieldView.instance.id)) {
+            return fieldView;
+          }
+
+          const savedValue = draftValuesByInstanceId[fieldView.instance.id] ?? "";
+          return {
+            ...fieldView,
+            displayValue: savedValue,
+            instance: {
+              ...fieldView.instance,
+              value: savedValue,
+              is_override: true,
+            },
+          };
+        }),
+      );
     } catch (error) {
       setSaveError(
         error instanceof Error ? error.message : "Failed to save field values.",
@@ -393,7 +607,9 @@ export function PacketFormEditor({
         packetFormId,
         fieldView.mapping.id,
       );
-      await loadData();
+      const preservedSelectionKey = getPacketFormFieldSelectionKey(fieldView);
+      await refreshEditorFields({ preserveScroll: true });
+      setSelectedFieldKey(preservedSelectionKey);
     } catch (error) {
       setSaveError(
         error instanceof Error
@@ -439,7 +655,11 @@ export function PacketFormEditor({
 
     try {
       await refreshPacketFormFieldValues(supabase, packetFormId);
-      await loadData();
+      const preservedSelectionKey = selectedFieldKey;
+      await refreshEditorFields({ preserveScroll: true });
+      if (preservedSelectionKey) {
+        setSelectedFieldKey(preservedSelectionKey);
+      }
     } catch (error) {
       setRefreshError(
         error instanceof Error
@@ -490,14 +710,13 @@ export function PacketFormEditor({
         formFieldMappingId: fieldView.mapping.id,
         placement,
       });
-      await loadData();
     } catch (error) {
       setUpdateLayoutError(
         error instanceof Error
           ? error.message
           : "Failed to save placement override.",
       );
-      await loadData();
+      await refreshEditorFields({ preserveScroll: true });
     } finally {
       setUpdatingMappingId(null);
     }
@@ -515,7 +734,8 @@ export function PacketFormEditor({
     }
 
     const rect = pdfToRenderRect(overlayField, metrics);
-    const placement = renderRectToPdfPlacement(
+    const placement = renderRectToPdfPlacementForField(
+      overlayField,
       { x, y, width: rect.width, height: rect.height },
       metrics,
       overlayField,
@@ -529,6 +749,8 @@ export function PacketFormEditor({
         page_number: overlayField.page_number,
         x: placement.x,
         y: placement.y,
+        width: placement.width,
+        height: placement.height,
         page_width: placement.page_width,
         page_height: placement.page_height,
         source: "packet_override",
@@ -539,8 +761,8 @@ export function PacketFormEditor({
       page_number: overlayField.page_number,
       x: placement.x,
       y: placement.y,
-      width: overlayField.width ?? placement.width,
-      height: overlayField.height ?? placement.height,
+      width: placement.width,
+      height: placement.height,
       page_width: placement.page_width,
       page_height: placement.page_height,
       font_size: fieldView.placement.font_size,
@@ -561,7 +783,8 @@ export function PacketFormEditor({
       return;
     }
 
-    const placement = renderRectToPdfPlacement(
+    const placement = renderRectToPdfPlacementForField(
+      overlayField,
       { x, y, width, height },
       metrics,
       overlayField,
@@ -636,6 +859,18 @@ export function PacketFormEditor({
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleDownloadPdf()}
+            disabled={!pdfUrl || isDownloadingPdf || formId == null}
+          >
+            <Download
+              className={cn("mr-1.5 h-4 w-4", isDownloadingPdf && "animate-pulse")}
+            />
+            {isDownloadingPdf ? "Preparing..." : "Download PDF"}
+          </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href={`/packets/${packetId}`}>Back to packet</Link>
           </Button>
@@ -646,6 +881,12 @@ export function PacketFormEditor({
           )}
         </div>
       </div>
+
+      {downloadError && (
+        <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          {downloadError}
+        </div>
+      )}
 
       {propertyResolutionWarning && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
@@ -782,11 +1023,16 @@ export function PacketFormEditor({
             )}
             {!pdfUrl ? (
               <p className="p-4 text-sm text-muted-foreground">
-                No PDF is available for this packet form yet.
+                {isLoading
+                  ? "Loading PDF..."
+                  : "No PDF is available for this packet form yet."}
               </p>
+            ) : !isPdfRenderReady ? (
+              <p className="p-4 text-sm text-muted-foreground">Loading PDF...</p>
             ) : (
               <div className="flex min-h-full flex-col items-center gap-8 p-6">
                 <Document
+                  key={`${documentKey}-${pdfUrl}`}
                   file={pdfUrl}
                   onLoadSuccess={({ numPages: loadedPages }) =>
                     setNumPages(loadedPages)
@@ -862,12 +1108,13 @@ export function PacketFormEditor({
                                     field={overlayField}
                                     metrics={metrics as PageMetrics}
                                     isSelected={
-                                      selectedMappingId === overlayField.id
+                                      selectedFieldKey ===
+                                      overlayField.selectionKey
                                     }
                                     isUpdating={
                                       updatingMappingId === overlayField.id
                                     }
-                                    onEdit={selectFieldFromOverlay}
+                                    onSelect={selectFieldFromOverlay}
                                     onDragStop={(field, x, y) =>
                                       handleOverlayDragStop(
                                         field,
@@ -910,17 +1157,18 @@ export function PacketFormEditor({
           fields={fields}
           draftValuesByInstanceId={draftValuesByInstanceId}
           savedValuesByInstanceId={savedValuesByInstanceId}
-          selectedMappingId={selectedMappingId}
+          selectedFieldKey={selectedFieldKey}
           isSaving={isSavingChanges}
           isResettingPlacementId={isResettingPlacementId}
           isRevertingInstanceId={isRevertingInstanceId}
           saveError={saveError}
           onDraftChange={handleDraftChange}
-          onSelectField={selectField}
+          onSelectField={selectFieldFromSidebar}
+          listRef={sidebarListRef}
           onSaveChanges={() => void handleSaveChanges()}
           onResetPlacement={(fieldView) => void handleResetPlacement(fieldView)}
           onRevertToDefault={(fieldView) => void handleRevertToDefault(fieldView)}
-          itemRefs={sidebarItemRefs}
+          fieldRefs={sidebarFieldRefs}
         />
       </div>
     </div>

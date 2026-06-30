@@ -2,7 +2,7 @@
 
 import { ContactPicker } from "@/components/contacts/contact-picker";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -354,7 +354,7 @@ export function BuyerRepAgreementForm({
             />
           </div>
           <div className="flex items-center gap-2 sm:col-span-2">
-            <Checkbox
+            <AppCheckbox
               id="retainer_applies_to_fee"
               checked={value.retainer_applies_to_fee}
               onCheckedChange={(checked) =>
@@ -401,7 +401,7 @@ export function BuyerRepAgreementForm({
             ] as const
           ).map(([key, label]) => (
             <div key={key} className="flex items-center gap-2">
-              <Checkbox
+              <AppCheckbox
                 id={key}
                 checked={value[key]}
                 onCheckedChange={(checked) =>

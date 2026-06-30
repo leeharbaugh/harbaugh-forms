@@ -474,6 +474,38 @@ export function formatFieldSourceMappingCatalog(field: {
   return `${sourceType} → ${sourcePath}`;
 }
 
+export const SOURCE_PATH_PRESET_CUSTOM_LEGACY = "__custom_legacy__";
+
+export function resolveSourcePathPresetValue(
+  sourceType: FieldSourceType | "",
+  sourcePath: string | null | undefined,
+): string {
+  const trimmed = sourcePath?.trim() ?? "";
+  if (!trimmed) {
+    return "";
+  }
+
+  const options = sourcePathDropdownOptionsForType(sourceType, trimmed);
+  const normalized = trimmed.toLowerCase();
+  const match = options.find(
+    (option) =>
+      option.value === trimmed || option.value.toLowerCase() === normalized,
+  );
+
+  if (match) {
+    return match.value;
+  }
+
+  return SOURCE_PATH_PRESET_CUSTOM_LEGACY;
+}
+
+export function formatSourcePathCustomLegacyLabel(
+  sourcePath: string | null | undefined,
+): string {
+  const trimmed = sourcePath?.trim();
+  return trimmed ? `Custom / legacy: ${trimmed}` : "Custom / legacy path";
+}
+
 export function sourcePathDropdownOptionsForType(
   sourceType: FieldSourceType | "",
   currentValue?: string | null,

@@ -3,7 +3,7 @@
 import { ContactPicker } from "@/components/contacts/contact-picker";
 import { PropertyPicker } from "@/components/properties/property-picker";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -350,7 +350,7 @@ export function ListingAgreementForm({
             ] as const
           ).map(([key, label]) => (
             <div key={key} className="flex items-center gap-2">
-              <Checkbox
+              <AppCheckbox
                 id={key}
                 checked={value[key]}
                 onCheckedChange={(checked) =>

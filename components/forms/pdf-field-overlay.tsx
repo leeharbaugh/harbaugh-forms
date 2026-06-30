@@ -3,8 +3,11 @@
 import {
   type PageMetrics,
   type PlacedPdfField,
+  isCheckboxPdfField,
   pdfToRenderRect,
 } from "@/lib/types/template-pdf-field";
+import { AppCheckboxVisual } from "@/components/ui/app-checkbox";
+import { CHECKBOX_VISUAL_SIZE_PX } from "@/lib/checkbox-constants";
 import { formatMappingOverlayLabel } from "@/lib/types/pdf-field-mapping-editor";
 import { cn } from "@/lib/utils";
 import { useRef } from "react";
@@ -51,6 +54,21 @@ export function PdfFieldOverlay({
   const interactionRef = useRef<InteractionState | null>(null);
   const rect = pdfToRenderRect(field, metrics);
   const label = formatMappingOverlayLabel(field);
+  const isCheckbox = isCheckboxPdfField(field);
+  const overlayResizeEnabled = isUpdating
+    ? false
+    : isCheckbox
+      ? false
+      : {
+          top: true,
+          right: true,
+          bottom: true,
+          left: true,
+          topRight: true,
+          bottomRight: true,
+          bottomLeft: true,
+          topLeft: true,
+        };
 
   const suppressClick = () => {
     suppressClickRef.current = true;
@@ -76,22 +94,11 @@ export function PdfFieldOverlay({
       bounds="parent"
       size={{ width: rect.width, height: rect.height }}
       position={{ x: rect.left, y: rect.top }}
-      minWidth={MIN_OVERLAY_SIZE}
-      minHeight={MIN_OVERLAY_SIZE}
-      enableResizing={
-        isUpdating
-          ? false
-          : {
-              top: true,
-              right: true,
-              bottom: true,
-              left: true,
-              topRight: true,
-              bottomRight: true,
-              bottomLeft: true,
-              topLeft: true,
-            }
-      }
+      minWidth={isCheckbox ? CHECKBOX_VISUAL_SIZE_PX : MIN_OVERLAY_SIZE}
+      minHeight={isCheckbox ? CHECKBOX_VISUAL_SIZE_PX : MIN_OVERLAY_SIZE}
+      maxWidth={isCheckbox ? rect.width : undefined}
+      maxHeight={isCheckbox ? rect.height : undefined}
+      enableResizing={overlayResizeEnabled}
       disableDragging={isUpdating}
       onDragStart={(_event, data) => {
         interactionRef.current = {
@@ -153,10 +160,17 @@ export function PdfFieldOverlay({
         }
       }}
       className={cn(
-        "z-[2] border-2 bg-sky-400/25 shadow-sm backdrop-blur-[1px] transition-[box-shadow,background-color,border-color]",
+        "z-[2] border-2 shadow-sm backdrop-blur-[1px] transition-[box-shadow,background-color,border-color]",
+        isCheckbox
+          ? "border-border bg-transparent"
+          : "bg-sky-400/25",
         isSelected
-          ? "border-amber-500 bg-amber-300/40 shadow-md ring-2 ring-amber-400 ring-offset-1 ring-offset-white dark:ring-offset-zinc-900"
-          : "border-sky-600 hover:border-sky-500",
+          ? isCheckbox
+            ? "border-amber-500 ring-2 ring-amber-400 ring-offset-1 ring-offset-white dark:ring-offset-zinc-900"
+            : "border-amber-500 bg-amber-300/40 shadow-md ring-2 ring-amber-400 ring-offset-1 ring-offset-white dark:ring-offset-zinc-900"
+          : isCheckbox
+            ? "border-border hover:border-muted-foreground"
+            : "border-sky-600 hover:border-sky-500",
         isUpdating && "opacity-70",
       )}
       style={{
@@ -165,11 +179,20 @@ export function PdfFieldOverlay({
     >
       <button
         type="button"
-        className="flex h-full w-full cursor-pointer items-start overflow-hidden px-1 py-0.5 text-left text-[10px] font-semibold leading-tight text-sky-950"
+        className={cn(
+          "flex h-full w-full cursor-pointer overflow-hidden text-left leading-tight",
+          isCheckbox
+            ? "items-center justify-center p-0"
+            : "items-start px-1 py-0.5 text-[10px] font-semibold text-sky-950",
+        )}
         onClick={handleSelect}
-        title="Click to select field"
+        title={isCheckbox ? `${label} — click to select` : "Click to select field"}
       >
-        <span className="truncate">{label}</span>
+        {isCheckbox ? (
+          <AppCheckboxVisual checked={false} />
+        ) : (
+          <span className="truncate">{label}</span>
+        )}
       </button>
     </Rnd>
   );

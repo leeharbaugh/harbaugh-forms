@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
@@ -248,7 +248,7 @@ export function FormPicker({
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                     <div className="flex items-center gap-2">
-                      <Checkbox
+                      <AppCheckbox
                         id={`form_required_${template.id}`}
                         checked={selection?.is_required ?? true}
                         onCheckedChange={(checked) =>

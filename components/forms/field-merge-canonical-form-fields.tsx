@@ -1,6 +1,6 @@
 "use client";
 
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FieldSourceFormFields } from "@/components/forms/field-source-form-fields";
@@ -137,7 +137,7 @@ export function FieldMergeCanonicalFormFields({
 
         {showDefaultChecked && (
           <div className="flex items-center gap-2 sm:col-span-2">
-            <Checkbox
+            <AppCheckbox
               id="merge_default_checked"
               checked={value.default_checked}
               onCheckedChange={(checked) =>
@@ -151,7 +151,7 @@ export function FieldMergeCanonicalFormFields({
         )}
 
         <div className="flex items-center gap-2 sm:col-span-2">
-          <Checkbox
+          <AppCheckbox
             id="merge_required"
             checked={value.required}
             onCheckedChange={(checked) =>

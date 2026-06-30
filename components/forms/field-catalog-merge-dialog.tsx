@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Label } from "@/components/ui/label";
 import {
   getBulkFieldUsageCounts,
@@ -515,7 +515,7 @@ export function FieldCatalogMergeDialog({
                     ))}
                   </ul>
                   <div className="mt-3 flex items-start gap-2">
-                    <Checkbox
+                    <AppCheckbox
                       id="catalog_ack_type_mismatch"
                       checked={acknowledgeTypeMismatch}
                       onCheckedChange={(checked) =>
@@ -567,7 +567,7 @@ export function FieldCatalogMergeDialog({
                     ))}
                   </ul>
                   <div className="mt-3 flex items-start gap-2">
-                    <Checkbox
+                    <AppCheckbox
                       id="catalog_ack_conflicts"
                       checked={acknowledgeConflicts}
                       onCheckedChange={(checked) =>

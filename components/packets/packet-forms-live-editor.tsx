@@ -4,10 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  createPacketFormDownloadUrl,
-  triggerBrowserDownload,
-} from "@/lib/packet-form-storage";
+import { downloadFilledPacketFormPdf } from "@/lib/packet-form-download";
 import { createClient } from "@/lib/supabase/client";
 import type { Form } from "@/lib/types/form";
 import {
@@ -101,21 +98,12 @@ export function PacketFormsLiveEditor({
   }, [searchForms]);
 
   const downloadDocument = async (document: PacketForm) => {
-    if (!document.storage_path) {
-      setActionError("This document does not have a stored PDF yet.");
-      return;
-    }
-
     setActionError(null);
     setDownloadingFormId(document.id);
 
     try {
       const supabase = createClient();
-      const url = await createPacketFormDownloadUrl(
-        supabase,
-        document.storage_path,
-      );
-      triggerBrowserDownload(url, document.document_name);
+      await downloadFilledPacketFormPdf(supabase, document);
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Failed to download PDF.",

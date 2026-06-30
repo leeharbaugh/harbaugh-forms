@@ -46,7 +46,6 @@ export const PACKET_PROPERTY_DIRECT_SOURCE_PATHS = [
   "lot",
   "block",
   "addition",
-  "subdivision",
   "tax_id",
   "geo_id",
   "school_district",
@@ -143,7 +142,6 @@ const DIRECT_META: Record<PacketPropertyDirectSourcePath, CanonicalMeta> = {
   lot: { label: "Lot", example: "1" },
   block: { label: "Block", example: "A" },
   addition: { label: "Addition", example: "Example Addition" },
-  subdivision: { label: "Subdivision", example: "Example Estates" },
   tax_id: { label: "Tax ID", example: "12345" },
   geo_id: { label: "Geo ID", example: "4811300123456" },
   school_district: { label: "School District", example: "Arlington ISD" },
@@ -237,6 +235,11 @@ const LEGACY_SOURCE_PATH_META: Record<string, CanonicalMeta> = {
     example: PACKET_PROPERTY_EXAMPLE_COUNTY,
     legacy: true,
   },
+  subdivision: {
+    label: "Legacy Subdivision (Addition)",
+    example: "Example Addition",
+    legacy: true,
+  },
 };
 
 export const PACKET_PROPERTY_LEGACY_SOURCE_PATHS = Object.keys(
@@ -288,7 +291,7 @@ const RESOLVER_ALIASES: Record<string, PropertyResolvedField> = {
   lot: "lot",
   block: "block",
   addition: "addition",
-  subdivision: "subdivision",
+  subdivision: "addition",
   geo_id: "geo_id",
   school_district: "school_district",
   municipality: "municipality",

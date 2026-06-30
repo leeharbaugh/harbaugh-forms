@@ -110,3 +110,120 @@ export function afterLayoutSettled(callback: () => void): void {
     requestAnimationFrame(callback);
   });
 }
+
+export type PdfWorkspaceScrollSnapshot = {
+  scrollTop: number;
+  scrollLeft: number;
+  pageNumber: number | null;
+  mappingId: string | null;
+};
+
+export function findMostVisiblePageNumber(
+  workspace: HTMLElement,
+  pageRefs: Record<number, HTMLElement | null>,
+): number | null {
+  const workspaceRect = workspace.getBoundingClientRect();
+  let bestPage: number | null = null;
+  let bestVisible = 0;
+
+  for (const [pageKey, element] of Object.entries(pageRefs)) {
+    if (!element) {
+      continue;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const visibleTop = Math.max(rect.top, workspaceRect.top);
+    const visibleBottom = Math.min(rect.bottom, workspaceRect.bottom);
+    const visible = Math.max(0, visibleBottom - visibleTop);
+
+    if (visible > bestVisible) {
+      bestVisible = visible;
+      bestPage = Number(pageKey);
+    }
+  }
+
+  return bestPage;
+}
+
+export function capturePdfWorkspaceScroll(params: {
+  workspace: HTMLElement | null;
+  pageRefs: Record<number, HTMLElement | null>;
+  selectedMappingId: string | null;
+  mappings: Array<{ id: string; page_number: number }>;
+}): PdfWorkspaceScrollSnapshot {
+  const { workspace, pageRefs, selectedMappingId, mappings } = params;
+  const selectedMapping = selectedMappingId
+    ? mappings.find((mapping) => mapping.id === selectedMappingId)
+    : null;
+
+  let pageNumber = selectedMapping?.page_number ?? null;
+  if (!pageNumber && workspace) {
+    pageNumber = findMostVisiblePageNumber(workspace, pageRefs);
+  }
+
+  return {
+    scrollTop: workspace?.scrollTop ?? 0,
+    scrollLeft: workspace?.scrollLeft ?? 0,
+    pageNumber,
+    mappingId: selectedMappingId,
+  };
+}
+
+type RestorePdfWorkspaceScrollParams = {
+  snapshot: PdfWorkspaceScrollSnapshot;
+  workspace: HTMLElement | null;
+  inventoryList?: HTMLElement | null;
+  inventoryItemRefs?: Record<string, HTMLElement | null>;
+};
+
+function applyPdfWorkspaceScrollSnapshot({
+  snapshot,
+  workspace,
+  inventoryList,
+  inventoryItemRefs,
+}: RestorePdfWorkspaceScrollParams): void {
+  if (workspace) {
+    workspace.scrollTop = snapshot.scrollTop;
+    workspace.scrollLeft = snapshot.scrollLeft;
+  }
+
+  if (snapshot.mappingId && inventoryList && inventoryItemRefs) {
+    const item = inventoryItemRefs[snapshot.mappingId];
+    if (item) {
+      scrollElementIntoContainer(inventoryList, item);
+    }
+  }
+}
+
+export function restorePdfWorkspaceScroll(
+  params: RestorePdfWorkspaceScrollParams,
+): void {
+  afterLayoutSettled(() => {
+    applyPdfWorkspaceScrollSnapshot(params);
+  });
+}
+
+export function restorePdfWorkspaceScrollWhenReady(
+  params: RestorePdfWorkspaceScrollParams & {
+    pageRefs: Record<number, HTMLElement | null>;
+    isReady: () => boolean;
+    maxAttempts?: number;
+  },
+): void {
+  const maxAttempts = params.maxAttempts ?? 30;
+
+  const attemptRestore = (attempt: number) => {
+    const pageReady =
+      !params.snapshot.pageNumber ||
+      params.pageRefs[params.snapshot.pageNumber] != null;
+
+    if ((params.isReady() && pageReady) || attempt >= maxAttempts) {
+      applyPdfWorkspaceScrollSnapshot(params);
+      return;
+    }
+
+    requestAnimationFrame(() => attemptRestore(attempt + 1));
+  };
+
+  afterLayoutSettled(() => attemptRestore(0));
+}

@@ -6,9 +6,12 @@ import type { FieldAdminInput } from "@/lib/types/field";
 import {
   CUSTOM_RESOLVER_KEYS,
   FIELD_SOURCE_TYPES,
+  SOURCE_PATH_PRESET_CUSTOM_LEGACY,
   formatFieldSourceStatusDisplay,
   formatFieldSourceType,
+  formatSourcePathCustomLegacyLabel,
   formatSourcePathDisplay,
+  resolveSourcePathPresetValue,
   sourcePathDropdownOptionsForType,
   sourceTypeAllowsFallbackValue,
   sourceTypeRequiresPath,
@@ -49,6 +52,12 @@ export function FieldSourceFormFields({
   );
 
   const sourceStatus = formatFieldSourceStatusDisplay(value);
+  const sourcePathPresetValue = resolveSourcePathPresetValue(
+    sourceType,
+    value.source_path,
+  );
+  const showCustomLegacyPreset =
+    sourcePathPresetValue === SOURCE_PATH_PRESET_CUSTOM_LEGACY;
 
   const setSourceType = (nextType: FieldSourceType | "") => {
     onChange({
@@ -110,10 +119,13 @@ export function FieldSourceFormFields({
                 <select
                   id="source_path_preset"
                   className={fieldClassName}
-                  value=""
+                  value={sourcePathPresetValue}
                   onChange={(event) => {
                     const nextPath = event.target.value;
-                    if (nextPath) {
+                    if (
+                      nextPath &&
+                      nextPath !== SOURCE_PATH_PRESET_CUSTOM_LEGACY
+                    ) {
                       onChange({ ...value, source_path: nextPath });
                     }
                   }}
@@ -122,6 +134,11 @@ export function FieldSourceFormFields({
                   <option value="">
                     Choose a preset to fill source path...
                   </option>
+                  {showCustomLegacyPreset && (
+                    <option value={SOURCE_PATH_PRESET_CUSTOM_LEGACY}>
+                      {formatSourcePathCustomLegacyLabel(value.source_path)}
+                    </option>
+                  )}
                   {pathOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}

@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -224,7 +224,7 @@ export function FieldForm({
 
         {showDefaultChecked && (
           <div className="flex items-center gap-2 sm:col-span-2">
-            <Checkbox
+            <AppCheckbox
               id="default_checked"
               checked={value.default_checked}
               onCheckedChange={(checked) =>
@@ -260,7 +260,7 @@ export function FieldForm({
         )}
 
         <div className="flex items-center gap-2 sm:col-span-2">
-          <Checkbox
+          <AppCheckbox
             id="required"
             checked={value.required}
             onCheckedChange={(checked) =>

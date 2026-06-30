@@ -65,4 +65,9 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Enforce custom checkbox rendering; do not use browser-default sizing. */
+  input[type="checkbox"] {
+    appearance: none;
+    accent-color: transparent;
+  }
 }

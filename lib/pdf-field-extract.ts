@@ -1,4 +1,5 @@
 import { pdfjs } from "react-pdf";
+import { acquirePdfWorker, releasePdfWorker } from "@/lib/pdfjs-setup";
 import {
   shouldSkipAuthentisignPdfInventoryField,
   AUTHENTISIGN_EXCLUSION_MESSAGE,
@@ -109,73 +110,79 @@ function isWidgetAnnotation(annotation: PdfWidgetAnnotation): boolean {
 export async function extractPdfFieldInventory(
   pdfSource: string | ArrayBuffer | Uint8Array,
 ): Promise<PdfFieldInventoryResult> {
-  const pdf = await pdfjs.getDocument(pdfSource).promise;
-  const items: PdfFieldInventoryItem[] = [];
-  const skipped: PdfFieldInventorySkippedItem[] = [];
-  const occurrenceCounts = new Map<string, number>();
+  acquirePdfWorker();
 
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1 });
-    const pageWidth = viewport.width;
-    const pageHeight = viewport.height;
-    const annotations = (await page.getAnnotations()) as PdfWidgetAnnotation[];
+  try {
+    const pdf = await pdfjs.getDocument(pdfSource).promise;
+    const items: PdfFieldInventoryItem[] = [];
+    const skipped: PdfFieldInventorySkippedItem[] = [];
+    const occurrenceCounts = new Map<string, number>();
 
-    for (const annotation of annotations) {
-      if (!isWidgetAnnotation(annotation)) {
-        continue;
-      }
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1 });
+      const pageWidth = viewport.width;
+      const pageHeight = viewport.height;
+      const annotations = (await page.getAnnotations()) as PdfWidgetAnnotation[];
 
-      const rawName = annotation.fieldName ?? annotation.id ?? "";
-      const fieldKey = normalizeExtractedFieldKey(rawName);
-      if (!fieldKey) {
-        continue;
-      }
+      for (const annotation of annotations) {
+        if (!isWidgetAnnotation(annotation)) {
+          continue;
+        }
 
-      const pdfFieldType = annotation.fieldType ?? null;
-      const catalogTypes = inferCatalogTypesFromPdfAnnotation(annotation);
+        const rawName = annotation.fieldName ?? annotation.id ?? "";
+        const fieldKey = normalizeExtractedFieldKey(rawName);
+        if (!fieldKey) {
+          continue;
+        }
 
-      if (
-        shouldSkipAuthentisignPdfInventoryField({
+        const pdfFieldType = annotation.fieldType ?? null;
+        const catalogTypes = inferCatalogTypesFromPdfAnnotation(annotation);
+
+        if (
+          shouldSkipAuthentisignPdfInventoryField({
+            fieldKey,
+            pdfFieldType,
+            fieldWidgetType: catalogTypes.fieldWidgetType,
+          })
+        ) {
+          skipped.push({
+            fieldKey,
+            pageNumber,
+            pdfFieldType,
+            reason: "authentisign",
+          });
+          continue;
+        }
+
+        if (!annotation.rect || annotation.rect.length < 4) {
+          continue;
+        }
+
+        const placement = pdfRectToPlacement(
+          annotation.rect,
+          pageWidth,
+          pageHeight,
+        );
+        const occurrenceIndex = occurrenceCounts.get(fieldKey) ?? 0;
+        occurrenceCounts.set(fieldKey, occurrenceIndex + 1);
+
+        items.push({
           fieldKey,
-          pdfFieldType,
+          fieldLabel: humanizeFieldKey(fieldKey),
           fieldWidgetType: catalogTypes.fieldWidgetType,
-        })
-      ) {
-        skipped.push({
-          fieldKey,
+          fieldDataType: catalogTypes.fieldDataType,
           pageNumber,
-          pdfFieldType,
-          reason: "authentisign",
+          occurrenceIndex,
+          ...placement,
         });
-        continue;
       }
-
-      if (!annotation.rect || annotation.rect.length < 4) {
-        continue;
-      }
-
-      const placement = pdfRectToPlacement(
-        annotation.rect,
-        pageWidth,
-        pageHeight,
-      );
-      const occurrenceIndex = occurrenceCounts.get(fieldKey) ?? 0;
-      occurrenceCounts.set(fieldKey, occurrenceIndex + 1);
-
-      items.push({
-        fieldKey,
-        fieldLabel: humanizeFieldKey(fieldKey),
-        fieldWidgetType: catalogTypes.fieldWidgetType,
-        fieldDataType: catalogTypes.fieldDataType,
-        pageNumber,
-        occurrenceIndex,
-        ...placement,
-      });
     }
-  }
 
-  return { items, skipped };
+    return { items, skipped };
+  } finally {
+    releasePdfWorker();
+  }
 }
 
 export { AUTHENTISIGN_EXCLUSION_MESSAGE };

@@ -128,10 +128,19 @@ export function buildPacketFormFieldViews(params: {
   });
 }
 
+/** Shared selection key for PDF overlays and sidebar rows (prefer stable instance id). */
+export function getPacketFormFieldSelectionKey(
+  fieldView: Pick<PacketFormFieldView, "instance" | "mapping">,
+): string {
+  return fieldView.instance.id || fieldView.mapping.id;
+}
+
 export function packetFormFieldViewToOverlayField(
   fieldView: PacketFormFieldView,
 ): {
   id: string;
+  selectionKey: string;
+  field_instance_id: string;
   field_id: string;
   field_key: string;
   field_label: string | null;
@@ -150,9 +159,12 @@ export function packetFormFieldViewToOverlayField(
   default_checked: boolean;
 } {
   const field = fieldView.instance.fields;
+  const selectionKey = getPacketFormFieldSelectionKey(fieldView);
 
   return {
     id: fieldView.mapping.id,
+    selectionKey,
+    field_instance_id: fieldView.instance.id,
     field_id: fieldView.mapping.field_id,
     field_key: field?.field_key ?? "",
     field_label: field?.field_label ?? fieldView.mapping.mapping_name,

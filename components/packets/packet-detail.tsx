@@ -10,10 +10,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  createPacketFormDownloadUrl,
-  triggerBrowserDownload,
-} from "@/lib/packet-form-storage";
+import { downloadFilledPacketFormPdf } from "@/lib/packet-form-download";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatAgreementReference,
@@ -91,21 +88,12 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
   }, [loadPacket]);
 
   const downloadDocument = async (document: PacketForm) => {
-    if (!document.storage_path) {
-      setDownloadError("This document does not have a copied PDF yet.");
-      return;
-    }
-
     setDownloadError(null);
     setDownloadingDocumentId(document.id);
 
     try {
       const supabase = createClient();
-      const url = await createPacketFormDownloadUrl(
-        supabase,
-        document.storage_path,
-      );
-      triggerBrowserDownload(url, document.document_name);
+      await downloadFilledPacketFormPdf(supabase, document);
     } catch (error) {
       setDownloadError(
         error instanceof Error ? error.message : "Failed to download PDF.",
@@ -132,11 +120,7 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
       const supabase = createClient();
 
       for (const document of downloadable) {
-        const url = await createPacketFormDownloadUrl(
-          supabase,
-          document.storage_path as string,
-        );
-        triggerBrowserDownload(url, document.document_name);
+        await downloadFilledPacketFormPdf(supabase, document);
       }
     } catch (error) {
       setDownloadError(

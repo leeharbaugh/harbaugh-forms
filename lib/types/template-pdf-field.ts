@@ -2,6 +2,11 @@ import {
   catalogTypesToLegacyFieldType,
   legacyFieldTypeToCatalogTypes,
 } from "@/lib/types/field";
+import { isCheckboxWidgetType } from "@/lib/field-instances";
+import {
+  CHECKBOX_MAPPING_SIZE_PX,
+  CHECKBOX_VISUAL_SIZE_PX,
+} from "@/lib/checkbox-constants";
 import type { FormFieldMapping } from "@/lib/types/form-field-mapping";
 
 export type TemplatePdfFieldType =
@@ -91,6 +96,58 @@ const DEFAULT_FIELD_DIMENSIONS: Record<
   INITIAL_PLACEHOLDER: { width: 48, height: 18 },
 };
 
+/** @deprecated Use CHECKBOX_VISUAL_SIZE_PX or CHECKBOX_MAPPING_SIZE_PX from lib/checkbox-constants */
+export const CHECKBOX_PDF_FIELD_SIZE_PX = CHECKBOX_MAPPING_SIZE_PX;
+
+export function isCheckboxPdfField(
+  field: Pick<PlacedPdfField, "field_type"> & {
+    field_widget_type?: string | null;
+  },
+): boolean {
+  return (
+    field.field_type === "CHECKBOX" ||
+    isCheckboxWidgetType(field.field_widget_type)
+  );
+}
+
+export function getEffectivePdfFieldDimensions(
+  field: Pick<PlacedPdfField, "field_type" | "width" | "height"> & {
+    field_widget_type?: string | null;
+  },
+): { width: number; height: number } {
+  if (isCheckboxPdfField(field)) {
+    return {
+      width: CHECKBOX_VISUAL_SIZE_PX,
+      height: CHECKBOX_VISUAL_SIZE_PX,
+    };
+  }
+
+  const defaults = getDefaultFieldDimensions(field.field_type);
+  return {
+    width: field.width ?? defaults.width,
+    height: field.height ?? defaults.height,
+  };
+}
+
+export function normalizeCheckboxPdfPlacement<
+  T extends { width?: number | null; height?: number | null },
+>(
+  field: Pick<PlacedPdfField, "field_type"> & {
+    field_widget_type?: string | null;
+  },
+  placement: T,
+): T {
+  if (!isCheckboxPdfField(field)) {
+    return placement;
+  }
+
+  return {
+    ...placement,
+    width: CHECKBOX_MAPPING_SIZE_PX,
+    height: CHECKBOX_MAPPING_SIZE_PX,
+  };
+}
+
 export function formFieldMappingToPlacedPdfField(
   mapping: FormFieldMapping,
 ): PlacedPdfField {
@@ -139,14 +196,14 @@ export function getDefaultFieldDimensions(fieldType: TemplatePdfFieldType) {
 export function templatePdfFieldToInput(
   field: PlacedPdfField,
 ): TemplatePdfFieldInput {
-  const defaults = getDefaultFieldDimensions(field.field_type);
+  const effective = getEffectivePdfFieldDimensions(field);
 
   return {
     field_key: field.field_key,
     field_label: field.field_label ?? "",
     field_type: field.field_type,
-    width: String(field.width ?? defaults.width),
-    height: String(field.height ?? defaults.height),
+    width: String(effective.width),
+    height: String(effective.height),
     font_size: String(field.font_size),
     is_required: field.is_required,
     notes: field.notes ?? "",
@@ -235,12 +292,13 @@ export function pdfToRenderRect(
     | "field_type"
     | "page_width"
     | "page_height"
-  >,
+  > & {
+    field_widget_type?: string | null;
+  },
   metrics: PageMetrics,
 ) {
-  const defaults = getDefaultFieldDimensions(field.field_type);
-  const pdfWidth = field.width ?? defaults.width;
-  const pdfHeight = field.height ?? defaults.height;
+  const { width: pdfWidth, height: pdfHeight } =
+    getEffectivePdfFieldDimensions(field);
   const { originalWidth, originalHeight } = getFieldPageDimensions(
     field,
     metrics,
@@ -279,6 +337,25 @@ export function renderRectToPdfPlacement(
     page_width: roundPdfCoordinate(metrics.originalWidth),
     page_height: roundPdfCoordinate(metrics.originalHeight),
   };
+}
+
+export function renderRectToPdfPlacementForField(
+  field: Pick<PlacedPdfField, "field_type"> & {
+    field_widget_type?: string | null;
+  },
+  rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  },
+  metrics: PageMetrics,
+  fieldPageDimensions?: Pick<PlacedPdfField, "page_width" | "page_height"> | null,
+) {
+  return normalizeCheckboxPdfPlacement(
+    field,
+    renderRectToPdfPlacement(rect, metrics, fieldPageDimensions),
+  );
 }
 
 export function validateTemplatePdfFieldInput(

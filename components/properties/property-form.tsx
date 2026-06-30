@@ -2,7 +2,7 @@
 
 import { CadSearchButton } from "@/components/properties/cad-search-button";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -293,16 +293,6 @@ export function PropertyForm({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="subdivision">Subdivision</Label>
-          <Input
-            id="subdivision"
-            value={value.subdivision}
-            onChange={(event) => setField("subdivision", event.target.value)}
-            disabled={readOnly}
-          />
-        </div>
-
-        <div className="space-y-2">
           <Label htmlFor="parcel_id">Parcel ID</Label>
           <Input
             id="parcel_id"
@@ -486,7 +476,7 @@ export function PropertyForm({
       >
         {PROPERTY_BOOLEAN_FIELDS.filter((key) => key !== "has_hoa").map((key) => (
           <div key={key} className="flex items-center gap-2 sm:col-span-1">
-            <Checkbox
+            <AppCheckbox
               id={`property_${key}`}
               checked={value[key]}
               onCheckedChange={(checked) =>
@@ -551,7 +541,7 @@ export function PropertyForm({
 
       <PropertySection title="HOA">
         <div className="flex items-center gap-2 sm:col-span-2">
-          <Checkbox
+          <AppCheckbox
             id="property_has_hoa"
             checked={value.has_hoa}
             onCheckedChange={(checked) =>

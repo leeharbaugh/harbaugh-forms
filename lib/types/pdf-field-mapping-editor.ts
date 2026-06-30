@@ -11,11 +11,14 @@ import {
   validateFieldInput,
 } from "@/lib/types/field";
 import { emptyFieldSourceInput } from "@/lib/types/field-source";
+import { CHECKBOX_MAPPING_SIZE_PX } from "@/lib/checkbox-constants";
 import {
   type PlacedPdfField,
   getDefaultFieldDimensions,
+  getEffectivePdfFieldDimensions,
   type PendingPdfPlacement,
 } from "@/lib/types/template-pdf-field";
+import { isCheckboxWidgetType } from "@/lib/field-instances";
 
 export type { PendingPdfPlacement };
 
@@ -94,6 +97,12 @@ export function placedPdfFieldToMappingInput(
   const widgetType =
     placed.field_widget_type ??
     legacyFieldTypeToCatalogTypes(placed.field_type).field_widget_type;
+  const effective = getEffectivePdfFieldDimensions({
+    field_type: placed.field_type,
+    field_widget_type: widgetType,
+    width: placed.width,
+    height: placed.height,
+  });
 
   return {
     field_selection_mode: "existing",
@@ -108,8 +117,8 @@ export function placedPdfFieldToMappingInput(
     page_number: String(placed.page_number),
     x: String(placed.x_position),
     y: String(placed.y_position),
-    width: placed.width != null ? String(placed.width) : "",
-    height: placed.height != null ? String(placed.height) : "",
+    width: String(effective.width),
+    height: String(effective.height),
     font_size: String(placed.font_size),
     alignment: placed.alignment ?? "left",
   };
@@ -235,6 +244,7 @@ export function validatePdfMappingEditorInput(
 export function normalizePdfMappingEditorInput(input: PdfMappingEditorInput) {
   const trim = (value: string) => value.trim();
   const widgetType = trim(input.field_widget_type);
+  const isCheckbox = isCheckboxWidgetType(widgetType);
 
   return {
     field_selection_mode: input.field_selection_mode,
@@ -260,8 +270,12 @@ export function normalizePdfMappingEditorInput(input: PdfMappingEditorInput) {
       page_number: Number(trim(input.page_number) || "1"),
       x: Number(trim(input.x) || "0"),
       y: Number(trim(input.y) || "0"),
-      width: Number(trim(input.width)),
-      height: Number(trim(input.height)),
+      width: isCheckbox
+        ? CHECKBOX_MAPPING_SIZE_PX
+        : Number(trim(input.width)),
+      height: isCheckbox
+        ? CHECKBOX_MAPPING_SIZE_PX
+        : Number(trim(input.height)),
       font_size: Number(trim(input.font_size) || "10"),
       alignment: trim(input.alignment) || null,
       field_widget_type: widgetType,

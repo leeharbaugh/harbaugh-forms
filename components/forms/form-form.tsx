@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -191,7 +191,7 @@ export function FormForm({
 
         {mode === "edit" && !readOnly && existingStoragePath && (
           <div className="flex items-center gap-2 sm:col-span-2">
-            <Checkbox
+            <AppCheckbox
               id="replace_pdf"
               checked={replacePdf}
               onCheckedChange={(checked) =>

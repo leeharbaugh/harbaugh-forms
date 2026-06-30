@@ -1,4 +1,4 @@
-import { Checkbox } from "../ui/checkbox";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 
 export function TutorialStep({
   title,
@@ -9,7 +9,7 @@ export function TutorialStep({
 }) {
   return (
     <li className="relative">
-      <Checkbox
+      <AppCheckbox
         id={title}
         name={title}
         className={`absolute top-[3px] mr-2 peer`}
