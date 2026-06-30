@@ -2,6 +2,7 @@ import {
   BUYER_REP_DETAILS_SOURCE_PATHS,
   REPRESENTATION_AGREEMENT_SOURCE_PATHS,
 } from "@/lib/types/buyer-rep-field-resolution";
+import { CONTRACT_DETAILS_SOURCE_PATHS } from "@/lib/types/contract-field-resolution";
 import {
   formatPacketContactSourcePathMappingLabel,
   formatPacketContactSourcePathOptionLabel,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/types/packet-property-source-paths";
 
 export { BUYER_REP_DETAILS_SOURCE_PATHS, REPRESENTATION_AGREEMENT_SOURCE_PATHS };
+export { CONTRACT_DETAILS_SOURCE_PATHS } from "@/lib/types/contract-field-resolution";
 export {
   formatPacketContactSourcePathMappingLabel,
   formatPacketContactSourcePathOptionLabel,
@@ -116,6 +118,10 @@ export const SETTINGS_BROKERAGE_SOURCE_PATHS = [
   "broker_license_number",
   "broker_phone",
   "broker_email",
+  "supervisor_name",
+  "supervisor_license_number",
+  "supervisor_phone",
+  "supervisor_email",
 ] as const;
 
 export { BUYER_CLIENT_CONTACT_SOURCE_PATHS } from "@/lib/types/packet-contact-source-paths";
@@ -134,6 +140,21 @@ export const CUSTOM_RESOLVER_KEYS = [
   "property_hoa_name",
   "property_hoa_phone",
   "property_address_city",
+  "property_address_street_zip",
+  "seller_names",
+  "buyer_names",
+  "contract_survey_option_seller_existing",
+  "contract_survey_option_buyer_new",
+  "contract_survey_option_seller_new",
+  "contract_effective_day",
+  "contract_effective_month",
+  "contract_effective_year",
+  "buyer_notice_address",
+  "buyer_notice_phone",
+  "buyer_notice_email",
+  "seller_notice_address",
+  "seller_notice_phone",
+  "seller_notice_email",
   "buyer_client_address",
   "buyer_client_city_state_zip",
   "brokerage_city_state_zip",

@@ -33,6 +33,7 @@ export const FIELDS_CATALOG_PAGE_DESCRIPTION = `Reusable business field definiti
 export const SEEDED_FIELD_RESOLVER_KEYS = [
   "property_full_address",
   "property_city_state_zip",
+  "property_address_street_zip",
   "agent_full_name",
   "broker_full_name",
   "buyer_1_full_name",
@@ -40,6 +41,19 @@ export const SEEDED_FIELD_RESOLVER_KEYS = [
   "seller_1_full_name",
   "seller_2_full_name",
   "seller_names",
+  "buyer_names",
+  "contract_survey_option_seller_existing",
+  "contract_survey_option_buyer_new",
+  "contract_survey_option_seller_new",
+  "contract_effective_day",
+  "contract_effective_month",
+  "contract_effective_year",
+  "buyer_notice_address",
+  "buyer_notice_phone",
+  "buyer_notice_email",
+  "seller_notice_address",
+  "seller_notice_phone",
+  "seller_notice_email",
 ] as const;
 
 export type SeededFieldResolverKey = (typeof SEEDED_FIELD_RESOLVER_KEYS)[number];
@@ -49,6 +63,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   settings: "Settings",
   contact_buyer: "Contact · Buyer",
   contact_seller: "Contact · Seller",
+  contract: "Contract",
 };
 
 export function formatFieldResolverCategory(category: string): string {
