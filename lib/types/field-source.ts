@@ -79,14 +79,6 @@ export const PACKET_INSTANCE_BACKFILL_FIELD_KEYS = [
 /** @deprecated Use PACKET_INSTANCE_BACKFILL_FIELD_KEYS. Kept for migration references only. */
 export const PACKET_INSTANCE_FIELD_KEY_HINTS = PACKET_INSTANCE_BACKFILL_FIELD_KEYS;
 
-export const CONTRACT_DETAILS_SOURCE_PATHS = [
-  "natural_resource_leases_delivered",
-  "natural_resource_leases_not_delivered",
-  "natural_resource_lease_termination_days",
-  "title_exception_amended_paid_by_buyer",
-  "title_exception_amended_paid_by_seller",
-] as const;
-
 export const SETTINGS_AGENT_SOURCE_PATHS = [
   "agent_first_name",
   "agent_middle_name",
