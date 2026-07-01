@@ -1303,6 +1303,11 @@ function resolveFromFieldSourceMapping(
       ) {
         return resolvePropertyAddressCity(context);
       }
+      if (
+        field.resolver_key?.trim().toLowerCase() === "property_hoa_name"
+      ) {
+        return resolvePropertyHoaResolverKey("property_hoa_name", context);
+      }
       return field.source_path
         ? resolvePropertySourcePath(field.source_path, context)
         : null;
