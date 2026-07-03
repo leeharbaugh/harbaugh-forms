@@ -21,10 +21,10 @@ type PdfFieldInventoryPanelProps = {
   importReportDismissed: boolean;
   importReportKey: number;
   isExtracting: boolean;
-  isApplying: boolean;
+  isImporting: boolean;
   error: string | null;
   onExtract: () => void;
-  onImportReview: () => void;
+  onImport: () => void;
   onDismissImportReport: () => void;
 };
 
@@ -199,6 +199,12 @@ function ImportReportCard({
             Updated {result.updatedCount} · Already existed{" "}
             {result.alreadyExistedCount} · Skipped {result.skippedSignatureFields}
           </p>
+          {result.createdFields > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              New fields created: {result.createdFields} · Reused existing:{" "}
+              {result.reusedFields}
+            </p>
+          )}
         </div>
         <Button
           type="button"
@@ -245,13 +251,6 @@ function ImportReportCard({
         >
           <FieldNameList items={result.alreadyExistedItems} />
         </CollapsibleSection>
-
-        {result.createdFields > 0 && (
-          <p className="text-xs text-muted-foreground">
-            New catalog fields: {result.createdFields} · reused:{" "}
-            {result.reusedFields}
-          </p>
-        )}
       </div>
     </div>
   );
@@ -263,10 +262,10 @@ export function PdfFieldInventoryPanel({
   importReportDismissed,
   importReportKey,
   isExtracting,
-  isApplying,
+  isImporting,
   error,
   onExtract,
-  onImportReview,
+  onImport,
   onDismissImportReport,
 }: PdfFieldInventoryPanelProps) {
   const importableCount = inventory?.items.length ?? 0;
@@ -278,9 +277,9 @@ export function PdfFieldInventoryPanel({
       <div>
         <h2 className="text-sm font-semibold">PDF field inventory</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Extract AcroForm fields from the template PDF, then use Import &
-          Review to map them before adding to the field inventory. Signature and
-          initials fields are excluded by default.
+          Extract AcroForm fields from the template PDF, then import them as
+          form-specific fields. Source mappings can be configured later via the
+          Edit dialog. Signature and initials fields are excluded by default.
         </p>
       </div>
 
@@ -289,7 +288,7 @@ export function PdfFieldInventoryPanel({
           type="button"
           variant="outline"
           size="sm"
-          disabled={isExtracting || isApplying}
+          disabled={isExtracting || isImporting}
           onClick={onExtract}
         >
           {isExtracting ? "Extracting..." : "Extract PDF fields"}
@@ -298,11 +297,13 @@ export function PdfFieldInventoryPanel({
           type="button"
           size="sm"
           disabled={
-            isExtracting || isApplying || !inventory || importableCount === 0
+            isExtracting || isImporting || !inventory || importableCount === 0
           }
-          onClick={onImportReview}
+          onClick={onImport}
         >
-          {isApplying ? "Opening..." : `Import & Review (${importableCount})`}
+          {isImporting
+            ? "Importing..."
+            : `Import AcroForm Fields (${importableCount})`}
         </Button>
       </div>
 

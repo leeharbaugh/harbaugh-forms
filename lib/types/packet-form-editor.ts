@@ -128,11 +128,11 @@ export function buildPacketFormFieldViews(params: {
   });
 }
 
-/** Shared selection key for PDF overlays and sidebar rows (prefer stable instance id). */
+/** Unique selection key per template placement row (mapping id), not per field instance. */
 export function getPacketFormFieldSelectionKey(
   fieldView: Pick<PacketFormFieldView, "instance" | "mapping">,
 ): string {
-  return fieldView.instance.id || fieldView.mapping.id;
+  return fieldView.mapping.id || fieldView.instance.id;
 }
 
 export function packetFormFieldViewToOverlayField(

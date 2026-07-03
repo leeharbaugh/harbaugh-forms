@@ -12,20 +12,23 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { saveContactWithOptionalProperty } from "@/lib/contact-save";
 import {
   type Contact,
   contactToInput,
   emptyContactInput,
   formatContactDisplayName,
-  normalizeContactInput,
   validateContactInput,
 } from "@/lib/types/contact";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
+import { CONTACTS_LIST_RESET_EVENT } from "@/lib/contacts-list-reset";
 
 type FormMode = "hidden" | "create" | "edit";
 
 export function ContactsPage() {
+  const pathname = usePathname();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -35,6 +38,8 @@ export function ContactsPage() {
   const [formMode, setFormMode] = useState<FormMode>("hidden");
   const [editingContactId, setEditingContactId] = useState<number | null>(null);
   const [formValue, setFormValue] = useState(emptyContactInput());
+  const [addAddressAsProperty, setAddAddressAsProperty] = useState(false);
+  const formPanelRef = useRef<HTMLDivElement>(null);
 
   const loadContacts = useCallback(async () => {
     const supabase = createClient();
@@ -86,10 +91,53 @@ export function ContactsPage() {
     return () => clearTimeout(timeout);
   }, [loadContacts]);
 
+  const closeForm = useCallback(() => {
+    setFormMode("hidden");
+    setEditingContactId(null);
+    setFormValue(emptyContactInput());
+    setAddAddressAsProperty(false);
+    setFormError(null);
+  }, []);
+
+  useEffect(() => {
+    if (pathname === "/contacts") {
+      closeForm();
+    }
+  }, [pathname, closeForm]);
+
+  useEffect(() => {
+    const handleReset = () => {
+      closeForm();
+    };
+
+    window.addEventListener(CONTACTS_LIST_RESET_EVENT, handleReset);
+    return () => {
+      window.removeEventListener(CONTACTS_LIST_RESET_EVENT, handleReset);
+    };
+  }, [closeForm]);
+
+  useEffect(() => {
+    if (formMode === "hidden") {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      formPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [formMode, editingContactId]);
+
   const openCreateForm = () => {
     setFormMode("create");
     setEditingContactId(null);
     setFormValue(emptyContactInput());
+    setAddAddressAsProperty(false);
     setFormError(null);
   };
 
@@ -97,19 +145,12 @@ export function ContactsPage() {
     setFormMode("edit");
     setEditingContactId(contact.id);
     setFormValue(contactToInput(contact));
-    setFormError(null);
-  };
-
-  const closeForm = () => {
-    setFormMode("hidden");
-    setEditingContactId(null);
-    setFormValue(emptyContactInput());
+    setAddAddressAsProperty(false);
     setFormError(null);
   };
 
   const handleSave = async () => {
-    const normalized = normalizeContactInput(formValue);
-    const validationError = validateContactInput(normalized);
+    const validationError = validateContactInput(formValue);
 
     if (validationError) {
       setFormError(validationError);
@@ -121,28 +162,19 @@ export function ContactsPage() {
 
     const supabase = createClient();
 
-    if (formMode === "create") {
-      const { error } = await supabase.from("contacts").insert(normalized);
-
-      if (error) {
-        setFormError(error.message);
-        setIsSubmitting(false);
-        return;
-      }
-    }
-
-    if (formMode === "edit" && editingContactId !== null) {
-      const { error } = await supabase
-        .from("contacts")
-        .update(normalized)
-        .eq("id", editingContactId)
-        .eq("status", "ACTIVE");
-
-      if (error) {
-        setFormError(error.message);
-        setIsSubmitting(false);
-        return;
-      }
+    try {
+      await saveContactWithOptionalProperty(supabase, {
+        contact: formValue,
+        addAddressAsProperty,
+        mode: formMode === "create" ? "create" : "edit",
+        contactId: editingContactId ?? undefined,
+      });
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Failed to save contact.",
+      );
+      setIsSubmitting(false);
+      return;
     }
 
     setIsSubmitting(false);
@@ -196,7 +228,7 @@ export function ContactsPage() {
       </div>
 
       {formMode !== "hidden" && (
-        <Card>
+        <Card ref={formPanelRef} className="scroll-mt-6">
           <CardHeader>
             <CardTitle>
               {formMode === "create" ? "Add contact" : "Edit contact"}
@@ -211,6 +243,8 @@ export function ContactsPage() {
             <ContactForm
               value={formValue}
               onChange={setFormValue}
+              addAddressAsProperty={addAddressAsProperty}
+              onAddAddressAsPropertyChange={setAddAddressAsProperty}
               onSubmit={() => void handleSave()}
               onCancel={closeForm}
               isSubmitting={isSubmitting}

@@ -15,7 +15,8 @@ type PdfAcroformImportDialogProps = {
   detectedCount: number;
   importableCount: number;
   skippedSignatureCount: number;
-  onImportReview: () => void;
+  isImporting: boolean;
+  onImport: () => void;
   onContinueManual: () => void;
 };
 
@@ -24,7 +25,8 @@ export function PdfAcroformImportDialog({
   detectedCount,
   importableCount,
   skippedSignatureCount,
-  onImportReview,
+  isImporting,
+  onImport,
   onContinueManual,
 }: PdfAcroformImportDialogProps) {
   if (!open) {
@@ -37,17 +39,22 @@ export function PdfAcroformImportDialog({
         type="button"
         className="absolute inset-0 bg-background/80 backdrop-blur-sm"
         onClick={onContinueManual}
+        disabled={isImporting}
         aria-label="Close import dialog"
       />
       <Card className="relative z-10 w-full max-w-md shadow-lg">
         <CardHeader>
-          <CardTitle>AcroForm fields detected</CardTitle>
+          <CardTitle>Import AcroForm fields</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
             This PDF contains {detectedCount} fillable AcroForm field
-            {detectedCount === 1 ? "" : "s"}. Review suggested field matches
-            before importing them into the template editor.
+            {detectedCount === 1 ? "" : "s"}. Import them as form-specific
+            fields with coordinates from the PDF?
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Each field will be created with <strong>manual_only</strong> source.
+            You can configure source mappings later using the Edit dialog.
           </p>
           {skippedSignatureCount > 0 && (
             <p className="text-xs text-muted-foreground">
@@ -68,15 +75,16 @@ export function PdfAcroformImportDialog({
             type="button"
             variant="outline"
             onClick={onContinueManual}
+            disabled={isImporting}
           >
             Continue with Manual Mapping
           </Button>
           <Button
             type="button"
-            onClick={onImportReview}
-            disabled={importableCount === 0}
+            onClick={onImport}
+            disabled={isImporting || importableCount === 0}
           >
-            Import &amp; Review
+            {isImporting ? "Importing..." : "Import AcroForm Fields"}
           </Button>
         </CardFooter>
       </Card>

@@ -1,4 +1,5 @@
 import { AuthButton } from "@/components/auth-button";
+import { ContactsNavLink } from "@/components/contacts-nav-link";
 import { EnsureProfile } from "@/components/ensure-profile";
 import { EnvVarWarning } from "@/components/env-var-warning";
 import { hasEnvVars } from "@/lib/utils";
@@ -29,9 +30,7 @@ export function AppNav({ active }: AppNavProps) {
             Harbaugh Forms
           </Link>
           <div className="flex items-center gap-4">
-            <Link href="/contacts" className={linkClass("contacts")}>
-              Contacts
-            </Link>
+            <ContactsNavLink className={linkClass("contacts")} />
             <Link href="/properties" className={linkClass("properties")}>
               Properties
             </Link>

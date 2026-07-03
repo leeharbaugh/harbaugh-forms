@@ -22,7 +22,6 @@ import {
 import { formatFieldMappingReference } from "@/lib/types/form-field-mapping";
 import {
   isAcroformImportedMapping,
-  isUnmappedAcroformMapping,
   type PlacedPdfField,
 } from "@/lib/types/template-pdf-field";
 
@@ -81,12 +80,8 @@ export function PdfFieldEditDialog({
   }
 
   const isAcroform = isAcroformImportedMapping(mapping);
-  const isUnmapped = isUnmappedAcroformMapping(mapping);
   const placementValidationError = validatePdfPlacementInput(placementValue);
-  const fieldValidationError =
-    isUnmapped || !mapping.field_id
-      ? null
-      : validateFieldInput(fieldValue);
+  const fieldValidationError = validateFieldInput(fieldValue);
   const validationError = placementValidationError ?? fieldValidationError;
   const isBusy = isSubmitting || isDeleting;
 
@@ -110,11 +105,7 @@ export function PdfFieldEditDialog({
           <CardTitle>Edit field mapping</CardTitle>
           <p className="text-sm text-muted-foreground">
             Placement {formatFieldMappingReference(mapping.id)}
-            {mapping.field_key
-              ? ` · ${mapping.field_key}`
-              : isAcroform && mapping.pdf_field_name
-                ? ` · ${mapping.pdf_field_name}`
-                : ""}
+            {mapping.field_key ? ` · ${mapping.field_key}` : ""}
           </p>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -145,23 +136,15 @@ export function PdfFieldEditDialog({
                   Section B: Reusable field source mapping
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  These settings update the catalog field definition used across
-                  all forms.
+                  These settings update the field definition. Configure source
+                  type, source path, and resolver to control how this field gets
+                  its value.
                 </p>
               </div>
-
-              {isUnmapped && (
-                <p className="text-sm text-amber-700 dark:text-amber-300">
-                  This AcroForm field is not linked to a reusable catalog field
-                  yet. Use Import &amp; Review or map it from the field catalog
-                  elsewhere before editing source mapping.
-                </p>
-              )}
 
               <PdfFieldDefinitionFormFields
                 value={fieldValue}
                 onChange={onFieldChange}
-                readOnly={isUnmapped || !mapping.field_id}
               />
             </section>
 

@@ -11,6 +11,7 @@ import {
 import type { PdfFieldInventoryItem } from "@/lib/pdf-field-extract";
 import { isCheckboxWidgetType } from "@/lib/field-instances";
 import { CHECKBOX_MAPPING_SIZE_PX } from "@/lib/checkbox-constants";
+import type { Field } from "@/lib/types/field";
 
 export type ApplyPdfFieldInventoryDetailItem = {
   pdfFieldName: string;
@@ -29,11 +30,8 @@ export type ApplyPdfFieldInventoryResult = {
   importedItems: ApplyPdfFieldInventoryDetailItem[];
   updatedItems: ApplyPdfFieldInventoryDetailItem[];
   alreadyExistedItems: ApplyPdfFieldInventoryDetailItem[];
-  /** @deprecated Use importedCount */
   createdMappings: number;
-  /** @deprecated Use alreadyExistedCount */
   skippedExistingMappings: number;
-  /** @deprecated Use skippedSignatureFields */
   skippedAuthentisign: number;
 };
 
@@ -52,9 +50,48 @@ function acroFormMappingKey(
   return `${pdfFieldName.trim().toLowerCase()}:${occurrenceIndex}`;
 }
 
+function normalizeFormCodeForFieldKey(formCode: string): string {
+  return formCode
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_{2,}/g, "_");
+}
+
+function normalizePdfNameForFieldKey(pdfFieldName: string): string {
+  return pdfFieldName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_{2,}/g, "_");
+}
+
+function buildFormSpecificFieldKey(
+  formCode: string,
+  pdfFieldName: string,
+): string {
+  const prefix = normalizeFormCodeForFieldKey(formCode);
+  const suffix = normalizePdfNameForFieldKey(pdfFieldName);
+  return `${prefix}_${suffix}`;
+}
+
+function humanizePdfFieldName(pdfFieldName: string): string {
+  return pdfFieldName
+    .trim()
+    .replace(/[_\-./]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
 function buildMappingPayload(
   formId: number,
-  fieldId: string | null,
+  fieldId: string,
   item: PdfFieldInventoryItem,
 ) {
   return {
@@ -78,7 +115,7 @@ function buildMappingPayload(
     field_widget_type: item.fieldWidgetType,
     default_value_override: item.pdfDefaultValue,
     required: false,
-    notes: "Imported from PDF AcroForm field inventory.",
+    notes: `Imported from AcroForm field: ${item.pdfFieldName}`,
     pdf_field_name: item.pdfFieldName,
     pdf_field_type: item.pdfFieldType,
     pdf_export_value: item.pdfExportValue,
@@ -89,14 +126,8 @@ function buildMappingPayload(
 function mappingNeedsUpdate(
   existing: FormFieldMapping,
   payload: ReturnType<typeof buildMappingPayload>,
-  options?: { updateFieldId?: boolean },
 ): boolean {
-  const fieldIdChanged =
-    options?.updateFieldId && existing.field_id !== payload.field_id;
-
   return (
-    fieldIdChanged ||
-    existing.mapping_name !== payload.mapping_name ||
     existing.page_number !== payload.page_number ||
     (existing.occurrence_index ?? 0) !== payload.occurrence_index ||
     existing.x !== payload.x ||
@@ -112,18 +143,58 @@ function mappingNeedsUpdate(
   );
 }
 
-export async function applyPdfFieldInventory(
+async function findOrCreateFormField(
+  supabase: SupabaseClient,
+  fieldKey: string,
+  item: PdfFieldInventoryItem,
+): Promise<{ field: Field; created: boolean }> {
+  const { data: existing } = await supabase
+    .from("fields")
+    .select("*")
+    .eq("field_key", fieldKey)
+    .eq("status", "ACTIVE")
+    .maybeSingle();
+
+  if (existing) {
+    return { field: existing as Field, created: false };
+  }
+
+  const { data: created, error } = await supabase
+    .from("fields")
+    .insert({
+      field_key: fieldKey,
+      field_name: fieldKey,
+      field_label: humanizePdfFieldName(item.pdfFieldName),
+      field_data_type: item.fieldDataType,
+      field_widget_type: item.fieldWidgetType,
+      default_value: null,
+      default_checked: item.fieldWidgetType === "checkbox" ? false : null,
+      required: false,
+      notes: `Imported from AcroForm field: ${item.pdfFieldName}`,
+      source_type: "manual_only",
+      source_path: null,
+      resolver_key: null,
+      fallback_value: null,
+      status: "ACTIVE",
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create field ${fieldKey}: ${error.message}`);
+  }
+
+  return { field: created as Field, created: true };
+}
+
+export async function importAcroformFields(
   supabase: SupabaseClient,
   formId: number,
+  formCode: string,
   items: PdfFieldInventoryItem[],
   options?: {
     detectedCount?: number;
     skippedSignatureFields?: number;
-    fieldIdResolver?: (
-      item: PdfFieldInventoryItem,
-      existingMapping: FormFieldMapping | null,
-    ) => string | null;
-    updateFieldId?: boolean;
   },
 ): Promise<ApplyPdfFieldInventoryResult> {
   const existingMappings = await loadActiveFormFieldMappingsForForm(
@@ -176,33 +247,45 @@ export async function applyPdfFieldInventory(
       continue;
     }
 
-    const acroKey = acroFormMappingKey(item.pdfFieldName, item.occurrenceIndex);
-    const existingMapping = existingByAcroFormKey.get(acroKey);
+    const fieldKey = buildFormSpecificFieldKey(formCode, item.pdfFieldName);
+    const { field, created: fieldCreated } = await findOrCreateFormField(
+      supabase,
+      fieldKey,
+      item,
+    );
 
-    let fieldId = existingMapping?.field_id ?? null;
-
-    if (options?.fieldIdResolver) {
-      fieldId = options.fieldIdResolver(item, existingMapping ?? null);
+    if (fieldCreated) {
+      result.createdFields += 1;
+    } else {
+      result.reusedFields += 1;
     }
 
-    const payload = buildMappingPayload(formId, fieldId, item);
+    const acroKey = acroFormMappingKey(item.pdfFieldName, item.occurrenceIndex);
+    const existingMapping = existingByAcroFormKey.get(acroKey);
+    const payload = buildMappingPayload(formId, field.id, item);
 
     if (existingMapping) {
-      if (
-        !mappingNeedsUpdate(existingMapping, payload, {
-          updateFieldId: options?.updateFieldId,
-        })
-      ) {
-        result.alreadyExistedCount += 1;
-        result.skippedExistingMappings += 1;
-        result.alreadyExistedItems.push(toDetailItem(item));
+      if (!mappingNeedsUpdate(existingMapping, payload)) {
+        if (existingMapping.field_id !== field.id) {
+          await supabase
+            .from("form_field_mappings")
+            .update({ field_id: field.id })
+            .eq("id", existingMapping.id)
+            .eq("status", "ACTIVE");
+          result.updatedCount += 1;
+          result.updatedItems.push(toDetailItem(item));
+        } else {
+          result.alreadyExistedCount += 1;
+          result.skippedExistingMappings += 1;
+          result.alreadyExistedItems.push(toDetailItem(item));
+        }
         continue;
       }
 
       const { error } = await supabase
         .from("form_field_mappings")
         .update({
-          ...(options?.updateFieldId ? { field_id: payload.field_id } : {}),
+          field_id: field.id,
           mapping_name: payload.mapping_name,
           page_number: payload.page_number,
           occurrence_index: payload.occurrence_index,
@@ -248,16 +331,6 @@ export async function applyPdfFieldInventory(
   }
 
   return result;
-}
-
-export async function loadMappableFormFieldMappingsForForm(
-  supabase: SupabaseClient,
-  formId: number,
-): Promise<FormFieldMapping[]> {
-  const mappings = await loadActiveFormFieldMappingsForForm(supabase, formId);
-  return mappings.filter(
-    (mapping) => !isAuthentisignExcludedFormFieldMapping(mapping),
-  );
 }
 
 export { FORM_FIELD_MAPPING_SELECT };

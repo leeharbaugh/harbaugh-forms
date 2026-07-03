@@ -1,8 +1,10 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { contactHasAddressInfo } from "@/lib/contact-property-from-address";
 import {
   type ContactInput,
   type ContactType,
@@ -15,6 +17,8 @@ import type { ReactNode } from "react";
 type ContactFormProps = {
   value: ContactInput;
   onChange: (value: ContactInput) => void;
+  addAddressAsProperty?: boolean;
+  onAddAddressAsPropertyChange?: (checked: boolean) => void;
   onSubmit?: () => void;
   onCancel?: () => void;
   isSubmitting?: boolean;
@@ -77,6 +81,8 @@ function ViewField({
 export function ContactForm({
   value,
   onChange,
+  addAddressAsProperty = false,
+  onAddAddressAsPropertyChange,
   onSubmit,
   onCancel,
   isSubmitting = false,
@@ -85,6 +91,10 @@ export function ContactForm({
   showActions = true,
 }: ContactFormProps) {
   const readOnly = mode === "view";
+  const showAddAsPropertyOption =
+    !readOnly &&
+    contactHasAddressInfo(value) &&
+    onAddAddressAsPropertyChange != null;
 
   const setField = <K extends keyof ContactInput>(
     key: K,
@@ -487,6 +497,33 @@ export function ContactForm({
           </>
         )}
       </ContactSection>
+
+      {showAddAsPropertyOption && (
+        <ContactSection
+          title="Property"
+          description="Optionally create a property record from this contact's address."
+        >
+          <div className="flex items-start gap-2 sm:col-span-2">
+            <AppCheckbox
+              id="add_address_as_property"
+              checked={addAddressAsProperty}
+              onCheckedChange={(checked) =>
+                onAddAddressAsPropertyChange?.(checked === true)
+              }
+            />
+            <div className="space-y-1">
+              <Label htmlFor="add_address_as_property" className="font-normal">
+                Add this address as a property
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Uses the street address when provided; otherwise the mailing
+                address. PO Boxes and mailing-only addresses cannot be added as
+                properties.
+              </p>
+            </div>
+          </div>
+        </ContactSection>
+      )}
 
       <ContactSection title="Professional & personal">
         {readOnly ? (

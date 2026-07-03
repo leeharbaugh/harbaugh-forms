@@ -5,7 +5,6 @@ import "react-pdf/dist/Page/TextLayer.css";
 
 import { PdfEditorResizableSidebar } from "@/components/forms/pdf-editor-resizable-sidebar";
 import { PdfAcroformImportDialog } from "@/components/forms/pdf-acroform-import-dialog";
-import { PdfAcroformImportWizard } from "@/components/forms/pdf-acroform-import-wizard";
 import { PdfFieldEditDialog } from "@/components/forms/pdf-field-edit-dialog";
 import { PdfFieldInventoryPanel } from "@/components/forms/pdf-field-inventory-panel";
 import { PdfFieldOverlay } from "@/components/forms/pdf-field-overlay";
@@ -18,6 +17,7 @@ import { getFormPdfSignedUrl } from "@/lib/form-storage";
 import { extractPdfFieldInventory } from "@/lib/pdf-field-extract";
 import {
   type ApplyPdfFieldInventoryResult,
+  importAcroformFields,
 } from "@/lib/pdf-field-inventory";
 import { createClient } from "@/lib/supabase/client";
 import { type Form, formatFormReference } from "@/lib/types/form";
@@ -202,9 +202,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   const [importReportDismissed, setImportReportDismissed] = useState(false);
   const [importReportKey, setImportReportKey] = useState(0);
   const [isExtractingInventory, setIsExtractingInventory] = useState(false);
+  const [isImportingAcroform, setIsImportingAcroform] = useState(false);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
   const [acroformPromptOpen, setAcroformPromptOpen] = useState(false);
-  const [acroformWizardOpen, setAcroformWizardOpen] = useState(false);
   const [acroformPromptDismissed, setAcroformPromptDismissed] = useState(false);
   const acroformAutoDetectRef = useRef(false);
   const [selectedMappingId, setSelectedMappingId] = useState<string | null>(
@@ -566,26 +566,43 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     }
   }, [pdfUrl]);
 
-  const handleOpenAcroformWizard = async () => {
-    if (!inventory || inventory.items.length === 0) {
-      setInventoryError("Extract PDF fields before starting import review.");
+  const handleImportAcroformFields = useCallback(async () => {
+    if (!template || !inventory || inventory.items.length === 0) {
       return;
     }
 
+    setIsImportingAcroform(true);
+    setInventoryError(null);
     setAcroformPromptOpen(false);
-    setAcroformWizardOpen(true);
-  };
 
-  const handleFinishAcroformImport = async (
-    result: ApplyPdfFieldInventoryResult,
-  ) => {
-    setInventoryApplyResult(result);
-    setImportReportDismissed(false);
-    setImportReportKey((current) => current + 1);
-    setAcroformWizardOpen(false);
-    setAcroformPromptDismissed(true);
-    await refreshEditorData({ preserveScroll: true });
-  };
+    try {
+      const supabase = createClient();
+      const result = await importAcroformFields(
+        supabase,
+        formId,
+        template.form_code,
+        inventory.items,
+        {
+          detectedCount: inventory.detectedCount,
+          skippedSignatureFields: inventory.skipped.length,
+        },
+      );
+
+      setInventoryApplyResult(result);
+      setImportReportDismissed(false);
+      setImportReportKey((current) => current + 1);
+      setAcroformPromptDismissed(true);
+      await refreshEditorData({ preserveScroll: true });
+    } catch (error) {
+      setInventoryError(
+        error instanceof Error
+          ? error.message
+          : "Failed to import AcroForm fields.",
+      );
+    } finally {
+      setIsImportingAcroform(false);
+    }
+  }, [template, inventory, formId, refreshEditorData]);
 
   const handleDismissAcroformPrompt = () => {
     setAcroformPromptOpen(false);
@@ -964,14 +981,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
     const isAcroform = isAcroformImportedMapping(editingMapping);
     const placementValidationError = validatePdfPlacementInput(editValue);
-    const normalizedPlacementPreview = normalizePdfMappingEditorInput(editValue);
-    const hasLinkedField = Boolean(
-      editingMapping.field_id || normalizedPlacementPreview.field_id,
-    );
-    const fieldValidationError =
-      isAcroform && !hasLinkedField
-        ? null
-        : validateFieldInput(editFieldValue);
+    const fieldValidationError = validateFieldInput(editFieldValue);
     const validationError = placementValidationError ?? fieldValidationError;
     if (validationError) {
       setEditError(validationError);
@@ -990,7 +1000,6 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     try {
       const mappingUpdates = isAcroform
         ? {
-            field_id: normalizedPlacement.field_id || null,
             mapping_name: normalizedPlacement.mapping.mapping_name,
             default_value_override:
               normalizedPlacement.mapping.default_value_override,
@@ -1013,10 +1022,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         return;
       }
 
-      const linkedFieldId =
-        (isAcroform
-          ? normalizedPlacement.field_id || editingMapping.field_id
-          : editingMapping.field_id) ?? null;
+      const linkedFieldId = editingMapping.field_id;
 
       if (linkedFieldId) {
         const { error: fieldError } = await supabase
@@ -1566,10 +1572,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
             importReportDismissed={importReportDismissed}
             importReportKey={importReportKey}
             isExtracting={isExtractingInventory}
-            isApplying={false}
+            isImporting={isImportingAcroform}
             error={inventoryError}
             onExtract={() => void handleExtractInventory()}
-            onImportReview={() => void handleOpenAcroformWizard()}
+            onImport={() => void handleImportAcroformFields()}
             onDismissImportReport={() => setImportReportDismissed(true)}
           />
           <div className="shrink-0 border-b px-4 py-3">
@@ -1626,11 +1632,6 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                       >
                         <div className="font-medium">
                           {formatMappingOverlayLabel(mapping)}
-                          {details.is_unmapped && (
-                            <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                              Unmapped
-                            </span>
-                          )}
                         </div>
                         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <dt>Field key</dt>
@@ -1807,20 +1808,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         detectedCount={inventory?.detectedCount ?? 0}
         importableCount={inventory?.items.length ?? 0}
         skippedSignatureCount={inventory?.skipped.length ?? 0}
-        onImportReview={() => void handleOpenAcroformWizard()}
+        isImporting={isImportingAcroform}
+        onImport={() => void handleImportAcroformFields()}
         onContinueManual={handleDismissAcroformPrompt}
       />
-
-      {template && inventory && (
-        <PdfAcroformImportWizard
-          open={acroformWizardOpen}
-          form={template}
-          inventory={inventory}
-          catalogFields={catalogFields}
-          onFinish={(result) => void handleFinishAcroformImport(result)}
-          onCancel={() => setAcroformWizardOpen(false)}
-        />
-      )}
 
       <ConfirmDialog
         open={mappingPendingDelete != null}

@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { saveContactWithOptionalProperty } from "@/lib/contact-save";
 import {
   fetchContactAssociatedPackets,
   formatContactAssociatedPacketType,
@@ -21,7 +22,6 @@ import {
   contactToInput,
   emptyContactInput,
   formatContactDisplayName,
-  normalizeContactInput,
   validateContactInput,
 } from "@/lib/types/contact";
 import {
@@ -52,6 +52,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   const [packetsError, setPacketsError] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<FormMode>("hidden");
   const [formValue, setFormValue] = useState(emptyContactInput());
+  const [addAddressAsProperty, setAddAddressAsProperty] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -116,18 +117,19 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
 
     setFormMode("edit");
     setFormValue(contactToInput(contact));
+    setAddAddressAsProperty(false);
     setFormError(null);
   };
 
   const closeEditForm = () => {
     setFormMode("hidden");
     setFormValue(emptyContactInput());
+    setAddAddressAsProperty(false);
     setFormError(null);
   };
 
   const handleSave = async () => {
-    const normalized = normalizeContactInput(formValue);
-    const validationError = validateContactInput(normalized);
+    const validationError = validateContactInput(formValue);
 
     if (validationError) {
       setFormError(validationError);
@@ -138,19 +140,23 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
     setFormError(null);
 
     const supabase = createClient();
-    const { error } = await supabase
-      .from("contacts")
-      .update(normalized)
-      .eq("id", contactId)
-      .eq("status", "ACTIVE");
 
-    setIsSubmitting(false);
-
-    if (error) {
-      setFormError(error.message);
+    try {
+      await saveContactWithOptionalProperty(supabase, {
+        contact: formValue,
+        addAddressAsProperty,
+        mode: "edit",
+        contactId,
+      });
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Failed to save contact.",
+      );
+      setIsSubmitting(false);
       return;
     }
 
+    setIsSubmitting(false);
     closeEditForm();
     await loadContact();
   };
@@ -245,6 +251,8 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
             <ContactForm
               value={formValue}
               onChange={setFormValue}
+              addAddressAsProperty={addAddressAsProperty}
+              onAddAddressAsPropertyChange={setAddAddressAsProperty}
               onSubmit={() => void handleSave()}
               onCancel={closeEditForm}
               isSubmitting={isSubmitting}
