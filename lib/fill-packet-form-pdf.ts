@@ -11,7 +11,6 @@ import {
 import {
   getEffectivePdfFieldDimensions,
   isCheckboxPdfField,
-  type TemplatePdfFieldType,
 } from "@/lib/types/template-pdf-field";
 import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
 
@@ -213,9 +212,94 @@ function drawFieldOnPage(
   drawTextFieldOnPage(page, placement, exportText, font);
 }
 
+function tryFillNativeAcroFormField(
+  pdfDoc: PDFDocument,
+  fieldView: PacketFormFieldView,
+): boolean {
+  const pdfFieldName = fieldView.mapping.pdf_field_name?.trim();
+  if (!pdfFieldName) {
+    return false;
+  }
+
+  const displayValue = fieldView.displayValue ?? "";
+  const fieldMeta = {
+    field_type: fieldView.field_type,
+    field_widget_type:
+      fieldView.mapping.field_widget_type ??
+      fieldView.instance.fields?.field_widget_type ??
+      null,
+  };
+
+  try {
+    const form = pdfDoc.getForm();
+
+    if (isCheckboxPdfField(fieldMeta)) {
+      const checked = resolveCheckboxCheckedState(
+        displayValue,
+        fieldView.instance.fields?.default_checked,
+      );
+
+      try {
+        const checkbox = form.getCheckBox(pdfFieldName);
+        if (checked) {
+          checkbox.check();
+        } else {
+          checkbox.uncheck();
+        }
+        return true;
+      } catch {
+        const exportValue = fieldView.mapping.pdf_export_value?.trim();
+        if (exportValue && checked) {
+          try {
+            const radioGroup = form.getRadioGroup(pdfFieldName);
+            radioGroup.select(exportValue);
+            return true;
+          } catch {
+            return false;
+          }
+        }
+        return false;
+      }
+    }
+
+    const exportText = resolveExportText(fieldView, displayValue);
+
+    try {
+      const textField = form.getTextField(pdfFieldName);
+      textField.setText(exportText);
+      return true;
+    } catch {
+      // fall through to other field types
+    }
+
+    if (exportText) {
+      try {
+        const dropdown = form.getDropdown(pdfFieldName);
+        dropdown.select(exportText);
+        return true;
+      } catch {
+        // fall through
+      }
+
+      try {
+        const optionList = form.getOptionList(pdfFieldName);
+        optionList.select(exportText);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Write packet form field values onto a PDF byte array.
- * Coordinates match the on-screen overlay system (top-left origin, scaled to page size).
+ * Native AcroForm fields are filled by name when pdf_field_name is set;
+ * overlay drawing is used as a fallback for manual placements.
  */
 export async function fillPacketFormPdfBytes(
   sourcePdfBytes: Uint8Array,
@@ -224,8 +308,16 @@ export async function fillPacketFormPdfBytes(
   const pdfDoc = await PDFDocument.load(sourcePdfBytes);
   const pages = pdfDoc.getPages();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const overlayFields: PacketFormFieldView[] = [];
 
   for (const fieldView of fields) {
+    const filledNatively = tryFillNativeAcroFormField(pdfDoc, fieldView);
+    if (!filledNatively) {
+      overlayFields.push(fieldView);
+    }
+  }
+
+  for (const fieldView of overlayFields) {
     const pageIndex = fieldView.placement.page_number - 1;
     const page = pages[pageIndex];
     if (!page) {

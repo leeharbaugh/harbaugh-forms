@@ -18,7 +18,7 @@ export type TemplatePdfFieldType =
 
 export type PlacedPdfField = {
   id: string;
-  field_id: string;
+  field_id: string | null;
   form_id: number;
   field_key: string;
   field_label: string | null;
@@ -38,10 +38,25 @@ export type PlacedPdfField = {
   font_size: number;
   is_required: boolean;
   notes: string | null;
+  pdf_field_name: string | null;
+  pdf_field_type: string | null;
+  pdf_export_value: string | null;
   create_date: string;
   update_date: string;
   status: string;
 };
+
+export function isAcroformImportedMapping(
+  field: Pick<PlacedPdfField, "pdf_field_name">,
+): boolean {
+  return Boolean(field.pdf_field_name?.trim());
+}
+
+export function isUnmappedAcroformMapping(
+  field: Pick<PlacedPdfField, "pdf_field_name" | "field_id">,
+): boolean {
+  return isAcroformImportedMapping(field) && !field.field_id;
+}
 
 export type TemplatePdfField = PlacedPdfField;
 
@@ -177,6 +192,9 @@ export function formFieldMappingToPlacedPdfField(
     font_size: mapping.font_size ?? 10,
     is_required: mapping.required,
     notes: mapping.notes,
+    pdf_field_name: mapping.pdf_field_name,
+    pdf_field_type: mapping.pdf_field_type,
+    pdf_export_value: mapping.pdf_export_value,
     create_date: mapping.create_date,
     update_date: mapping.update_date,
     status: mapping.status,

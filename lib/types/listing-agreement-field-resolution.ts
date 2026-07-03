@@ -6,6 +6,9 @@ export type ListingAgreementDetailsRow = {
   seller_is_foreign_person?: boolean | null;
   listing_begin_date?: string | null;
   listing_end_date?: string | null;
+  lease_listing_begin_date?: string | null;
+  lease_listing_end_date?: string | null;
+  late_charges_incurred_day?: number | string | null;
   list_price?: number | string | null;
   keybox_authorized?: boolean | null;
   seller_authorizes_buyer_expense_disclosure?: boolean | null;
@@ -85,6 +88,8 @@ const LISTING_BOOLEAN_SOURCE_PATHS = new Set<string>([
 const LISTING_DATE_SOURCE_PATHS = new Set<string>([
   "listing_begin_date",
   "listing_end_date",
+  "lease_listing_begin_date",
+  "lease_listing_end_date",
 ]);
 
 const LISTING_SCALAR_SOURCE_PATHS = new Set<string>([
@@ -111,6 +116,7 @@ const LISTING_SCALAR_SOURCE_PATHS = new Set<string>([
   "internet_display_option",
   "add_other_document_description",
   "list_price",
+  "late_charges_incurred_day",
 ]);
 
 export function isListingAgreementDetailsSourcePath(value: string): boolean {

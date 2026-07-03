@@ -16,6 +16,8 @@ import {
   type PlacedPdfField,
   getDefaultFieldDimensions,
   getEffectivePdfFieldDimensions,
+  isAcroformImportedMapping,
+  isUnmappedAcroformMapping,
   type PendingPdfPlacement,
 } from "@/lib/types/template-pdf-field";
 import { isCheckboxWidgetType } from "@/lib/field-instances";
@@ -106,7 +108,7 @@ export function placedPdfFieldToMappingInput(
 
   return {
     field_selection_mode: "existing",
-    field_id: placed.field_id,
+    field_id: placed.field_id ?? "",
     quick_create: emptyQuickCreateFieldInput(),
     mapping_name: placed.mapping_name ?? "",
     occurrence_index: String(placed.occurrence_index ?? 0),
@@ -158,17 +160,27 @@ export type TemplatePlacementSidebarDetails = {
   page_number: number;
   mapping_name: string | null;
   occurrence_index: number | null;
+  pdf_field_name: string | null;
+  is_acroform: boolean;
+  is_unmapped: boolean;
 };
 
 export function templatePlacementSidebarDetails(
   placed: PlacedPdfField,
 ): TemplatePlacementSidebarDetails {
   return {
-    field_key: placed.field_key || "—",
-    field_label: placed.field_label?.trim() || "—",
+    field_key: placed.field_id
+      ? placed.field_key || "—"
+      : "Unmapped",
+    field_label: placed.field_id
+      ? placed.field_label?.trim() || "—"
+      : "Not linked to a reusable field",
     page_number: placed.page_number,
     mapping_name: placed.mapping_name?.trim() || null,
     occurrence_index: placed.occurrence_index,
+    pdf_field_name: placed.pdf_field_name?.trim() || null,
+    is_acroform: isAcroformImportedMapping(placed),
+    is_unmapped: isUnmappedAcroformMapping(placed),
   };
 }
 

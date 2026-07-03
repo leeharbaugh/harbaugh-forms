@@ -3,6 +3,9 @@
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
+import { PdfEditorResizableSidebar } from "@/components/forms/pdf-editor-resizable-sidebar";
+import { PdfAcroformImportDialog } from "@/components/forms/pdf-acroform-import-dialog";
+import { PdfAcroformImportWizard } from "@/components/forms/pdf-acroform-import-wizard";
 import { PdfFieldEditDialog } from "@/components/forms/pdf-field-edit-dialog";
 import { PdfFieldInventoryPanel } from "@/components/forms/pdf-field-inventory-panel";
 import { PdfFieldOverlay } from "@/components/forms/pdf-field-overlay";
@@ -14,7 +17,6 @@ import { createActiveField } from "@/lib/field-catalog";
 import { getFormPdfSignedUrl } from "@/lib/form-storage";
 import { extractPdfFieldInventory } from "@/lib/pdf-field-extract";
 import {
-  applyPdfFieldInventory,
   type ApplyPdfFieldInventoryResult,
 } from "@/lib/pdf-field-inventory";
 import { createClient } from "@/lib/supabase/client";
@@ -53,6 +55,7 @@ import {
   formFieldMappingToPlacedPdfField,
   getDefaultFieldDimensions,
   getEffectivePdfFieldDimensions,
+  isAcroformImportedMapping,
   normalizeCheckboxPdfPlacement,
   pdfToRenderRect,
   renderRectToPdfPlacementForField,
@@ -60,7 +63,6 @@ import {
 import { cn } from "@/lib/utils";
 import { usePdfEditorSession } from "@/lib/use-pdf-editor-session";
 import {
-  PDF_EDITOR_SIDEBAR_WIDTH,
   PDF_MIN_PAGE_WIDTH,
   type PdfWorkspaceScrollSnapshot,
   type PdfZoomMode,
@@ -73,6 +75,7 @@ import {
   scrollElementIntoContainer,
   stepZoomPercent,
 } from "@/lib/pdf-editor-zoom";
+import { usePdfEditorSidebarWidth } from "@/lib/use-pdf-editor-sidebar-width";
 import { ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -196,9 +199,14 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   );
   const [inventoryApplyResult, setInventoryApplyResult] =
     useState<ApplyPdfFieldInventoryResult | null>(null);
+  const [importReportDismissed, setImportReportDismissed] = useState(false);
+  const [importReportKey, setImportReportKey] = useState(0);
   const [isExtractingInventory, setIsExtractingInventory] = useState(false);
-  const [isApplyingInventory, setIsApplyingInventory] = useState(false);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
+  const [acroformPromptOpen, setAcroformPromptOpen] = useState(false);
+  const [acroformWizardOpen, setAcroformWizardOpen] = useState(false);
+  const [acroformPromptDismissed, setAcroformPromptDismissed] = useState(false);
+  const acroformAutoDetectRef = useRef(false);
   const [selectedMappingId, setSelectedMappingId] = useState<string | null>(
     null,
   );
@@ -223,6 +231,12 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     isPdfRenderReady,
     documentKey,
   } = usePdfEditorSession(pdfUrl, isLoading);
+  const {
+    width: sidebarWidth,
+    setWidth: setSidebarWidth,
+    minWidth: sidebarMinWidth,
+    maxWidth: sidebarMaxWidth,
+  } = usePdfEditorSidebarWidth();
 
   useEffect(() => {
     const element = pdfWorkspaceRef.current;
@@ -526,9 +540,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     void loadData({ showFullScreenLoading: true });
   }, [loadData]);
 
-  const handleExtractInventory = async () => {
+  const handleExtractInventory = useCallback(async (): Promise<PdfFieldInventoryResult | null> => {
     if (!pdfUrl) {
-      return;
+      return null;
     }
 
     setIsExtractingInventory(true);
@@ -538,6 +552,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     try {
       const result = await extractPdfFieldInventory(pdfUrl);
       setInventory(result);
+      return result;
     } catch (error) {
       setInventory(null);
       setInventoryError(
@@ -545,39 +560,57 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           ? error.message
           : "Failed to extract PDF field inventory.",
       );
+      return null;
     } finally {
       setIsExtractingInventory(false);
     }
-  };
+  }, [pdfUrl]);
 
-  const handleApplyInventory = async () => {
+  const handleOpenAcroformWizard = async () => {
     if (!inventory || inventory.items.length === 0) {
+      setInventoryError("Extract PDF fields before starting import review.");
       return;
     }
 
-    setIsApplyingInventory(true);
-    setInventoryError(null);
-
-    const supabase = createClient();
-
-    try {
-      const result = await applyPdfFieldInventory(
-        supabase,
-        formId,
-        inventory.items,
-      );
-      setInventoryApplyResult(result);
-      await refreshEditorData({ preserveScroll: true });
-    } catch (error) {
-      setInventoryError(
-        error instanceof Error
-          ? error.message
-          : "Failed to apply PDF field inventory.",
-      );
-    } finally {
-      setIsApplyingInventory(false);
-    }
+    setAcroformPromptOpen(false);
+    setAcroformWizardOpen(true);
   };
+
+  const handleFinishAcroformImport = async (
+    result: ApplyPdfFieldInventoryResult,
+  ) => {
+    setInventoryApplyResult(result);
+    setImportReportDismissed(false);
+    setImportReportKey((current) => current + 1);
+    setAcroformWizardOpen(false);
+    setAcroformPromptDismissed(true);
+    await refreshEditorData({ preserveScroll: true });
+  };
+
+  const handleDismissAcroformPrompt = () => {
+    setAcroformPromptOpen(false);
+    setAcroformPromptDismissed(true);
+  };
+
+  useEffect(() => {
+    if (
+      !pdfUrl ||
+      !isPdfRenderReady ||
+      acroformAutoDetectRef.current ||
+      acroformPromptDismissed
+    ) {
+      return;
+    }
+
+    acroformAutoDetectRef.current = true;
+
+    void (async () => {
+      const result = await handleExtractInventory();
+      if (result && result.detectedCount > 0) {
+        setAcroformPromptOpen(true);
+      }
+    })();
+  }, [pdfUrl, isPdfRenderReady, acroformPromptDismissed, handleExtractInventory]);
 
   const mappingsByPage = useMemo(() => {
     const grouped: Record<number, PlacedPdfField[]> = {};
@@ -895,6 +928,18 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     [scrollPdfPageIntoView],
   );
 
+  const handleCatalogFieldCreated = useCallback((field: Field) => {
+    setCatalogFields((current) => {
+      if (current.some((item) => item.id === field.id)) {
+        return current;
+      }
+
+      return [...current, field].sort((left, right) =>
+        left.field_key.localeCompare(right.field_key),
+      );
+    });
+  }, []);
+
   const openEditDialog = (mapping: PlacedPdfField) => {
     setSelectedMappingId(mapping.id);
     setEditingMapping(mapping);
@@ -917,8 +962,16 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   const handleSaveEdit = async () => {
     if (!editingMapping) return;
 
+    const isAcroform = isAcroformImportedMapping(editingMapping);
     const placementValidationError = validatePdfPlacementInput(editValue);
-    const fieldValidationError = validateFieldInput(editFieldValue);
+    const normalizedPlacementPreview = normalizePdfMappingEditorInput(editValue);
+    const hasLinkedField = Boolean(
+      editingMapping.field_id || normalizedPlacementPreview.field_id,
+    );
+    const fieldValidationError =
+      isAcroform && !hasLinkedField
+        ? null
+        : validateFieldInput(editFieldValue);
     const validationError = placementValidationError ?? fieldValidationError;
     if (validationError) {
       setEditError(validationError);
@@ -935,11 +988,20 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     const supabase = createClient();
 
     try {
+      const mappingUpdates = isAcroform
+        ? {
+            field_id: normalizedPlacement.field_id || null,
+            mapping_name: normalizedPlacement.mapping.mapping_name,
+            default_value_override:
+              normalizedPlacement.mapping.default_value_override,
+            required: normalizedPlacement.mapping.required,
+            notes: normalizedPlacement.mapping.notes,
+          }
+        : normalizedPlacement.mapping;
+
       const { data: mappingData, error: mappingError } = await supabase
         .from("form_field_mappings")
-        .update({
-          ...normalizedPlacement.mapping,
-        })
+        .update(mappingUpdates)
         .eq("id", editingMapping.id)
         .eq("status", "ACTIVE")
         .select(FORM_FIELD_MAPPING_SELECT)
@@ -951,18 +1013,26 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         return;
       }
 
-      const { error: fieldError } = await supabase
-        .from("fields")
-        .update(normalizedField)
-        .eq("id", editingMapping.field_id)
-        .eq("status", "ACTIVE");
+      const linkedFieldId =
+        (isAcroform
+          ? normalizedPlacement.field_id || editingMapping.field_id
+          : editingMapping.field_id) ?? null;
+
+      if (linkedFieldId) {
+        const { error: fieldError } = await supabase
+          .from("fields")
+          .update(normalizedField)
+          .eq("id", linkedFieldId)
+          .eq("status", "ACTIVE");
+
+        if (fieldError) {
+          setIsEditing(false);
+          setEditError(formatFieldSourceSaveError(fieldError.message));
+          return;
+        }
+      }
 
       setIsEditing(false);
-
-      if (fieldError) {
-        setEditError(formatFieldSourceSaveError(fieldError.message));
-        return;
-      }
 
       const updatedMapping = formFieldMappingToPlacedPdfField(
         mappingData as FormFieldMapping,
@@ -975,18 +1045,20 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         ),
       );
 
-      const { data: fieldData, error: fieldFetchError } = await supabase
-        .from("fields")
-        .select("*")
-        .eq("id", editingMapping.field_id)
-        .single();
+      if (linkedFieldId) {
+        const { data: fieldData, error: fieldFetchError } = await supabase
+          .from("fields")
+          .select("*")
+          .eq("id", linkedFieldId)
+          .single();
 
-      if (!fieldFetchError && fieldData) {
-        setCatalogFields((current) =>
-          current.map((field) =>
-            field.id === fieldData.id ? (fieldData as Field) : field,
-          ),
-        );
+        if (!fieldFetchError && fieldData) {
+          setCatalogFields((current) =>
+            current.map((field) =>
+              field.id === fieldData.id ? (fieldData as Field) : field,
+            ),
+          );
+        }
       }
 
       setSelectedMappingId(preservedMappingId);
@@ -1041,6 +1113,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       page_height: number;
     },
   ) => {
+    if (isAcroformImportedMapping(mapping)) {
+      return;
+    }
+
     if (mappingLayoutMatches(mapping, updates)) {
       return;
     }
@@ -1127,6 +1203,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
   const moveMappingToPage = useCallback(
     async (mapping: PlacedPdfField, newPageNumber: number) => {
+      if (isAcroformImportedMapping(mapping)) {
+        return;
+      }
+
       if (
         !Number.isInteger(newPageNumber) ||
         newPageNumber < 1 ||
@@ -1272,13 +1352,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         </div>
       </div>
 
-      <div
-        className="grid min-h-0 flex-1"
-        style={{
-          gridTemplateColumns: `minmax(0, 1fr) ${PDF_EDITOR_SIDEBAR_WIDTH}px`,
-        }}
-      >
-        <div className="flex min-h-0 min-w-0 flex-col border-r">
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col border-r">
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2">
             <Button
               type="button"
@@ -1479,15 +1554,23 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           </div>
         </div>
 
-        <aside className="flex min-h-0 min-w-0 flex-col border-l bg-card">
+        <PdfEditorResizableSidebar
+          width={sidebarWidth}
+          minWidth={sidebarMinWidth}
+          maxWidth={sidebarMaxWidth}
+          onWidthChange={setSidebarWidth}
+        >
           <PdfFieldInventoryPanel
             inventory={inventory}
             applyResult={inventoryApplyResult}
+            importReportDismissed={importReportDismissed}
+            importReportKey={importReportKey}
             isExtracting={isExtractingInventory}
-            isApplying={isApplyingInventory}
+            isApplying={false}
             error={inventoryError}
             onExtract={() => void handleExtractInventory()}
-            onApply={() => void handleApplyInventory()}
+            onImportReview={() => void handleOpenAcroformWizard()}
+            onDismissImportReport={() => setImportReportDismissed(true)}
           />
           <div className="shrink-0 border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Template placements</h2>
@@ -1524,6 +1607,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                         "flex flex-col gap-2 p-3 text-sm transition-colors",
                         isSelected &&
                           "bg-amber-50 ring-2 ring-inset ring-amber-400 dark:bg-amber-950/30",
+                        details.is_acroform &&
+                          !isSelected &&
+                          "border-l-4 border-l-emerald-500",
                       )}
                     >
                       <div
@@ -1540,14 +1626,25 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                       >
                         <div className="font-medium">
                           {formatMappingOverlayLabel(mapping)}
+                          {details.is_unmapped && (
+                            <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                              Unmapped
+                            </span>
+                          )}
                         </div>
                         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <dt>Field key</dt>
                           <dd className="font-mono">{details.field_key}</dd>
+                          {details.pdf_field_name && (
+                            <>
+                              <dt>PDF field</dt>
+                              <dd className="font-mono">{details.pdf_field_name}</dd>
+                            </>
+                          )}
                           <dt>Label</dt>
                           <dd>{details.field_label}</dd>
                           <dt>Page</dt>
-                          {isSelected ? (
+                          {isSelected && !details.is_acroform ? (
                             <dd className="col-span-1">
                               <div
                                 className="space-y-2"
@@ -1635,6 +1732,12 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                           ) : (
                             <dd>{details.page_number}</dd>
                           )}
+                          {details.is_acroform && (
+                            <>
+                              <dt>Source</dt>
+                              <dd>AcroForm import</dd>
+                            </>
+                          )}
                           <dt>Mapping name</dt>
                           <dd>{details.mapping_name ?? "—"}</dd>
                           <dt>Occurrence</dt>
@@ -1666,7 +1769,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
               </div>
             )}
           </div>
-        </aside>
+        </PdfEditorResizableSidebar>
       </div>
 
       <PdfFieldPlacementDialog
@@ -1688,6 +1791,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         mapping={editingMapping}
         placementValue={editValue}
         fieldValue={editFieldValue}
+        catalogFields={catalogFields}
         onPlacementChange={setEditValue}
         onFieldChange={setEditFieldValue}
         onSubmit={() => void handleSaveEdit()}
@@ -1697,6 +1801,26 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         isDeleting={isDeleting}
         error={editError}
       />
+
+      <PdfAcroformImportDialog
+        open={acroformPromptOpen}
+        detectedCount={inventory?.detectedCount ?? 0}
+        importableCount={inventory?.items.length ?? 0}
+        skippedSignatureCount={inventory?.skipped.length ?? 0}
+        onImportReview={() => void handleOpenAcroformWizard()}
+        onContinueManual={handleDismissAcroformPrompt}
+      />
+
+      {template && inventory && (
+        <PdfAcroformImportWizard
+          open={acroformWizardOpen}
+          form={template}
+          inventory={inventory}
+          catalogFields={catalogFields}
+          onFinish={(result) => void handleFinishAcroformImport(result)}
+          onCancel={() => setAcroformWizardOpen(false)}
+        />
+      )}
 
       <ConfirmDialog
         open={mappingPendingDelete != null}

@@ -8,16 +8,23 @@ import { roundPdfCoordinate } from "@/lib/types/template-pdf-field";
 
 export type PdfFieldInventorySkippedItem = {
   fieldKey: string;
+  pdfFieldName: string;
   pageNumber: number;
   pdfFieldType: string | null;
   reason: "authentisign";
 };
 
 export type PdfFieldInventoryItem = {
+  /** Normalized catalog field key */
   fieldKey: string;
+  /** Native AcroForm field name from the PDF */
+  pdfFieldName: string;
   fieldLabel: string;
   fieldWidgetType: string;
   fieldDataType: string;
+  pdfFieldType: string | null;
+  pdfDefaultValue: string | null;
+  pdfExportValue: string | null;
   pageNumber: number;
   x: number;
   y: number;
@@ -31,6 +38,7 @@ export type PdfFieldInventoryItem = {
 export type PdfFieldInventoryResult = {
   items: PdfFieldInventoryItem[];
   skipped: PdfFieldInventorySkippedItem[];
+  detectedCount: number;
 };
 
 type PdfWidgetAnnotation = {
@@ -42,6 +50,10 @@ type PdfWidgetAnnotation = {
   rect?: number[];
   checkBox?: boolean;
   radioButton?: boolean;
+  fieldValue?: string | boolean;
+  buttonValue?: string;
+  exportValue?: string;
+  defaultFieldValue?: string;
 };
 
 function normalizeExtractedFieldKey(rawName: string): string {
@@ -99,6 +111,23 @@ function pdfRectToPlacement(
   };
 }
 
+function readAnnotationString(value: unknown): string | null {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  return String(value).trim() || null;
+}
+
 function isWidgetAnnotation(annotation: PdfWidgetAnnotation): boolean {
   return (
     annotation.subtype === "Widget" ||
@@ -130,8 +159,12 @@ export async function extractPdfFieldInventory(
           continue;
         }
 
-        const rawName = annotation.fieldName ?? annotation.id ?? "";
-        const fieldKey = normalizeExtractedFieldKey(rawName);
+        const pdfFieldName = (annotation.fieldName ?? annotation.id ?? "").trim();
+        if (!pdfFieldName) {
+          continue;
+        }
+
+        const fieldKey = normalizeExtractedFieldKey(pdfFieldName);
         if (!fieldKey) {
           continue;
         }
@@ -148,6 +181,7 @@ export async function extractPdfFieldInventory(
         ) {
           skipped.push({
             fieldKey,
+            pdfFieldName,
             pageNumber,
             pdfFieldType,
             reason: "authentisign",
@@ -164,14 +198,25 @@ export async function extractPdfFieldInventory(
           pageWidth,
           pageHeight,
         );
-        const occurrenceIndex = occurrenceCounts.get(fieldKey) ?? 0;
-        occurrenceCounts.set(fieldKey, occurrenceIndex + 1);
+        const occurrenceIndex = occurrenceCounts.get(pdfFieldName) ?? 0;
+        occurrenceCounts.set(pdfFieldName, occurrenceIndex + 1);
+
+        const pdfDefaultValue =
+          readAnnotationString(annotation.defaultFieldValue) ??
+          readAnnotationString(annotation.fieldValue);
+        const pdfExportValue =
+          readAnnotationString(annotation.exportValue) ??
+          readAnnotationString(annotation.buttonValue);
 
         items.push({
           fieldKey,
+          pdfFieldName,
           fieldLabel: humanizeFieldKey(fieldKey),
           fieldWidgetType: catalogTypes.fieldWidgetType,
           fieldDataType: catalogTypes.fieldDataType,
+          pdfFieldType,
+          pdfDefaultValue,
+          pdfExportValue,
           pageNumber,
           occurrenceIndex,
           ...placement,
@@ -179,7 +224,11 @@ export async function extractPdfFieldInventory(
       }
     }
 
-    return { items, skipped };
+    return {
+      items,
+      skipped,
+      detectedCount: items.length + skipped.length,
+    };
   } finally {
     releasePdfWorker();
   }

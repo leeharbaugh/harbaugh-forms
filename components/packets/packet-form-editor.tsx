@@ -705,7 +705,7 @@ export function PacketFormEditor({
       await upsertFieldInstanceMappingPlacement(supabase, {
         packetId,
         packetFormId,
-        fieldId: fieldView.mapping.field_id,
+        fieldId: fieldView.mapping.field_id ?? fieldView.instance.field_id,
         fieldInstanceId: fieldView.instance.id,
         formFieldMappingId: fieldView.mapping.id,
         placement,

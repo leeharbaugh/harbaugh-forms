@@ -3,6 +3,7 @@
 import {
   type PageMetrics,
   type PlacedPdfField,
+  isAcroformImportedMapping,
   isCheckboxPdfField,
   pdfToRenderRect,
 } from "@/lib/types/template-pdf-field";
@@ -55,7 +56,9 @@ export function PdfFieldOverlay({
   const rect = pdfToRenderRect(field, metrics);
   const label = formatMappingOverlayLabel(field);
   const isCheckbox = isCheckboxPdfField(field);
-  const overlayResizeEnabled = isUpdating
+  const isAcroform = isAcroformImportedMapping(field);
+  const placementLocked = isAcroform || isUpdating;
+  const overlayResizeEnabled = placementLocked
     ? false
     : isCheckbox
       ? false
@@ -99,7 +102,7 @@ export function PdfFieldOverlay({
       maxWidth={isCheckbox ? rect.width : undefined}
       maxHeight={isCheckbox ? rect.height : undefined}
       enableResizing={overlayResizeEnabled}
-      disableDragging={isUpdating}
+      disableDragging={placementLocked}
       onDragStart={(_event, data) => {
         interactionRef.current = {
           mode: "drag",
@@ -163,14 +166,18 @@ export function PdfFieldOverlay({
         "z-[2] border-2 shadow-sm backdrop-blur-[1px] transition-[box-shadow,background-color,border-color]",
         isCheckbox
           ? "border-border bg-transparent"
-          : "bg-sky-400/25",
+          : isAcroform
+            ? "bg-emerald-400/25"
+            : "bg-sky-400/25",
         isSelected
           ? isCheckbox
             ? "border-amber-500 ring-2 ring-amber-400 ring-offset-1 ring-offset-white dark:ring-offset-zinc-900"
             : "border-amber-500 bg-amber-300/40 shadow-md ring-2 ring-amber-400 ring-offset-1 ring-offset-white dark:ring-offset-zinc-900"
           : isCheckbox
             ? "border-border hover:border-muted-foreground"
-            : "border-sky-600 hover:border-sky-500",
+            : isAcroform
+              ? "border-emerald-600 hover:border-emerald-500"
+              : "border-sky-600 hover:border-sky-500",
         isUpdating && "opacity-70",
       )}
       style={{
@@ -183,10 +190,17 @@ export function PdfFieldOverlay({
           "flex h-full w-full cursor-pointer overflow-hidden text-left leading-tight",
           isCheckbox
             ? "items-center justify-center p-0"
-            : "items-start px-1 py-0.5 text-[10px] font-semibold text-sky-950",
+            : "items-start px-1 py-0.5 text-[10px] font-semibold",
+          isAcroform ? "text-emerald-950" : "text-sky-950",
         )}
         onClick={handleSelect}
-        title={isCheckbox ? `${label} — click to select` : "Click to select field"}
+        title={
+          isAcroform
+            ? `${label} (AcroForm: ${field.pdf_field_name}) — click to select`
+            : isCheckbox
+              ? `${label} — click to select`
+              : "Click to select field"
+        }
       >
         {isCheckbox ? (
           <AppCheckboxVisual checked={false} />

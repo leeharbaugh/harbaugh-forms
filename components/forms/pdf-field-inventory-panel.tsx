@@ -7,90 +7,280 @@ import {
   type PdfFieldInventoryResult,
   type PdfFieldInventorySkippedItem,
 } from "@/lib/pdf-field-extract";
-import type { ApplyPdfFieldInventoryResult } from "@/lib/pdf-field-inventory";
+import type {
+  ApplyPdfFieldInventoryDetailItem,
+  ApplyPdfFieldInventoryResult,
+} from "@/lib/pdf-field-inventory";
+import { cn } from "@/lib/utils";
+import { ChevronDown, X } from "lucide-react";
+import { useId, useState } from "react";
 
 type PdfFieldInventoryPanelProps = {
   inventory: PdfFieldInventoryResult | null;
   applyResult: ApplyPdfFieldInventoryResult | null;
+  importReportDismissed: boolean;
+  importReportKey: number;
   isExtracting: boolean;
   isApplying: boolean;
   error: string | null;
   onExtract: () => void;
-  onApply: () => void;
+  onImportReview: () => void;
+  onDismissImportReport: () => void;
 };
 
-function SkippedList({ skipped }: { skipped: PdfFieldInventorySkippedItem[] }) {
-  if (skipped.length === 0) {
+type CollapsibleSectionProps = {
+  title: string;
+  count: number;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+  tone?: "default" | "warning";
+};
+
+function detailItemKey(item: ApplyPdfFieldInventoryDetailItem): string {
+  return `${item.pdfFieldName}:${item.pageNumber}:${item.occurrenceIndex}`;
+}
+
+function CollapsibleSection({
+  title,
+  count,
+  defaultOpen = false,
+  children,
+  tone = "default",
+}: CollapsibleSectionProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  const contentId = useId();
+
+  if (count === 0) {
     return null;
   }
 
   return (
-    <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
-      <p className="font-medium text-foreground">
-        Skipped {skipped.length} Authentisign field
-        {skipped.length === 1 ? "" : "s"}
-      </p>
-      <p className="mt-1">{AUTHENTISIGN_EXCLUSION_MESSAGE}</p>
-      <ul className="mt-2 max-h-24 space-y-1 overflow-y-auto font-mono">
-        {skipped.slice(0, 8).map((item) => (
-          <li key={`${item.fieldKey}-${item.pageNumber}`}>
-            {item.fieldKey} · page {item.pageNumber}
+    <div className="rounded-md border bg-background/80">
+      <button
+        type="button"
+        className={cn(
+          "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs",
+          tone === "warning" && "text-amber-900 dark:text-amber-200",
+        )}
+        aria-expanded={open}
+        aria-controls={contentId}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="font-medium">
+          {title} ({count})
+        </span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+      {open && (
+        <div id={contentId} className="border-t px-3 py-2">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FieldNameList({
+  items,
+  emptyMessage,
+}: {
+  items: ApplyPdfFieldInventoryDetailItem[];
+  emptyMessage?: string;
+}) {
+  if (items.length === 0) {
+    return emptyMessage ? (
+      <p className="text-xs text-muted-foreground">{emptyMessage}</p>
+    ) : null;
+  }
+
+  return (
+    <ul className="max-h-32 space-y-1 overflow-y-auto font-mono text-xs text-muted-foreground">
+      {items.slice(0, 20).map((item) => (
+        <li key={detailItemKey(item)}>
+          {item.pdfFieldName} · page {item.pageNumber}
+          {item.occurrenceIndex > 0 ? ` · #${item.occurrenceIndex}` : ""}
+        </li>
+      ))}
+      {items.length > 20 && (
+        <li className="font-sans">+ {items.length - 20} more</li>
+      )}
+    </ul>
+  );
+}
+
+function SkippedFieldList({ skipped }: { skipped: PdfFieldInventorySkippedItem[] }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">{AUTHENTISIGN_EXCLUSION_MESSAGE}</p>
+      <ul className="max-h-32 space-y-1 overflow-y-auto font-mono text-xs text-muted-foreground">
+        {skipped.slice(0, 20).map((item) => (
+          <li key={`${item.pdfFieldName}-${item.pageNumber}`}>
+            {item.pdfFieldName} · page {item.pageNumber}
           </li>
         ))}
-        {skipped.length > 8 && (
-          <li>+ {skipped.length - 8} more</li>
+        {skipped.length > 20 && (
+          <li className="font-sans">+ {skipped.length - 20} more</li>
         )}
       </ul>
     </div>
   );
 }
 
-function InventoryPreview({ items }: { items: PdfFieldInventoryItem[] }) {
-  if (items.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        No importable AcroForm fields were found on this PDF.
-      </p>
-    );
-  }
+function ExtractPreviewSection({
+  inventory,
+  defaultOpen,
+}: {
+  inventory: PdfFieldInventoryResult;
+  defaultOpen: boolean;
+}) {
+  const importableCount = inventory.items.length;
+  const detectedCount = inventory.detectedCount;
 
   return (
-    <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border px-3 py-2 text-xs">
-      {items.slice(0, 12).map((item) => (
-        <li key={`${item.fieldKey}-${item.pageNumber}-${item.occurrenceIndex}`}>
-          <span className="font-mono">{item.fieldKey}</span>
-          <span className="text-muted-foreground">
-            {" "}
-            · page {item.pageNumber}
-            {item.occurrenceIndex > 0 ? ` · #${item.occurrenceIndex}` : ""}
-          </span>
-        </li>
-      ))}
-      {items.length > 12 && (
-        <li className="text-muted-foreground">+ {items.length - 12} more</li>
-      )}
-    </ul>
+    <CollapsibleSection
+      title="Extract preview"
+      count={detectedCount}
+      defaultOpen={defaultOpen}
+    >
+      <div className="space-y-2">
+        <p className="text-xs text-muted-foreground">
+          {importableCount} importable · {inventory.skipped.length} skipped
+        </p>
+        {importableCount === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No importable AcroForm fields were found on this PDF.
+          </p>
+        ) : (
+          <ul className="max-h-28 space-y-1 overflow-y-auto font-mono text-xs text-muted-foreground">
+            {inventory.items.slice(0, 10).map((item: PdfFieldInventoryItem) => (
+              <li
+                key={`${item.pdfFieldName}-${item.pageNumber}-${item.occurrenceIndex}`}
+              >
+                {item.pdfFieldName} · page {item.pageNumber}
+              </li>
+            ))}
+            {importableCount > 10 && (
+              <li className="font-sans">+ {importableCount - 10} more</li>
+            )}
+          </ul>
+        )}
+      </div>
+    </CollapsibleSection>
+  );
+}
+
+function ImportReportCard({
+  result,
+  skipped,
+  error,
+  onDismiss,
+}: {
+  result: ApplyPdfFieldInventoryResult;
+  skipped: PdfFieldInventorySkippedItem[];
+  error: string | null;
+  onDismiss: () => void;
+}) {
+  const hasWarning =
+    Boolean(error) ||
+    (result.importedCount === 0 && result.updatedCount === 0);
+
+  return (
+    <div className="rounded-md border bg-muted/30">
+      <div className="flex items-start justify-between gap-2 border-b px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Import complete</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Detected {result.detectedCount} · Imported {result.importedCount} ·
+            Updated {result.updatedCount} · Already existed{" "}
+            {result.alreadyExistedCount} · Skipped {result.skippedSignatureFields}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          aria-label="Dismiss import report"
+          onClick={onDismiss}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div className="space-y-2 px-3 py-2">
+        <CollapsibleSection
+          title="Fields imported"
+          count={result.importedCount}
+          defaultOpen
+        >
+          <FieldNameList items={result.importedItems} />
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          title="Fields skipped"
+          count={result.skippedSignatureFields}
+          defaultOpen={hasWarning && result.skippedSignatureFields > 0}
+          tone={hasWarning ? "warning" : "default"}
+        >
+          <SkippedFieldList skipped={skipped} />
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          title="Fields updated"
+          count={result.updatedCount}
+          defaultOpen={hasWarning && result.updatedCount > 0}
+        >
+          <FieldNameList items={result.updatedItems} />
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          title="Already existing"
+          count={result.alreadyExistedCount}
+          defaultOpen={false}
+        >
+          <FieldNameList items={result.alreadyExistedItems} />
+        </CollapsibleSection>
+
+        {result.createdFields > 0 && (
+          <p className="text-xs text-muted-foreground">
+            New catalog fields: {result.createdFields} · reused:{" "}
+            {result.reusedFields}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
 export function PdfFieldInventoryPanel({
   inventory,
   applyResult,
+  importReportDismissed,
+  importReportKey,
   isExtracting,
   isApplying,
   error,
   onExtract,
-  onApply,
+  onImportReview,
+  onDismissImportReport,
 }: PdfFieldInventoryPanelProps) {
   const importableCount = inventory?.items.length ?? 0;
+  const showImportReport = applyResult != null && !importReportDismissed;
+  const showExtractPreview = inventory != null && !showImportReport;
 
   return (
-    <div className="space-y-3 border-b px-4 py-3">
+    <div className="shrink-0 space-y-3 border-b px-4 py-3">
       <div>
         <h2 className="text-sm font-semibold">PDF field inventory</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Extract AcroForm fields from the template PDF. Initials and signatures
-          are ignored.
+          Extract AcroForm fields from the template PDF, then use Import &
+          Review to map them before adding to the field inventory. Signature and
+          initials fields are excluded by default.
         </p>
       </div>
 
@@ -110,31 +300,29 @@ export function PdfFieldInventoryPanel({
           disabled={
             isExtracting || isApplying || !inventory || importableCount === 0
           }
-          onClick={onApply}
+          onClick={onImportReview}
         >
-          {isApplying ? "Applying..." : `Apply inventory (${importableCount})`}
+          {isApplying ? "Opening..." : `Import & Review (${importableCount})`}
         </Button>
       </div>
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
-      {inventory && (
-        <>
-          <InventoryPreview items={inventory.items} />
-          <SkippedList skipped={inventory.skipped} />
-        </>
+      {showExtractPreview && inventory && (
+        <ExtractPreviewSection
+          inventory={inventory}
+          defaultOpen={importableCount > 0}
+        />
       )}
 
-      {applyResult && (
-        <p className="text-xs text-muted-foreground">
-          Applied {applyResult.createdMappings} mapping
-          {applyResult.createdMappings === 1 ? "" : "s"} ·{" "}
-          {applyResult.createdFields} new field
-          {applyResult.createdFields === 1 ? "" : "s"} ·{" "}
-          {applyResult.reusedFields} reused ·{" "}
-          {applyResult.skippedAuthentisign} Authentisign skipped ·{" "}
-          {applyResult.skippedExistingMappings} already mapped
-        </p>
+      {showImportReport && applyResult && (
+        <ImportReportCard
+          key={importReportKey}
+          result={applyResult}
+          skipped={inventory?.skipped ?? []}
+          error={error}
+          onDismiss={onDismissImportReport}
+        />
       )}
     </div>
   );

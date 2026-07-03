@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { Field } from "@/lib/types/field";
 import {
   type FieldInput,
   validateFieldInput,
@@ -18,14 +19,19 @@ import {
   type PdfMappingEditorInput,
   validatePdfPlacementInput,
 } from "@/lib/types/pdf-field-mapping-editor";
-import type { PlacedPdfField } from "@/lib/types/template-pdf-field";
 import { formatFieldMappingReference } from "@/lib/types/form-field-mapping";
+import {
+  isAcroformImportedMapping,
+  isUnmappedAcroformMapping,
+  type PlacedPdfField,
+} from "@/lib/types/template-pdf-field";
 
 type PdfFieldEditDialogProps = {
   open: boolean;
   mapping: PlacedPdfField | null;
   placementValue: PdfMappingEditorInput;
   fieldValue: FieldInput;
+  catalogFields: Field[];
   onPlacementChange: (value: PdfMappingEditorInput) => void;
   onFieldChange: (value: FieldInput) => void;
   onSubmit: () => void;
@@ -35,6 +41,26 @@ type PdfFieldEditDialogProps = {
   isDeleting: boolean;
   error: string | null;
 };
+
+function NativePdfFieldPanel({ mapping }: { mapping: PlacedPdfField }) {
+  return (
+    <div className="space-y-2">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Native PDF field
+      </h4>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 rounded-md border bg-muted/30 px-3 py-2 text-xs">
+        <dt className="text-muted-foreground">PDF field name</dt>
+        <dd className="font-mono">{mapping.pdf_field_name ?? "—"}</dd>
+        <dt className="text-muted-foreground">PDF field type</dt>
+        <dd className="font-mono">{mapping.pdf_field_type ?? "—"}</dd>
+        <dt className="text-muted-foreground">Export value</dt>
+        <dd className="font-mono">{mapping.pdf_export_value ?? "—"}</dd>
+        <dt className="text-muted-foreground">Imported from AcroForm</dt>
+        <dd>Yes</dd>
+      </dl>
+    </div>
+  );
+}
 
 export function PdfFieldEditDialog({
   open,
@@ -54,8 +80,13 @@ export function PdfFieldEditDialog({
     return null;
   }
 
+  const isAcroform = isAcroformImportedMapping(mapping);
+  const isUnmapped = isUnmappedAcroformMapping(mapping);
   const placementValidationError = validatePdfPlacementInput(placementValue);
-  const fieldValidationError = validateFieldInput(fieldValue);
+  const fieldValidationError =
+    isUnmapped || !mapping.field_id
+      ? null
+      : validateFieldInput(fieldValue);
   const validationError = placementValidationError ?? fieldValidationError;
   const isBusy = isSubmitting || isDeleting;
 
@@ -78,8 +109,12 @@ export function PdfFieldEditDialog({
         <CardHeader>
           <CardTitle>Edit field mapping</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Placement {formatFieldMappingReference(mapping.id)} ·{" "}
-            {mapping.field_key}
+            Placement {formatFieldMappingReference(mapping.id)}
+            {mapping.field_key
+              ? ` · ${mapping.field_key}`
+              : isAcroform && mapping.pdf_field_name
+                ? ` · ${mapping.pdf_field_name}`
+                : ""}
           </p>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -90,13 +125,17 @@ export function PdfFieldEditDialog({
                   Section A: Placement on this form
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  These settings apply only to this form template placement.
+                  {isAcroform
+                    ? "Placement label, required flag, and notes for this template. Coordinates come from the PDF."
+                    : "These settings apply only to this form template placement."}
                 </p>
               </div>
+              {isAcroform && <NativePdfFieldPanel mapping={mapping} />}
               <PdfPlacementFormFields
                 value={placementValue}
                 onChange={onPlacementChange}
                 showLayoutFields
+                layoutReadOnly={isAcroform}
               />
             </section>
 
@@ -110,9 +149,19 @@ export function PdfFieldEditDialog({
                   all forms.
                 </p>
               </div>
+
+              {isUnmapped && (
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  This AcroForm field is not linked to a reusable catalog field
+                  yet. Use Import &amp; Review or map it from the field catalog
+                  elsewhere before editing source mapping.
+                </p>
+              )}
+
               <PdfFieldDefinitionFormFields
                 value={fieldValue}
                 onChange={onFieldChange}
+                readOnly={isUnmapped || !mapping.field_id}
               />
             </section>
 

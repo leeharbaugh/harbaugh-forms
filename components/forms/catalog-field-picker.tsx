@@ -15,6 +15,7 @@ type CatalogFieldPickerProps = {
   required?: boolean;
   label?: string;
   id?: string;
+  placeholder?: string;
 };
 
 function fieldSearchHaystack(field: Field): string {
@@ -24,6 +25,7 @@ function fieldSearchHaystack(field: Field): string {
     field.field_label,
     field.source_path,
     field.resolver_key,
+    field.notes,
     formatFieldSourceMappingCatalog(field),
   ]
     .filter(Boolean)
@@ -52,6 +54,7 @@ export function CatalogFieldPicker({
   required = false,
   label = "Catalog field",
   id,
+  placeholder = "Search by label, key, source path, resolver key, or notes...",
 }: CatalogFieldPickerProps) {
   const generatedId = useId();
   const inputId = id ?? generatedId;
@@ -117,7 +120,7 @@ export function CatalogFieldPicker({
         aria-controls={listboxId}
         aria-autocomplete="list"
         value={query}
-        placeholder="Search by label, key, name, or source path..."
+        placeholder={placeholder}
         disabled={disabled}
         onFocus={() => setOpen(true)}
         onChange={(event) => {
@@ -173,6 +176,11 @@ export function CatalogFieldPicker({
                   {sourceLabel && (
                     <span className="truncate text-xs text-muted-foreground/90">
                       {sourceLabel}
+                    </span>
+                  )}
+                  {field.resolver_key?.trim() && (
+                    <span className="truncate font-mono text-xs text-muted-foreground/90">
+                      resolver: {field.resolver_key}
                     </span>
                   )}
                 </button>

@@ -765,7 +765,9 @@ function resolveListingAgreementDetailsSourcePath(
 
   const displayValue =
     normalizedPath === "listing_begin_date" ||
-    normalizedPath === "listing_end_date"
+    normalizedPath === "listing_end_date" ||
+    normalizedPath === "lease_listing_begin_date" ||
+    normalizedPath === "lease_listing_end_date"
       ? normalizeDateDisplay(value.split("T")[0])
       : value;
 
@@ -1819,7 +1821,8 @@ export function buildFieldResolutionDiagnostics(params: {
 
   return params.fields.map(({ mapping, instance }) => {
     const field = instance.fields;
-    const fieldKey = field?.field_key ?? mapping.field_id;
+    const fieldKey =
+      field?.field_key ?? mapping.pdf_field_name ?? mapping.id;
 
     if (!field) {
       return {
@@ -2397,7 +2400,13 @@ export async function resolvePacketFormFieldValues(
     existingInstances.map((instance) => [instance.field_id, instance]),
   );
 
-  const fieldIds = [...new Set(mappings.map((mapping) => mapping.field_id))];
+  const fieldIds = [
+    ...new Set(
+      mappings
+        .map((mapping) => mapping.field_id)
+        .filter((fieldId): fieldId is string => fieldId != null),
+    ),
+  ];
   const inserts: ReturnType<typeof buildFieldInstancePersistenceRow>[] = [];
   const updates: Array<{
     id: string;

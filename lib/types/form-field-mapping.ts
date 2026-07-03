@@ -4,7 +4,7 @@ import type { Field } from "@/lib/types/field";
 export type FormFieldMapping = {
   id: string;
   form_id: number;
-  field_id: string;
+  field_id: string | null;
   mapping_name: string | null;
   occurrence_index: number | null;
   page_number: number;
@@ -20,6 +20,9 @@ export type FormFieldMapping = {
   default_value_override: string | null;
   required: boolean;
   notes: string | null;
+  pdf_field_name: string | null;
+  pdf_field_type: string | null;
+  pdf_export_value: string | null;
   create_date: string;
   update_date: string;
   status: string;

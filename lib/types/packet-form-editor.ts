@@ -105,8 +105,8 @@ export function buildPacketFormFieldViews(params: {
       return [];
     }
 
-    const instance = instancesByFieldId.get(mapping.field_id);
-    if (!instance) {
+    const instance = instancesByFieldId.get(mapping.field_id ?? "");
+    if (!mapping.field_id || !instance) {
       return [];
     }
 
@@ -165,7 +165,7 @@ export function packetFormFieldViewToOverlayField(
     id: fieldView.mapping.id,
     selectionKey,
     field_instance_id: fieldView.instance.id,
-    field_id: fieldView.mapping.field_id,
+    field_id: fieldView.mapping.field_id ?? fieldView.instance.field_id,
     field_key: field?.field_key ?? "",
     field_label: field?.field_label ?? fieldView.mapping.mapping_name,
     field_type: fieldView.field_type,

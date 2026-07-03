@@ -62,6 +62,17 @@ export function isAuthentisignExcludedFieldKey(
     return true;
   }
 
+  if (
+    key.includes("signature_date") ||
+    key.includes("sig_date") ||
+    key.includes("sign_date") ||
+    key.includes("signed_date") ||
+    key.includes("date_signed") ||
+    key.endsWith("_signaturedate")
+  ) {
+    return true;
+  }
+
   return false;
 }
 
@@ -123,4 +134,4 @@ export function shouldSkipAuthentisignPdfInventoryField(params: {
 }
 
 export const AUTHENTISIGN_EXCLUSION_MESSAGE =
-  "Initials and signatures are handled in Authentisign and are not imported into Harbaugh Forms.";
+  "Signature and initials fields are handled in Authentisign and were excluded.";

@@ -5,6 +5,9 @@ export const PDF_ZOOM_MAX = 300;
 export const PDF_ZOOM_STEP = 1.25;
 export const PDF_WORKSPACE_PADDING = 48;
 export const PDF_EDITOR_SIDEBAR_WIDTH = 360;
+export const PDF_EDITOR_SIDEBAR_WIDTH_MIN = 280;
+export const PDF_EDITOR_SIDEBAR_WIDTH_MAX = 640;
+export const PDF_EDITOR_SIDEBAR_WIDTH_STORAGE_KEY = "harbaugh-pdf-editor-sidebar-width";
 export const PDF_MIN_PAGE_WIDTH = 280;
 
 export function computePdfPageWidth(params: {
