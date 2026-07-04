@@ -1,3 +1,4 @@
+import { sortPacketFormFieldViews } from "@/lib/pdf-field-sort";
 import type { FormFieldMapping } from "@/lib/types/form-field-mapping";
 import type {
   FieldInstance,
@@ -100,7 +101,7 @@ export function buildPacketFormFieldViews(params: {
       .map((override) => [override.form_field_mapping_id as string, override]),
   );
 
-  return params.mappings.flatMap((mapping) => {
+  const fieldViews = params.mappings.flatMap((mapping) => {
     if (isAuthentisignExcludedFormFieldMapping(mapping)) {
       return [];
     }
@@ -126,6 +127,8 @@ export function buildPacketFormFieldViews(params: {
       },
     ];
   });
+
+  return sortPacketFormFieldViews(fieldViews);
 }
 
 /** Unique selection key per template placement row (mapping id), not per field instance. */
@@ -157,6 +160,8 @@ export function packetFormFieldViewToOverlayField(
   hasPlacementOverride: boolean;
   displayValue: string;
   default_checked: boolean;
+  editorControl: PacketFieldEditorControl;
+  occurrence_index: number | null;
 } {
   const field = fieldView.instance.fields;
   const selectionKey = getPacketFormFieldSelectionKey(fieldView);
@@ -181,6 +186,8 @@ export function packetFormFieldViewToOverlayField(
     hasPlacementOverride: fieldView.hasPlacementOverride,
     displayValue: fieldView.displayValue,
     default_checked: field?.default_checked ?? false,
+    editorControl: resolvePacketFieldEditorControl(fieldView),
+    occurrence_index: fieldView.mapping.occurrence_index,
   };
 }
 

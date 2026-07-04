@@ -10,10 +10,12 @@ import {
   formatPacketFieldOverlayValue,
   isPacketFieldValueEmpty,
   resolveCheckboxCheckedState,
+  type PacketFieldEditorControl,
 } from "@/lib/types/packet-form-editor";
+import { toDateInputValue } from "@/components/packets/packet-form-field-value-input";
 import { AppCheckboxVisual } from "@/components/ui/app-checkbox";
 import { cn } from "@/lib/utils";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Rnd } from "react-rnd";
 
 export type PacketFormOverlayField = {
@@ -36,6 +38,8 @@ export type PacketFormOverlayField = {
   hasPlacementOverride: boolean;
   displayValue: string;
   default_checked: boolean;
+  editorControl: PacketFieldEditorControl;
+  occurrence_index: number | null;
 };
 
 type PacketFormFieldOverlayProps = {
@@ -43,7 +47,15 @@ type PacketFormFieldOverlayProps = {
   metrics: PageMetrics;
   isSelected: boolean;
   isUpdating: boolean;
+  isInlineEditing: boolean;
+  inlineEditValue: string;
+  isSavingValue: boolean;
   onSelect: (field: PacketFormOverlayField) => void;
+  onStartInlineEdit: (field: PacketFormOverlayField) => void;
+  onInlineEditChange: (field: PacketFormOverlayField, value: string) => void;
+  onInlineEditSave: (field: PacketFormOverlayField) => void;
+  onInlineEditCancel: (field: PacketFormOverlayField) => void;
+  onCheckboxToggle: (field: PacketFormOverlayField) => void;
   onDragStop: (field: PacketFormOverlayField, x: number, y: number) => void;
   onResizeStop: (
     field: PacketFormOverlayField,
@@ -66,16 +78,38 @@ type InteractionState = {
   startHeight: number;
 };
 
+function isInlineEditableField(field: PacketFormOverlayField): boolean {
+  if (field.field_type === "SIGNATURE_PLACEHOLDER") {
+    return false;
+  }
+
+  if (field.field_type === "INITIAL_PLACEHOLDER") {
+    return false;
+  }
+
+  return field.editorControl !== "checkbox";
+}
+
 export function PacketFormFieldOverlay({
   field,
   metrics,
   isSelected,
   isUpdating,
+  isInlineEditing,
+  inlineEditValue,
+  isSavingValue,
   onSelect,
+  onStartInlineEdit,
+  onInlineEditChange,
+  onInlineEditSave,
+  onInlineEditCancel,
+  onCheckboxToggle,
   onDragStop,
   onResizeStop,
 }: PacketFormFieldOverlayProps) {
   const suppressClickRef = useRef(false);
+  const cancelInlineEditRef = useRef(false);
+  const inlineInputRef = useRef<HTMLInputElement>(null);
   const interactionRef = useRef<InteractionState | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const rect = pdfToRenderRect(field, metrics);
@@ -103,6 +137,16 @@ export function PacketFormFieldOverlay({
       : isCheckbox
         ? ""
         : "Empty";
+  const placementLocked = isUpdating || isInlineEditing || isSavingValue;
+
+  useEffect(() => {
+    if (!isInlineEditing) {
+      return;
+    }
+
+    inlineInputRef.current?.focus();
+    inlineInputRef.current?.select();
+  }, [isInlineEditing]);
 
   const suppressClick = () => {
     suppressClickRef.current = true;
@@ -112,18 +156,84 @@ export function PacketFormFieldOverlay({
   };
 
   const handleSelect = () => {
-    if (suppressClickRef.current || isUpdating) {
+    if (suppressClickRef.current || isUpdating || isSavingValue) {
       return;
     }
 
     onSelect(field);
   };
 
+  const handleContentClick = () => {
+    if (suppressClickRef.current || isUpdating || isSavingValue || isInlineEditing) {
+      return;
+    }
+
+    if (isCheckbox) {
+      onSelect(field);
+      onCheckboxToggle(field);
+      return;
+    }
+
+    if (!isInlineEditableField(field)) {
+      handleSelect();
+      return;
+    }
+
+    if (isSelected) {
+      onStartInlineEdit(field);
+      return;
+    }
+
+    handleSelect();
+  };
+
+  const handleDoubleClick = () => {
+    if (
+      suppressClickRef.current ||
+      isUpdating ||
+      isSavingValue ||
+      isInlineEditing ||
+      !isInlineEditableField(field)
+    ) {
+      return;
+    }
+
+    onSelect(field);
+    onStartInlineEdit(field);
+  };
+
+  const handleInlineBlur = () => {
+    if (cancelInlineEditRef.current) {
+      cancelInlineEditRef.current = false;
+      return;
+    }
+
+    onInlineEditSave(field);
+  };
+
+  const handleInlineKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    event.stopPropagation();
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      onInlineEditSave(field);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelInlineEditRef.current = true;
+      onInlineEditCancel(field);
+    }
+  };
+
   const clearInteraction = () => {
     interactionRef.current = null;
   };
 
-  const overlayResizeEnabled = isUpdating
+  const overlayResizeEnabled = placementLocked
     ? false
     : isCheckbox
       ? false
@@ -138,6 +248,19 @@ export function PacketFormFieldOverlay({
           topLeft: true,
         };
 
+  const inputType =
+    field.editorControl === "date"
+      ? "date"
+      : field.editorControl === "number"
+        ? "text"
+        : "text";
+  const inputMode =
+    field.editorControl === "number" ? "decimal" : undefined;
+  const inputValue =
+    field.editorControl === "date"
+      ? toDateInputValue(inlineEditValue)
+      : inlineEditValue;
+
   return (
     <Rnd
       bounds="parent"
@@ -148,7 +271,7 @@ export function PacketFormFieldOverlay({
       maxWidth={isCheckbox ? rect.width : undefined}
       maxHeight={isCheckbox ? rect.height : undefined}
       enableResizing={overlayResizeEnabled}
-      disableDragging={isUpdating}
+      disableDragging={placementLocked}
       onDragStart={(_event, data) => {
         interactionRef.current = {
           mode: "drag",
@@ -185,7 +308,7 @@ export function PacketFormFieldOverlay({
           return;
         }
 
-        onSelect(field);
+        handleContentClick();
       }}
       onResizeStop={(_event, _direction, ref, _delta, position) => {
         const interaction = interactionRef.current;
@@ -226,35 +349,63 @@ export function PacketFormFieldOverlay({
             : hasValue
               ? "bg-white/85 dark:bg-zinc-900/85"
               : "border-dashed bg-transparent opacity-70 hover:opacity-100",
-        isUpdating && "opacity-70",
+        (isUpdating || isSavingValue) && "opacity-70",
+        isInlineEditing && "z-[3] bg-white dark:bg-zinc-900",
       )}
       style={{
         boxSizing: "border-box",
       }}
     >
-      <button
-        type="button"
-        className={cn(
-          "flex h-full w-full cursor-pointer items-center overflow-hidden text-left text-[10px] leading-tight",
-          !isCheckbox && "px-1 py-0.5",
-          hasValue || isSelected
-            ? "text-foreground"
-            : "text-muted-foreground",
-          isCheckbox
-            ? "justify-center border-transparent bg-transparent p-0 shadow-none"
-            : "justify-start",
-        )}
-        onClick={handleSelect}
-        title="Click to select field"
-      >
-        {isCheckbox ? (
-          <AppCheckboxVisual checked={isChecked} />
-        ) : hasValue ? (
-          <span className="truncate font-normal">{valueText}</span>
-        ) : showPlaceholder && placeholderText ? (
-          <span className="truncate italic opacity-70">{placeholderText}</span>
-        ) : null}
-      </button>
+      {isInlineEditing ? (
+        <input
+          ref={inlineInputRef}
+          type={inputType}
+          inputMode={inputMode}
+          value={inputValue}
+          disabled={isSavingValue}
+          onChange={(event) => onInlineEditChange(field, event.target.value)}
+          onBlur={handleInlineBlur}
+          onKeyDown={handleInlineKeyDown}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          className="h-full w-full border-0 bg-transparent px-1 py-0.5 text-[10px] leading-tight text-foreground outline-none ring-0 focus:ring-0"
+          style={{
+            fontSize: `${Math.min(field.font_size, rect.height * 0.75)}px`,
+          }}
+          aria-label={field.field_label ?? field.field_key ?? "Field value"}
+        />
+      ) : (
+        <button
+          type="button"
+          className={cn(
+            "flex h-full w-full cursor-pointer items-center overflow-hidden text-left text-[10px] leading-tight",
+            !isCheckbox && "px-1 py-0.5",
+            hasValue || isSelected
+              ? "text-foreground"
+              : "text-muted-foreground",
+            isCheckbox
+              ? "justify-center border-transparent bg-transparent p-0 shadow-none"
+              : "justify-start",
+          )}
+          onClick={handleContentClick}
+          onDoubleClick={handleDoubleClick}
+          title={
+            isCheckbox
+              ? "Click to toggle"
+              : isInlineEditableField(field)
+                ? "Click to select, double-click to edit"
+                : "Click to select field"
+          }
+        >
+          {isCheckbox ? (
+            <AppCheckboxVisual checked={isChecked} />
+          ) : hasValue ? (
+            <span className="truncate font-normal">{valueText}</span>
+          ) : showPlaceholder && placeholderText ? (
+            <span className="truncate italic opacity-70">{placeholderText}</span>
+          ) : null}
+        </button>
+      )}
     </Rnd>
   );
 }

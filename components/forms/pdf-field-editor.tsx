@@ -19,6 +19,11 @@ import {
   type ApplyPdfFieldInventoryResult,
   importAcroformFields,
 } from "@/lib/pdf-field-inventory";
+import {
+  placedPdfFieldSortPosition,
+  sortGroupedPdfFields,
+  sortPlacedPdfFields,
+} from "@/lib/pdf-field-sort";
 import { createClient } from "@/lib/supabase/client";
 import { type Form, formatFormReference } from "@/lib/types/form";
 import {
@@ -396,7 +401,11 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         setMappings([]);
       } else {
         const rows = (mappingsResult.data as FormFieldMapping[]) ?? [];
-        setMappings(rows.map((row) => formFieldMappingToPlacedPdfField(row)));
+        setMappings(
+          sortPlacedPdfFields(
+            rows.map((row) => formFieldMappingToPlacedPdfField(row)),
+          ),
+        );
       }
 
       if (catalogResult.error) {
@@ -510,7 +519,11 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         setLoadError(mappingsResult.error.message);
       } else {
         const rows = (mappingsResult.data as FormFieldMapping[]) ?? [];
-        setMappings(rows.map((row) => formFieldMappingToPlacedPdfField(row)));
+        setMappings(
+          sortPlacedPdfFields(
+            rows.map((row) => formFieldMappingToPlacedPdfField(row)),
+          ),
+        );
       }
 
       if (catalogResult.error) {
@@ -639,24 +652,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       grouped[mapping.page_number].push(mapping);
     }
 
-    return grouped;
+    return sortGroupedPdfFields(grouped, placedPdfFieldSortPosition);
   }, [mappings]);
-
-  const sortPlacedPdfFields = useCallback((rows: PlacedPdfField[]) => {
-    return [...rows].sort((a, b) => {
-      if (a.page_number !== b.page_number) {
-        return a.page_number - b.page_number;
-      }
-
-      const aOccurrence = a.occurrence_index ?? 0;
-      const bOccurrence = b.occurrence_index ?? 0;
-      if (aOccurrence !== bOccurrence) {
-        return aOccurrence - bOccurrence;
-      }
-
-      return a.id.localeCompare(b.id);
-    });
-  }, []);
 
   const scrollInventoryItemIntoView = useCallback((mappingId: string) => {
     const container = inventoryListRef.current;

@@ -17,7 +17,7 @@ type PacketFormFieldValueInputProps = {
   id?: string;
 };
 
-function toDateInputValue(value: string): string {
+export function toDateInputValue(value: string): string {
   const trimmed = value.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
     return trimmed;

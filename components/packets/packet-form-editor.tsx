@@ -14,6 +14,7 @@ import {
   refreshPacketFormFieldValues,
   resetFieldInstanceMappingPlacement,
   revertPacketFormFieldValue,
+  saveFieldInstanceValue,
   saveFieldInstanceValues,
   upsertFieldInstanceMappingPlacement,
 } from "@/lib/packet-form-editor";
@@ -32,6 +33,7 @@ import {
   stepZoomPercent,
 } from "@/lib/pdf-editor-zoom";
 import { downloadFilledPacketFormPdf } from "@/lib/packet-form-download";
+import { sortGroupedPdfFields } from "@/lib/pdf-field-sort";
 import { createClient } from "@/lib/supabase/client";
 import { formatFormReference } from "@/lib/types/form";
 import type { FieldInstanceWithField } from "@/lib/types/field-instance";
@@ -41,6 +43,7 @@ import {
   getDirtyFieldInstanceIds,
   getPacketFormFieldSelectionKey,
   packetFormFieldViewToOverlayField,
+  resolveCheckboxCheckedState,
   type PacketFormFieldView,
 } from "@/lib/types/packet-form-editor";
 import {
@@ -113,6 +116,13 @@ export function PacketFormEditor({
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(
     null,
   );
+  const [editingSelectionKey, setEditingSelectionKey] = useState<string | null>(
+    null,
+  );
+  const [inlineEditValue, setInlineEditValue] = useState("");
+  const [isSavingInlineValueId, setIsSavingInlineValueId] = useState<
+    string | null
+  >(null);
   const pdfWorkspaceRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const sidebarListRef = useRef<HTMLDivElement>(null);
@@ -389,7 +399,16 @@ export function PacketFormEditor({
       grouped[overlayField.page_number].push(overlayField);
     }
 
-    return grouped;
+    return sortGroupedPdfFields(grouped, (overlayField) => ({
+      page_number: overlayField.page_number,
+      y: overlayField.y_position,
+      x: overlayField.x_position,
+      occurrence_index: overlayField.occurrence_index,
+      labelOrKey:
+        overlayField.field_label?.trim() ||
+        overlayField.field_key?.trim() ||
+        overlayField.id,
+    }));
   }, [fieldsWithDraftValues]);
 
   const updatePageMetrics = (
@@ -417,6 +436,173 @@ export function PacketFormEditor({
     }));
     setSaveError(null);
   };
+
+  const applySavedFieldInstanceValue = useCallback(
+    (instanceId: string, value: string) => {
+      setSavedValuesByInstanceId((current) => ({
+        ...current,
+        [instanceId]: value,
+      }));
+
+      setFields((current) =>
+        current.map((fieldView) =>
+          fieldView.instance.id === instanceId
+            ? {
+                ...fieldView,
+                displayValue: value,
+                instance: {
+                  ...fieldView.instance,
+                  value,
+                  is_override: true,
+                  source: "manual_override",
+                },
+              }
+            : fieldView,
+        ),
+      );
+    },
+    [],
+  );
+
+  const persistInlineFieldValue = useCallback(
+    async (overlayField: PacketFormOverlayField, value: string) => {
+      const instanceId = overlayField.field_instance_id;
+      const savedValue = savedValuesByInstanceId[instanceId] ?? "";
+
+      handleDraftChange(instanceId, value);
+
+      if (value === savedValue) {
+        return;
+      }
+
+      setIsSavingInlineValueId(instanceId);
+      setSaveError(null);
+
+      const supabase = createClient();
+
+      try {
+        await saveFieldInstanceValue(supabase, instanceId, value);
+        applySavedFieldInstanceValue(instanceId, value);
+      } catch (error) {
+        handleDraftChange(instanceId, savedValue);
+        setSaveError(
+          error instanceof Error
+            ? error.message
+            : "Failed to save field value.",
+        );
+      } finally {
+        setIsSavingInlineValueId(null);
+      }
+    },
+    [applySavedFieldInstanceValue, savedValuesByInstanceId],
+  );
+
+  const commitInlineEdit = useCallback(
+    async (overlayField: PacketFormOverlayField) => {
+      const value =
+        draftValuesByInstanceId[overlayField.field_instance_id] ??
+        inlineEditValue;
+
+      setEditingSelectionKey(null);
+      setInlineEditValue("");
+      await persistInlineFieldValue(overlayField, value);
+    },
+    [draftValuesByInstanceId, inlineEditValue, persistInlineFieldValue],
+  );
+
+  const cancelInlineEdit = useCallback(
+    (overlayField: PacketFormOverlayField) => {
+      const instanceId = overlayField.field_instance_id;
+      const savedValue = savedValuesByInstanceId[instanceId] ?? "";
+
+      handleDraftChange(instanceId, savedValue);
+      setEditingSelectionKey(null);
+      setInlineEditValue("");
+    },
+    [savedValuesByInstanceId],
+  );
+
+  const finishInlineEditForSelectionKey = useCallback(
+    async (nextSelectionKey: string | null) => {
+      if (!editingSelectionKey || editingSelectionKey === nextSelectionKey) {
+        return;
+      }
+
+      const editingFieldView = fieldsWithDraftValues.find(
+        (fieldView) =>
+          getPacketFormFieldSelectionKey(fieldView) === editingSelectionKey,
+      );
+
+      if (!editingFieldView) {
+        setEditingSelectionKey(null);
+        setInlineEditValue("");
+        return;
+      }
+
+      await commitInlineEdit(
+        packetFormFieldViewToOverlayField(editingFieldView),
+      );
+    },
+    [commitInlineEdit, editingSelectionKey, fieldsWithDraftValues],
+  );
+
+  const handleStartInlineEdit = useCallback(
+    (overlayField: PacketFormOverlayField) => {
+      void finishInlineEditForSelectionKey(overlayField.selectionKey);
+
+      const currentValue =
+        draftValuesByInstanceId[overlayField.field_instance_id] ??
+        overlayField.displayValue;
+
+      setEditingSelectionKey(overlayField.selectionKey);
+      setInlineEditValue(currentValue);
+    },
+    [draftValuesByInstanceId, finishInlineEditForSelectionKey],
+  );
+
+  const handleInlineEditChange = useCallback(
+    (overlayField: PacketFormOverlayField, value: string) => {
+      setInlineEditValue(value);
+      handleDraftChange(overlayField.field_instance_id, value);
+    },
+    [],
+  );
+
+  const handleInlineEditSave = useCallback(
+    async (overlayField: PacketFormOverlayField) => {
+      if (editingSelectionKey !== overlayField.selectionKey) {
+        return;
+      }
+
+      await commitInlineEdit(overlayField);
+    },
+    [commitInlineEdit, editingSelectionKey],
+  );
+
+  const handleInlineEditCancel = useCallback(
+    (overlayField: PacketFormOverlayField) => {
+      if (editingSelectionKey !== overlayField.selectionKey) {
+        return;
+      }
+
+      cancelInlineEdit(overlayField);
+    },
+    [cancelInlineEdit, editingSelectionKey],
+  );
+
+  const handleCheckboxToggle = useCallback(
+    async (overlayField: PacketFormOverlayField) => {
+      const currentChecked = resolveCheckboxCheckedState(
+        draftValuesByInstanceId[overlayField.field_instance_id] ??
+          overlayField.displayValue,
+        overlayField.default_checked,
+      );
+      const nextValue = currentChecked ? "false" : "true";
+
+      await persistInlineFieldValue(overlayField, nextValue);
+    },
+    [draftValuesByInstanceId, persistInlineFieldValue],
+  );
 
   const applyRevertedInstance = (updated: FieldInstanceWithField) => {
     const revertedValue = updated.value ?? "";
@@ -472,12 +658,13 @@ export function PacketFormEditor({
   const selectFieldFromSidebar = useCallback(
     (fieldView: PacketFormFieldView) => {
       const selectionKey = getPacketFormFieldSelectionKey(fieldView);
+      void finishInlineEditForSelectionKey(selectionKey);
       setSelectedFieldKey(selectionKey);
       afterLayoutSettled(() => {
         scrollPdfPageIntoView(fieldView.placement.page_number);
       });
     },
-    [scrollPdfPageIntoView],
+    [finishInlineEditForSelectionKey, scrollPdfPageIntoView],
   );
 
   const selectFieldFromOverlay = useCallback(
@@ -493,12 +680,13 @@ export function PacketFormEditor({
         });
       }
 
+      void finishInlineEditForSelectionKey(selectionKey);
       setSelectedFieldKey(selectionKey);
       afterLayoutSettled(() => {
         scrollSidebarFieldIntoView(selectionKey);
       });
     },
-    [scrollSidebarFieldIntoView],
+    [finishInlineEditForSelectionKey, scrollSidebarFieldIntoView],
   );
 
   const handleDownloadPdf = async () => {
@@ -1114,7 +1302,25 @@ export function PacketFormEditor({
                                     isUpdating={
                                       updatingMappingId === overlayField.id
                                     }
+                                    isInlineEditing={
+                                      editingSelectionKey ===
+                                      overlayField.selectionKey
+                                    }
+                                    inlineEditValue={inlineEditValue}
+                                    isSavingValue={
+                                      isSavingInlineValueId ===
+                                      overlayField.field_instance_id
+                                    }
                                     onSelect={selectFieldFromOverlay}
+                                    onStartInlineEdit={handleStartInlineEdit}
+                                    onInlineEditChange={handleInlineEditChange}
+                                    onInlineEditSave={(field) =>
+                                      void handleInlineEditSave(field)
+                                    }
+                                    onInlineEditCancel={handleInlineEditCancel}
+                                    onCheckboxToggle={(field) =>
+                                      void handleCheckboxToggle(field)
+                                    }
                                     onDragStop={(field, x, y) =>
                                       handleOverlayDragStop(
                                         field,
