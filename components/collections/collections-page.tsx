@@ -2,6 +2,13 @@
 
 import { CollectionForm } from "@/components/collections/collection-form";
 import { ListRowActions } from "@/components/list-row-actions";
+import {
+  ResizableDataTable,
+  ResizableDataTableActionsCell,
+  ResizableDataTableCell,
+  ResizableDataTableRow,
+  type ResizableDataTableColumn,
+} from "@/components/resizable-data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,13 +38,23 @@ import {
   syncCollectionForms,
   validateCollectionInput,
 } from "@/lib/types/collection";
-import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useState } from "react";
 
 type FormMode = "hidden" | "create" | "edit" | "view";
 
-const LIST_COLUMNS =
-  "grid grid-cols-[minmax(0,0.5fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,0.6fr)] gap-3";
+const COLLECTION_TABLE_COLUMNS: ResizableDataTableColumn[] = [
+  { id: "id", label: "ID", defaultWidth: 72, minWidth: 48 },
+  { id: "name", label: "Packet name", defaultWidth: 200 },
+  { id: "type", label: "Packet type", defaultWidth: 140 },
+  { id: "description", label: "Description", defaultWidth: 260 },
+  { id: "forms", label: "Forms", defaultWidth: 80, minWidth: 64 },
+  {
+    id: "actions",
+    label: "Actions",
+    defaultWidth: 224,
+    isActions: true,
+  },
+];
 
 const PACKET_LIST_SELECT = `
   *,
@@ -501,82 +518,86 @@ export function CollectionsPage() {
                 : "No active packet templates found."}
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <div className="min-w-[880px]">
-                <div
-                  className={`${LIST_COLUMNS} border-b bg-muted/40 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground`}
-                >
-                  <span>ID</span>
-                  <span>Packet name</span>
-                  <span>Packet type</span>
-                  <span>Description</span>
-                  <span>Forms</span>
-                </div>
-                <div className="divide-y">
-                  {packets.map((packet) => {
-                    const deleted = isCollectionDeleted(packet);
+            <ResizableDataTable
+              storageKey="harbaugh-collections-list-column-widths"
+              tablePreferencesKey="collections_list"
+              columns={COLLECTION_TABLE_COLUMNS}
+              minTableWidth={880}
+            >
+              {packets.map((packet) => {
+                const deleted = isCollectionDeleted(packet);
+                const description = packet.description ?? "—";
 
-                    return (
-                      <div
-                        key={packet.id}
-                        className={cn(
-                          "flex flex-col gap-3 p-4 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-4",
-                          deleted && "bg-muted/30 opacity-70",
-                        )}
-                      >
-                        <div
-                          className={`${LIST_COLUMNS} items-center px-0 text-sm`}
+                return (
+                  <ResizableDataTableRow
+                    key={packet.id}
+                    className={deleted ? "bg-muted/30 opacity-70" : undefined}
+                  >
+                    <ResizableDataTableCell className="text-muted-foreground">
+                      {formatCollectionReference(packet.id)}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="truncate font-medium"
+                          title={packet.collection_name}
                         >
-                          <span className="text-muted-foreground">
-                            {formatCollectionReference(packet.id)}
-                          </span>
-                          <span className="flex items-center gap-2 font-medium">
-                            {packet.collection_name}
-                            {deleted && (
-                              <Badge variant="destructive">Deleted</Badge>
-                            )}
-                          </span>
-                          <span>{formatCollectionType(packet.collection_type)}</span>
-                          <span className="truncate">
-                            {packet.description ?? "—"}
-                          </span>
-                          <span>{getActiveFormLinkCount(packet)}</span>
-                        </div>
-                        <ListRowActions>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void openPacketForm(packet.id, "view")}
-                          >
-                            View
-                          </Button>
-                          {!deleted && (
-                            <>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  void openPacketForm(packet.id, "edit")
-                                }
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => openDeleteDialog(packet)}
-                              >
-                                Delete
-                              </Button>
-                            </>
-                          )}
-                        </ListRowActions>
+                          {packet.collection_name}
+                        </span>
+                        {deleted && (
+                          <Badge variant="destructive" className="shrink-0">
+                            Deleted
+                          </Badge>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell truncate>
+                      {formatCollectionType(packet.collection_type)}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell
+                      truncate
+                      title={description === "—" ? undefined : description}
+                    >
+                      {description}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell>
+                      {getActiveFormLinkCount(packet)}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableActionsCell>
+                      <ListRowActions>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void openPacketForm(packet.id, "view")}
+                        >
+                          View
+                        </Button>
+                        {!deleted && (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                void openPacketForm(packet.id, "edit")
+                              }
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => openDeleteDialog(packet)}
+                            >
+                              Delete
+                            </Button>
+                          </>
+                        )}
+                      </ListRowActions>
+                    </ResizableDataTableActionsCell>
+                  </ResizableDataTableRow>
+                );
+              })}
+            </ResizableDataTable>
           )}
         </CardContent>
       </Card>

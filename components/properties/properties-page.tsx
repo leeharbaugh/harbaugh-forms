@@ -2,6 +2,13 @@
 
 import { PropertyForm } from "@/components/properties/property-form";
 import { ListRowActions } from "@/components/list-row-actions";
+import {
+  ResizableDataTable,
+  ResizableDataTableActionsCell,
+  ResizableDataTableCell,
+  ResizableDataTableRow,
+  type ResizableDataTableColumn,
+} from "@/components/resizable-data-table";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,8 +32,23 @@ import { useCallback, useEffect, useState } from "react";
 
 type FormMode = "hidden" | "create" | "edit" | "view";
 
-const LIST_COLUMNS =
-  "grid grid-cols-[minmax(0,0.6fr)_minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.9fr)_minmax(0,0.5fr)_minmax(0,0.7fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,0.8fr)] gap-3";
+const PROPERTY_TABLE_COLUMNS: ResizableDataTableColumn[] = [
+  { id: "id", label: "ID", defaultWidth: 72, minWidth: 48 },
+  { id: "street", label: "Street address", defaultWidth: 200 },
+  { id: "unit", label: "Unit", defaultWidth: 80, minWidth: 56 },
+  { id: "city", label: "City", defaultWidth: 120 },
+  { id: "state", label: "State", defaultWidth: 64, minWidth: 48 },
+  { id: "zip", label: "ZIP", defaultWidth: 80, minWidth: 56 },
+  { id: "county", label: "County", defaultWidth: 120 },
+  { id: "propertyType", label: "Property type", defaultWidth: 140 },
+  { id: "mls", label: "MLS number", defaultWidth: 120 },
+  {
+    id: "actions",
+    label: "Actions",
+    defaultWidth: 224,
+    isActions: true,
+  },
+];
 
 export function PropertiesPage() {
   const [properties, setProperties] = useState<Property[]>([]);
@@ -254,70 +276,75 @@ export function PropertiesPage() {
               No active properties found.
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <div className="min-w-[960px]">
-                <div
-                  className={`${LIST_COLUMNS} border-b bg-muted/40 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground`}
-                >
-                  <span>ID</span>
-                  <span>Street address</span>
-                  <span>Unit</span>
-                  <span>City</span>
-                  <span>State</span>
-                  <span>ZIP</span>
-                  <span>County</span>
-                  <span>Property type</span>
-                  <span>MLS number</span>
-                </div>
-                <div className="divide-y">
-                  {properties.map((property) => (
-                    <div
-                      key={property.id}
-                      className="flex flex-col gap-3 p-4 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-4"
-                    >
-                      <div className={`${LIST_COLUMNS} items-center px-0 text-sm`}>
-                        <span className="text-muted-foreground">
-                          {formatPropertyReference(property.id)}
-                        </span>
-                        <span className="font-medium">
-                          {property.street_address}
-                        </span>
-                        <span>{property.unit ?? "—"}</span>
-                        <span>{property.city}</span>
-                        <span>{property.state}</span>
-                        <span>{property.zip}</span>
-                        <span>{property.county ?? "—"}</span>
-                        <span>{formatPropertyType(property.property_type)}</span>
-                        <span>{property.mls_number ?? "—"}</span>
-                      </div>
-                      <ListRowActions>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openPropertyForm(property, "view")}
-                        >
-                          View
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openPropertyForm(property, "edit")}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => void handleDelete(property)}
-                        >
-                          Delete
-                        </Button>
-                      </ListRowActions>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <ResizableDataTable
+              storageKey="harbaugh-properties-list-column-widths"
+              tablePreferencesKey="properties_list"
+              columns={PROPERTY_TABLE_COLUMNS}
+              minTableWidth={1040}
+            >
+              {properties.map((property) => (
+                <ResizableDataTableRow key={property.id}>
+                  <ResizableDataTableCell className="text-muted-foreground">
+                    {formatPropertyReference(property.id)}
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell
+                    truncate
+                    title={property.street_address}
+                    className="font-medium"
+                  >
+                    {property.street_address}
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell truncate title={property.unit ?? undefined}>
+                    {property.unit ?? "—"}
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell truncate title={property.city}>
+                    {property.city}
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell>{property.state}</ResizableDataTableCell>
+                  <ResizableDataTableCell>{property.zip}</ResizableDataTableCell>
+                  <ResizableDataTableCell
+                    truncate
+                    title={property.county ?? undefined}
+                  >
+                    {property.county ?? "—"}
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell truncate>
+                    {formatPropertyType(property.property_type)}
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell
+                    truncate
+                    title={property.mls_number ?? undefined}
+                  >
+                    {property.mls_number ?? "—"}
+                  </ResizableDataTableCell>
+                  <ResizableDataTableActionsCell>
+                    <ListRowActions>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openPropertyForm(property, "view")}
+                      >
+                        View
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openPropertyForm(property, "edit")}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => void handleDelete(property)}
+                      >
+                        Delete
+                      </Button>
+                    </ListRowActions>
+                  </ResizableDataTableActionsCell>
+                </ResizableDataTableRow>
+              ))}
+            </ResizableDataTable>
           )}
         </CardContent>
       </Card>

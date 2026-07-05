@@ -1,7 +1,16 @@
 "use client";
 
 import { CreatePacketWizard } from "@/components/packets/create-packet-wizard";
-import { ListRowActions } from "@/components/list-row-actions";
+import {
+  ListRowActions,
+} from "@/components/list-row-actions";
+import {
+  ResizableDataTable,
+  ResizableDataTableActionsCell,
+  ResizableDataTableCell,
+  ResizableDataTableRow,
+  type ResizableDataTableColumn,
+} from "@/components/resizable-data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,13 +39,24 @@ import {
   isPacketWorkflowType,
   type PacketWorkflowType,
 } from "@/lib/types/packet-workflow";
-import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
-const LIST_COLUMNS =
-  "grid grid-cols-[minmax(0,0.5fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,0.6fr)] gap-3";
+const PACKET_TABLE_COLUMNS: ResizableDataTableColumn[] = [
+  { id: "id", label: "ID", defaultWidth: 72, minWidth: 48 },
+  { id: "label", label: "Packet label", defaultWidth: 220 },
+  { id: "collection", label: "Collection", defaultWidth: 160 },
+  { id: "agreement", label: "Legacy agreement", defaultWidth: 200 },
+  { id: "created", label: "Created", defaultWidth: 148 },
+  { id: "documents", label: "Documents", defaultWidth: 96, minWidth: 72 },
+  {
+    id: "actions",
+    label: "Actions",
+    defaultWidth: 224,
+    isActions: true,
+  },
+];
 
 const GENERATED_PACKET_LIST_SELECT = `
   *,
@@ -292,92 +312,104 @@ function PacketsPageContent() {
               {showDeleted ? "No packets found." : "No active packets found."}
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <div className="min-w-[1040px]">
-                <div
-                  className={`${LIST_COLUMNS} border-b bg-muted/40 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground`}
-                >
-                  <span>ID</span>
-                  <span>Packet label</span>
-                  <span>Collection</span>
-                  <span>Legacy agreement</span>
-                  <span>Created</span>
-                  <span>Documents</span>
-                </div>
-                <div className="divide-y">
-                  {packets.map((packet) => {
-                    const deleted = isPacketDeleted(packet);
+            <ResizableDataTable
+              storageKey="harbaugh-packets-list-column-widths"
+              tablePreferencesKey="packets_list"
+              columns={PACKET_TABLE_COLUMNS}
+              minTableWidth={1040}
+            >
+              {packets.map((packet) => {
+                const deleted = isPacketDeleted(packet);
+                const collectionName =
+                  packet.collections?.collection_name ?? "—";
+                const agreementLabel = formatRelatedAgreementLabel(
+                  packet.representation_agreements,
+                );
 
-                    return (
-                      <div
-                        key={packet.id}
-                        className={cn(
-                          "flex flex-col gap-3 p-4 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-4",
-                          deleted && "bg-muted/30 opacity-70",
-                        )}
-                      >
-                        <div
-                          className={`${LIST_COLUMNS} items-center px-0 text-sm`}
+                return (
+                  <ResizableDataTableRow
+                    key={packet.id}
+                    className={deleted ? "bg-muted/30 opacity-70" : undefined}
+                  >
+                    <ResizableDataTableCell className="text-muted-foreground">
+                      {formatPacketReference(packet.id)}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="truncate font-medium"
+                          title={packet.label}
                         >
-                          <span className="text-muted-foreground">
-                            {formatPacketReference(packet.id)}
-                          </span>
-                          <span className="flex items-center gap-2 font-medium">
-                            {packet.label}
-                            {deleted && (
-                              <Badge variant="destructive">Deleted</Badge>
-                            )}
-                          </span>
-                          <span>
-                            {packet.collections?.collection_name ?? "—"}
-                          </span>
-                          <span>
-                            {formatRelatedAgreementLabel(
-                              packet.representation_agreements,
-                            )}
-                          </span>
-                          <span>{formatDateTime(packet.create_date)}</span>
-                          <span>{getActivePacketFormCount(packet)}</span>
-                        </div>
-                        <ListRowActions>
-                          <Button variant="outline" size="sm" asChild>
-                            <Link href={`/packets/${packet.id}`}>View</Link>
-                          </Button>
-                          {!deleted && (
-                            <Button variant="outline" size="sm" asChild>
-                              <Link href={`/packets/${packet.id}/edit`}>
-                                Edit
-                              </Link>
-                            </Button>
-                          )}
-                          {deleted ? (
-                            <Button
-                              size="sm"
-                              onClick={() => void handleRestore(packet.id)}
-                              disabled={
-                                isRestoring && restoringPacketId === packet.id
-                              }
-                            >
-                              {isRestoring && restoringPacketId === packet.id
-                                ? "Restoring..."
-                                : "Restore"}
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => openDeleteDialog(packet)}
-                            >
-                              Delete
-                            </Button>
-                          )}
-                        </ListRowActions>
+                          {packet.label}
+                        </span>
+                        {deleted && (
+                          <Badge variant="destructive" className="shrink-0">
+                            Deleted
+                          </Badge>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell
+                      truncate
+                      title={
+                        collectionName === "—" ? undefined : collectionName
+                      }
+                    >
+                      {collectionName}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell
+                      truncate
+                      title={
+                        agreementLabel === "—" ? undefined : agreementLabel
+                      }
+                    >
+                      {agreementLabel}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell truncate>
+                      {formatDateTime(packet.create_date)}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell>
+                      {getActivePacketFormCount(packet)}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableActionsCell>
+                      <ListRowActions>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/packets/${packet.id}`}>View</Link>
+                        </Button>
+                        {!deleted && (
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={`/packets/${packet.id}/edit`}>
+                              Edit
+                            </Link>
+                          </Button>
+                        )}
+                        {deleted ? (
+                          <Button
+                            size="sm"
+                            onClick={() => void handleRestore(packet.id)}
+                            disabled={
+                              isRestoring && restoringPacketId === packet.id
+                            }
+                          >
+                            {isRestoring && restoringPacketId === packet.id
+                              ? "Restoring..."
+                              : "Restore"}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => openDeleteDialog(packet)}
+                          >
+                            Delete
+                          </Button>
+                        )}
+                      </ListRowActions>
+                    </ResizableDataTableActionsCell>
+                  </ResizableDataTableRow>
+                );
+              })}
+            </ResizableDataTable>
           )}
         </CardContent>
       </Card>
