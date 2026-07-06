@@ -76,6 +76,7 @@ function useResizableColumnWidths(
     startWidth: number;
     minWidth: number;
     maxWidth: number;
+    edge: "left" | "right";
   } | null>(null);
 
   widthsRef.current = widths;
@@ -176,13 +177,18 @@ function useResizableColumnWidths(
   );
 
   const startResize = useCallback(
-    (column: ResizableDataTableColumn, clientX: number) => {
+    (
+      column: ResizableDataTableColumn,
+      clientX: number,
+      edge: "left" | "right" = "right",
+    ) => {
       resizeState.current = {
         columnId: column.id,
         startX: clientX,
         startWidth: widths[column.id] ?? column.defaultWidth,
         minWidth: column.minWidth ?? DEFAULT_MIN_COLUMN_WIDTH,
         maxWidth: column.maxWidth ?? DEFAULT_MAX_COLUMN_WIDTH,
+        edge,
       };
     },
     [widths],
@@ -197,11 +203,13 @@ function useResizableColumnWidths(
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
 
-      const { columnId, startX, startWidth, minWidth, maxWidth } =
+      const { columnId, startX, startWidth, minWidth, maxWidth, edge } =
         resizeState.current;
+      const delta =
+        edge === "left" ? startX - event.clientX : event.clientX - startX;
       const nextWidth = Math.min(
         maxWidth,
-        Math.max(minWidth, startWidth + (event.clientX - startX)),
+        Math.max(minWidth, startWidth + delta),
       );
 
       setWidths((current) => ({
@@ -237,7 +245,6 @@ type ResizableDataTableProps = {
   storageKey: string;
   tablePreferencesKey: string;
   columns: ResizableDataTableColumn[];
-  minTableWidth?: number;
   children: ReactNode;
 };
 
@@ -245,7 +252,6 @@ export function ResizableDataTable({
   storageKey,
   tablePreferencesKey,
   columns,
-  minTableWidth,
   children,
 }: ResizableDataTableProps) {
   const { widths, startResize } = useResizableColumnWidths(
@@ -254,11 +260,16 @@ export function ResizableDataTable({
     columns,
   );
 
+  const totalColumnWidth = columns.reduce(
+    (sum, column) => sum + (widths[column.id] ?? column.defaultWidth),
+    0,
+  );
+
   return (
     <div className="overflow-x-auto rounded-md border">
       <table
         className="w-full table-fixed border-collapse"
-        style={minTableWidth ? { minWidth: minTableWidth } : undefined}
+        style={{ minWidth: totalColumnWidth }}
       >
         <colgroup>
           {columns.map((column) => (
@@ -278,7 +289,7 @@ export function ResizableDataTable({
                   <th
                     key={column.id}
                     scope="col"
-                    style={{ width, minWidth: width }}
+                    style={{ width, minWidth: width, maxWidth: width }}
                     className={cn(
                       listTableActionsHeaderClass,
                       actionsResizable && "relative select-none",
@@ -286,15 +297,26 @@ export function ResizableDataTable({
                   >
                     {column.label}
                     {actionsResizable && (
-                      <button
-                        type="button"
-                        aria-label={`Resize ${column.label} column`}
-                        className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize border-r border-transparent hover:border-border"
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                          startResize(column, event.clientX);
-                        }}
-                      />
+                      <>
+                        <button
+                          type="button"
+                          aria-label={`Resize ${column.label} column`}
+                          className="absolute inset-y-0 left-0 z-10 w-2 cursor-col-resize border-l border-transparent hover:border-border"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            startResize(column, event.clientX, "left");
+                          }}
+                        />
+                        <button
+                          type="button"
+                          aria-label={`Resize ${column.label} column`}
+                          className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize border-r border-transparent hover:border-border"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            startResize(column, event.clientX, "right");
+                          }}
+                        />
+                      </>
                     )}
                   </th>
                 );
@@ -304,7 +326,7 @@ export function ResizableDataTable({
                 <th
                   key={column.id}
                   scope="col"
-                  style={{ width, minWidth: width }}
+                  style={{ width, minWidth: width, maxWidth: width }}
                   className={cn(
                     "relative select-none px-4 py-3 align-bottom",
                     column.align === "right" && "text-right",
@@ -358,8 +380,7 @@ export function ResizableDataTableCell({
   return (
     <td
       className={cn(
-        "px-4 py-3 align-middle",
-        truncate && "min-w-0 max-w-0",
+        "min-w-0 max-w-0 px-4 py-3 align-middle",
         className,
       )}
     >

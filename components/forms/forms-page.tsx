@@ -1,7 +1,14 @@
 "use client";
 
 import { FormForm } from "@/components/forms/form-form";
-import { ListRowActions, listTableActionsCellClass, listTableActionsHeaderClass } from "@/components/list-row-actions";
+import { ListRowActions } from "@/components/list-row-actions";
+import {
+  ResizableDataTable,
+  ResizableDataTableActionsCell,
+  ResizableDataTableCell,
+  ResizableDataTableRow,
+  type ResizableDataTableColumn,
+} from "@/components/resizable-data-table";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,6 +33,22 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type FormMode = "hidden" | "create" | "edit";
+
+const FORM_TABLE_COLUMNS: ResizableDataTableColumn[] = [
+  { id: "id", label: "ID", defaultWidth: 72, minWidth: 48 },
+  { id: "form_name", label: "Template name", defaultWidth: 200 },
+  { id: "form_code", label: "Template code", defaultWidth: 140 },
+  { id: "category", label: "Category", defaultWidth: 120 },
+  { id: "version", label: "Version", defaultWidth: 100, minWidth: 72 },
+  { id: "storage_path", label: "Storage path", defaultWidth: 220 },
+  {
+    id: "actions",
+    label: "Actions",
+    defaultWidth: 300,
+    minWidth: 260,
+    isActions: true,
+  },
+];
 
 export function FormsPage() {
   const [templates, setTemplates] = useState<Form[]>([]);
@@ -322,83 +345,72 @@ export function FormsPage() {
               No active form templates found.
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <table className="w-full table-auto border-collapse">
-                <thead>
-                  <tr className="border-b bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    <th className="px-4 py-3">ID</th>
-                    <th className="min-w-[8rem] px-4 py-3">Template name</th>
-                    <th className="min-w-[6rem] px-4 py-3">Template code</th>
-                    <th className="px-4 py-3">Category</th>
-                    <th className="px-4 py-3">Version</th>
-                    <th className="min-w-[8rem] px-4 py-3">Storage path</th>
-                    <th className={listTableActionsHeaderClass}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {templates.map((template) => (
-                    <tr key={template.id} className="text-sm">
-                      <td className="px-4 py-3 align-middle text-muted-foreground">
-                        {formatFormReference(template.id)}
-                      </td>
-                      <td className="min-w-0 px-4 py-3 align-middle">
-                        <span
-                          className="line-clamp-2 font-medium leading-snug"
-                          title={template.form_name}
-                        >
-                          {template.form_name}
-                        </span>
-                      </td>
-                      <td className="min-w-0 px-4 py-3 align-middle">
-                        <span
-                          className="line-clamp-2 break-all font-mono text-xs leading-snug"
-                          title={template.form_code}
-                        >
-                          {template.form_code}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 align-middle">
-                        {formatFormCategory(template.form_category)}
-                      </td>
-                      <td className="px-4 py-3 align-middle">
-                        {template.version_label ?? "—"}
-                      </td>
-                      <td className="min-w-0 px-4 py-3 align-middle">
-                        <span
-                          className="line-clamp-2 break-all font-mono text-xs leading-snug text-muted-foreground"
-                          title={template.source_storage_path}
-                        >
-                          {template.source_storage_path}
-                        </span>
-                      </td>
-                      <td className={listTableActionsCellClass}>
-                        <ListRowActions>
-                          <Button variant="outline" size="sm" asChild>
-                            <Link href={`/forms/${template.id}/editor`}>
-                              Map fields
-                            </Link>
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openEditForm(template)}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => void handleDelete(template)}
-                          >
-                            Delete
-                          </Button>
-                        </ListRowActions>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ResizableDataTable
+              storageKey="harbaugh-forms-list-column-widths"
+              tablePreferencesKey="forms_list"
+              columns={FORM_TABLE_COLUMNS}
+            >
+              {templates.map((template) => (
+                <ResizableDataTableRow key={template.id}>
+                  <ResizableDataTableCell className="text-muted-foreground">
+                    {formatFormReference(template.id)}
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell>
+                    <span
+                      className="line-clamp-2 font-medium leading-snug"
+                      title={template.form_name}
+                    >
+                      {template.form_name}
+                    </span>
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell>
+                    <span
+                      className="line-clamp-2 break-all font-mono text-xs leading-snug"
+                      title={template.form_code}
+                    >
+                      {template.form_code}
+                    </span>
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell truncate>
+                    {formatFormCategory(template.form_category)}
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell truncate>
+                    {template.version_label ?? "—"}
+                  </ResizableDataTableCell>
+                  <ResizableDataTableCell>
+                    <span
+                      className="line-clamp-2 break-all font-mono text-xs leading-snug text-muted-foreground"
+                      title={template.source_storage_path}
+                    >
+                      {template.source_storage_path}
+                    </span>
+                  </ResizableDataTableCell>
+                  <ResizableDataTableActionsCell>
+                    <ListRowActions>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/forms/${template.id}/editor`}>
+                          Map fields
+                        </Link>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEditForm(template)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => void handleDelete(template)}
+                      >
+                        Delete
+                      </Button>
+                    </ListRowActions>
+                  </ResizableDataTableActionsCell>
+                </ResizableDataTableRow>
+              ))}
+            </ResizableDataTable>
           )}
         </CardContent>
       </Card>

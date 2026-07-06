@@ -28,7 +28,7 @@ export function ListRowActions({
 }
 
 export const listTableActionsHeaderClass =
-  "w-px whitespace-nowrap px-4 py-3 text-right";
+  "min-w-0 whitespace-nowrap px-4 py-3 text-right";
 
 export const listTableActionsCellClass =
-  "w-px whitespace-nowrap px-4 py-3 align-middle text-right";
+  "min-w-0 max-w-0 whitespace-nowrap px-4 py-3 align-middle text-right";

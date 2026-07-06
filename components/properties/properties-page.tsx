@@ -280,7 +280,6 @@ export function PropertiesPage() {
               storageKey="harbaugh-properties-list-column-widths"
               tablePreferencesKey="properties_list"
               columns={PROPERTY_TABLE_COLUMNS}
-              minTableWidth={1040}
             >
               {properties.map((property) => (
                 <ResizableDataTableRow key={property.id}>

@@ -522,7 +522,6 @@ export function CollectionsPage() {
               storageKey="harbaugh-collections-list-column-widths"
               tablePreferencesKey="collections_list"
               columns={COLLECTION_TABLE_COLUMNS}
-              minTableWidth={880}
             >
               {packets.map((packet) => {
                 const deleted = isCollectionDeleted(packet);

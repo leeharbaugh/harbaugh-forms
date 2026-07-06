@@ -316,7 +316,6 @@ function PacketsPageContent() {
               storageKey="harbaugh-packets-list-column-widths"
               tablePreferencesKey="packets_list"
               columns={PACKET_TABLE_COLUMNS}
-              minTableWidth={1040}
             >
               {packets.map((packet) => {
                 const deleted = isPacketDeleted(packet);
