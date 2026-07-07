@@ -1,5 +1,6 @@
 "use client";
 
+import { AddressAutofillFields } from "@/components/address-autofill-fields";
 import { CadSearchButton } from "@/components/properties/cad-search-button";
 import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
@@ -136,26 +137,90 @@ export function PropertyForm({
           </div>
         )}
 
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="street_address">Street address *</Label>
-          <Input
-            id="street_address"
-            value={value.street_address}
-            onChange={(event) => setField("street_address", event.target.value)}
-            disabled={readOnly}
-            required
+        {!readOnly ? (
+          <AddressAutofillFields
+            line1={{
+              id: "street_address",
+              label: "Street address",
+              value: value.street_address,
+              onChange: (fieldValue) => setField("street_address", fieldValue),
+              required: true,
+            }}
+            line2={{
+              id: "unit",
+              label: "Unit",
+              value: value.unit,
+              onChange: (fieldValue) => setField("unit", fieldValue),
+            }}
+            line1Label="Street address *"
+            line2Label="Unit"
+            city={{
+              id: "city",
+              label: "City",
+              value: value.city,
+              onChange: (fieldValue) => setField("city", fieldValue),
+              required: true,
+            }}
+            state={{
+              id: "state",
+              label: "State",
+              value: value.state,
+              onChange: (fieldValue) => setField("state", fieldValue),
+              maxLength: 2,
+              required: true,
+            }}
+            zip={{
+              id: "zip",
+              label: "ZIP",
+              value: value.zip,
+              onChange: (fieldValue) => setField("zip", fieldValue),
+              required: true,
+            }}
+            county={{
+              id: "county",
+              label: "County",
+              value: value.county,
+              onChange: (fieldValue) => setField("county", fieldValue),
+            }}
           />
-        </div>
+        ) : (
+          <>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="street_address">Street address *</Label>
+              <Input
+                id="street_address"
+                value={value.street_address}
+                disabled
+                readOnly
+              />
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="unit">Unit</Label>
-          <Input
-            id="unit"
-            value={value.unit}
-            onChange={(event) => setField("unit", event.target.value)}
-            disabled={readOnly}
-          />
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="unit">Unit</Label>
+              <Input id="unit" value={value.unit} disabled readOnly />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="city">City *</Label>
+              <Input id="city" value={value.city} disabled readOnly />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="state">State *</Label>
+              <Input id="state" value={value.state} disabled readOnly />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="zip">ZIP *</Label>
+              <Input id="zip" value={value.zip} disabled readOnly />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="county">County</Label>
+              <Input id="county" value={value.county} disabled readOnly />
+            </div>
+          </>
+        )}
 
         <div className="space-y-2">
           <Label htmlFor="property_type">Property type *</Label>
@@ -175,50 +240,6 @@ export function PropertyForm({
               </option>
             ))}
           </select>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="city">City *</Label>
-          <Input
-            id="city"
-            value={value.city}
-            onChange={(event) => setField("city", event.target.value)}
-            disabled={readOnly}
-            required
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="state">State *</Label>
-          <Input
-            id="state"
-            value={value.state}
-            onChange={(event) => setField("state", event.target.value)}
-            disabled={readOnly}
-            maxLength={2}
-            required
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="zip">ZIP *</Label>
-          <Input
-            id="zip"
-            value={value.zip}
-            onChange={(event) => setField("zip", event.target.value)}
-            disabled={readOnly}
-            required
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="county">County</Label>
-          <Input
-            id="county"
-            value={value.county}
-            onChange={(event) => setField("county", event.target.value)}
-            disabled={readOnly}
-          />
         </div>
 
         <CadSearchButton county={value.county} />

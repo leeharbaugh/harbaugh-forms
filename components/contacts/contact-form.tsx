@@ -1,5 +1,6 @@
 "use client";
 
+import { AddressAutofillFields } from "@/components/address-autofill-fields";
 import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
@@ -359,67 +360,47 @@ export function ContactForm({
             <ViewField label="County" value={value.county} />
           </>
         ) : (
-          <>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="mailing_address_line_1">Address line 1</Label>
-              <Input
-                id="mailing_address_line_1"
-                value={value.mailing_address_line_1 ?? ""}
-                onChange={(event) =>
-                  setField("mailing_address_line_1", event.target.value)
-                }
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="mailing_address_line_2">Address line 2</Label>
-              <Input
-                id="mailing_address_line_2"
-                value={value.mailing_address_line_2 ?? ""}
-                onChange={(event) =>
-                  setField("mailing_address_line_2", event.target.value)
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="mailing_city">City</Label>
-              <Input
-                id="mailing_city"
-                value={value.mailing_city ?? ""}
-                onChange={(event) =>
-                  setField("mailing_city", event.target.value)
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="mailing_state">State</Label>
-              <Input
-                id="mailing_state"
-                value={value.mailing_state ?? "TX"}
-                onChange={(event) =>
-                  setField("mailing_state", event.target.value)
-                }
-                maxLength={2}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="mailing_zip">ZIP</Label>
-              <Input
-                id="mailing_zip"
-                value={value.mailing_zip ?? ""}
-                onChange={(event) =>
-                  setField("mailing_zip", event.target.value)
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="county">County</Label>
-              <Input
-                id="county"
-                value={value.county ?? ""}
-                onChange={(event) => setField("county", event.target.value)}
-              />
-            </div>
-          </>
+          <AddressAutofillFields
+            line1={{
+              id: "mailing_address_line_1",
+              label: "Address line 1",
+              value: value.mailing_address_line_1 ?? "",
+              onChange: (fieldValue) =>
+                setField("mailing_address_line_1", fieldValue),
+            }}
+            line2={{
+              id: "mailing_address_line_2",
+              label: "Address line 2",
+              value: value.mailing_address_line_2 ?? "",
+              onChange: (fieldValue) =>
+                setField("mailing_address_line_2", fieldValue),
+            }}
+            city={{
+              id: "mailing_city",
+              label: "City",
+              value: value.mailing_city ?? "",
+              onChange: (fieldValue) => setField("mailing_city", fieldValue),
+            }}
+            state={{
+              id: "mailing_state",
+              label: "State",
+              value: value.mailing_state ?? "TX",
+              onChange: (fieldValue) => setField("mailing_state", fieldValue),
+              maxLength: 2,
+            }}
+            zip={{
+              id: "mailing_zip",
+              label: "ZIP",
+              value: value.mailing_zip ?? "",
+              onChange: (fieldValue) => setField("mailing_zip", fieldValue),
+            }}
+            county={{
+              id: "county",
+              label: "County",
+              value: value.county ?? "",
+              onChange: (fieldValue) => setField("county", fieldValue),
+            }}
+          />
         )}
       </ContactSection>
 
@@ -444,57 +425,42 @@ export function ContactForm({
             <ViewField label="ZIP" value={value.street_zip} />
           </>
         ) : (
-          <>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="street_address_line_1">Address line 1</Label>
-              <Input
-                id="street_address_line_1"
-                value={value.street_address_line_1 ?? ""}
-                onChange={(event) =>
-                  setField("street_address_line_1", event.target.value)
-                }
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="street_address_line_2">Address line 2</Label>
-              <Input
-                id="street_address_line_2"
-                value={value.street_address_line_2 ?? ""}
-                onChange={(event) =>
-                  setField("street_address_line_2", event.target.value)
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="street_city">City</Label>
-              <Input
-                id="street_city"
-                value={value.street_city ?? ""}
-                onChange={(event) =>
-                  setField("street_city", event.target.value)
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="street_state">State</Label>
-              <Input
-                id="street_state"
-                value={value.street_state ?? "TX"}
-                onChange={(event) =>
-                  setField("street_state", event.target.value)
-                }
-                maxLength={2}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="street_zip">ZIP</Label>
-              <Input
-                id="street_zip"
-                value={value.street_zip ?? ""}
-                onChange={(event) => setField("street_zip", event.target.value)}
-              />
-            </div>
-          </>
+          <AddressAutofillFields
+            section="shipping"
+            line1={{
+              id: "street_address_line_1",
+              label: "Address line 1",
+              value: value.street_address_line_1 ?? "",
+              onChange: (fieldValue) =>
+                setField("street_address_line_1", fieldValue),
+            }}
+            line2={{
+              id: "street_address_line_2",
+              label: "Address line 2",
+              value: value.street_address_line_2 ?? "",
+              onChange: (fieldValue) =>
+                setField("street_address_line_2", fieldValue),
+            }}
+            city={{
+              id: "street_city",
+              label: "City",
+              value: value.street_city ?? "",
+              onChange: (fieldValue) => setField("street_city", fieldValue),
+            }}
+            state={{
+              id: "street_state",
+              label: "State",
+              value: value.street_state ?? "TX",
+              onChange: (fieldValue) => setField("street_state", fieldValue),
+              maxLength: 2,
+            }}
+            zip={{
+              id: "street_zip",
+              label: "ZIP",
+              value: value.street_zip ?? "",
+              onChange: (fieldValue) => setField("street_zip", fieldValue),
+            }}
+          />
         )}
       </ContactSection>
 
