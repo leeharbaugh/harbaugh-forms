@@ -10,7 +10,7 @@ import {
 } from "@/lib/mapbox-address";
 import type { AddressAutofillRetrieveResponse } from "@mapbox/search-js-core";
 import type { ComponentType, ReactNode } from "react";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type AddressFieldBinding = {
   id: string;
@@ -173,6 +173,7 @@ export function AddressAutofillFields(props: AddressAutofillFieldsProps) {
             id={county.id}
             value={county.value}
             onChange={(event) => county.onChange(event.target.value)}
+            autoComplete="off"
             disabled={disabled}
           />
         </div>
@@ -180,8 +181,12 @@ export function AddressAutofillFields(props: AddressAutofillFieldsProps) {
     </>
   );
 
+  const fieldGrid = (
+    <div className="grid w-full gap-4 sm:grid-cols-2">{fields}</div>
+  );
+
   if (!accessToken || !AddressAutofill) {
-    return fields;
+    return fieldGrid;
   }
 
   return (
@@ -193,7 +198,7 @@ export function AddressAutofillFields(props: AddressAutofillFieldsProps) {
         // Manual entry remains available when suggestions fail.
       }}
     >
-      <Fragment>{fields}</Fragment>
+      {fieldGrid}
     </AddressAutofill>
   );
 }

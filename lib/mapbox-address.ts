@@ -65,6 +65,13 @@ export type ParsedMapboxAddress = {
 
 export type AddressAutofillSection = "default" | "shipping";
 
+export type MapboxFeatureLike = {
+  properties?: {
+    context?: unknown;
+    address_level3?: string;
+  };
+};
+
 export function getMapboxAccessToken(): string | null {
   const token = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN?.trim();
   return token || null;
@@ -93,15 +100,120 @@ export function normalizeUsStateCode(state: string): string {
   return US_STATE_NAME_TO_CODE[trimmed.toLowerCase()] ?? trimmed.toUpperCase();
 }
 
+type MapboxContextComponent = {
+  id?: string;
+  text?: string;
+  name?: string;
+};
+
+type MapboxContextObject = {
+  district?: MapboxDistrictValue;
+};
+
+type MapboxDistrictValue =
+  | string
+  | {
+      id?: string;
+      name?: string;
+      text?: string;
+      mapbox_id?: string;
+    };
+
+function trimToOptionalString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function districtLabelFromValue(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return trimToOptionalString(value);
+  }
+
+  if (!value || typeof value !== "object") return undefined;
+
+  const district = value as Exclude<MapboxDistrictValue, string>;
+  return (
+    trimToOptionalString(district.name) ?? trimToOptionalString(district.text)
+  );
+}
+
+function formatMapboxCountyName(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const withoutSuffix = value.replace(/\s+county$/i, "").trim();
+  return withoutSuffix || undefined;
+}
+
+function isDistrictContextId(id: unknown): boolean {
+  if (typeof id !== "string") return false;
+  const normalized = id.toLowerCase();
+  return normalized === "district" || normalized.startsWith("district.");
+}
+
+function isDistrictContextComponent(component: MapboxContextComponent): boolean {
+  if (isDistrictContextId(component.id)) return true;
+  if (typeof component.id !== "string") return false;
+  const [type] = component.id.split(/[./]/);
+  return type?.toLowerCase() === "district";
+}
+
+/**
+ * Address Autofill returns `context` as an array (`district.*` → `text`).
+ * Search Box retrieve responses use an object (`context.district.name`).
+ *
+ * County must come only from district/county-level context — never from
+ * neighborhood, locality, place, street, or address-level3.
+ */
+export function extractCountyFromMapboxContext(
+  context: unknown,
+): string | undefined {
+  if (!context) return undefined;
+
+  if (Array.isArray(context)) {
+    for (const component of context) {
+      if (!component || typeof component !== "object") continue;
+      const typed = component as MapboxContextComponent;
+      if (!isDistrictContextComponent(typed)) continue;
+      const county =
+        districtLabelFromValue(typed) ??
+        trimToOptionalString(typed.text) ??
+        trimToOptionalString(typed.name);
+      const formatted = formatMapboxCountyName(county);
+      if (formatted) return formatted;
+    }
+    return undefined;
+  }
+
+  if (typeof context === "object") {
+    return formatMapboxCountyName(
+      districtLabelFromValue((context as MapboxContextObject).district),
+    );
+  }
+
+  return undefined;
+}
+
+export function extractCountyFromMapboxFeature(
+  feature: MapboxFeatureLike | null | undefined,
+): string | undefined {
+  if (!feature) return undefined;
+
+  const properties = feature.properties;
+  const fromProperties = extractCountyFromMapboxContext(properties?.context);
+  if (fromProperties) return fromProperties;
+
+  const featureContext = (feature as { context?: unknown }).context;
+  return extractCountyFromMapboxContext(featureContext);
+}
+
 export function parseMapboxRetrieveResponse(
   response: AddressAutofillRetrieveResponse,
 ): ParsedMapboxAddress | null {
-  const properties = response.features?.[0]?.properties;
+  const feature = response.features?.[0];
+  const properties = feature?.properties;
   if (!properties) return null;
 
-  const countyFromContext = properties.context?.find((component) =>
-    component.id.startsWith("district."),
-  )?.text;
+  const county = extractCountyFromMapboxFeature(feature);
 
   return {
     line1: properties.address_line1 ?? properties.feature_name ?? undefined,
@@ -111,6 +223,6 @@ export function parseMapboxRetrieveResponse(
       ? normalizeUsStateCode(properties.address_level1)
       : undefined,
     zip: properties.postcode || undefined,
-    county: countyFromContext || properties.address_level3 || undefined,
+    county,
   };
 }

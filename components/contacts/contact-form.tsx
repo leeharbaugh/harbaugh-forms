@@ -13,7 +13,7 @@ import {
   validateContactInput,
 } from "@/lib/types/contact";
 import { cn } from "@/lib/utils";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 type ContactFormProps = {
   value: ContactInput;
@@ -92,6 +92,12 @@ export function ContactForm({
   showActions = true,
 }: ContactFormProps) {
   const readOnly = mode === "view";
+  const valueRef = useRef(value);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
   const showAddAsPropertyOption =
     !readOnly &&
     contactHasAddressInfo(value) &&
@@ -101,7 +107,9 @@ export function ContactForm({
     key: K,
     fieldValue: ContactInput[K],
   ) => {
-    onChange({ ...value, [key]: fieldValue });
+    const nextValue = { ...valueRef.current, [key]: fieldValue };
+    valueRef.current = nextValue;
+    onChange(nextValue);
   };
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -360,8 +368,9 @@ export function ContactForm({
             <ViewField label="County" value={value.county} />
           </>
         ) : (
-          <AddressAutofillFields
-            line1={{
+          <div className="sm:col-span-2">
+            <AddressAutofillFields
+              line1={{
               id: "mailing_address_line_1",
               label: "Address line 1",
               value: value.mailing_address_line_1 ?? "",
@@ -400,7 +409,8 @@ export function ContactForm({
               value: value.county ?? "",
               onChange: (fieldValue) => setField("county", fieldValue),
             }}
-          />
+            />
+          </div>
         )}
       </ContactSection>
 
@@ -425,9 +435,10 @@ export function ContactForm({
             <ViewField label="ZIP" value={value.street_zip} />
           </>
         ) : (
-          <AddressAutofillFields
-            section="shipping"
-            line1={{
+          <div className="sm:col-span-2">
+            <AddressAutofillFields
+              section="shipping"
+              line1={{
               id: "street_address_line_1",
               label: "Address line 1",
               value: value.street_address_line_1 ?? "",
@@ -460,7 +471,8 @@ export function ContactForm({
               value: value.street_zip ?? "",
               onChange: (fieldValue) => setField("street_zip", fieldValue),
             }}
-          />
+            />
+          </div>
         )}
       </ContactSection>
 

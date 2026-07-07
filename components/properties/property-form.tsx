@@ -17,7 +17,7 @@ import {
   validatePropertyInput,
 } from "@/lib/types/property";
 import { cn } from "@/lib/utils";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 type PropertyFormProps = {
   value: PropertyInput;
@@ -94,12 +94,19 @@ export function PropertyForm({
   showActions = true,
 }: PropertyFormProps) {
   const readOnly = mode === "view";
+  const valueRef = useRef(value);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   const setField = <K extends keyof PropertyInput>(
     key: K,
     fieldValue: PropertyInput[K],
   ) => {
-    onChange({ ...value, [key]: fieldValue });
+    const nextValue = { ...valueRef.current, [key]: fieldValue };
+    valueRef.current = nextValue;
+    onChange(nextValue);
   };
 
   const setBooleanField = (key: PropertyBooleanField, checked: boolean) => {
@@ -126,7 +133,7 @@ export function PropertyForm({
     >
       <PropertySection title="Address">
         {propertyId != null && (
-          <div className="space-y-2">
+          <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="property_reference_id">ID</Label>
             <Input
               id="property_reference_id"
@@ -138,7 +145,8 @@ export function PropertyForm({
         )}
 
         {!readOnly ? (
-          <AddressAutofillFields
+          <div className="sm:col-span-2">
+            <AddressAutofillFields
             line1={{
               id: "street_address",
               label: "Street address",
@@ -182,9 +190,10 @@ export function PropertyForm({
               value: value.county,
               onChange: (fieldValue) => setField("county", fieldValue),
             }}
-          />
+            />
+          </div>
         ) : (
-          <>
+          <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="street_address">Street address *</Label>
               <Input
@@ -219,7 +228,7 @@ export function PropertyForm({
               <Label htmlFor="county">County</Label>
               <Input id="county" value={value.county} disabled readOnly />
             </div>
-          </>
+          </div>
         )}
 
         <div className="space-y-2">

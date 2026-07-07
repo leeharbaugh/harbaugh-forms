@@ -5,6 +5,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "test:mapbox": "node --experimental-strip-types --test lib/mapbox-address.test.ts",
     "postinstall": "node scripts/copy-pdf-worker.js"
   },
   "dependencies": {
