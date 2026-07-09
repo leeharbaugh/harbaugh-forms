@@ -19,6 +19,7 @@ import {
   upsertFieldInstanceMappingPlacement,
 } from "@/lib/packet-form-editor";
 import type { FieldResolutionDiagnostic } from "@/lib/field-resolver";
+import type { PacketWorkflowType } from "@/lib/types/packet-workflow";
 import {
   PDF_EDITOR_SIDEBAR_WIDTH,
   PDF_MIN_PAGE_WIDTH,
@@ -108,6 +109,7 @@ export function PacketFormEditor({
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [propertyId, setPropertyId] = useState<number | null>(null);
   const [hasPacketProperty, setHasPacketProperty] = useState(false);
+  const [packetType, setPacketType] = useState<PacketWorkflowType | null>(null);
   const [fieldResolutionDiagnostics, setFieldResolutionDiagnostics] = useState<
     FieldResolutionDiagnostic[] | null
   >(null);
@@ -281,6 +283,7 @@ export function PacketFormEditor({
         }
         setPropertyId(data.propertyId);
         setHasPacketProperty(data.hasPacketProperty);
+        setPacketType(data.packetType);
         setFieldResolutionDiagnostics(data.fieldResolutionDiagnostics);
       } catch (error) {
         if (!request.isCurrent()) {
@@ -296,6 +299,7 @@ export function PacketFormEditor({
         setPdfUrl(null);
         setPropertyId(null);
         setHasPacketProperty(false);
+        setPacketType(null);
         setFieldResolutionDiagnostics(null);
       } finally {
         if (request.isCurrent() && showFullScreenLoading) {
@@ -366,6 +370,7 @@ export function PacketFormEditor({
       setSavedValuesByInstanceId(valueState);
       setPropertyId(data.propertyId);
       setHasPacketProperty(data.hasPacketProperty);
+      setPacketType(data.packetType);
       setFieldResolutionDiagnostics(data.fieldResolutionDiagnostics);
     },
     [packetFormId, packetId, queueWorkspaceScrollRestore],
@@ -1008,11 +1013,13 @@ export function PacketFormEditor({
 
   const isDevelopment = process.env.NODE_ENV === "development";
   const propertyResolutionWarning =
-    propertyId == null
-      ? "This packet has no property selected, so property fields cannot be resolved."
-      : !hasPacketProperty
-        ? "This packet has a property ID but the property record could not be loaded."
-        : null;
+    packetType === "buyer_rep"
+      ? null
+      : propertyId == null
+        ? "This packet has no property selected, so property fields cannot be resolved."
+        : !hasPacketProperty
+          ? "This packet has a property ID but the property record could not be loaded."
+          : null;
 
   if (isLoading) {
     return (

@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/phone-input";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -88,6 +89,18 @@ export function PacketFormFieldValueInput({
         inputMode={dataType === "currency" ? "decimal" : "numeric"}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+        className="h-8 text-sm"
+      />
+    );
+  }
+
+  if (control === "phone") {
+    return (
+      <PhoneInput
+        id={inputId}
+        value={value}
+        onChange={onChange}
         disabled={disabled}
         className="h-8 text-sm"
       />

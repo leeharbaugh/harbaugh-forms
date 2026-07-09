@@ -26,6 +26,7 @@ import {
   PACKET_WORKFLOW_TYPES,
   type PacketWorkflowType,
   workflowRequiresProperty,
+  workflowSupportsPropertySelection,
   workflowToCollectionType,
 } from "@/lib/types/packet-workflow";
 import {
@@ -145,6 +146,8 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
 
   const hasLegacyAgreement = packet?.representation_agreement_id != null;
   const isDeleted = packet?.status === "DELETED";
+  const showPropertySelection =
+    packetType !== "" && workflowSupportsPropertySelection(packetType);
   const propertyRequired =
     packetType !== "" && workflowRequiresProperty(packetType);
 
@@ -173,7 +176,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
           label,
           packetType: packetType || null,
           collectionId,
-          propertyId,
+          propertyId: showPropertySelection ? propertyId : null,
           notes,
           status,
         },
@@ -338,33 +341,35 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
             </select>
           </div>
 
-          <div className="space-y-2 sm:col-span-2">
-            <Label>
-              Property{propertyRequired ? " *" : " (optional)"}
-            </Label>
-            {packet.properties && propertyMode === "existing" && propertyId && (
-              <p className="text-sm text-muted-foreground">
-                Current: {formatPropertyAddress(packet.properties)}
-              </p>
-            )}
-            <PropertyPicker
-              mode={propertyMode}
-              propertyId={propertyId}
-              property={property}
-              onSelectionChange={(patch) => {
-                if (patch.property_mode !== undefined) {
-                  setPropertyMode(patch.property_mode);
-                }
-                if (patch.property_id !== undefined) {
-                  setPropertyId(patch.property_id);
-                }
-                if (patch.property !== undefined) {
-                  setProperty(patch.property);
-                }
-              }}
-              disabled={isSaving}
-            />
-          </div>
+          {showPropertySelection && (
+            <div className="space-y-2 sm:col-span-2">
+              <Label>
+                Property{propertyRequired ? " *" : " (optional)"}
+              </Label>
+              {packet.properties && propertyMode === "existing" && propertyId && (
+                <p className="text-sm text-muted-foreground">
+                  Current: {formatPropertyAddress(packet.properties)}
+                </p>
+              )}
+              <PropertyPicker
+                mode={propertyMode}
+                propertyId={propertyId}
+                property={property}
+                onSelectionChange={(patch) => {
+                  if (patch.property_mode !== undefined) {
+                    setPropertyMode(patch.property_mode);
+                  }
+                  if (patch.property_id !== undefined) {
+                    setPropertyId(patch.property_id);
+                  }
+                  if (patch.property !== undefined) {
+                    setProperty(patch.property);
+                  }
+                }}
+                disabled={isSaving}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 

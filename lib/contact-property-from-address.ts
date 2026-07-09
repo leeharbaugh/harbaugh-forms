@@ -202,14 +202,6 @@ export async function ensurePropertyFromContactAddress(
     throw new Error("Enter an address before adding it as a property.");
   }
 
-  const existingPropertyId = await findExistingActivePropertyByAddress(
-    supabase,
-    propertyInput,
-  );
-  if (existingPropertyId != null) {
-    return { propertyId: existingPropertyId, created: false };
-  }
-
   const normalized = normalizePropertyInput(propertyInput);
   const { data, error } = await supabase
     .from("properties")

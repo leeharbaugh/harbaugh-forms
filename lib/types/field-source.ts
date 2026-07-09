@@ -4,6 +4,7 @@ import {
 } from "@/lib/types/buyer-rep-field-resolution";
 import { CONTRACT_DETAILS_SOURCE_PATHS } from "@/lib/types/contract-field-resolution";
 import {
+  canonicalizePacketContactSourcePath,
   formatPacketContactSourcePathMappingLabel,
   formatPacketContactSourcePathOptionLabel,
   getPacketContactSourcePathMeta,
@@ -513,10 +514,24 @@ export function resolveSourcePathPresetValue(
 
   const options = sourcePathDropdownOptionsForType(sourceType, trimmed);
   const normalized = trimmed.toLowerCase();
-  const match = options.find(
-    (option) =>
-      option.value === trimmed || option.value.toLowerCase() === normalized,
-  );
+  const canonical =
+    sourceType === "packet_contact"
+      ? canonicalizePacketContactSourcePath(trimmed)
+      : normalized;
+
+  const match = options.find((option) => {
+    if (option.value === trimmed || option.value.toLowerCase() === normalized) {
+      return true;
+    }
+
+    if (sourceType === "packet_contact") {
+      return (
+        canonicalizePacketContactSourcePath(option.value) === canonical
+      );
+    }
+
+    return false;
+  });
 
   if (match) {
     return match.value;

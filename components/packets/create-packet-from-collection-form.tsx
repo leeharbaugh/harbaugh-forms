@@ -3,9 +3,11 @@
 import { ContactPicker } from "@/components/contacts/contact-picker";
 import { PacketFormsDraftEditor } from "@/components/packets/packet-forms-draft-editor";
 import { PropertyPicker } from "@/components/properties/property-picker";
+import { usePropertyDuplicateConfirm } from "@/components/properties/use-property-duplicate-confirm";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
 import { type CollectionFormLink } from "@/lib/types/collection";
 import { buildPacketContactAssignments } from "@/lib/types/packet-contact";
 import type { DraftExternalPacketForm } from "@/lib/types/packet-form";
@@ -21,15 +23,16 @@ import {
   NO_COLLECTIONS_MESSAGE,
   type PacketWorkflowType,
   workflowRequiresProperty,
+  workflowSupportsPropertySelection,
   workflowToCollectionType,
 } from "@/lib/types/packet-workflow";
 import {
   emptyPropertyInput,
-  normalizePropertyInput,
   type PropertyInput,
   type PropertySelectionMode,
   validatePropertyInput,
 } from "@/lib/types/property";
+import type { PropertyDuplicatePromptInfo } from "@/lib/property-duplicate";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -73,6 +76,7 @@ async function resolvePropertyId(
   property: PropertyInput,
   required: boolean,
   workflowType: PacketWorkflowType,
+  onDuplicate: (info: PropertyDuplicatePromptInfo) => Promise<"update" | "cancel">,
 ): Promise<number | null> {
   const supabase = createClient();
 
@@ -84,22 +88,11 @@ async function resolvePropertyId(
       return null;
     }
 
-    const validationError = validatePropertyInput(property);
-    if (validationError) {
-      throw new Error(validationError);
-    }
-
-    const { data, error } = await supabase
-      .from("properties")
-      .insert(normalizePropertyInput(property))
-      .select("id")
-      .single();
-
-    if (error || !data) {
-      throw new Error(error?.message ?? "Failed to create property.");
-    }
-
-    return data.id as number;
+    return saveNewPropertyWithDuplicateHandling(
+      supabase,
+      property,
+      onDuplicate,
+    );
   }
 
   if (propertyId == null) {
@@ -118,6 +111,7 @@ export function CreatePacketFromCollectionForm({
 }: CreatePacketFromCollectionFormProps) {
   const router = useRouter();
   const contactLabels = getPacketContactLabels(workflowType);
+  const showPropertySelection = workflowSupportsPropertySelection(workflowType);
   const propertyRequired = workflowRequiresProperty(workflowType);
 
   const [step, setStep] = useState<CreateStep>("details");
@@ -140,6 +134,8 @@ export function CreatePacketFromCollectionForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const { promptDuplicate, dialog: duplicateDialog } =
+    usePropertyDuplicateConfirm();
 
   const loadCollections = useCallback(async () => {
     setIsLoading(true);
@@ -184,17 +180,15 @@ export function CreatePacketFromCollectionForm({
     collectionId: selectedCollectionId,
     packetType: workflowType,
     contactIds,
-    propertyId: propertyRequired
+    propertyId: showPropertySelection
       ? propertyMode === "existing"
         ? propertyId
         : null
-      : propertyMode === "existing"
-        ? propertyId
-        : null,
+      : null,
   });
 
-  const propertyValidationError =
-    propertyRequired && propertyMode === "existing" && propertyId == null
+  const propertyValidationError = showPropertySelection
+    ? propertyRequired && propertyMode === "existing" && propertyId == null
       ? getPropertyRequiredMessage(workflowType)
       : propertyRequired &&
           propertyMode === "new" &&
@@ -208,7 +202,8 @@ export function CreatePacketFromCollectionForm({
               propertyMode === "new" &&
               property.street_address.trim()
             ? validatePropertyInput(property)
-            : null;
+            : null
+    : null;
 
   const formsValidationError =
     selectedCollection && selectedForms.length === 0
@@ -255,13 +250,26 @@ export function CreatePacketFromCollectionForm({
     const supabase = createClient();
 
     try {
-      const resolvedPropertyId = await resolvePropertyId(
-        propertyMode,
-        propertyId,
-        property,
-        propertyRequired,
-        workflowType,
-      );
+      const resolvedPropertyId = showPropertySelection
+        ? await resolvePropertyId(
+            propertyMode,
+            propertyId,
+            property,
+            propertyRequired,
+            workflowType,
+            promptDuplicate,
+          )
+        : null;
+
+      if (
+        showPropertySelection &&
+        propertyMode === "new" &&
+        property.street_address.trim() &&
+        resolvedPropertyId === null
+      ) {
+        setIsSubmitting(false);
+        return;
+      }
 
       const { packetId } = await createPacketFromCollection(supabase, {
         collectionId: selectedCollectionId as number,
@@ -302,7 +310,9 @@ export function CreatePacketFromCollectionForm({
 
   if (step === "forms") {
     return (
-      <div className="space-y-6">
+      <>
+        {duplicateDialog}
+        <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-lg font-semibold">Review forms</h2>
@@ -353,11 +363,14 @@ export function CreatePacketFromCollectionForm({
           </Button>
         </div>
       </div>
+      </>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <>
+      {duplicateDialog}
+      <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">
           {getPacketCreateTitle(workflowType)}
@@ -410,26 +423,28 @@ export function CreatePacketFromCollectionForm({
         />
       </div>
 
-      <div className="space-y-2">
-        <Label>Property{propertyRequired ? " *" : " (optional)"}</Label>
-        <PropertyPicker
-          mode={propertyMode}
-          propertyId={propertyId}
-          property={property}
-          onSelectionChange={(patch) => {
-            if (patch.property_mode !== undefined) {
-              setPropertyMode(patch.property_mode);
-            }
-            if (patch.property_id !== undefined) {
-              setPropertyId(patch.property_id);
-            }
-            if (patch.property !== undefined) {
-              setProperty(patch.property);
-            }
-          }}
-          disabled={isSubmitting}
-        />
-      </div>
+      {showPropertySelection && (
+        <div className="space-y-2">
+          <Label>Property{propertyRequired ? " *" : " (optional)"}</Label>
+          <PropertyPicker
+            mode={propertyMode}
+            propertyId={propertyId}
+            property={property}
+            onSelectionChange={(patch) => {
+              if (patch.property_mode !== undefined) {
+                setPropertyMode(patch.property_mode);
+              }
+              if (patch.property_id !== undefined) {
+                setPropertyId(patch.property_id);
+              }
+              if (patch.property !== undefined) {
+                setProperty(patch.property);
+              }
+            }}
+            disabled={isSubmitting}
+          />
+        </div>
+      )}
 
       {(submitError || validationError || formsValidationError || propertyValidationError) && (
         <p className="text-sm text-destructive">
@@ -464,5 +479,6 @@ export function CreatePacketFromCollectionForm({
         </Button>
       </div>
     </div>
+    </>
   );
 }

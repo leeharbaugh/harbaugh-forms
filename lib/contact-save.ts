@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  ensurePropertyFromContactAddress,
+  buildPropertyInputFromContactAddress,
+  findExistingActivePropertyByAddress,
   validateContactPropertyCreation,
 } from "@/lib/contact-property-from-address";
 import {
@@ -8,6 +9,10 @@ import {
   normalizeContactInput,
   validateContactInput,
 } from "@/lib/types/contact";
+import {
+  formatPropertyAddress,
+  normalizePropertyInput,
+} from "@/lib/types/property";
 
 export type SaveContactWithOptionalPropertyInput = {
   contact: ContactInput;
@@ -20,6 +25,8 @@ export type SaveContactWithOptionalPropertyResult = {
   contactId: number;
   propertyId?: number;
   propertyCreated?: boolean;
+  propertyDuplicateSkipped?: boolean;
+  duplicatePropertyAddress?: string;
 };
 
 export async function saveContactWithOptionalProperty(
@@ -73,14 +80,39 @@ export async function saveContactWithOptionalProperty(
     return { contactId: contactId as number };
   }
 
-  const propertyResult = await ensurePropertyFromContactAddress(
+  const propertyInput = buildPropertyInputFromContactAddress(normalized);
+  if (!propertyInput) {
+    throw new Error("Enter an address before adding it as a property.");
+  }
+
+  const existingPropertyId = await findExistingActivePropertyByAddress(
     supabase,
-    normalized,
+    propertyInput,
   );
+  if (existingPropertyId != null) {
+    return {
+      contactId: contactId as number,
+      propertyDuplicateSkipped: true,
+      duplicatePropertyAddress: formatPropertyAddress(
+        normalizePropertyInput(propertyInput),
+      ),
+    };
+  }
+
+  const normalizedProperty = normalizePropertyInput(propertyInput);
+  const { data, error } = await supabase
+    .from("properties")
+    .insert(normalizedProperty)
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Failed to create property.");
+  }
 
   return {
     contactId: contactId as number,
-    propertyId: propertyResult.propertyId,
-    propertyCreated: propertyResult.created,
+    propertyId: data.id as number,
+    propertyCreated: true,
   };
 }

@@ -3,6 +3,7 @@
 import { ContactForm } from "@/components/contacts/contact-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { InfoDialog } from "@/components/ui/info-dialog";
 import {
   Card,
   CardContent,
@@ -12,6 +13,10 @@ import {
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
 import { saveContactWithOptionalProperty } from "@/lib/contact-save";
+import {
+  PROPERTY_DUPLICATE_TITLE,
+  formatPropertyDuplicateInfoMessage,
+} from "@/lib/property-duplicate";
 import {
   fetchContactAssociatedPackets,
   formatContactAssociatedPacketType,
@@ -56,6 +61,9 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [propertyDuplicateMessage, setPropertyDuplicateMessage] = useState<
+    string | null
+  >(null);
 
   const loadContact = useCallback(async () => {
     setIsLoading(true);
@@ -142,12 +150,22 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
     const supabase = createClient();
 
     try {
-      await saveContactWithOptionalProperty(supabase, {
+      const result = await saveContactWithOptionalProperty(supabase, {
         contact: formValue,
         addAddressAsProperty,
         mode: "edit",
         contactId,
       });
+
+      if (result.propertyDuplicateSkipped && result.duplicatePropertyAddress) {
+        setPropertyDuplicateMessage(
+          formatPropertyDuplicateInfoMessage(result.duplicatePropertyAddress),
+        );
+        setAddAddressAsProperty(false);
+        setIsSubmitting(false);
+        await loadContact();
+        return;
+      }
     } catch (error) {
       setFormError(
         error instanceof Error ? error.message : "Failed to save contact.",
@@ -215,6 +233,12 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
 
   return (
     <div className="flex w-full max-w-5xl flex-col gap-6">
+      <InfoDialog
+        open={propertyDuplicateMessage != null}
+        title={PROPERTY_DUPLICATE_TITLE}
+        message={propertyDuplicateMessage ?? ""}
+        onClose={() => setPropertyDuplicateMessage(null)}
+      />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{displayName}</h1>

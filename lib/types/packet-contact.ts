@@ -164,6 +164,62 @@ export function getOrderedBuyerContacts(
   );
 }
 
+export type NumberedPacketContactRolePrefix =
+  | "buyer"
+  | "seller"
+  | "tenant"
+  | "landlord";
+
+/** Nth active party for buyer_1/buyer_2, seller_1/seller_2, etc. (by sort_order). */
+export function getOrderedContactsForNumberedRolePrefix(
+  packetContacts: PacketContact[],
+  prefix: NumberedPacketContactRolePrefix,
+): Contact[] {
+  switch (prefix) {
+    case "buyer":
+      return getOrderedBuyerContacts(packetContacts);
+    case "seller":
+      return getOrderedSellerContacts(packetContacts);
+    case "tenant":
+      return getOrderedContactsByPacketRoles(packetContacts, [
+        "TENANT",
+        "CO_CLIENT",
+        "SPOUSE",
+        "PRIMARY",
+        "OTHER",
+      ]);
+    case "landlord":
+      return getOrderedContactsByPacketRoles(packetContacts, [
+        "LANDLORD",
+        "CO_CLIENT",
+        "SPOUSE",
+        "OTHER",
+      ]);
+  }
+}
+
+export function getPacketContactByNumberedRoleSlug(
+  packetContacts: PacketContact[],
+  roleSlug: string,
+): Contact | null {
+  const normalized = roleSlug.trim().toLowerCase();
+  const match = normalized.match(/^(buyer|seller|tenant|landlord)_(\d+)$/);
+  if (!match) {
+    return null;
+  }
+
+  const prefix = match[1] as NumberedPacketContactRolePrefix;
+  const index = Number(match[2]);
+  if (!Number.isInteger(index) || index < 1) {
+    return null;
+  }
+
+  return (
+    getOrderedContactsForNumberedRolePrefix(packetContacts, prefix)[index - 1] ??
+    null
+  );
+}
+
 export function formatJoinedContactNames(contacts: Contact[]): string {
   return contacts
     .map((contact) => formatContactDisplayName(contact))

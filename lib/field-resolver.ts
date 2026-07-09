@@ -41,9 +41,9 @@ import {
   type PacketContactRole,
   getBuyerClientContactAtIndex,
   getOrderedBuyerClientContacts,
+  getPacketContactByNumberedRoleSlug,
   getPrimaryBuyerClientContact,
   parseBuyerClientIndexSlug,
-  sortPacketContacts,
 } from "@/lib/types/packet-contact";
 import type { Packet } from "@/lib/types/packet";
 import {
@@ -254,22 +254,7 @@ export function getPacketContactByRole(
   packetContacts: PacketContact[],
   role: string,
 ): Contact | null {
-  const parsed = parseNumberedContactRoleSlug(role);
-  if (!parsed) {
-    return null;
-  }
-
-  const activeContacts = sortPacketContacts(
-    packetContacts.filter((row) => row.status === "ACTIVE"),
-  );
-
-  const match = activeContacts.find(
-    (row) =>
-      row.packet_role === parsed.packetRole &&
-      row.sort_order === parsed.sortOrder,
-  );
-
-  return match?.contacts ?? null;
+  return getPacketContactByNumberedRoleSlug(packetContacts, role);
 }
 
 export function normalizeDateDisplay(value: string | null | undefined): string {

@@ -19,6 +19,8 @@ type ConfirmDialogProps = {
   onConfirm: () => void;
   onCancel: () => void;
   variant?: "destructive" | "default";
+  /** Use elevated z-index when shown over another modal (e.g. download progress). */
+  elevated?: boolean;
 };
 
 export function ConfirmDialog({
@@ -31,13 +33,16 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   variant = "default",
+  elevated = false,
 }: ConfirmDialogProps) {
   if (!open) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className={`fixed inset-0 flex items-center justify-center p-4 ${elevated ? "z-[60]" : "z-50"}`}
+    >
       <button
         type="button"
         className="absolute inset-0 bg-background/80 backdrop-blur-sm"

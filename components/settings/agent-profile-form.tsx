@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/phone-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,11 +83,10 @@ export function AgentProfileForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="agent_phone">Phone *</Label>
-          <Input
+          <PhoneInput
             id="agent_phone"
-            type="tel"
             value={value.agent_phone}
-            onChange={(event) => setField("agent_phone", event.target.value)}
+            onChange={(nextValue) => setField("agent_phone", nextValue)}
             required
           />
         </div>

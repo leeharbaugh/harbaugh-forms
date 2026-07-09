@@ -16,6 +16,7 @@ import type {
   FieldInstanceMapping,
   FieldInstanceWithField,
 } from "@/lib/types/field-instance";
+import type { PacketWorkflowType } from "@/lib/types/packet-workflow";
 import {
   buildPacketFormFieldViews,
   type PacketFormEditorData,
@@ -46,6 +47,7 @@ export type PacketFormEditorLoadResult = PacketFormEditorData & {
   pdfUrl: string | null;
   propertyId: number | null;
   hasPacketProperty: boolean;
+  packetType: PacketWorkflowType | null;
   fieldResolutionDiagnostics: FieldResolutionDiagnostic[] | null;
 };
 
@@ -141,6 +143,7 @@ export async function loadPacketFormEditorData(
     pdfUrl,
     propertyId: resolverContext.packet.property_id,
     hasPacketProperty: resolverContext.packet.properties != null,
+    packetType: (resolverContext.packet.packet_type as PacketWorkflowType | null) ?? null,
     fieldResolutionDiagnostics,
   };
 }

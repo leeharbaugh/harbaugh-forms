@@ -17,7 +17,7 @@ const WORKFLOW_LABELS: Record<PacketWorkflowType, string> = {
 
 const WORKFLOW_DESCRIPTIONS: Record<PacketWorkflowType, string> = {
   buyer_rep:
-    "Create a buyer representation packet from a collection, buyers, and an optional property.",
+    "Create a buyer representation packet from a collection and assigned buyers.",
   listing:
     "Create a listing packet from a collection, sellers, and a property.",
   contract_offer:
@@ -120,6 +120,13 @@ export function workflowRequiresProperty(workflow: PacketWorkflowType): boolean 
     case "contract_offer":
       return true;
   }
+}
+
+/** Buyer rep packets are client/representation-based and do not use a subject property. */
+export function workflowSupportsPropertySelection(
+  workflow: PacketWorkflowType,
+): boolean {
+  return workflow !== "buyer_rep";
 }
 
 export function getPropertyRequiredMessage(

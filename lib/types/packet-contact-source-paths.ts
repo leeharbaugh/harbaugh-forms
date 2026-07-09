@@ -1,4 +1,4 @@
-import type { Contact } from "@/lib/types/contact";
+import { dedupeSourcePathOptions } from "@/lib/types/source-path-options";
 import {
   formatContactDisplayName,
   formatContactDateOfBirth,
@@ -46,6 +46,10 @@ export const PACKET_CONTACT_DIRECT_FIELD_SUFFIXES = [
 export type PacketContactDirectFieldSuffix =
   (typeof PACKET_CONTACT_DIRECT_FIELD_SUFFIXES)[number];
 
+/** Alias suffixes excluded from dropdown presets; resolution still accepts them. */
+export const PACKET_CONTACT_DROPDOWN_DIRECT_FIELD_SUFFIXES =
+  PACKET_CONTACT_DIRECT_FIELD_SUFFIXES.filter((suffix) => suffix !== "phone");
+
 /** Resolved via formatter, not a DB column. */
 export const PACKET_CONTACT_COMPUTED_FIELD_SUFFIXES = [
   "full_name",
@@ -73,7 +77,7 @@ const BUYER_CLIENT_INDICES = [1, 2] as const;
 
 const BUYER_CLIENT_FIELD_SUFFIXES = [
   ...PACKET_CONTACT_COMPUTED_FIELD_SUFFIXES,
-  ...PACKET_CONTACT_DIRECT_FIELD_SUFFIXES,
+  ...PACKET_CONTACT_DROPDOWN_DIRECT_FIELD_SUFFIXES,
 ] as const;
 
 export type PacketContactSourcePathMeta = {
@@ -226,6 +230,21 @@ export function normalizePacketContactFieldSuffix(
   return null;
 }
 
+export function canonicalizePacketContactSourcePath(sourcePath: string): string {
+  const trimmed = sourcePath.trim().toLowerCase();
+  const dotMatch = trimmed.match(/^([a-z0-9_]+)\.([a-z_]+)$/i);
+  if (!dotMatch) {
+    return trimmed;
+  }
+
+  const suffix = normalizePacketContactFieldSuffix(dotMatch[2]);
+  if (!suffix) {
+    return trimmed;
+  }
+
+  return `${dotMatch[1]}.${suffix}`;
+}
+
 export function isValidPacketContactSourcePath(sourcePath: string): boolean {
   const trimmed = sourcePath.trim();
   const dotMatch = trimmed.match(/^([a-z0-9_]+)\.([a-z_]+)$/i);
@@ -292,7 +311,7 @@ export function getPacketContactSourcePathOptions(
       options.push(
         ...buildRolePaths(prefix, index, [
           ...PACKET_CONTACT_COMPUTED_FIELD_SUFFIXES,
-          ...PACKET_CONTACT_DIRECT_FIELD_SUFFIXES,
+          ...PACKET_CONTACT_DROPDOWN_DIRECT_FIELD_SUFFIXES,
         ]),
       );
     }
@@ -305,18 +324,43 @@ export function getPacketContactSourcePathOptions(
   }
 
   const normalizedCurrent = currentValue?.trim().toLowerCase() ?? "";
+  const canonicalCurrent = normalizedCurrent
+    ? canonicalizePacketContactSourcePath(normalizedCurrent)
+    : "";
+
+  const deduped = dedupeSourcePathOptions(
+    options.map((option) => ({
+      value: option.value,
+      label: formatPacketContactSourcePathOptionLabel(option),
+    })),
+    {
+      canonicalize: canonicalizePacketContactSourcePath,
+      preferValue: (values, canonicalValue) =>
+        values.find((value) => value.toLowerCase() === canonicalValue) ??
+        values[0],
+    },
+  );
+
+  const dedupedMeta = deduped.map((option) => {
+    const meta = getPacketContactSourcePathMeta(option.value);
+    return meta ?? { value: option.value, label: option.label, example: "—" };
+  });
+
   if (
     normalizedCurrent &&
-    !options.some((option) => option.value === normalizedCurrent) &&
-    isValidPacketContactSourcePath(normalizedCurrent)
+    isValidPacketContactSourcePath(normalizedCurrent) &&
+    !dedupedMeta.some(
+      (option) =>
+        canonicalizePacketContactSourcePath(option.value) === canonicalCurrent,
+    )
   ) {
     const meta = getPacketContactSourcePathMeta(normalizedCurrent);
     if (meta) {
-      options.push(meta);
+      dedupedMeta.push(meta);
     }
   }
 
-  return options;
+  return dedupedMeta;
 }
 
 export function formatPacketContactResolvedFieldValue(

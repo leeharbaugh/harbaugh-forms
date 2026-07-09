@@ -10,7 +10,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { downloadFilledPacketFormPdf } from "@/lib/packet-form-download";
+import { InfoDialog } from "@/components/ui/info-dialog";
+import { DownloadAllFormsProgressDialog } from "@/components/packets/download-all-forms-progress-dialog";
+import {
+  downloadAllFilledPacketForms,
+  downloadFilledPacketFormPdf,
+} from "@/lib/packet-form-download";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatAgreementReference,
@@ -36,7 +41,7 @@ import { formatPropertyAddress, type Property } from "@/lib/types/property";
 import { PacketFormsLiveEditor } from "@/components/packets/packet-forms-live-editor";
 import { sortPacketForms } from "@/lib/types/packet-form";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const DELETE_DIALOG_MESSAGE =
   "Are you sure you want to delete this generated packet? This will hide the packet and its generated documents from normal use, but the records will remain in the database.";
@@ -51,6 +56,24 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+  const [downloadWarning, setDownloadWarning] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{
+    completed: number;
+    total: number;
+    currentDocumentName: string | null;
+  } | null>(null);
+  const [downloadCompleteDialog, setDownloadCompleteDialog] = useState<{
+    title: string;
+    message: string;
+  } | null>(null);
+  const [overwritePrompt, setOverwritePrompt] = useState<{
+    fileName: string;
+    documentName: string;
+  } | null>(null);
+  const overwriteResolverRef = useRef<((overwrite: boolean) => void) | null>(
+    null,
+  );
   const [downloadingDocumentId, setDownloadingDocumentId] = useState<
     number | null
   >(null);
@@ -87,8 +110,26 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
     void loadPacket();
   }, [loadPacket]);
 
+  const confirmOverwrite = useCallback(
+    (fileName: string, documentName: string): Promise<boolean> => {
+      return new Promise((resolve) => {
+        overwriteResolverRef.current = resolve;
+        setOverwritePrompt({ fileName, documentName });
+      });
+    },
+    [],
+  );
+
+  const resolveOverwritePrompt = (overwrite: boolean) => {
+    overwriteResolverRef.current?.(overwrite);
+    overwriteResolverRef.current = null;
+    setOverwritePrompt(null);
+  };
+
   const downloadDocument = async (document: PacketForm) => {
     setDownloadError(null);
+    setDownloadNotice(null);
+    setDownloadWarning(null);
     setDownloadingDocumentId(document.id);
 
     try {
@@ -103,24 +144,119 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
     }
   };
 
-  const downloadAllDocuments = async (documentsToDownload: PacketForm[]) => {
+  const downloadAllDocuments = async (
+    documentsToDownload: PacketForm[],
+    contactNames: string,
+  ) => {
     const downloadable = documentsToDownload.filter(
       (document) => document.storage_path,
     );
 
     if (downloadable.length === 0) {
       setDownloadError("No copied PDFs are available to download.");
+      setDownloadNotice(null);
+      setDownloadWarning(null);
       return;
     }
 
     setDownloadError(null);
+    setDownloadNotice(null);
+    setDownloadWarning(null);
+    setDownloadCompleteDialog(null);
     setIsDownloadingAll(true);
+    setDownloadProgress({ completed: 0, total: downloadable.length, currentDocumentName: null });
 
     try {
       const supabase = createClient();
+      const result = await downloadAllFilledPacketForms(
+        supabase,
+        downloadable,
+        {
+          contactNames:
+            contactNames !== "Unnamed packet" ? contactNames : null,
+          onProgress: setDownloadProgress,
+          onDuplicateFile: async ({ fileName, documentName }) =>
+            confirmOverwrite(fileName, documentName),
+        },
+      );
 
-      for (const document of downloadable) {
-        await downloadFilledPacketFormPdf(supabase, document);
+      if (result.cancelled) {
+        return;
+      }
+
+      const skippedDetails =
+        result.skipped.length > 0
+          ? result.skipped
+              .map((entry) => `• ${entry.fileName}`)
+              .join("\n")
+          : "";
+
+      if (result.failed.length > 0) {
+        const failureDetails = result.failed
+          .map(
+            (failure) =>
+              `• ${failure.documentName}: ${failure.error}`,
+          )
+          .join("\n");
+
+        setDownloadWarning(
+          result.savedCount > 0
+            ? `Saved ${result.savedCount} of ${downloadable.length} forms. Some forms could not be saved.`
+            : "Could not save any forms.",
+        );
+
+        setDownloadCompleteDialog({
+          title: "Download completed with warnings",
+          message: [
+            result.savedCount > 0
+              ? `${result.savedCount} of ${downloadable.length} forms were saved successfully.`
+              : "No forms could be saved.",
+            result.skippedCount > 0
+              ? `${result.skippedCount} form${result.skippedCount === 1 ? "" : "s"} skipped because a file already existed and overwrite was not confirmed.`
+              : "",
+            result.skippedCount > 0 ? skippedDetails : "",
+            "",
+            "The following forms failed:",
+            failureDetails,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        });
+      } else if (result.savedCount === 0 && result.skippedCount > 0) {
+        setDownloadCompleteDialog({
+          title: "Download complete",
+          message: [
+            `No forms were overwritten.`,
+            `${result.skippedCount} form${result.skippedCount === 1 ? "" : "s"} already existed in the selected folder and ${result.skippedCount === 1 ? "was" : "were"} skipped:`,
+            skippedDetails,
+          ].join("\n"),
+        });
+      } else {
+        setDownloadNotice(null);
+        setDownloadWarning(null);
+
+        const successMessage = result.usedDirectoryPicker
+          ? [
+              `${result.savedCount} form${result.savedCount === 1 ? "" : "s"} ${result.savedCount === 1 ? "was" : "were"} saved to the folder you selected.`,
+              result.skippedCount > 0
+                ? `${result.skippedCount} existing file${result.skippedCount === 1 ? "" : "s"} ${result.skippedCount === 1 ? "was" : "were"} skipped:`
+                : "",
+              result.skippedCount > 0 ? skippedDetails : "",
+            ]
+              .filter(Boolean)
+              .join("\n")
+          : [
+              `${result.savedCount} form${result.savedCount === 1 ? "" : "s"} ${result.savedCount === 1 ? "was" : "were"} downloaded successfully.`,
+              result.fallbackNotice ?? "",
+              "Check your browser's downloads folder for the PDF files.",
+            ]
+              .filter(Boolean)
+              .join("\n\n");
+
+        setDownloadCompleteDialog({
+          title: "Download complete",
+          message: successMessage,
+        });
       }
     } catch (error) {
       setDownloadError(
@@ -128,6 +264,7 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
       );
     } finally {
       setIsDownloadingAll(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -236,6 +373,35 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
         variant="destructive"
+      />
+
+      <DownloadAllFormsProgressDialog
+        open={isDownloadingAll && downloadProgress != null}
+        completed={downloadProgress?.completed ?? 0}
+        total={downloadProgress?.total ?? 0}
+        currentDocumentName={downloadProgress?.currentDocumentName ?? null}
+      />
+
+      <ConfirmDialog
+        open={overwritePrompt != null}
+        title="Replace existing file?"
+        message={
+          overwritePrompt
+            ? `"${overwritePrompt.fileName}" already exists in the selected folder.\n\nDo you want to replace it with the downloaded version of ${overwritePrompt.documentName}?`
+            : ""
+        }
+        confirmLabel="Replace"
+        cancelLabel="Skip"
+        elevated
+        onConfirm={() => resolveOverwritePrompt(true)}
+        onCancel={() => resolveOverwritePrompt(false)}
+      />
+
+      <InfoDialog
+        open={downloadCompleteDialog != null}
+        title={downloadCompleteDialog?.title ?? "Download complete"}
+        message={downloadCompleteDialog?.message ?? ""}
+        onClose={() => setDownloadCompleteDialog(null)}
       />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -392,16 +558,26 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void downloadAllDocuments(documents)}
+                onClick={() =>
+                  void downloadAllDocuments(documents, displayContactNames)
+                }
                 disabled={isDownloadingAll || downloadingDocumentId !== null}
               >
-                {isDownloadingAll ? "Downloading..." : "Download all"}
+                {isDownloadingAll ? "Saving..." : "Download All Forms"}
               </Button>
             )}
         </CardHeader>
         <CardContent className="space-y-4">
           {downloadError && (
             <p className="text-sm text-destructive">{downloadError}</p>
+          )}
+          {downloadNotice && (
+            <p className="text-sm text-muted-foreground">{downloadNotice}</p>
+          )}
+          {downloadWarning && (
+            <p className="text-sm text-amber-600 dark:text-amber-500">
+              {downloadWarning}
+            </p>
           )}
 
           <PacketFormsLiveEditor

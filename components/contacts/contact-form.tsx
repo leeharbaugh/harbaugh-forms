@@ -1,6 +1,7 @@
 "use client";
 
 import { AddressAutofillFields } from "@/components/address-autofill-fields";
+import { PhoneInput } from "@/components/phone-input";
 import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
@@ -300,23 +301,19 @@ export function ContactForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone_primary">Primary phone</Label>
-              <Input
+              <PhoneInput
                 id="phone_primary"
-                type="tel"
                 value={value.phone_primary ?? ""}
-                onChange={(event) =>
-                  setField("phone_primary", event.target.value)
-                }
+                onChange={(nextValue) => setField("phone_primary", nextValue)}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone_secondary">Secondary phone</Label>
-              <Input
+              <PhoneInput
                 id="phone_secondary"
-                type="tel"
                 value={value.phone_secondary ?? ""}
-                onChange={(event) =>
-                  setField("phone_secondary", event.target.value)
+                onChange={(nextValue) =>
+                  setField("phone_secondary", nextValue)
                 }
               />
             </div>

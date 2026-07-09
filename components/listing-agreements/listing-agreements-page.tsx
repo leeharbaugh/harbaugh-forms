@@ -1,6 +1,7 @@
 "use client";
 
 import { ListingAgreementForm } from "@/components/listing-agreements/listing-agreement-form";
+import { usePropertyDuplicateConfirm } from "@/components/properties/use-property-duplicate-confirm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
 import {
   type ListingAgreementListItem,
   buildListingContactLinkRows,
@@ -58,6 +60,8 @@ export function ListingAgreementsPage() {
     null,
   );
   const [formValue, setFormValue] = useState(emptyListingAgreementInput());
+  const { promptDuplicate, dialog: duplicateDialog } =
+    usePropertyDuplicateConfirm();
 
   const loadAgreements = useCallback(async () => {
     const supabase = createClient();
@@ -214,17 +218,17 @@ export function ListingAgreementsPage() {
     const supabase = createClient();
 
     if (normalized.property_mode === "new") {
-      const { data, error } = await supabase
-        .from("properties")
-        .insert(normalized.property)
-        .select("id")
-        .single();
+      const propertyId = await saveNewPropertyWithDuplicateHandling(
+        supabase,
+        normalized.property,
+        promptDuplicate,
+      );
 
-      if (error || !data) {
-        throw new Error(error?.message ?? "Failed to create property.");
+      if (propertyId === null) {
+        return null;
       }
 
-      return data.id as number;
+      return propertyId;
     }
 
     if (normalized.property_id == null) {
@@ -249,6 +253,11 @@ export function ListingAgreementsPage() {
 
     try {
       const propertyId = await resolvePropertyId(normalized);
+
+      if (propertyId === null) {
+        setIsSubmitting(false);
+        return;
+      }
 
       if (formMode === "create") {
         const { data: createdAgreement, error: agreementError } = await supabase
@@ -416,6 +425,7 @@ export function ListingAgreementsPage() {
 
   return (
     <div className="flex w-full max-w-5xl flex-col gap-6">
+      {duplicateDialog}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">

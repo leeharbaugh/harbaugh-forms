@@ -270,6 +270,7 @@ export type PacketFieldEditorControl =
   | "text"
   | "number"
   | "date"
+  | "phone"
   | "checkbox";
 
 export function resolvePacketFieldEditorControl(
@@ -293,6 +294,10 @@ export function resolvePacketFieldEditorControl(
 
   if (dataType === "number" || dataType === "currency") {
     return "number";
+  }
+
+  if (dataType === "phone") {
+    return "phone";
   }
 
   return "text";

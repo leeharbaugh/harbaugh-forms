@@ -31,6 +31,18 @@ import {
   getPropertyRequiredMessage,
 } from "@/lib/types/packet-workflow";
 
+/** Buyer rep packets never persist a subject property. */
+export function resolvePacketPropertyIdForSave(
+  packetType: PacketWorkflowType | null,
+  propertyId: number | null,
+): number | null {
+  if (packetType === "buyer_rep") {
+    return null;
+  }
+
+  return propertyId;
+}
+
 export type DocumentState = "DRAFT" | "FINAL" | "SIGNED" | "VOID";
 
 export type Packet = {
@@ -277,9 +289,14 @@ export function validateCreatePacketFromCollectionInput(input: {
     return "At least one contact is required.";
   }
 
+  const propertyId = resolvePacketPropertyIdForSave(
+    input.packetType,
+    input.propertyId,
+  );
+
   if (
     workflowRequiresProperty(input.packetType) &&
-    input.propertyId == null
+    propertyId == null
   ) {
     return getPropertyRequiredMessage(input.packetType);
   }
@@ -311,10 +328,15 @@ export function validateUpdatePacketInput(input: {
     return "A collection is required.";
   }
 
+  const propertyId = resolvePacketPropertyIdForSave(
+    input.packetType,
+    input.propertyId,
+  );
+
   if (
     input.packetType &&
     workflowRequiresProperty(input.packetType) &&
-    input.propertyId == null
+    propertyId == null
   ) {
     return getPropertyRequiredMessage(input.packetType);
   }
@@ -359,7 +381,10 @@ export async function updatePacket(
 
   const updateRow: Record<string, unknown> = {
     label: input.label.trim(),
-    property_id: input.propertyId,
+    property_id: resolvePacketPropertyIdForSave(
+      input.packetType,
+      input.propertyId,
+    ),
     notes: input.notes?.trim() || null,
     status: input.status,
   };
@@ -548,7 +573,10 @@ export async function createPacketFromCollection(
       collection_id: input.collectionId,
       representation_agreement_id: null,
       packet_type: input.packetType,
-      property_id: input.propertyId ?? null,
+      property_id: resolvePacketPropertyIdForSave(
+        input.packetType,
+        input.propertyId ?? null,
+      ),
       label: packetLabel,
       generated_by_user_id: user?.id ?? null,
     })
@@ -687,7 +715,10 @@ export async function generatePacketFromAgreement(
           : agreement.agreement_type === "BUYER_REP"
             ? "buyer_rep"
             : null,
-      property_id: agreement.property_id ?? null,
+      property_id:
+        agreement.agreement_type === "BUYER_REP"
+          ? null
+          : agreement.property_id ?? null,
       label: packetLabel,
       generated_by_user_id: user?.id ?? null,
     })

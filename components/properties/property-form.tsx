@@ -1,6 +1,7 @@
 "use client";
 
 import { AddressAutofillFields } from "@/components/address-autofill-fields";
+import { PhoneInput } from "@/components/phone-input";
 import { CadSearchButton } from "@/components/properties/cad-search-button";
 import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
@@ -620,10 +621,10 @@ export function PropertyForm({
 
         <div className="space-y-2">
           <Label htmlFor="hoa_phone">Phone</Label>
-          <Input
+          <PhoneInput
             id="hoa_phone"
             value={value.hoa_phone}
-            onChange={(event) => setField("hoa_phone", event.target.value)}
+            onChange={(nextValue) => setField("hoa_phone", nextValue)}
             disabled={readOnly}
           />
         </div>

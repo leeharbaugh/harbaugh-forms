@@ -13,6 +13,7 @@ import {
   type PacketFieldEditorControl,
 } from "@/lib/types/packet-form-editor";
 import { toDateInputValue } from "@/components/packets/packet-form-field-value-input";
+import { formatPhoneInput } from "@/lib/phone-format";
 import { AppCheckboxVisual } from "@/components/ui/app-checkbox";
 import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
@@ -251,15 +252,21 @@ export function PacketFormFieldOverlay({
   const inputType =
     field.editorControl === "date"
       ? "date"
-      : field.editorControl === "number"
-        ? "text"
+      : field.editorControl === "phone"
+        ? "tel"
         : "text";
   const inputMode =
-    field.editorControl === "number" ? "decimal" : undefined;
+    field.editorControl === "number"
+      ? "decimal"
+      : field.editorControl === "phone"
+        ? "tel"
+        : undefined;
   const inputValue =
     field.editorControl === "date"
       ? toDateInputValue(inlineEditValue)
-      : inlineEditValue;
+      : field.editorControl === "phone"
+        ? formatPhoneInput(inlineEditValue)
+        : inlineEditValue;
 
   return (
     <Rnd
@@ -363,7 +370,14 @@ export function PacketFormFieldOverlay({
           inputMode={inputMode}
           value={inputValue}
           disabled={isSavingValue}
-          onChange={(event) => onInlineEditChange(field, event.target.value)}
+          onChange={(event) =>
+            onInlineEditChange(
+              field,
+              field.editorControl === "phone"
+                ? formatPhoneInput(event.target.value)
+                : event.target.value,
+            )
+          }
           onBlur={handleInlineBlur}
           onKeyDown={handleInlineKeyDown}
           onMouseDown={(event) => event.stopPropagation()}

@@ -11,8 +11,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { InfoDialog } from "@/components/ui/info-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { saveContactWithOptionalProperty } from "@/lib/contact-save";
+import {
+  PROPERTY_DUPLICATE_TITLE,
+  formatPropertyDuplicateInfoMessage,
+} from "@/lib/property-duplicate";
 import {
   type Contact,
   contactToInput,
@@ -39,6 +44,9 @@ export function ContactsPage() {
   const [editingContactId, setEditingContactId] = useState<number | null>(null);
   const [formValue, setFormValue] = useState(emptyContactInput());
   const [addAddressAsProperty, setAddAddressAsProperty] = useState(false);
+  const [propertyDuplicateMessage, setPropertyDuplicateMessage] = useState<
+    string | null
+  >(null);
   const formPanelRef = useRef<HTMLDivElement>(null);
 
   const loadContacts = useCallback(async () => {
@@ -163,12 +171,26 @@ export function ContactsPage() {
     const supabase = createClient();
 
     try {
-      await saveContactWithOptionalProperty(supabase, {
+      const result = await saveContactWithOptionalProperty(supabase, {
         contact: formValue,
         addAddressAsProperty,
         mode: formMode === "create" ? "create" : "edit",
         contactId: editingContactId ?? undefined,
       });
+
+      if (result.propertyDuplicateSkipped && result.duplicatePropertyAddress) {
+        setPropertyDuplicateMessage(
+          formatPropertyDuplicateInfoMessage(result.duplicatePropertyAddress),
+        );
+        setAddAddressAsProperty(false);
+        if (formMode === "create") {
+          setFormMode("edit");
+          setEditingContactId(result.contactId);
+        }
+        setIsSubmitting(false);
+        await loadContacts();
+        return;
+      }
     } catch (error) {
       setFormError(
         error instanceof Error ? error.message : "Failed to save contact.",
@@ -215,6 +237,12 @@ export function ContactsPage() {
 
   return (
     <div className="flex w-full max-w-5xl flex-col gap-6">
+      <InfoDialog
+        open={propertyDuplicateMessage != null}
+        title={PROPERTY_DUPLICATE_TITLE}
+        message={propertyDuplicateMessage ?? ""}
+        onClose={() => setPropertyDuplicateMessage(null)}
+      />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Contacts</h1>

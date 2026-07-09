@@ -1,6 +1,7 @@
 "use client";
 
 import { PropertyForm } from "@/components/properties/property-form";
+import { usePropertyDuplicateConfirm } from "@/components/properties/use-property-duplicate-confirm";
 import { ListRowActions } from "@/components/list-row-actions";
 import {
   ResizableDataTable,
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
 import {
   type Property,
   emptyPropertyInput,
@@ -62,6 +64,8 @@ export function PropertiesPage() {
     null,
   );
   const [formValue, setFormValue] = useState(emptyPropertyInput());
+  const { promptDuplicate, dialog: duplicateDialog } =
+    usePropertyDuplicateConfirm();
 
   const loadProperties = useCallback(async () => {
     const supabase = createClient();
@@ -146,11 +150,15 @@ export function PropertiesPage() {
     const supabase = createClient();
 
     if (formMode === "create") {
-      const { error } = await supabase.from("properties").insert(normalized);
+      const createdPropertyId = await saveNewPropertyWithDuplicateHandling(
+        supabase,
+        formValue,
+        promptDuplicate,
+      );
 
-      if (error) {
-        setFormError(error.message);
+      if (createdPropertyId === null) {
         setIsSubmitting(false);
+        closeForm();
         return;
       }
     }
@@ -219,6 +227,7 @@ export function PropertiesPage() {
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
+      {duplicateDialog}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Properties</h1>

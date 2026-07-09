@@ -1,5 +1,6 @@
 "use client";
 
+import { PhoneInput } from "@/components/phone-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -119,12 +120,11 @@ export function BrokerageProfileForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="brokerage_office_phone">Brokerage Office Phone *</Label>
-            <Input
+            <PhoneInput
               id="brokerage_office_phone"
-              type="tel"
               value={value.brokerage_office_phone}
-              onChange={(event) =>
-                setField("brokerage_office_phone", event.target.value)
+              onChange={(nextValue) =>
+                setField("brokerage_office_phone", nextValue)
               }
               required
             />
@@ -207,11 +207,10 @@ export function BrokerageProfileForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="broker_phone">Broker Phone *</Label>
-            <Input
+            <PhoneInput
               id="broker_phone"
-              type="tel"
               value={value.broker_phone}
-              onChange={(event) => setField("broker_phone", event.target.value)}
+              onChange={(nextValue) => setField("broker_phone", nextValue)}
               required
             />
           </div>
