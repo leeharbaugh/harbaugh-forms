@@ -19,7 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
@@ -80,9 +80,6 @@ const PACKET_DETAIL_SELECT = `
     )
   )
 `;
-
-const DELETE_DIALOG_MESSAGE =
-  "Are you sure you want to delete this packet template? This will hide it from normal use but will not remove historical generated packets.";
 
 export function CollectionsPage() {
   const [packets, setPackets] = useState<CollectionListItem[]>([]);
@@ -396,16 +393,19 @@ export function CollectionsPage() {
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
-      <ConfirmDialog
+      <ConfirmDeleteDialog
         open={deleteDialogOpen}
-        title="Delete Packet Template"
-        message={DELETE_DIALOG_MESSAGE}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
+        objectType="packet template"
+        itemName={
+          packetPendingDelete
+            ? packetPendingDelete.collection_name
+            : null
+        }
+        consequence="It will be hidden from normal use and can be restored later. Historical generated packets are unchanged."
+        canRestore
         isConfirming={isDeleting}
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
-        variant="destructive"
       />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

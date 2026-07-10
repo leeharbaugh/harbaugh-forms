@@ -10,7 +10,7 @@ import { PdfFieldInventoryPanel } from "@/components/forms/pdf-field-inventory-p
 import { PdfFieldOverlay } from "@/components/forms/pdf-field-overlay";
 import { PdfFieldPlacementDialog } from "@/components/forms/pdf-field-placement-dialog";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Input } from "@/components/ui/input";
 import { createActiveField } from "@/lib/field-catalog";
 import { getFormPdfSignedUrl } from "@/lib/form-storage";
@@ -187,7 +187,6 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
   const [updatingMappingId, setUpdatingMappingId] = useState<string | null>(
     null,
@@ -816,16 +815,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     }
   };
 
-  const handleDeleteMapping = async (mapping: PlacedPdfField) => {
-    const confirmed = window.confirm(
-      `Delete template placement for ${formatMappingOverlayLabel(mapping)} on this form?`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    await executeDeleteMapping(mapping);
+  const handleDeleteMapping = (mapping: PlacedPdfField) => {
+    setMappingPendingDelete(mapping);
   };
 
   const executeDeleteMapping = async (mapping: PlacedPdfField) => {
@@ -844,7 +835,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
     if (error) {
       setDeleteError(error.message);
-      return;
+      return false;
     }
 
     if (editingMapping?.id === mapping.id) {
@@ -866,6 +857,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           ? null
           : scrollSnapshot.mappingId,
     });
+    return true;
   };
 
   const handleConfirmKeyboardDelete = async () => {
@@ -874,8 +866,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     }
 
     const mapping = mappingPendingDelete;
-    setMappingPendingDelete(null);
-    await executeDeleteMapping(mapping);
+    const deleted = await executeDeleteMapping(mapping);
+    if (deleted) {
+      setMappingPendingDelete(null);
+    }
   };
 
   useEffect(() => {
@@ -897,7 +891,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         return;
       }
 
-      if (isDeletingId || isDeleting) {
+      if (isDeletingId) {
         return;
       }
 
@@ -919,7 +913,6 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     pendingPlacement,
     mappingPendingDelete,
     isDeletingId,
-    isDeleting,
   ]);
 
   const selectMappingFromOverlay = useCallback(
@@ -966,7 +959,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   };
 
   const closeEditDialog = () => {
-    if (isEditing || isDeleting) return;
+    if (isEditing || isDeletingId) return;
     setEditingMapping(null);
     setEditError(null);
     setEditValue(emptyPdfMappingEditorInput());
@@ -1081,17 +1074,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     }
   };
 
-  const handleDeleteFromDialog = async () => {
+  const handleDeleteFromDialog = () => {
     if (!editingMapping) return;
-
-    setIsDeleting(true);
-    setEditError(null);
-
-    try {
-      await handleDeleteMapping(editingMapping);
-    } finally {
-      setIsDeleting(false);
-    }
+    setMappingPendingDelete(editingMapping);
   };
 
   const updateMappingInState = (
@@ -1793,10 +1778,12 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         onPlacementChange={setEditValue}
         onFieldChange={setEditFieldValue}
         onSubmit={() => void handleSaveEdit()}
-        onDelete={() => void handleDeleteFromDialog()}
+        onDelete={handleDeleteFromDialog}
         onCancel={closeEditDialog}
         isSubmitting={isEditing}
-        isDeleting={isDeleting}
+        isDeleting={
+          editingMapping != null && isDeletingId === editingMapping.id
+        }
         error={editError}
       />
 
@@ -1810,16 +1797,21 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         onContinueManual={handleDismissAcroformPrompt}
       />
 
-      <ConfirmDialog
+      <ConfirmDeleteDialog
         open={mappingPendingDelete != null}
-        title="Remove field placement?"
-        message="Remove this field placement from this form? This will not delete the reusable field definition."
+        objectType="field placement"
+        itemName={
+          mappingPendingDelete
+            ? formatMappingOverlayLabel(mappingPendingDelete)
+            : null
+        }
+        consequence="This removes the placement from this form template and does not delete the reusable field definition."
         confirmLabel="Remove"
-        cancelLabel="Cancel"
-        variant="destructive"
+        confirmingLabel="Removing..."
         isConfirming={isDeletingId === mappingPendingDelete?.id}
         onConfirm={() => void handleConfirmKeyboardDelete()}
         onCancel={() => setMappingPendingDelete(null)}
+        elevated={editingMapping != null}
       />
     </div>
   );

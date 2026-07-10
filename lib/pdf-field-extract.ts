@@ -1,4 +1,5 @@
 import { pdfjs } from "react-pdf";
+import { inferAcroformCatalogTypes } from "@/lib/acroform-field-type-inference";
 import { acquirePdfWorker, releasePdfWorker } from "@/lib/pdfjs-setup";
 import {
   shouldSkipAuthentisignPdfInventoryField,
@@ -76,20 +77,14 @@ function humanizeFieldKey(fieldKey: string): string {
 
 function inferCatalogTypesFromPdfAnnotation(
   annotation: PdfWidgetAnnotation,
+  pdfFieldName: string,
 ): { fieldWidgetType: string; fieldDataType: string } {
-  const pdfFieldType = (annotation.fieldType ?? "").trim();
-
-  if (pdfFieldType === "Btn") {
-    if (annotation.checkBox || annotation.radioButton) {
-      return { fieldWidgetType: "checkbox", fieldDataType: "boolean" };
-    }
-  }
-
-  if (pdfFieldType === "Ch") {
-    return { fieldWidgetType: "text", fieldDataType: "text" };
-  }
-
-  return { fieldWidgetType: "text", fieldDataType: "text" };
+  return inferAcroformCatalogTypes({
+    pdfFieldType: annotation.fieldType,
+    checkBox: annotation.checkBox,
+    radioButton: annotation.radioButton,
+    pdfFieldName,
+  });
 }
 
 function pdfRectToPlacement(
@@ -170,7 +165,10 @@ export async function extractPdfFieldInventory(
         }
 
         const pdfFieldType = annotation.fieldType ?? null;
-        const catalogTypes = inferCatalogTypesFromPdfAnnotation(annotation);
+        const catalogTypes = inferCatalogTypesFromPdfAnnotation(
+          annotation,
+          pdfFieldName,
+        );
 
         if (
           shouldSkipAuthentisignPdfInventoryField({

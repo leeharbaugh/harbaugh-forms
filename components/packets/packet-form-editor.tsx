@@ -18,6 +18,7 @@ import {
   saveFieldInstanceValues,
   upsertFieldInstanceMappingPlacement,
 } from "@/lib/packet-form-editor";
+import { formatAmountInput } from "@/lib/amount-format";
 import type { FieldResolutionDiagnostic } from "@/lib/field-resolver";
 import type { PacketWorkflowType } from "@/lib/types/packet-workflow";
 import {
@@ -504,9 +505,13 @@ export function PacketFormEditor({
 
   const commitInlineEdit = useCallback(
     async (overlayField: PacketFormOverlayField) => {
-      const value =
+      const rawValue =
         draftValuesByInstanceId[overlayField.field_instance_id] ??
         inlineEditValue;
+      const value =
+        overlayField.editorControl === "currency"
+          ? formatAmountInput(rawValue)
+          : rawValue;
 
       setEditingSelectionKey(null);
       setInlineEditValue("");
@@ -558,9 +563,13 @@ export function PacketFormEditor({
       const currentValue =
         draftValuesByInstanceId[overlayField.field_instance_id] ??
         overlayField.displayValue;
+      const nextValue =
+        overlayField.editorControl === "currency"
+          ? formatAmountInput(currentValue)
+          : currentValue;
 
       setEditingSelectionKey(overlayField.selectionKey);
-      setInlineEditValue(currentValue);
+      setInlineEditValue(nextValue);
     },
     [draftValuesByInstanceId, finishInlineEditForSelectionKey],
   );

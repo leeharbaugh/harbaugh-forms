@@ -21,7 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
@@ -81,9 +81,6 @@ const GENERATED_PACKET_LIST_SELECT = `
     status
   )
 `;
-
-const DELETE_DIALOG_MESSAGE =
-  "Are you sure you want to delete this generated packet? This will hide the packet and its generated documents from normal use, but the records will remain in the database.";
 
 function PacketsPageContent() {
   const router = useRouter();
@@ -239,16 +236,19 @@ function PacketsPageContent() {
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
-      <ConfirmDialog
+      <ConfirmDeleteDialog
         open={deleteDialogOpen}
-        title="Delete Generated Packet"
-        message={DELETE_DIALOG_MESSAGE}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
+        objectType="generated packet"
+        itemName={
+          packetPendingDelete
+            ? `${packetPendingDelete.label} (${formatPacketReference(packetPendingDelete.id)})`
+            : null
+        }
+        consequence="It will be hidden from normal use along with its generated documents and can be restored later."
+        canRestore
         isConfirming={isDeleting}
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
-        variant="destructive"
       />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">

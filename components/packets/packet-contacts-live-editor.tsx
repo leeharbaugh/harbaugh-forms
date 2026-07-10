@@ -3,6 +3,7 @@
 import { ContactPicker } from "@/components/contacts/contact-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { formatContactDisplayName } from "@/lib/types/contact";
@@ -45,6 +46,9 @@ export function PacketContactsLiveEditor({
   const [showAddContact, setShowAddContact] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [contactPendingRemove, setContactPendingRemove] =
+    useState<PacketContact | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   const activeContacts = sortPacketContacts(
     packetContacts.filter((row) => row.status === "ACTIVE"),
@@ -115,25 +119,44 @@ export function PacketContactsLiveEditor({
     }
   };
 
-  const handleRemove = async (packetContactId: number) => {
+  const openRemoveDialog = (row: PacketContact) => {
     const emptyError = validatePacketContactsNotEmpty(activeContacts.length - 1);
     if (emptyError) {
       setActionError(emptyError);
       return;
     }
 
+    setContactPendingRemove(row);
+    setActionError(null);
+  };
+
+  const closeRemoveDialog = () => {
+    if (isRemoving) {
+      return;
+    }
+    setContactPendingRemove(null);
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!contactPendingRemove) {
+      return;
+    }
+
+    setIsRemoving(true);
     setIsSubmitting(true);
     setActionError(null);
     const supabase = createClient();
 
     try {
-      await softDeletePacketContact(supabase, packetContactId);
+      await softDeletePacketContact(supabase, contactPendingRemove.id);
+      setContactPendingRemove(null);
       onContactsChange();
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Failed to remove contact.",
       );
     } finally {
+      setIsRemoving(false);
       setIsSubmitting(false);
     }
   };
@@ -157,6 +180,23 @@ export function PacketContactsLiveEditor({
 
   return (
     <div className="space-y-4">
+      <ConfirmDeleteDialog
+        open={contactPendingRemove != null}
+        objectType="packet contact"
+        itemName={
+          contactPendingRemove?.contacts
+            ? formatContactDisplayName(contactPendingRemove.contacts)
+            : contactPendingRemove
+              ? `Contact #${contactPendingRemove.contact_id}`
+              : null
+        }
+        consequence="It will be removed from this packet and can be added again later."
+        confirmLabel="Remove"
+        confirmingLabel="Removing..."
+        isConfirming={isRemoving}
+        onConfirm={() => void handleConfirmRemove()}
+        onCancel={closeRemoveDialog}
+      />
       {!disabled && (
         <Button
           type="button"
@@ -274,7 +314,7 @@ export function PacketContactsLiveEditor({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => void handleRemove(row.id)}
+                    onClick={() => openRemoveDialog(row)}
                     disabled={isSubmitting || activeContacts.length <= 1}
                   >
                     Remove

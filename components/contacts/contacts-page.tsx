@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { InfoDialog } from "@/components/ui/info-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { saveContactWithOptionalProperty } from "@/lib/contact-save";
@@ -47,6 +48,9 @@ export function ContactsPage() {
   const [propertyDuplicateMessage, setPropertyDuplicateMessage] = useState<
     string | null
   >(null);
+  const [contactPendingDelete, setContactPendingDelete] =
+    useState<Contact | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const formPanelRef = useRef<HTMLDivElement>(null);
 
   const loadContacts = useCallback(async () => {
@@ -204,39 +208,62 @@ export function ContactsPage() {
     await loadContacts();
   };
 
-  const handleDelete = async (contact: Contact) => {
-    const displayName = formatContactDisplayName(contact);
-    const confirmed = window.confirm(
-      `Delete ${displayName}? This will mark the contact as deleted.`,
-    );
+  const openDeleteDialog = (contact: Contact) => {
+    setContactPendingDelete(contact);
+    setListError(null);
+  };
 
-    if (!confirmed) {
+  const closeDeleteDialog = () => {
+    if (isDeleting) {
+      return;
+    }
+    setContactPendingDelete(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!contactPendingDelete) {
       return;
     }
 
+    setIsDeleting(true);
     setListError(null);
 
     const supabase = createClient();
     const { error } = await supabase
       .from("contacts")
       .update({ status: "DELETED" })
-      .eq("id", contact.id)
+      .eq("id", contactPendingDelete.id)
       .eq("status", "ACTIVE");
+
+    setIsDeleting(false);
 
     if (error) {
       setListError(error.message);
       return;
     }
 
-    if (editingContactId === contact.id) {
+    if (editingContactId === contactPendingDelete.id) {
       closeForm();
     }
 
+    setContactPendingDelete(null);
     await loadContacts();
   };
 
   return (
     <div className="flex w-full max-w-5xl flex-col gap-6">
+      <ConfirmDeleteDialog
+        open={contactPendingDelete != null}
+        objectType="contact"
+        itemName={
+          contactPendingDelete
+            ? formatContactDisplayName(contactPendingDelete)
+            : null
+        }
+        isConfirming={isDeleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={closeDeleteDialog}
+      />
       <InfoDialog
         open={propertyDuplicateMessage != null}
         title={PROPERTY_DUPLICATE_TITLE}
@@ -341,7 +368,7 @@ export function ContactsPage() {
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={() => void handleDelete(contact)}
+                      onClick={() => openDeleteDialog(contact)}
                     >
                       Delete
                     </Button>

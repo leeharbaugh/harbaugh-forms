@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { uploadFormPdf } from "@/lib/form-storage";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -67,6 +68,9 @@ export function FormsPage() {
   );
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [replacePdf, setReplacePdf] = useState(false);
+  const [templatePendingDelete, setTemplatePendingDelete] =
+    useState<Form | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadTemplates = useCallback(async () => {
     const supabase = createClient();
@@ -241,32 +245,44 @@ export function FormsPage() {
     await loadTemplates();
   };
 
-  const handleDelete = async (template: Form) => {
-    const confirmed = window.confirm(
-      `Delete form template ${template.form_name} (${formatFormReference(template.id)})? This will mark the template as deleted.`,
-    );
+  const openDeleteDialog = (template: Form) => {
+    setTemplatePendingDelete(template);
+    setListError(null);
+  };
 
-    if (!confirmed) {
+  const closeDeleteDialog = () => {
+    if (isDeleting) {
+      return;
+    }
+    setTemplatePendingDelete(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!templatePendingDelete) {
       return;
     }
 
+    setIsDeleting(true);
     setListError(null);
     const supabase = createClient();
     const { error } = await supabase
       .from("forms")
       .update({ status: "DELETED" })
-      .eq("id", template.id)
+      .eq("id", templatePendingDelete.id)
       .eq("status", "ACTIVE");
+
+    setIsDeleting(false);
 
     if (error) {
       setListError(error.message);
       return;
     }
 
-    if (editingTemplateId === template.id) {
+    if (editingTemplateId === templatePendingDelete.id) {
       closeForm();
     }
 
+    setTemplatePendingDelete(null);
     await loadTemplates();
   };
 
@@ -280,6 +296,18 @@ export function FormsPage() {
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
+      <ConfirmDeleteDialog
+        open={templatePendingDelete != null}
+        objectType="form template"
+        itemName={
+          templatePendingDelete
+            ? `${templatePendingDelete.form_name} (${formatFormReference(templatePendingDelete.id)})`
+            : null
+        }
+        isConfirming={isDeleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={closeDeleteDialog}
+      />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -402,7 +430,7 @@ export function FormsPage() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => void handleDelete(template)}
+                        onClick={() => openDeleteDialog(template)}
                       >
                         Delete
                       </Button>

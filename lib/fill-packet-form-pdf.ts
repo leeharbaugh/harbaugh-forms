@@ -127,7 +127,20 @@ function resolveExportText(
     return "";
   }
 
-  return formatPacketFieldOverlayValue(displayValue, fieldView.field_type);
+  return formatPacketFieldOverlayValue(
+    displayValue,
+    fieldView.field_type,
+    {
+      field_data_type: fieldView.instance.fields?.field_data_type,
+      field_widget_type:
+        fieldView.instance.fields?.field_widget_type ??
+        fieldView.mapping.field_widget_type,
+      field_key: fieldView.instance.fields?.field_key,
+      field_label: fieldView.instance.fields?.field_label,
+      pdf_field_name: fieldView.mapping.pdf_field_name,
+      mapping_name: fieldView.mapping.mapping_name,
+    },
+  );
 }
 
 function resolveTextX(

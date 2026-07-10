@@ -6,6 +6,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test:mapbox": "node --experimental-strip-types --test lib/mapbox-address.test.ts",
+    "test:amount-format": "node --experimental-strip-types --test lib/amount-format.test.ts lib/acroform-field-type-inference.test.ts",
     "postinstall": "node scripts/copy-pdf-worker.js"
   },
   "dependencies": {

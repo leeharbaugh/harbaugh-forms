@@ -3,6 +3,7 @@
 import { ContactForm } from "@/components/contacts/contact-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { InfoDialog } from "@/components/ui/info-dialog";
 import {
   Card,
@@ -64,6 +65,8 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   const [propertyDuplicateMessage, setPropertyDuplicateMessage] = useState<
     string | null
   >(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadContact = useCallback(async () => {
     setIsLoading(true);
@@ -179,20 +182,24 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
     await loadContact();
   };
 
-  const handleDelete = async () => {
+  const openDeleteDialog = () => {
+    setDeleteDialogOpen(true);
+    setListError(null);
+  };
+
+  const closeDeleteDialog = () => {
+    if (isDeleting) {
+      return;
+    }
+    setDeleteDialogOpen(false);
+  };
+
+  const handleConfirmDelete = async () => {
     if (!contact) {
       return;
     }
 
-    const displayName = formatContactDisplayName(contact);
-    const confirmed = window.confirm(
-      `Delete ${displayName}? This will mark the contact as deleted.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
+    setIsDeleting(true);
     setListError(null);
 
     const supabase = createClient();
@@ -202,11 +209,14 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
       .eq("id", contact.id)
       .eq("status", "ACTIVE");
 
+    setIsDeleting(false);
+
     if (error) {
       setListError(error.message);
       return;
     }
 
+    setDeleteDialogOpen(false);
     router.push("/contacts");
   };
 
@@ -233,6 +243,14 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
 
   return (
     <div className="flex w-full max-w-5xl flex-col gap-6">
+      <ConfirmDeleteDialog
+        open={deleteDialogOpen}
+        objectType="contact"
+        itemName={displayName}
+        isConfirming={isDeleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={closeDeleteDialog}
+      />
       <InfoDialog
         open={propertyDuplicateMessage != null}
         title={PROPERTY_DUPLICATE_TITLE}
@@ -255,7 +273,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
               <Button variant="outline" onClick={openEditForm}>
                 Edit
               </Button>
-              <Button variant="destructive" onClick={() => void handleDelete()}>
+              <Button variant="destructive" onClick={openDeleteDialog}>
                 Delete
               </Button>
             </>

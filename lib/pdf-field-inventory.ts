@@ -156,7 +156,29 @@ async function findOrCreateFormField(
     .maybeSingle();
 
   if (existing) {
-    return { field: existing as Field, created: false };
+    const existingField = existing as Field;
+    // Upgrade AcroForm text fields to currency when name inference says so.
+    if (
+      item.fieldDataType === "currency" &&
+      (existingField.field_data_type ?? "").toLowerCase() !== "currency"
+    ) {
+      const { data: updated, error: updateError } = await supabase
+        .from("fields")
+        .update({ field_data_type: "currency" })
+        .eq("id", existingField.id)
+        .select("*")
+        .single();
+
+      if (updateError) {
+        throw new Error(
+          `Failed to upgrade field ${fieldKey} to currency: ${updateError.message}`,
+        );
+      }
+
+      return { field: updated as Field, created: false };
+    }
+
+    return { field: existingField, created: false };
   }
 
   const { data: created, error } = await supabase

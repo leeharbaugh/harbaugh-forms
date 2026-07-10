@@ -26,9 +26,10 @@ import type {
 } from "@/lib/types/packet-contact";
 import type { Property } from "@/lib/types/property";
 import {
+  getPacketContactRequiredMessage,
+  getPropertyRequiredMessage,
   type PacketWorkflowType,
   workflowRequiresProperty,
-  getPropertyRequiredMessage,
 } from "@/lib/types/packet-workflow";
 
 /** Buyer rep packets never persist a subject property. */
@@ -282,11 +283,11 @@ export function validateCreatePacketFromCollectionInput(input: {
   propertyId: number | null;
 }): string | null {
   if (input.collectionId == null) {
-    return "A collection is required.";
+    return "Choose a collection before continuing.";
   }
 
   if (input.contactIds.length === 0) {
-    return "At least one contact is required.";
+    return getPacketContactRequiredMessage(input.packetType);
   }
 
   const propertyId = resolvePacketPropertyIdForSave(

@@ -16,8 +16,7 @@ import {
   validateCreatePacketFromCollectionInput,
 } from "@/lib/types/packet";
 import {
-  formatPacketWorkflowType,
-  getPacketContactLabels,
+  getPacketCreateFlowCopy,
   getPacketCreateTitle,
   getPropertyRequiredMessage,
   NO_COLLECTIONS_MESSAGE,
@@ -34,7 +33,7 @@ import {
 } from "@/lib/types/property";
 import type { PropertyDuplicatePromptInfo } from "@/lib/property-duplicate";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type CollectionOption = {
   id: number;
@@ -110,7 +109,8 @@ export function CreatePacketFromCollectionForm({
   onCancel,
 }: CreatePacketFromCollectionFormProps) {
   const router = useRouter();
-  const contactLabels = getPacketContactLabels(workflowType);
+  const createFlow = getPacketCreateFlowCopy(workflowType);
+  const contactLabels = createFlow.contacts;
   const showPropertySelection = workflowSupportsPropertySelection(workflowType);
   const propertyRequired = workflowRequiresProperty(workflowType);
 
@@ -134,8 +134,29 @@ export function CreatePacketFromCollectionForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const reviewStepTopRef = useRef<HTMLDivElement>(null);
   const { promptDuplicate, dialog: duplicateDialog } =
     usePropertyDuplicateConfirm();
+
+  useEffect(() => {
+    if (step !== "forms") {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      if (reviewStepTopRef.current) {
+        reviewStepTopRef.current.scrollIntoView({
+          block: "start",
+          behavior: "smooth",
+        });
+        return;
+      }
+
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [step]);
 
   const loadCollections = useCallback(async () => {
     setIsLoading(true);
@@ -180,30 +201,24 @@ export function CreatePacketFromCollectionForm({
     collectionId: selectedCollectionId,
     packetType: workflowType,
     contactIds,
-    propertyId: showPropertySelection
-      ? propertyMode === "existing"
-        ? propertyId
-        : null
-      : null,
+    propertyId: showPropertySelection ? propertyId : null,
   });
 
-  const propertyValidationError = showPropertySelection
-    ? propertyRequired && propertyMode === "existing" && propertyId == null
-      ? getPropertyRequiredMessage(workflowType)
-      : propertyRequired &&
-          propertyMode === "new" &&
-          !property.street_address.trim()
-        ? getPropertyRequiredMessage(workflowType)
-        : propertyRequired &&
-            propertyMode === "new" &&
-            property.street_address.trim()
-          ? validatePropertyInput(property)
-          : !propertyRequired &&
-              propertyMode === "new" &&
-              property.street_address.trim()
-            ? validatePropertyInput(property)
-            : null
-    : null;
+  const propertyValidationError = (() => {
+    if (!showPropertySelection || !propertyRequired || propertyId != null) {
+      return null;
+    }
+
+    if (propertyMode === "new") {
+      const fieldError = validatePropertyInput(property);
+      if (fieldError) {
+        return fieldError;
+      }
+      return "Save and select the new property before continuing.";
+    }
+
+    return getPropertyRequiredMessage(workflowType);
+  })();
 
   const formsValidationError =
     selectedCollection && selectedForms.length === 0
@@ -221,7 +236,7 @@ export function CreatePacketFromCollectionForm({
       validationError ??
       formsValidationError ??
       propertyValidationError ??
-      (selectedCollectionId == null ? "A collection is required." : null);
+      (selectedCollectionId == null ? "Choose a collection before continuing." : null);
 
     if (error) {
       setSubmitError(error);
@@ -237,7 +252,7 @@ export function CreatePacketFromCollectionForm({
       validationError ??
       formsValidationError ??
       propertyValidationError ??
-      (selectedCollectionId == null ? "A collection is required." : null);
+      (selectedCollectionId == null ? "Choose a collection before continuing." : null);
 
     if (error) {
       setSubmitError(error);
@@ -312,13 +327,13 @@ export function CreatePacketFromCollectionForm({
     return (
       <>
         {duplicateDialog}
-        <div className="space-y-6">
+        <div ref={reviewStepTopRef} className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-lg font-semibold">Review forms</h2>
             <p className="text-sm text-muted-foreground">
-              Confirm default collection forms and add optional or external
-              documents before creating the packet.
+              Confirm the collection forms, add any optional documents, then
+              create the packet.
             </p>
           </div>
           <Button
@@ -371,15 +386,20 @@ export function CreatePacketFromCollectionForm({
     <>
       {duplicateDialog}
       <div className="space-y-6">
-      <div>
+      <div className="space-y-2">
         <h2 className="text-lg font-semibold">
           {getPacketCreateTitle(workflowType)}
         </h2>
+        <ol className="list-none space-y-1 text-sm text-muted-foreground">
+          {createFlow.steps.map((stepText) => (
+            <li key={stepText}>{stepText}</li>
+          ))}
+        </ol>
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="collection_id">
-          {formatPacketWorkflowType(workflowType)} collection *
+          {createFlow.collectionLabel} *
         </Label>
         {collections.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -417,20 +437,24 @@ export function CreatePacketFromCollectionForm({
           emptySelectedMessage={contactLabels.empty}
           error={
             contactIds.length === 0 && submitError
-              ? "At least one contact is required."
+              ? contactLabels.required
               : null
           }
         />
       </div>
 
-      {showPropertySelection && (
+      {showPropertySelection && createFlow.propertyLabel && (
         <div className="space-y-2">
-          <Label>Property{propertyRequired ? " *" : " (optional)"}</Label>
+          <Label>
+            {createFlow.propertyLabel}
+            {propertyRequired ? " *" : " (optional)"}
+          </Label>
           <PropertyPicker
             mode={propertyMode}
             propertyId={propertyId}
             property={property}
             onSelectionChange={(patch) => {
+              setSubmitError(null);
               if (patch.property_mode !== undefined) {
                 setPropertyMode(patch.property_mode);
               }
@@ -442,6 +466,7 @@ export function CreatePacketFromCollectionForm({
               }
             }}
             disabled={isSubmitting}
+            requireSavedNewProperty={propertyRequired}
           />
         </div>
       )}

@@ -367,6 +367,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
                   }
                 }}
                 disabled={isSaving}
+                requireSavedNewProperty={propertyRequired}
               />
             </div>
           )}

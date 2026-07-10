@@ -4,6 +4,7 @@ import { PhoneInput } from "@/components/phone-input";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatAmountInput } from "@/lib/amount-format";
 import {
   resolveCheckboxCheckedState,
   resolvePacketFieldEditorControl,
@@ -79,14 +80,26 @@ export function PacketFormFieldValueInput({
     );
   }
 
-  if (control === "number") {
-    const dataType = (field?.field_data_type ?? "number").toLowerCase();
-
+  if (control === "currency") {
     return (
       <Input
         id={inputId}
         type="text"
-        inputMode={dataType === "currency" ? "decimal" : "numeric"}
+        inputMode="decimal"
+        value={formatAmountInput(value)}
+        onChange={(event) => onChange(formatAmountInput(event.target.value))}
+        disabled={disabled}
+        className="h-8 text-sm"
+      />
+    );
+  }
+
+  if (control === "number") {
+    return (
+      <Input
+        id={inputId}
+        type="text"
+        inputMode="numeric"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}

@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   type BuyerRepAgreementListItem,
   buyerRepAgreementToInput,
@@ -56,6 +57,9 @@ export function RepresentationAgreementsPage() {
     null,
   );
   const [formValue, setFormValue] = useState(emptyBuyerRepAgreementInput());
+  const [agreementPendingDelete, setAgreementPendingDelete] =
+    useState<BuyerRepAgreementListItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadAgreements = useCallback(async () => {
     const supabase = createClient();
@@ -298,26 +302,35 @@ export function RepresentationAgreementsPage() {
     await loadAgreements();
   };
 
-  const handleDelete = async (agreement: BuyerRepAgreementListItem) => {
-    const clientNames = getOrderedContactNames(agreement);
-    const confirmed = window.confirm(
-      `Delete buyer rep agreement for ${clientNames} (${formatAgreementReference(agreement.id)})? This will mark the agreement and related records as deleted.`,
-    );
+  const openDeleteDialog = (agreement: BuyerRepAgreementListItem) => {
+    setAgreementPendingDelete(agreement);
+    setListError(null);
+  };
 
-    if (!confirmed) {
+  const closeDeleteDialog = () => {
+    if (isDeleting) {
+      return;
+    }
+    setAgreementPendingDelete(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!agreementPendingDelete) {
       return;
     }
 
+    setIsDeleting(true);
     setListError(null);
     const supabase = createClient();
 
     const { error: clientsError } = await supabase
       .from("representation_agreement_clients")
       .update({ status: "DELETED" })
-      .eq("representation_agreement_id", agreement.id)
+      .eq("representation_agreement_id", agreementPendingDelete.id)
       .eq("status", "ACTIVE");
 
     if (clientsError) {
+      setIsDeleting(false);
       setListError(clientsError.message);
       return;
     }
@@ -325,10 +338,11 @@ export function RepresentationAgreementsPage() {
     const { error: detailsError } = await supabase
       .from("buyer_rep_details")
       .update({ status: "DELETED" })
-      .eq("representation_agreement_id", agreement.id)
+      .eq("representation_agreement_id", agreementPendingDelete.id)
       .eq("status", "ACTIVE");
 
     if (detailsError) {
+      setIsDeleting(false);
       setListError(detailsError.message);
       return;
     }
@@ -336,18 +350,21 @@ export function RepresentationAgreementsPage() {
     const { error: agreementError } = await supabase
       .from("representation_agreements")
       .update({ status: "DELETED" })
-      .eq("id", agreement.id)
+      .eq("id", agreementPendingDelete.id)
       .eq("status", "ACTIVE");
+
+    setIsDeleting(false);
 
     if (agreementError) {
       setListError(agreementError.message);
       return;
     }
 
-    if (editingAgreementId === agreement.id) {
+    if (editingAgreementId === agreementPendingDelete.id) {
       closeForm();
     }
 
+    setAgreementPendingDelete(null);
     await loadAgreements();
   };
 
@@ -367,6 +384,19 @@ export function RepresentationAgreementsPage() {
 
   return (
     <div className="flex w-full max-w-5xl flex-col gap-6">
+      <ConfirmDeleteDialog
+        open={agreementPendingDelete != null}
+        objectType="buyer rep agreement"
+        itemName={
+          agreementPendingDelete
+            ? `${getOrderedContactNames(agreementPendingDelete)} (${formatAgreementReference(agreementPendingDelete.id)})`
+            : null
+        }
+        consequence="This marks the agreement and related records as deleted and hides them from normal use."
+        isConfirming={isDeleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={closeDeleteDialog}
+      />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -474,7 +504,7 @@ export function RepresentationAgreementsPage() {
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={() => void handleDelete(agreement)}
+                      onClick={() => openDeleteDialog(agreement)}
                     >
                       Delete
                     </Button>

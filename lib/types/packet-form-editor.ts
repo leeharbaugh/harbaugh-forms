@@ -8,6 +8,8 @@ import type {
 import { isAuthentisignExcludedFormFieldMapping } from "@/lib/types/authentisign-excluded-fields";
 import type { TemplatePdfFieldType } from "@/lib/types/template-pdf-field";
 import { catalogTypesToLegacyFieldType } from "@/lib/types/field";
+import { formatAmountInput } from "@/lib/amount-format";
+import { isCurrencyAmountField } from "@/lib/acroform-field-type-inference";
 
 export type PlacementSource = "template" | "packet_override";
 
@@ -248,12 +250,25 @@ export function isPacketFieldValueEmpty(
 export function formatPacketFieldOverlayValue(
   value: string,
   fieldType: TemplatePdfFieldType,
+  field?: {
+    field_data_type?: string | null;
+    field_widget_type?: string | null;
+    field_key?: string | null;
+    field_label?: string | null;
+    pdf_field_name?: string | null;
+    mapping_name?: string | null;
+  } | null,
 ): string {
   if (fieldType === "CHECKBOX") {
     return "";
   }
 
-  return value.trim();
+  const trimmed = value.trim();
+  if (isCurrencyAmountField(field)) {
+    return formatAmountInput(trimmed);
+  }
+
+  return trimmed;
 }
 
 export function packetFieldSidebarLabel(fieldView: PacketFormFieldView): string {
@@ -269,6 +284,7 @@ export function packetFieldSidebarLabel(fieldView: PacketFormFieldView): string 
 export type PacketFieldEditorControl =
   | "text"
   | "number"
+  | "currency"
   | "date"
   | "phone"
   | "checkbox";
@@ -292,7 +308,20 @@ export function resolvePacketFieldEditorControl(
     return "date";
   }
 
-  if (dataType === "number" || dataType === "currency") {
+  if (
+    isCurrencyAmountField({
+      field_data_type: field?.field_data_type,
+      field_widget_type: field?.field_widget_type ?? fieldView.mapping.field_widget_type,
+      field_key: field?.field_key,
+      field_label: field?.field_label,
+      pdf_field_name: fieldView.mapping.pdf_field_name,
+      mapping_name: fieldView.mapping.mapping_name,
+    })
+  ) {
+    return "currency";
+  }
+
+  if (dataType === "number") {
     return "number";
   }
 
@@ -309,7 +338,19 @@ export function buildDraftValuesFromFieldViews(
   const drafts: Record<string, string> = {};
 
   for (const fieldView of fieldViews) {
-    drafts[fieldView.instance.id] = fieldView.displayValue;
+    const raw = fieldView.displayValue;
+    drafts[fieldView.instance.id] = isCurrencyAmountField({
+      field_data_type: fieldView.instance.fields?.field_data_type,
+      field_widget_type:
+        fieldView.instance.fields?.field_widget_type ??
+        fieldView.mapping.field_widget_type,
+      field_key: fieldView.instance.fields?.field_key,
+      field_label: fieldView.instance.fields?.field_label,
+      pdf_field_name: fieldView.mapping.pdf_field_name,
+      mapping_name: fieldView.mapping.mapping_name,
+    })
+      ? formatAmountInput(raw)
+      : raw;
   }
 
   return drafts;

@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
 import {
   type ListingAgreementListItem,
@@ -62,6 +63,9 @@ export function ListingAgreementsPage() {
   const [formValue, setFormValue] = useState(emptyListingAgreementInput());
   const { promptDuplicate, dialog: duplicateDialog } =
     usePropertyDuplicateConfirm();
+  const [agreementPendingDelete, setAgreementPendingDelete] =
+    useState<ListingAgreementListItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadAgreements = useCallback(async () => {
     const supabase = createClient();
@@ -356,26 +360,35 @@ export function ListingAgreementsPage() {
     await loadAgreements();
   };
 
-  const handleDelete = async (agreement: ListingAgreementListItem) => {
-    const propertyAddress = getPropertyAddressForListItem(agreement);
-    const confirmed = window.confirm(
-      `Delete listing agreement for ${propertyAddress} (${formatAgreementReference(agreement.id)})? This will mark the agreement and related records as deleted.`,
-    );
+  const openDeleteDialog = (agreement: ListingAgreementListItem) => {
+    setAgreementPendingDelete(agreement);
+    setListError(null);
+  };
 
-    if (!confirmed) {
+  const closeDeleteDialog = () => {
+    if (isDeleting) {
+      return;
+    }
+    setAgreementPendingDelete(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!agreementPendingDelete) {
       return;
     }
 
+    setIsDeleting(true);
     setListError(null);
     const supabase = createClient();
 
     const { error: clientsError } = await supabase
       .from("representation_agreement_clients")
       .update({ status: "DELETED" })
-      .eq("representation_agreement_id", agreement.id)
+      .eq("representation_agreement_id", agreementPendingDelete.id)
       .eq("status", "ACTIVE");
 
     if (clientsError) {
+      setIsDeleting(false);
       setListError(clientsError.message);
       return;
     }
@@ -383,10 +396,11 @@ export function ListingAgreementsPage() {
     const { error: detailsError } = await supabase
       .from("listing_agreement_details")
       .update({ status: "DELETED" })
-      .eq("representation_agreement_id", agreement.id)
+      .eq("representation_agreement_id", agreementPendingDelete.id)
       .eq("status", "ACTIVE");
 
     if (detailsError) {
+      setIsDeleting(false);
       setListError(detailsError.message);
       return;
     }
@@ -394,18 +408,21 @@ export function ListingAgreementsPage() {
     const { error: agreementError } = await supabase
       .from("representation_agreements")
       .update({ status: "DELETED" })
-      .eq("id", agreement.id)
+      .eq("id", agreementPendingDelete.id)
       .eq("status", "ACTIVE");
+
+    setIsDeleting(false);
 
     if (agreementError) {
       setListError(agreementError.message);
       return;
     }
 
-    if (editingAgreementId === agreement.id) {
+    if (editingAgreementId === agreementPendingDelete.id) {
       closeForm();
     }
 
+    setAgreementPendingDelete(null);
     await loadAgreements();
   };
 
@@ -426,6 +443,19 @@ export function ListingAgreementsPage() {
   return (
     <div className="flex w-full max-w-5xl flex-col gap-6">
       {duplicateDialog}
+      <ConfirmDeleteDialog
+        open={agreementPendingDelete != null}
+        objectType="listing agreement"
+        itemName={
+          agreementPendingDelete
+            ? `${getPropertyAddressForListItem(agreementPendingDelete)} (${formatAgreementReference(agreementPendingDelete.id)})`
+            : null
+        }
+        consequence="This marks the agreement and related records as deleted and hides them from normal use."
+        isConfirming={isDeleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={closeDeleteDialog}
+      />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -543,7 +573,7 @@ export function ListingAgreementsPage() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => void handleDelete(agreement)}
+                        onClick={() => openDeleteDialog(agreement)}
                       >
                         Delete
                       </Button>

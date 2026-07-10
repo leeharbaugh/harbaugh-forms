@@ -19,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { createClient } from "@/lib/supabase/client";
 import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
 import {
@@ -66,6 +67,9 @@ export function PropertiesPage() {
   const [formValue, setFormValue] = useState(emptyPropertyInput());
   const { promptDuplicate, dialog: duplicateDialog } =
     usePropertyDuplicateConfirm();
+  const [propertyPendingDelete, setPropertyPendingDelete] =
+    useState<Property | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadProperties = useCallback(async () => {
     const supabase = createClient();
@@ -182,32 +186,44 @@ export function PropertiesPage() {
     await loadProperties();
   };
 
-  const handleDelete = async (property: Property) => {
-    const confirmed = window.confirm(
-      `Delete property ${formatPropertyReference(property.id)} at ${property.street_address}, ${property.city}? This will mark the property as deleted.`,
-    );
+  const openDeleteDialog = (property: Property) => {
+    setPropertyPendingDelete(property);
+    setListError(null);
+  };
 
-    if (!confirmed) {
+  const closeDeleteDialog = () => {
+    if (isDeleting) {
+      return;
+    }
+    setPropertyPendingDelete(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!propertyPendingDelete) {
       return;
     }
 
+    setIsDeleting(true);
     setListError(null);
     const supabase = createClient();
     const { error } = await supabase
       .from("properties")
       .update({ status: "DELETED" })
-      .eq("id", property.id)
+      .eq("id", propertyPendingDelete.id)
       .eq("status", "ACTIVE");
+
+    setIsDeleting(false);
 
     if (error) {
       setListError(error.message);
       return;
     }
 
-    if (editingPropertyId === property.id) {
+    if (editingPropertyId === propertyPendingDelete.id) {
       closeForm();
     }
 
+    setPropertyPendingDelete(null);
     await loadProperties();
   };
 
@@ -228,6 +244,18 @@ export function PropertiesPage() {
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
       {duplicateDialog}
+      <ConfirmDeleteDialog
+        open={propertyPendingDelete != null}
+        objectType="property"
+        itemName={
+          propertyPendingDelete
+            ? `${formatPropertyReference(propertyPendingDelete.id)} at ${propertyPendingDelete.street_address}, ${propertyPendingDelete.city}`
+            : null
+        }
+        isConfirming={isDeleting}
+        onConfirm={() => void handleConfirmDelete()}
+        onCancel={closeDeleteDialog}
+      />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Properties</h1>
@@ -344,7 +372,7 @@ export function PropertiesPage() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => void handleDelete(property)}
+                        onClick={() => openDeleteDialog(property)}
                       >
                         Delete
                       </Button>

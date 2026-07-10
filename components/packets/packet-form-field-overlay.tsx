@@ -13,6 +13,7 @@ import {
   type PacketFieldEditorControl,
 } from "@/lib/types/packet-form-editor";
 import { toDateInputValue } from "@/components/packets/packet-form-field-value-input";
+import { formatAmountInput } from "@/lib/amount-format";
 import { formatPhoneInput } from "@/lib/phone-format";
 import { AppCheckboxVisual } from "@/components/ui/app-checkbox";
 import { cn } from "@/lib/utils";
@@ -126,10 +127,10 @@ export function PacketFormFieldOverlay({
     field.field_type,
     field.default_checked,
   );
-  const valueText = formatPacketFieldOverlayValue(
-    field.displayValue,
-    field.field_type,
-  );
+  const valueText =
+    field.editorControl === "currency"
+      ? formatAmountInput(field.displayValue)
+      : formatPacketFieldOverlayValue(field.displayValue, field.field_type);
   const showPlaceholder = (isSelected || isHovered) && !hasValue;
   const placeholderText = isSignature
     ? "Signature"
@@ -256,17 +257,21 @@ export function PacketFormFieldOverlay({
         ? "tel"
         : "text";
   const inputMode =
-    field.editorControl === "number"
+    field.editorControl === "currency"
       ? "decimal"
-      : field.editorControl === "phone"
-        ? "tel"
-        : undefined;
+      : field.editorControl === "number"
+        ? "numeric"
+        : field.editorControl === "phone"
+          ? "tel"
+          : undefined;
   const inputValue =
     field.editorControl === "date"
       ? toDateInputValue(inlineEditValue)
       : field.editorControl === "phone"
         ? formatPhoneInput(inlineEditValue)
-        : inlineEditValue;
+        : field.editorControl === "currency"
+          ? formatAmountInput(inlineEditValue)
+          : inlineEditValue;
 
   return (
     <Rnd
@@ -375,7 +380,9 @@ export function PacketFormFieldOverlay({
               field,
               field.editorControl === "phone"
                 ? formatPhoneInput(event.target.value)
-                : event.target.value,
+                : field.editorControl === "currency"
+                  ? formatAmountInput(event.target.value)
+                  : event.target.value,
             )
           }
           onBlur={handleInlineBlur}

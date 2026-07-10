@@ -30,24 +30,71 @@ const WORKFLOW_CREATE_TITLES: Record<PacketWorkflowType, string> = {
   contract_offer: "Create Contract Offer Packet",
 };
 
-const CONTACT_LABELS: Record<
-  PacketWorkflowType,
-  { search: string; selected: string; empty: string }
-> = {
+export type PacketCreateFlowCopy = {
+  steps: string[];
+  collectionLabel: string;
+  propertyLabel: string | null;
+  contacts: {
+    search: string;
+    selected: string;
+    empty: string;
+    required: string;
+  };
+};
+
+const CREATE_FLOW_COPY: Record<PacketWorkflowType, PacketCreateFlowCopy> = {
   buyer_rep: {
-    search: "Search buyers",
-    selected: "Assigned buyers",
-    empty: "No buyers assigned yet.",
+    steps: [
+      "Step 1: Choose the buyer rep collection you want to use.",
+      "Step 2: Search for each buyer by name, email, or phone.",
+      "Step 3: Select the correct buyer to add them to the packet.",
+      "Step 4: Continue to review the forms before generating the packet.",
+    ],
+    collectionLabel: "1. Choose buyer rep collection",
+    propertyLabel: null,
+    contacts: {
+      search: "2. Search and add buyers",
+      selected: "3. Buyers assigned to this packet",
+      empty:
+        "No buyers have been added to this packet yet. Search above to add one or more buyers.",
+      required: "Add at least one buyer before continuing.",
+    },
   },
   listing: {
-    search: "Search sellers",
-    selected: "Assigned sellers",
-    empty: "No sellers assigned yet.",
+    steps: [
+      "Step 1: Choose the listing collection you want to use.",
+      "Step 2: Search for each seller by name, email, or phone.",
+      "Step 3: Select the correct seller to add them to the packet.",
+      "Step 4: Choose the property for this listing.",
+      "Step 5: Continue to review the forms before generating the packet.",
+    ],
+    collectionLabel: "1. Choose listing collection",
+    propertyLabel: "4. Choose property",
+    contacts: {
+      search: "2. Search and add sellers",
+      selected: "3. Sellers assigned to this packet",
+      empty:
+        "No sellers have been added to this packet yet. Search above to add one or more sellers.",
+      required: "Add at least one seller before continuing.",
+    },
   },
   contract_offer: {
-    search: "Search contacts",
-    selected: "Assigned contacts",
-    empty: "No contacts assigned yet.",
+    steps: [
+      "Step 1: Choose the contract offer collection you want to use.",
+      "Step 2: Search for each contact by name, email, or phone.",
+      "Step 3: Select the correct contact to add them to the packet.",
+      "Step 4: Choose the property for this offer.",
+      "Step 5: Continue to review the forms before generating the packet.",
+    ],
+    collectionLabel: "1. Choose contract offer collection",
+    propertyLabel: "4. Choose property",
+    contacts: {
+      search: "2. Search and add contacts",
+      selected: "3. Contacts assigned to this packet",
+      empty:
+        "No contacts have been added to this packet yet. Search above to add one or more contacts.",
+      required: "Add at least one contact before continuing.",
+    },
   },
 };
 
@@ -63,8 +110,20 @@ export function getPacketCreateTitle(type: PacketWorkflowType): string {
   return WORKFLOW_CREATE_TITLES[type];
 }
 
+export function getPacketCreateFlowCopy(
+  type: PacketWorkflowType,
+): PacketCreateFlowCopy {
+  return CREATE_FLOW_COPY[type];
+}
+
 export function getPacketContactLabels(type: PacketWorkflowType) {
-  return CONTACT_LABELS[type];
+  return CREATE_FLOW_COPY[type].contacts;
+}
+
+export function getPacketContactRequiredMessage(
+  type: PacketWorkflowType,
+): string {
+  return CREATE_FLOW_COPY[type].contacts.required;
 }
 
 /** Maps a UI workflow to the legacy collection_type filter. */
@@ -134,11 +193,11 @@ export function getPropertyRequiredMessage(
 ): string {
   switch (workflow) {
     case "listing":
-      return "A property is required for listing packets.";
+      return "Choose a property for this listing before continuing.";
     case "contract_offer":
-      return "A property is required for contract offer packets.";
+      return "Choose a property for this offer before continuing.";
     default:
-      return "A property is required for this packet type.";
+      return "Choose a property before continuing.";
   }
 }
 

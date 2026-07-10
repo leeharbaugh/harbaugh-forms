@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { downloadFilledPacketFormPdf } from "@/lib/packet-form-download";
@@ -61,6 +62,9 @@ export function PacketFormsLiveEditor({
   const [externalName, setExternalName] = useState("");
   const [externalNotes, setExternalNotes] = useState("");
   const [externalFile, setExternalFile] = useState<File | null>(null);
+  const [formPendingRemove, setFormPendingRemove] =
+    useState<PacketForm | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   const searchForms = useCallback(async () => {
     const trimmed = formSearch.trim();
@@ -193,20 +197,39 @@ export function PacketFormsLiveEditor({
     }
   };
 
-  const handleRemoveForm = async (packetFormId: number) => {
+  const openRemoveDialog = (document: PacketForm) => {
+    setFormPendingRemove(document);
+    setActionError(null);
+  };
+
+  const closeRemoveDialog = () => {
+    if (isRemoving) {
+      return;
+    }
+    setFormPendingRemove(null);
+  };
+
+  const handleConfirmRemoveForm = async () => {
+    if (!formPendingRemove) {
+      return;
+    }
+
+    setIsRemoving(true);
     setIsSubmitting(true);
     setActionError(null);
 
     const supabase = createClient();
 
     try {
-      await softDeletePacketForm(supabase, packetFormId);
+      await softDeletePacketForm(supabase, formPendingRemove.id);
+      setFormPendingRemove(null);
       onFormsChange();
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Failed to remove form.",
       );
     } finally {
+      setIsRemoving(false);
       setIsSubmitting(false);
     }
   };
@@ -231,6 +254,17 @@ export function PacketFormsLiveEditor({
 
   return (
     <div className="space-y-4">
+      <ConfirmDeleteDialog
+        open={formPendingRemove != null}
+        objectType="packet form"
+        itemName={formPendingRemove?.document_name}
+        consequence="It will be removed from this packet and can be added again later."
+        confirmLabel="Remove"
+        confirmingLabel="Removing..."
+        isConfirming={isRemoving}
+        onConfirm={() => void handleConfirmRemoveForm()}
+        onCancel={closeRemoveDialog}
+      />
       {!disabled && (
         <div className="flex flex-wrap gap-2">
           <Button
@@ -439,7 +473,7 @@ export function PacketFormsLiveEditor({
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => void handleRemoveForm(document.id)}
+                      onClick={() => openRemoveDialog(document)}
                       disabled={
                         isSubmitting ||
                         ((document.origin ?? "collection") === "collection" &&

@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { InfoDialog } from "@/components/ui/info-dialog";
 import { DownloadAllFormsProgressDialog } from "@/components/packets/download-all-forms-progress-dialog";
@@ -42,9 +43,6 @@ import { PacketFormsLiveEditor } from "@/components/packets/packet-forms-live-ed
 import { sortPacketForms } from "@/lib/types/packet-form";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-const DELETE_DIALOG_MESSAGE =
-  "Are you sure you want to delete this generated packet? This will hide the packet and its generated documents from normal use, but the records will remain in the database.";
 
 type PacketDetailProps = {
   packetId: number;
@@ -363,16 +361,19 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
-      <ConfirmDialog
+      <ConfirmDeleteDialog
         open={deleteDialogOpen}
-        title="Delete Generated Packet"
-        message={DELETE_DIALOG_MESSAGE}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
+        objectType="generated packet"
+        itemName={
+          packet
+            ? `${packet.label} (${formatPacketReference(packet.id)})`
+            : null
+        }
+        consequence="It will be hidden from normal use along with its generated documents and can be restored later."
+        canRestore
         isConfirming={isDeleting}
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
-        variant="destructive"
       />
 
       <DownloadAllFormsProgressDialog
