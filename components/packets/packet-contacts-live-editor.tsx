@@ -20,6 +20,7 @@ import {
   type PacketContact,
   type PacketContactRole,
 } from "@/lib/types/packet-contact";
+import type { ListingOwnerKind } from "@/lib/types/listing-packet-kind";
 import type { PacketWorkflowType } from "@/lib/types/packet-workflow";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
@@ -28,6 +29,7 @@ type PacketContactsLiveEditorProps = {
   packetId: number;
   packetContacts: PacketContact[];
   packetType: PacketWorkflowType | null;
+  listingOwnerKind?: ListingOwnerKind;
   disabled?: boolean;
   onContactsChange: () => void;
 };
@@ -39,6 +41,7 @@ export function PacketContactsLiveEditor({
   packetId,
   packetContacts,
   packetType,
+  listingOwnerKind = "seller",
   disabled = false,
   onContactsChange,
 }: PacketContactsLiveEditorProps) {
@@ -53,7 +56,10 @@ export function PacketContactsLiveEditor({
   const activeContacts = sortPacketContacts(
     packetContacts.filter((row) => row.status === "ACTIVE"),
   );
-  const roleOptions = getPacketContactRolesForWorkflow(packetType);
+  const roleOptions = getPacketContactRolesForWorkflow(
+    packetType,
+    listingOwnerKind,
+  );
 
   const handleAddContacts = async () => {
     if (draftContactIds.length === 0) {
@@ -76,6 +82,7 @@ export function PacketContactsLiveEditor({
         const role = getDefaultPacketRole(
           packetType ?? "contract_offer",
           activeContacts.length + index,
+          listingOwnerKind,
         );
         await addPacketContact(
           supabase,

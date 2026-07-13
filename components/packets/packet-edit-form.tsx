@@ -16,6 +16,9 @@ import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { formatCollectionType, type CollectionType } from "@/lib/types/collection";
 import {
+  getListingOwnerKindFromPacket,
+} from "@/lib/types/listing-packet-kind";
+import {
   PACKET_DETAIL_SELECT,
   type PacketDetail,
   updatePacket,
@@ -157,6 +160,11 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
   const collectionFormIds = activeForms
     .filter((form) => (form.origin ?? "collection") === "collection" && form.form_id)
     .map((form) => form.form_id as number);
+  const listingOwnerKind = getListingOwnerKindFromPacket({
+    packetType: packetType || packet?.packet_type || null,
+    collectionName: packet?.collections?.collection_name,
+    packetForms: packet?.packet_forms,
+  });
 
   const handleSave = async () => {
     if (!packet || collectionId == null) {
@@ -386,6 +394,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
             packetId={packetId}
             packetContacts={packet.packet_contacts ?? []}
             packetType={packetType || null}
+            listingOwnerKind={listingOwnerKind}
             disabled={isSaving}
             onContactsChange={() => void loadPacket()}
           />

@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
 import { type CollectionFormLink } from "@/lib/types/collection";
 import { buildPacketContactAssignments } from "@/lib/types/packet-contact";
+import { getListingOwnerKindFromCollection } from "@/lib/types/listing-packet-kind";
 import type { DraftExternalPacketForm } from "@/lib/types/packet-form";
 import {
   createPacketFromCollection,
@@ -33,7 +34,7 @@ import {
 } from "@/lib/types/property";
 import type { PropertyDuplicatePromptInfo } from "@/lib/property-duplicate";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type CollectionOption = {
   id: number;
@@ -109,8 +110,6 @@ export function CreatePacketFromCollectionForm({
   onCancel,
 }: CreatePacketFromCollectionFormProps) {
   const router = useRouter();
-  const createFlow = getPacketCreateFlowCopy(workflowType);
-  const contactLabels = createFlow.contacts;
   const showPropertySelection = workflowSupportsPropertySelection(workflowType);
   const propertyRequired = workflowRequiresProperty(workflowType);
 
@@ -193,6 +192,16 @@ export function CreatePacketFromCollectionForm({
     (collection) => collection.id === selectedCollectionId,
   );
 
+  const listingOwnerKind = useMemo(() => {
+    if (workflowType !== "listing") {
+      return "seller" as const;
+    }
+    return getListingOwnerKindFromCollection(selectedCollection);
+  }, [workflowType, selectedCollection]);
+
+  const createFlow = getPacketCreateFlowCopy(workflowType, listingOwnerKind);
+  const contactLabels = createFlow.contacts;
+
   const selectedForms = (selectedCollection?.collection_forms ?? []).filter(
     (link) => link.status === "ACTIVE",
   );
@@ -202,6 +211,7 @@ export function CreatePacketFromCollectionForm({
     packetType: workflowType,
     contactIds,
     propertyId: showPropertySelection ? propertyId : null,
+    listingOwnerKind,
   });
 
   const propertyValidationError = (() => {
@@ -289,7 +299,11 @@ export function CreatePacketFromCollectionForm({
       const { packetId } = await createPacketFromCollection(supabase, {
         collectionId: selectedCollectionId as number,
         packetType: workflowType,
-        contacts: buildPacketContactAssignments(workflowType, contactIds),
+        contacts: buildPacketContactAssignments(
+          workflowType,
+          contactIds,
+          listingOwnerKind,
+        ),
         propertyId: resolvedPropertyId,
         additionalInternalFormIds,
         externalForms,

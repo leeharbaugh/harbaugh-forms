@@ -41,10 +41,12 @@ import {
   type PacketContactRole,
   getBuyerClientContactAtIndex,
   getOrderedBuyerClientContacts,
+  getOrderedContactsForNumberedRolePrefix,
   getPacketContactByNumberedRoleSlug,
   getPrimaryBuyerClientContact,
   parseBuyerClientIndexSlug,
 } from "@/lib/types/packet-contact";
+import { isLeaseListingPacket } from "@/lib/types/listing-packet-kind";
 import type { Packet } from "@/lib/types/packet";
 import {
   formatPropertyResolvedFieldValue,
@@ -130,6 +132,8 @@ export type FieldResolverContext = {
     properties?: Property | null;
   };
   packetContacts: PacketContact[];
+  /** Lease listing packets may treat legacy SELLER contacts as landlords for fill. */
+  fallbackSellersAsLandlords: boolean;
   settings: BrokerageSettings | null;
   representationAgreement: {
     effective_date: string | null;
@@ -210,6 +214,10 @@ const PACKET_RESOLVER_SELECT = `
   create_date,
   representation_agreement_id,
   properties(*),
+  collections(
+    id,
+    collection_name
+  ),
   representation_agreements(
     effective_date,
     expiration_date,
@@ -225,6 +233,15 @@ const PACKET_RESOLVER_SELECT = `
     sort_order,
     status,
     contacts(*)
+  ),
+  packet_forms(
+    id,
+    status,
+    forms(
+      id,
+      form_code,
+      form_name
+    )
   )
 `;
 
@@ -253,8 +270,9 @@ export function buildBrokerFullName(
 export function getPacketContactByRole(
   packetContacts: PacketContact[],
   role: string,
+  options?: { fallbackSellersAsLandlords?: boolean },
 ): Contact | null {
-  return getPacketContactByNumberedRoleSlug(packetContacts, role);
+  return getPacketContactByNumberedRoleSlug(packetContacts, role, options);
 }
 
 export function normalizeDateDisplay(value: string | null | undefined): string {
@@ -383,7 +401,9 @@ function resolvePacketContactSourcePath(
   const contact =
     parsed.kind === "buyer_client"
       ? getBuyerClientContactAtIndex(context.packetContacts, parsed.index)
-      : getPacketContactByRole(context.packetContacts, parsed.roleSlug);
+      : getPacketContactByRole(context.packetContacts, parsed.roleSlug, {
+          fallbackSellersAsLandlords: context.fallbackSellersAsLandlords,
+        });
 
   if (!contact) {
     return null;
@@ -872,6 +892,68 @@ function resolveCustomResolverKey(
 
   if (normalizedKey === "buyer_client_city_state_zip") {
     const contact = getPrimaryBuyerClientContact(context.packetContacts);
+    if (!contact) {
+      return null;
+    }
+
+    const value = resolveBuyerClientContactField(contact, "city_state_zip");
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (
+    normalizedKey === "seller_address" ||
+    normalizedKey === "landlord_address"
+  ) {
+    const contacts =
+      normalizedKey === "seller_address"
+        ? getOrderedSellerContacts(context.packetContacts)
+        : getOrderedContactsForNumberedRolePrefix(
+            context.packetContacts,
+            "landlord",
+            {
+              fallbackSellersAsLandlords: context.fallbackSellersAsLandlords,
+            },
+          );
+    const contact = contacts[0] ?? null;
+    if (!contact) {
+      return null;
+    }
+
+    const value = resolveBuyerClientContactField(contact, "address");
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (
+    normalizedKey === "seller_city_state_zip" ||
+    normalizedKey === "landlord_city_state_zip"
+  ) {
+    const contacts =
+      normalizedKey === "seller_city_state_zip"
+        ? getOrderedSellerContacts(context.packetContacts)
+        : getOrderedContactsForNumberedRolePrefix(
+            context.packetContacts,
+            "landlord",
+            {
+              fallbackSellersAsLandlords: context.fallbackSellersAsLandlords,
+            },
+          );
+    const contact = contacts[0] ?? null;
     if (!contact) {
       return null;
     }
@@ -1956,6 +2038,19 @@ export async function loadFieldResolverContext(
   > & {
     properties?: Property | Property[] | null;
     packet_contacts?: PacketContact[] | null;
+    collections?:
+      | { id?: number; collection_name?: string | null }
+      | Array<{ id?: number; collection_name?: string | null }>
+      | null;
+    packet_forms?: Array<{
+      id?: number;
+      status?: string | null;
+      forms?: {
+        id?: number;
+        form_code?: string | null;
+        form_name?: string | null;
+      } | null;
+    }> | null;
     representation_agreements?:
       | {
           effective_date: string | null;
@@ -2012,6 +2107,16 @@ export async function loadFieldResolverContext(
     );
   }
 
+  const collectionJoin = Array.isArray(packetRow.collections)
+    ? packetRow.collections[0]
+    : packetRow.collections;
+
+  const fallbackSellersAsLandlords = isLeaseListingPacket({
+    packetType: packetRow.packet_type,
+    collectionName: collectionJoin?.collection_name,
+    packetForms: packetRow.packet_forms,
+  });
+
   return {
     packetId,
     packetFormId,
@@ -2025,6 +2130,7 @@ export async function loadFieldResolverContext(
       properties: property,
     },
     packetContacts: normalizePacketContactsJoin(packetRow.packet_contacts),
+    fallbackSellersAsLandlords,
     settings,
     representationAgreement: normalizeRepresentationAgreementJoin(
       packetRow.representation_agreements,

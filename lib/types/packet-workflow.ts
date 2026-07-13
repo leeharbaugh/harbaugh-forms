@@ -1,4 +1,5 @@
 import type { CollectionType } from "@/lib/types/collection";
+import type { ListingOwnerKind } from "@/lib/types/listing-packet-kind";
 
 /** UI workflow types for creating packets from the Packets page. */
 export type PacketWorkflowType = "buyer_rep" | "listing" | "contract_offer";
@@ -98,6 +99,25 @@ const CREATE_FLOW_COPY: Record<PacketWorkflowType, PacketCreateFlowCopy> = {
   },
 };
 
+const LEASE_LISTING_CREATE_FLOW_COPY: PacketCreateFlowCopy = {
+  steps: [
+    "Step 1: Choose the listing collection you want to use.",
+    "Step 2: Search for each landlord by name, email, or phone.",
+    "Step 3: Select the correct landlord to add them to the packet.",
+    "Step 4: Choose the property for this listing.",
+    "Step 5: Continue to review the forms before generating the packet.",
+  ],
+  collectionLabel: "1. Choose listing collection",
+  propertyLabel: "4. Choose property",
+  contacts: {
+    search: "2. Search landlords",
+    selected: "3. Landlords assigned to this packet",
+    empty:
+      "No landlords have been added to this packet yet. Search above to add one or more landlords.",
+    required: "Add at least one landlord before continuing.",
+  },
+};
+
 export function formatPacketWorkflowType(type: PacketWorkflowType): string {
   return WORKFLOW_LABELS[type];
 }
@@ -112,18 +132,26 @@ export function getPacketCreateTitle(type: PacketWorkflowType): string {
 
 export function getPacketCreateFlowCopy(
   type: PacketWorkflowType,
+  listingOwnerKind: ListingOwnerKind = "seller",
 ): PacketCreateFlowCopy {
+  if (type === "listing" && listingOwnerKind === "landlord") {
+    return LEASE_LISTING_CREATE_FLOW_COPY;
+  }
   return CREATE_FLOW_COPY[type];
 }
 
-export function getPacketContactLabels(type: PacketWorkflowType) {
-  return CREATE_FLOW_COPY[type].contacts;
+export function getPacketContactLabels(
+  type: PacketWorkflowType,
+  listingOwnerKind: ListingOwnerKind = "seller",
+) {
+  return getPacketCreateFlowCopy(type, listingOwnerKind).contacts;
 }
 
 export function getPacketContactRequiredMessage(
   type: PacketWorkflowType,
+  listingOwnerKind: ListingOwnerKind = "seller",
 ): string {
-  return CREATE_FLOW_COPY[type].contacts.required;
+  return getPacketCreateFlowCopy(type, listingOwnerKind).contacts.required;
 }
 
 /** Maps a UI workflow to the legacy collection_type filter. */

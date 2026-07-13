@@ -16,6 +16,7 @@ import {
   getOrderedContactNames,
 } from "@/lib/types/buyer-rep-agreement";
 import type { Form } from "@/lib/types/form";
+import type { ListingOwnerKind } from "@/lib/types/listing-packet-kind";
 import type {
   Collection,
   CollectionFormLink,
@@ -281,13 +282,17 @@ export function validateCreatePacketFromCollectionInput(input: {
   packetType: PacketWorkflowType;
   contactIds: number[];
   propertyId: number | null;
+  listingOwnerKind?: ListingOwnerKind;
 }): string | null {
   if (input.collectionId == null) {
     return "Choose a collection before continuing.";
   }
 
   if (input.contactIds.length === 0) {
-    return getPacketContactRequiredMessage(input.packetType);
+    return getPacketContactRequiredMessage(
+      input.packetType,
+      input.listingOwnerKind ?? "seller",
+    );
   }
 
   const propertyId = resolvePacketPropertyIdForSave(
@@ -477,6 +482,11 @@ export async function createPacketFromCollection(
     packetType: input.packetType,
     contactIds: input.contacts.map((contact) => contact.contactId),
     propertyId: input.propertyId ?? null,
+    listingOwnerKind:
+      input.packetType === "listing" &&
+      input.contacts.some((contact) => contact.packetRole === "LANDLORD")
+        ? "landlord"
+        : "seller",
   });
   if (validationError) {
     throw new Error(validationError);

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Contact } from "@/lib/types/contact";
 import { formatContactDisplayName } from "@/lib/types/contact";
+import type { ListingOwnerKind } from "@/lib/types/listing-packet-kind";
 import type { PacketWorkflowType } from "@/lib/types/packet-workflow";
 
 export type PacketContactRole =
@@ -75,12 +76,15 @@ export function formatPacketContactRole(role: PacketContactRole): string {
 
 export function getPacketContactRolesForWorkflow(
   workflow: PacketWorkflowType | null,
+  listingOwnerKind: ListingOwnerKind = "seller",
 ): PacketContactRole[] {
   switch (workflow) {
     case "buyer_rep":
       return ["BUYER", "CO_CLIENT", "SPOUSE", "TENANT", "OTHER"];
     case "listing":
-      return ["SELLER", "CO_CLIENT", "SPOUSE", "LANDLORD", "OTHER"];
+      return listingOwnerKind === "landlord"
+        ? ["LANDLORD", "CO_CLIENT", "SPOUSE", "SELLER", "OTHER"]
+        : ["SELLER", "CO_CLIENT", "SPOUSE", "LANDLORD", "OTHER"];
     case "contract_offer":
       return ["PRIMARY", "CO_CLIENT", "BUYER", "SELLER", "OTHER"];
     default:
@@ -91,12 +95,16 @@ export function getPacketContactRolesForWorkflow(
 export function getDefaultPacketRole(
   workflow: PacketWorkflowType,
   index: number,
+  listingOwnerKind: ListingOwnerKind = "seller",
 ): PacketContactRole {
   switch (workflow) {
     case "buyer_rep":
       return index === 0 ? "BUYER" : "CO_CLIENT";
     case "listing":
-      return index === 0 ? "SELLER" : "CO_CLIENT";
+      if (index === 0) {
+        return listingOwnerKind === "landlord" ? "LANDLORD" : "SELLER";
+      }
+      return "CO_CLIENT";
     case "contract_offer":
       return index === 0 ? "PRIMARY" : "CO_CLIENT";
   }
@@ -105,10 +113,11 @@ export function getDefaultPacketRole(
 export function buildPacketContactAssignments(
   workflow: PacketWorkflowType,
   contactIds: number[],
+  listingOwnerKind: ListingOwnerKind = "seller",
 ): PacketContactAssignment[] {
   return contactIds.map((contactId, index) => ({
     contactId,
-    packetRole: getDefaultPacketRole(workflow, index),
+    packetRole: getDefaultPacketRole(workflow, index, listingOwnerKind),
     sortOrder: index,
   }));
 }
@@ -174,6 +183,7 @@ export type NumberedPacketContactRolePrefix =
 export function getOrderedContactsForNumberedRolePrefix(
   packetContacts: PacketContact[],
   prefix: NumberedPacketContactRolePrefix,
+  options?: { fallbackSellersAsLandlords?: boolean },
 ): Contact[] {
   switch (prefix) {
     case "buyer":
@@ -188,19 +198,32 @@ export function getOrderedContactsForNumberedRolePrefix(
         "PRIMARY",
         "OTHER",
       ]);
-    case "landlord":
+    case "landlord": {
+      const hasExplicitLandlord = packetContacts.some(
+        (row) =>
+          row.status === "ACTIVE" &&
+          row.contacts &&
+          row.packet_role === "LANDLORD",
+      );
+
+      if (!hasExplicitLandlord && options?.fallbackSellersAsLandlords) {
+        return getOrderedSellerContacts(packetContacts);
+      }
+
       return getOrderedContactsByPacketRoles(packetContacts, [
         "LANDLORD",
         "CO_CLIENT",
         "SPOUSE",
         "OTHER",
       ]);
+    }
   }
 }
 
 export function getPacketContactByNumberedRoleSlug(
   packetContacts: PacketContact[],
   roleSlug: string,
+  options?: { fallbackSellersAsLandlords?: boolean },
 ): Contact | null {
   const normalized = roleSlug.trim().toLowerCase();
   const match = normalized.match(/^(buyer|seller|tenant|landlord)_(\d+)$/);
@@ -215,8 +238,9 @@ export function getPacketContactByNumberedRoleSlug(
   }
 
   return (
-    getOrderedContactsForNumberedRolePrefix(packetContacts, prefix)[index - 1] ??
-    null
+    getOrderedContactsForNumberedRolePrefix(packetContacts, prefix, options)[
+      index - 1
+    ] ?? null
   );
 }
 
