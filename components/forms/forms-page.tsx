@@ -197,9 +197,15 @@ export function FormsPage() {
       if (formMode === "create") {
         const sourceStoragePath = await resolveStoragePath(normalized, null);
 
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
         const { error } = await supabase.from("forms").insert({
           ...normalized,
           source_storage_path: sourceStoragePath,
+          scope: "PRIVATE",
+          owner_user_id: user?.id ?? null,
         });
 
         if (error) {

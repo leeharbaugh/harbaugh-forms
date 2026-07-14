@@ -164,18 +164,25 @@ function propertyAddressKeyFromParts(parts: {
 export async function findExistingActivePropertyByAddress(
   supabase: SupabaseClient,
   propertyInput: PropertyInput,
+  ownerUserId?: string | null,
 ): Promise<number | null> {
   const normalized = normalizePropertyInput(propertyInput);
   const targetKey = propertyAddressKeyFromParts(normalized);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("properties")
-    .select("id, street_address, unit, city, state, zip")
+    .select("id, street_address, unit, city, state, zip, owner_user_id")
     .eq("status", "ACTIVE")
     .ilike("street_address", normalized.street_address)
     .ilike("city", normalized.city)
     .eq("state", normalized.state)
     .ilike("zip", normalized.zip);
+
+  if (ownerUserId) {
+    query = query.eq("owner_user_id", ownerUserId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(error.message);
@@ -203,9 +210,16 @@ export async function ensurePropertyFromContactAddress(
   }
 
   const normalized = normalizePropertyInput(propertyInput);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const { data, error } = await supabase
     .from("properties")
-    .insert(normalized)
+    .insert({
+      ...normalized,
+      owner_user_id: user?.id ?? null,
+    })
     .select("id")
     .single();
 

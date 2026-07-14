@@ -48,6 +48,7 @@ export function resolvePacketPropertyIdForSave(
 export type DocumentState = "DRAFT" | "FINAL" | "SIGNED" | "VOID";
 
 export type Packet = {
+  owner_user_id: string | null;
   id: number;
   collection_id: number;
   representation_agreement_id: number | null;
@@ -78,6 +79,7 @@ export type PacketForm = {
   field_data: Record<string, unknown>;
   signed_date: string | null;
   generated_by_user_id: string | null;
+  owner_user_id: string | null;
   create_date: string;
   update_date: string;
   status: string;
@@ -590,6 +592,7 @@ export async function createPacketFromCollection(
       ),
       label: packetLabel,
       generated_by_user_id: user?.id ?? null,
+      owner_user_id: user?.id ?? null,
     })
     .select("id")
     .single();
@@ -732,6 +735,7 @@ export async function generatePacketFromAgreement(
           : agreement.property_id ?? null,
       label: packetLabel,
       generated_by_user_id: user?.id ?? null,
+      owner_user_id: user?.id ?? null,
     })
     .select("id")
     .single();

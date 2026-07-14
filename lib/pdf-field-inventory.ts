@@ -181,6 +181,10 @@ async function findOrCreateFormField(
     return { field: existingField, created: false };
   }
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const { data: created, error } = await supabase
     .from("fields")
     .insert({
@@ -198,6 +202,8 @@ async function findOrCreateFormField(
       resolver_key: null,
       fallback_value: null,
       status: "ACTIVE",
+      scope: "PRIVATE",
+      owner_user_id: user?.id ?? null,
     })
     .select("*")
     .single();

@@ -4,6 +4,7 @@ import {
   findExistingActivePropertyByAddress,
   validateContactPropertyCreation,
 } from "@/lib/contact-property-from-address";
+import { requireAuthenticatedUserId } from "@/lib/ownership";
 import {
   type ContactInput,
   normalizeContactInput,
@@ -47,11 +48,15 @@ export async function saveContactWithOptionalProperty(
   }
 
   let contactId = input.contactId ?? null;
+  const ownerUserId = await requireAuthenticatedUserId(supabase);
 
   if (input.mode === "create") {
     const { data, error } = await supabase
       .from("contacts")
-      .insert(normalized)
+      .insert({
+        ...normalized,
+        owner_user_id: ownerUserId,
+      })
       .select("id")
       .single();
 
@@ -88,6 +93,7 @@ export async function saveContactWithOptionalProperty(
   const existingPropertyId = await findExistingActivePropertyByAddress(
     supabase,
     propertyInput,
+    ownerUserId,
   );
   if (existingPropertyId != null) {
     return {
@@ -102,7 +108,10 @@ export async function saveContactWithOptionalProperty(
   const normalizedProperty = normalizePropertyInput(propertyInput);
   const { data, error } = await supabase
     .from("properties")
-    .insert(normalizedProperty)
+    .insert({
+      ...normalizedProperty,
+      owner_user_id: ownerUserId,
+    })
     .select("id")
     .single();
 

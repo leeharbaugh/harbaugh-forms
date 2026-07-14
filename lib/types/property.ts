@@ -125,6 +125,7 @@ export type Property = {
   create_date: string;
   update_date: string;
   status: string;
+  owner_user_id: string | null;
 };
 
 export type PropertySelectionMode = "existing" | "new";
@@ -329,7 +330,13 @@ export function formatPropertyType(type: PropertyType): string {
     .join(" ");
 }
 
-export function formatPropertyAddress(property: Property | PropertyInput): string {
+export function formatPropertyAddress(property: {
+  street_address: string;
+  unit?: string | null;
+  city: string;
+  state: string;
+  zip: string;
+}): string {
   const line1 = [property.street_address, property.unit?.trim()]
     .filter(Boolean)
     .join(property.unit?.trim() ? " " : "");

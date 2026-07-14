@@ -7,7 +7,6 @@ import {
   type PropertyInput,
   emptyPropertyInput,
   formatPropertyAddress,
-  normalizePropertyInput,
   propertyToInput,
   validatePropertyInput,
 } from "@/lib/types/property";
@@ -342,7 +341,7 @@ export function normalizeListingAgreementInput(input: ListingAgreementInput) {
     contact_ids: input.contact_ids,
     property_mode: input.property_mode,
     property_id: input.property_id,
-    property: normalizePropertyInput(input.property),
+    property: input.property,
   };
 }
 

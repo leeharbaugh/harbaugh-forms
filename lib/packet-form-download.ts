@@ -234,7 +234,13 @@ export async function downloadAllFilledPacketForms(
     let directoryHandle: FileSystemDirectoryHandle;
 
     try {
-      directoryHandle = await window.showDirectoryPicker({
+      directoryHandle = await (
+        window as unknown as {
+          showDirectoryPicker: (options?: {
+            mode?: "read" | "readwrite";
+          }) => Promise<FileSystemDirectoryHandle>;
+        }
+      ).showDirectoryPicker({
         mode: "readwrite",
       });
     } catch (error) {

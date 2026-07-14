@@ -37,6 +37,7 @@ export async function ensureUserProfile(
       typeof metadata.middle_name === "string" ? metadata.middle_name : null,
     last_name:
       typeof metadata.last_name === "string" ? metadata.last_name : null,
+    app_role: "USER" as const,
   };
 
   const { data: created, error: insertError } = await supabase

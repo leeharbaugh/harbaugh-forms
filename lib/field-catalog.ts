@@ -9,18 +9,46 @@ export async function findActiveFieldByKey(
   supabase: SupabaseClient,
   fieldKey: string,
 ): Promise<Field | null> {
-  const { data, error } = await supabase
+  const normalizedKey = fieldKey.trim().toUpperCase();
+
+  const { data: globalField, error: globalError } = await supabase
     .from("fields")
     .select("*")
-    .eq("field_key", fieldKey.trim().toUpperCase())
+    .eq("field_key", normalizedKey)
     .eq("status", "ACTIVE")
+    .eq("scope", "GLOBAL")
     .maybeSingle();
 
-  if (error) {
-    throw error;
+  if (globalError) {
+    throw globalError;
   }
 
-  return (data as Field | null) ?? null;
+  if (globalField) {
+    return globalField as Field;
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return null;
+  }
+
+  const { data: privateField, error: privateError } = await supabase
+    .from("fields")
+    .select("*")
+    .eq("field_key", normalizedKey)
+    .eq("status", "ACTIVE")
+    .eq("scope", "PRIVATE")
+    .eq("owner_user_id", user.id)
+    .maybeSingle();
+
+  if (privateError) {
+    throw privateError;
+  }
+
+  return (privateField as Field | null) ?? null;
 }
 
 export async function createActiveField(
@@ -28,10 +56,17 @@ export async function createActiveField(
   input: FieldInput,
 ): Promise<Field> {
   const normalized = normalizeFieldInput(input);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const { data, error } = await supabase
     .from("fields")
-    .insert(normalized as Record<string, unknown>)
+    .insert({
+      ...(normalized as Record<string, unknown>),
+      scope: "PRIVATE",
+      owner_user_id: user?.id ?? null,
+    })
     .select("*")
     .single();
 
@@ -65,9 +100,17 @@ export async function upsertActiveField(
     return data as Field;
   }
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const { data, error } = await supabase
     .from("fields")
-    .insert(normalized as Record<string, unknown>)
+    .insert({
+      ...(normalized as Record<string, unknown>),
+      scope: "PRIVATE",
+      owner_user_id: user?.id ?? null,
+    })
     .select("*")
     .single();
 

@@ -235,6 +235,10 @@ export function CollectionsPage() {
             collection_name: normalized.collection_name,
             collection_type: normalized.collection_type,
             description: normalized.description,
+            scope: "PRIVATE",
+            owner_user_id: (
+              await supabase.auth.getUser()
+            ).data.user?.id ?? null,
           })
           .select("id")
           .single();
@@ -461,6 +465,9 @@ export function CollectionsPage() {
                         create_date: "",
                         update_date: "",
                         status: viewingPacketStatus,
+                        scope: "PRIVATE",
+                        owner_user_id: null,
+                        organization_id: null,
                       });
                     }
                   : undefined

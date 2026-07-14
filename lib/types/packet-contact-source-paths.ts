@@ -1,5 +1,6 @@
 import { dedupeSourcePathOptions } from "@/lib/types/source-path-options";
 import {
+  type Contact,
   formatContactDisplayName,
   formatContactDateOfBirth,
 } from "@/lib/types/contact";

@@ -8,6 +8,8 @@ import {
   type FieldSourceInput,
 } from "@/lib/types/field-source";
 
+export type VisibilityScope = "GLOBAL" | "PRIVATE" | "ORGANIZATION";
+
 export type Field = {
   id: string;
   field_key: string;
@@ -28,6 +30,9 @@ export type Field = {
   create_date: string;
   update_date: string;
   status: string;
+  scope: VisibilityScope;
+  owner_user_id: string | null;
+  organization_id: string | null;
 };
 
 export type FieldInput = {

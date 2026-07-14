@@ -222,9 +222,17 @@ export function RepresentationAgreementsPage() {
 
     try {
       if (formMode === "create") {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
         const { data: createdAgreement, error: agreementError } = await supabase
           .from("representation_agreements")
-          .insert(normalized.agreement)
+          .insert({
+            ...normalized.agreement,
+            owner_user_id: user?.id ?? null,
+            created_by_user_id: user?.id ?? null,
+          })
           .select("id")
           .single();
 

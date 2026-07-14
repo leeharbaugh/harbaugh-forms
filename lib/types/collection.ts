@@ -8,6 +8,8 @@ export type CollectionType =
   | "AMENDMENT_PACKET"
   | "CUSTOM";
 
+export type VisibilityScope = "GLOBAL" | "PRIVATE" | "ORGANIZATION";
+
 export type Collection = {
   id: number;
   collection_name: string;
@@ -16,6 +18,9 @@ export type Collection = {
   create_date: string;
   update_date: string;
   status: string;
+  scope: VisibilityScope;
+  owner_user_id: string | null;
+  organization_id: string | null;
 };
 
 export type CollectionFormLink = {

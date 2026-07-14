@@ -5,6 +5,8 @@ export type FormCategory =
   | "CONTRACT"
   | "OTHER";
 
+export type VisibilityScope = "GLOBAL" | "PRIVATE" | "ORGANIZATION";
+
 export type Form = {
   id: number;
   form_code: string;
@@ -17,6 +19,9 @@ export type Form = {
   create_date: string;
   update_date: string;
   status: string;
+  scope: VisibilityScope;
+  owner_user_id: string | null;
+  organization_id: string | null;
 };
 
 export type FormInput = {

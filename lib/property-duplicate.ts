@@ -40,10 +40,15 @@ export async function saveNewPropertyWithDuplicateHandling(
     throw new Error(validationError);
   }
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const normalized = normalizePropertyInput(propertyInput);
   const existingPropertyId = await findExistingActivePropertyByAddress(
     supabase,
     propertyInput,
+    user?.id ?? null,
   );
 
   if (existingPropertyId != null) {
@@ -72,7 +77,10 @@ export async function saveNewPropertyWithDuplicateHandling(
 
   const { data, error } = await supabase
     .from("properties")
-    .insert(normalized)
+    .insert({
+      ...normalized,
+      owner_user_id: user?.id ?? null,
+    })
     .select("id")
     .single();
 

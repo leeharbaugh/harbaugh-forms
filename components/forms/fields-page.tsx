@@ -195,9 +195,15 @@ export function FieldsPage() {
     const supabase = createClient();
 
     if (formPanelMode === "create") {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       const { error } = await supabase.from("fields").insert({
         ...(normalized as Record<string, unknown>),
         status: "ACTIVE",
+        scope: "PRIVATE",
+        owner_user_id: user?.id ?? null,
       });
 
       if (error) {
