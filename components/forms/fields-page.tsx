@@ -18,6 +18,11 @@ import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import {
+  assertCanEditForm,
+  canEditField,
+  LIBRARY_PERMISSION_DENIED,
+} from "@/lib/library-permissions";
 import type { FieldMergeResult } from "@/lib/field-merge";
 import { getFieldUsageCounts, type FieldUsageCounts } from "@/lib/field-retire";
 import {
@@ -39,6 +44,7 @@ import {
   formatFieldSourceStatusDisplay,
 } from "@/lib/types/field-source";
 import { FIELDS_CATALOG_PAGE_DESCRIPTION } from "@/lib/types/field-resolver-catalog";
+import { useLibraryActor } from "@/lib/use-library-actor";
 import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useState } from "react";
 
@@ -75,6 +81,7 @@ function formatMergeSuccessMessage(result: FieldMergeResult): string {
 }
 
 export function FieldsPage() {
+  const { actor } = useLibraryActor();
   const [fields, setFields] = useState<Field[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
@@ -174,6 +181,10 @@ export function FieldsPage() {
   };
 
   const openEditField = (field: Field) => {
+    if (!canEditField(actor, field)) {
+      setListError(LIBRARY_PERMISSION_DENIED);
+      return;
+    }
     setViewField(null);
     setFormPanelMode("edit");
     setEditingFieldId(field.id);
@@ -214,13 +225,44 @@ export function FieldsPage() {
     }
 
     if (formPanelMode === "edit" && editingFieldId !== null) {
-      const { error } = await supabase
+      const { data: existingField, error: existingError } = await supabase
+        .from("fields")
+        .select("id, scope, owner_user_id, status")
+        .eq("id", editingFieldId)
+        .single();
+
+      if (existingError || !existingField) {
+        setFormError(existingError?.message ?? "Field not found.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      try {
+        assertCanEditForm(actor, existingField);
+      } catch (permissionError) {
+        setFormError(
+          permissionError instanceof Error
+            ? permissionError.message
+            : LIBRARY_PERMISSION_DENIED,
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
+      const { data: updatedRows, error } = await supabase
         .from("fields")
         .update(normalized as Record<string, unknown>)
-        .eq("id", editingFieldId);
+        .eq("id", editingFieldId)
+        .select("id");
 
       if (error) {
         setFormError(formatFieldSourceSaveError(error.message));
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!updatedRows?.length) {
+        setFormError(LIBRARY_PERMISSION_DENIED);
         setIsSubmitting(false);
         return;
       }
@@ -243,6 +285,10 @@ export function FieldsPage() {
   };
 
   const openRetireDialog = async (field: Field) => {
+    if (!canEditField(actor, field)) {
+      setListError(LIBRARY_PERMISSION_DENIED);
+      return;
+    }
     setListError(null);
     setFieldToRetire(field);
     setRetireUsage(null);
@@ -270,6 +316,10 @@ export function FieldsPage() {
   };
 
   const openMergeField = (field: Field) => {
+    if (!canEditField(actor, field)) {
+      setListError(LIBRARY_PERMISSION_DENIED);
+      return;
+    }
     setSuccessMessage(null);
     setListError(null);
     setMergeSourceField(field);
@@ -298,6 +348,7 @@ export function FieldsPage() {
     setIsDeleting(true);
 
     try {
+      assertCanEditForm(actor, fieldToRetire);
       const supabase = createClient();
       await deleteField(supabase, fieldToRetire.id);
 
@@ -503,7 +554,7 @@ export function FieldsPage() {
                             >
                               View
                             </Button>
-                            {!deleted && (
+                            {!deleted && canEditField(actor, field) ? (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -511,8 +562,8 @@ export function FieldsPage() {
                               >
                                 Edit
                               </Button>
-                            )}
-                            {!deleted && (
+                            ) : null}
+                            {!deleted && canEditField(actor, field) ? (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -520,8 +571,9 @@ export function FieldsPage() {
                               >
                                 Merge
                               </Button>
-                            )}
+                            ) : null}
                             {deleted ? (
+                              canEditField(actor, field) ? (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -530,7 +582,8 @@ export function FieldsPage() {
                               >
                                 Restore
                               </Button>
-                            ) : (
+                              ) : null
+                            ) : canEditField(actor, field) ? (
                               <Button
                                 variant="destructive"
                                 size="sm"
@@ -539,7 +592,7 @@ export function FieldsPage() {
                               >
                                 Delete
                               </Button>
-                            )}
+                            ) : null}
                           </ListRowActions>
                         </td>
                       </tr>
@@ -563,10 +616,14 @@ export function FieldsPage() {
         open={viewField != null}
         field={viewField}
         onClose={closeViewField}
-        onEdit={(field) => {
-          closeViewField();
-          openEditField(field);
-        }}
+        onEdit={
+          viewField && canEditField(actor, viewField)
+            ? (field) => {
+                closeViewField();
+                openEditField(field);
+              }
+            : undefined
+        }
       />
 
       <FieldFormDialog

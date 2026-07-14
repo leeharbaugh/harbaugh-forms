@@ -24,8 +24,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import {
+  assertCanEditCollection,
+  canCloneCollection,
+  canDeleteCollection,
+  canEditCollection,
+  COLLECTION_PERMISSION_DENIED,
+} from "@/lib/library-permissions";
+import {
   type CollectionDetail,
   type CollectionListItem,
+  cloneGlobalCollection,
   deleteCollection,
   emptyCollectionInput,
   formatCollectionReference,
@@ -38,6 +46,7 @@ import {
   syncCollectionForms,
   validateCollectionInput,
 } from "@/lib/types/collection";
+import { useLibraryActor } from "@/lib/use-library-actor";
 import { useCallback, useEffect, useState } from "react";
 
 type FormMode = "hidden" | "create" | "edit" | "view";
@@ -51,7 +60,8 @@ const COLLECTION_TABLE_COLUMNS: ResizableDataTableColumn[] = [
   {
     id: "actions",
     label: "Actions",
-    defaultWidth: 224,
+    defaultWidth: 320,
+    minWidth: 260,
     isActions: true,
   },
 ];
@@ -82,6 +92,7 @@ const PACKET_DETAIL_SELECT = `
 `;
 
 export function CollectionsPage() {
+  const { actor } = useLibraryActor();
   const [packets, setPackets] = useState<CollectionListItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
@@ -89,6 +100,8 @@ export function CollectionsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isCloningId, setIsCloningId] = useState<number | null>(null);
+  const [cloneMessage, setCloneMessage] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<FormMode>("hidden");
@@ -168,6 +181,7 @@ export function CollectionsPage() {
   const openPacketForm = async (packetId: number, mode: "edit" | "view") => {
     setFormError(null);
     setListError(null);
+    setCloneMessage(null);
 
     const supabase = createClient();
     const { data, error } = await supabase
@@ -183,15 +197,58 @@ export function CollectionsPage() {
 
     const packet = data as CollectionDetail;
 
-    if (mode === "edit" && isCollectionDeleted(packet)) {
-      setListError("Deleted packet templates cannot be edited. Restore it first.");
-      return;
+    if (mode === "edit") {
+      if (isCollectionDeleted(packet)) {
+        setListError(
+          "Deleted packet templates cannot be edited. Restore it first.",
+        );
+        return;
+      }
+      if (!canEditCollection(actor, packet)) {
+        setListError(COLLECTION_PERMISSION_DENIED);
+        setFormMode("view");
+        setEditingPacketId(packet.id);
+        setViewingPacketStatus(packet.status);
+        setFormValue(collectionToInput(packet));
+        return;
+      }
     }
 
     setFormMode(mode);
     setEditingPacketId(packet.id);
     setViewingPacketStatus(packet.status);
     setFormValue(collectionToInput(packet));
+  };
+
+  const handleCloneCollection = async (packet: CollectionListItem) => {
+    if (!canCloneCollection(actor, packet)) {
+      setListError(COLLECTION_PERMISSION_DENIED);
+      return;
+    }
+
+    setIsCloningId(packet.id);
+    setListError(null);
+    setCloneMessage(null);
+    setFormError(null);
+
+    const supabase = createClient();
+
+    try {
+      const newId = await cloneGlobalCollection(supabase, packet.id);
+      setCloneMessage(
+        `Copied “${packet.collection_name}” to your private collections.`,
+      );
+      await loadPackets();
+      await openPacketForm(newId, "edit");
+    } catch (cloneError) {
+      setListError(
+        cloneError instanceof Error
+          ? cloneError.message
+          : "Failed to copy collection.",
+      );
+    } finally {
+      setIsCloningId(null);
+    }
   };
 
   const reloadOpenPacket = async (packetId: number) => {
@@ -257,7 +314,19 @@ export function CollectionsPage() {
       }
 
       if (formMode === "edit" && editingPacketId !== null) {
-        const { error: updateError } = await supabase
+        const { data: existing, error: existingError } = await supabase
+          .from("collections")
+          .select("id, status, scope, owner_user_id")
+          .eq("id", editingPacketId)
+          .single();
+
+        if (existingError || !existing) {
+          throw new Error(existingError?.message ?? "Collection not found.");
+        }
+
+        assertCanEditCollection(actor, existing);
+
+        const { data: updatedRows, error: updateError } = await supabase
           .from("collections")
           .update({
             collection_name: normalized.collection_name,
@@ -265,10 +334,17 @@ export function CollectionsPage() {
             description: normalized.description,
           })
           .eq("id", editingPacketId)
-          .eq("status", "ACTIVE");
+          .eq("status", "ACTIVE")
+          .select("id");
 
         if (updateError) {
           setFormError(updateError.message);
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (!updatedRows?.length) {
+          setFormError(COLLECTION_PERMISSION_DENIED);
           setIsSubmitting(false);
           return;
         }
@@ -295,6 +371,10 @@ export function CollectionsPage() {
   };
 
   const openDeleteDialog = (packet: CollectionListItem) => {
+    if (!canDeleteCollection(actor, packet)) {
+      setListError(COLLECTION_PERMISSION_DENIED);
+      return;
+    }
     setPacketPendingDelete(packet);
     setDeleteDialogOpen(true);
     setListError(null);
@@ -447,7 +527,26 @@ export function CollectionsPage() {
               onDelete={
                 formMode === "view" &&
                 !isCollectionDeleted({ status: viewingPacketStatus }) &&
-                editingPacketId !== null
+                editingPacketId !== null &&
+                canDeleteCollection(
+                  actor,
+                  packets.find((item) => item.id === editingPacketId) ?? {
+                    id: editingPacketId,
+                    collection_name: formValue.collection_name,
+                    collection_type: formValue.collection_type,
+                    description: formValue.description || null,
+                    create_date: "",
+                    update_date: "",
+                    status: viewingPacketStatus,
+                    scope:
+                      packets.find((item) => item.id === editingPacketId)
+                        ?.scope ?? "PRIVATE",
+                    owner_user_id:
+                      packets.find((item) => item.id === editingPacketId)
+                        ?.owner_user_id ?? actor?.userId ?? null,
+                    organization_id: null,
+                  },
+                )
                   ? () => {
                       const packet = packets.find(
                         (item) => item.id === editingPacketId,
@@ -466,7 +565,7 @@ export function CollectionsPage() {
                         update_date: "",
                         status: viewingPacketStatus,
                         scope: "PRIVATE",
-                        owner_user_id: null,
+                        owner_user_id: actor?.userId ?? null,
                         organization_id: null,
                       });
                     }
@@ -474,7 +573,12 @@ export function CollectionsPage() {
               }
               onRestore={
                 formMode === "view" &&
-                isCollectionDeleted({ status: viewingPacketStatus })
+                isCollectionDeleted({ status: viewingPacketStatus }) &&
+                editingPacketId !== null &&
+                canEditCollection(
+                  actor,
+                  packets.find((item) => item.id === editingPacketId) ?? null,
+                )
                   ? () => void handleRestore()
                   : undefined
               }
@@ -513,6 +617,9 @@ export function CollectionsPage() {
           </div>
 
           {listError && <p className="text-sm text-destructive">{listError}</p>}
+          {cloneMessage && (
+            <p className="text-sm text-emerald-700">{cloneMessage}</p>
+          )}
 
           {isLoading ? (
             <p className="text-sm text-muted-foreground">
@@ -550,6 +657,15 @@ export function CollectionsPage() {
                         >
                           {packet.collection_name}
                         </span>
+                        {packet.scope === "GLOBAL" ? (
+                          <Badge variant="outline" className="shrink-0">
+                            Global
+                          </Badge>
+                        ) : packet.scope === "PRIVATE" ? (
+                          <Badge variant="secondary" className="shrink-0">
+                            Mine
+                          </Badge>
+                        ) : null}
                         {deleted && (
                           <Badge variant="destructive" className="shrink-0">
                             Deleted
@@ -578,26 +694,38 @@ export function CollectionsPage() {
                         >
                           View
                         </Button>
-                        {!deleted && (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                void openPacketForm(packet.id, "edit")
-                              }
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => openDeleteDialog(packet)}
-                            >
-                              Delete
-                            </Button>
-                          </>
-                        )}
+                        {!deleted && canCloneCollection(actor, packet) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isCloningId === packet.id}
+                            onClick={() => void handleCloneCollection(packet)}
+                          >
+                            {isCloningId === packet.id
+                              ? "Copying..."
+                              : "Copy to My Collections"}
+                          </Button>
+                        ) : null}
+                        {!deleted && canEditCollection(actor, packet) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              void openPacketForm(packet.id, "edit")
+                            }
+                          >
+                            Edit
+                          </Button>
+                        ) : null}
+                        {!deleted && canDeleteCollection(actor, packet) ? (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => openDeleteDialog(packet)}
+                          >
+                            Delete
+                          </Button>
+                        ) : null}
                       </ListRowActions>
                     </ResizableDataTableActionsCell>
                   </ResizableDataTableRow>

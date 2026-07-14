@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Form } from "@/lib/types/form";
+import {
+  assertCanEditCollection,
+  COLLECTION_PERMISSION_DENIED,
+  isActiveAppAdmin,
+} from "@/lib/library-permissions";
 
 export type CollectionType =
   | "BUYER_REP_PACKET"
@@ -100,28 +105,56 @@ export async function deleteCollection(
   supabase: SupabaseClient,
   collectionId: number,
 ): Promise<void> {
-  const { data, error: fetchError } = await supabase
-    .from("collections")
-    .select("id, status")
-    .eq("id", collectionId)
-    .single();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Authentication required.");
+  }
+
+  const [{ data: profile }, { data, error: fetchError }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("status, app_role, onboarding_status")
+      .eq("id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("collections")
+      .select("id, status, scope, owner_user_id")
+      .eq("id", collectionId)
+      .single(),
+  ]);
 
   if (fetchError || !data) {
     throw new Error("Collection not found.");
   }
 
+  assertCanEditCollection(
+    {
+      userId: user.id,
+      isActiveAdmin: isActiveAppAdmin(profile),
+    },
+    data,
+  );
+
   if (data.status === "DELETED") {
     throw new Error("Collection is already deleted.");
   }
 
-  const { error } = await supabase
+  const { data: deletedRows, error } = await supabase
     .from("collections")
     .update({ status: "DELETED" })
     .eq("id", collectionId)
-    .eq("status", "ACTIVE");
+    .eq("status", "ACTIVE")
+    .select("id");
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  if (!deletedRows?.length) {
+    throw new Error(COLLECTION_PERMISSION_DENIED);
   }
 }
 
@@ -129,28 +162,56 @@ export async function restoreCollection(
   supabase: SupabaseClient,
   collectionId: number,
 ): Promise<void> {
-  const { data, error: fetchError } = await supabase
-    .from("collections")
-    .select("id, status")
-    .eq("id", collectionId)
-    .single();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Authentication required.");
+  }
+
+  const [{ data: profile }, { data, error: fetchError }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("status, app_role, onboarding_status")
+      .eq("id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("collections")
+      .select("id, status, scope, owner_user_id")
+      .eq("id", collectionId)
+      .single(),
+  ]);
 
   if (fetchError || !data) {
     throw new Error("Collection not found.");
   }
 
+  assertCanEditCollection(
+    {
+      userId: user.id,
+      isActiveAdmin: isActiveAppAdmin(profile),
+    },
+    data,
+  );
+
   if (data.status !== "DELETED") {
     throw new Error("Only deleted collections can be restored.");
   }
 
-  const { error } = await supabase
+  const { data: restoredRows, error } = await supabase
     .from("collections")
     .update({ status: "ACTIVE" })
     .eq("id", collectionId)
-    .eq("status", "DELETED");
+    .eq("status", "DELETED")
+    .select("id");
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  if (!restoredRows?.length) {
+    throw new Error(COLLECTION_PERMISSION_DENIED);
   }
 }
 
@@ -222,6 +283,40 @@ export async function syncCollectionForms(
   collectionId: number,
   forms: CollectionFormSelection[],
 ): Promise<void> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Authentication required.");
+  }
+
+  const [{ data: profile }, { data: collection, error: collectionError }] =
+    await Promise.all([
+      supabase
+        .from("profiles")
+        .select("status, app_role, onboarding_status")
+        .eq("id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("collections")
+        .select("id, status, scope, owner_user_id")
+        .eq("id", collectionId)
+        .single(),
+    ]);
+
+  if (collectionError || !collection) {
+    throw new Error(collectionError?.message ?? "Collection not found.");
+  }
+
+  assertCanEditCollection(
+    {
+      userId: user.id,
+      isActiveAdmin: isActiveAppAdmin(profile),
+    },
+    collection,
+  );
+
   const { error: deleteError } = await supabase
     .from("collection_forms")
     .update({ status: "DELETED" })
@@ -250,4 +345,24 @@ export async function syncCollectionForms(
   if (insertError) {
     throw new Error(insertError.message);
   }
+}
+
+export async function cloneGlobalCollection(
+  supabase: SupabaseClient,
+  sourceCollectionId: number,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("clone_global_collection", {
+    p_source_collection_id: sourceCollectionId,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const newId = typeof data === "number" ? data : Number(data);
+  if (!Number.isFinite(newId)) {
+    throw new Error("Clone succeeded but no collection id was returned.");
+  }
+
+  return newId;
 }

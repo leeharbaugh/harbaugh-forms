@@ -10,6 +10,7 @@ import {
   type ResizableDataTableColumn,
 } from "@/components/resizable-data-table";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -25,6 +26,13 @@ import {
   removeFormStorageObject,
   uploadFormPdfToPath,
 } from "@/lib/form-storage";
+import {
+  assertCanEditForm,
+  canDeleteForm,
+  canEditForm,
+  canMapFormFields,
+  LIBRARY_PERMISSION_DENIED,
+} from "@/lib/library-permissions";
 import { createClient } from "@/lib/supabase/client";
 import {
   type Form,
@@ -35,6 +43,7 @@ import {
   normalizeFormInput,
   validateFormInput,
 } from "@/lib/types/form";
+import { useLibraryActor } from "@/lib/use-library-actor";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -57,6 +66,7 @@ const FORM_TABLE_COLUMNS: ResizableDataTableColumn[] = [
 ];
 
 export function FormsPage() {
+  const { actor } = useLibraryActor();
   const [templates, setTemplates] = useState<Form[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -142,6 +152,10 @@ export function FormsPage() {
   };
 
   const openEditForm = (template: Form) => {
+    if (!canEditForm(actor, template)) {
+      setListError(LIBRARY_PERMISSION_DENIED);
+      return;
+    }
     setFormMode("edit");
     setEditingTemplateId(template.id);
     setFormValue(formToInput(template));
@@ -243,22 +257,24 @@ export function FormsPage() {
       }
 
       if (formMode === "edit" && editingTemplateId !== null) {
+        const { data: existingForm, error: existingError } = await supabase
+          .from("forms")
+          .select("id, scope, owner_user_id, status")
+          .eq("id", editingTemplateId)
+          .eq("status", "ACTIVE")
+          .single();
+
+        if (existingError || !existingForm) {
+          throw new Error(existingError?.message ?? "Form not found.");
+        }
+
+        assertCanEditForm(actor, existingForm);
+
         let sourceStoragePath = existingStoragePath?.trim() || "";
 
         if (replacePdf) {
           if (!pdfFile) {
             throw new Error("Select a PDF file to replace the current template.");
-          }
-
-          const { data: existingForm, error: existingError } = await supabase
-            .from("forms")
-            .select("id, scope, owner_user_id")
-            .eq("id", editingTemplateId)
-            .eq("status", "ACTIVE")
-            .single();
-
-          if (existingError || !existingForm) {
-            throw new Error(existingError?.message ?? "Form not found.");
           }
 
           const storagePath = buildFormStoragePath({
@@ -280,17 +296,24 @@ export function FormsPage() {
           throw new Error("A stored PDF is required for this form template.");
         }
 
-        const { error } = await supabase
+        const { data: updatedRows, error } = await supabase
           .from("forms")
           .update({
             ...normalized,
             source_storage_path: sourceStoragePath,
           })
           .eq("id", editingTemplateId)
-          .eq("status", "ACTIVE");
+          .eq("status", "ACTIVE")
+          .select("id");
 
         if (error) {
           setFormError(error.message);
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (!updatedRows?.length) {
+          setFormError(LIBRARY_PERMISSION_DENIED);
           setIsSubmitting(false);
           return;
         }
@@ -311,6 +334,10 @@ export function FormsPage() {
   };
 
   const openDeleteDialog = (template: Form) => {
+    if (!canDeleteForm(actor, template)) {
+      setListError(LIBRARY_PERMISSION_DENIED);
+      return;
+    }
     setTemplatePendingDelete(template);
     setListError(null);
   };
@@ -330,18 +357,34 @@ export function FormsPage() {
     setIsDeleting(true);
     setListError(null);
     const supabase = createClient();
-    const { error } = await supabase
-      .from("forms")
-      .update({ status: "DELETED" })
-      .eq("id", templatePendingDelete.id)
-      .eq("status", "ACTIVE");
 
-    setIsDeleting(false);
+    try {
+      assertCanEditForm(actor, templatePendingDelete);
+      const { data: deletedRows, error } = await supabase
+        .from("forms")
+        .update({ status: "DELETED" })
+        .eq("id", templatePendingDelete.id)
+        .eq("status", "ACTIVE")
+        .select("id");
 
-    if (error) {
-      setListError(error.message);
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (!deletedRows?.length) {
+        throw new Error(LIBRARY_PERMISSION_DENIED);
+      }
+    } catch (deleteError) {
+      setIsDeleting(false);
+      setListError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : LIBRARY_PERMISSION_DENIED,
+      );
       return;
     }
+
+    setIsDeleting(false);
 
     if (editingTemplateId === templatePendingDelete.id) {
       closeForm();
@@ -449,12 +492,23 @@ export function FormsPage() {
                     {formatFormReference(template.id)}
                   </ResizableDataTableCell>
                   <ResizableDataTableCell>
-                    <span
-                      className="line-clamp-2 font-medium leading-snug"
-                      title={template.form_name}
-                    >
-                      {template.form_name}
-                    </span>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="line-clamp-2 font-medium leading-snug"
+                        title={template.form_name}
+                      >
+                        {template.form_name}
+                      </span>
+                      {template.scope === "GLOBAL" ? (
+                        <Badge variant="outline" className="shrink-0">
+                          Global
+                        </Badge>
+                      ) : template.scope === "PRIVATE" ? (
+                        <Badge variant="secondary" className="shrink-0">
+                          Mine
+                        </Badge>
+                      ) : null}
+                    </div>
                   </ResizableDataTableCell>
                   <ResizableDataTableCell>
                     <span
@@ -480,25 +534,31 @@ export function FormsPage() {
                   </ResizableDataTableCell>
                   <ResizableDataTableActionsCell>
                     <ListRowActions>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/forms/${template.id}/editor`}>
-                          Map fields
-                        </Link>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openEditForm(template)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => openDeleteDialog(template)}
-                      >
-                        Delete
-                      </Button>
+                      {canMapFormFields(actor, template) ? (
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/forms/${template.id}/editor`}>
+                            Map fields
+                          </Link>
+                        </Button>
+                      ) : null}
+                      {canEditForm(actor, template) ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditForm(template)}
+                        >
+                          Edit
+                        </Button>
+                      ) : null}
+                      {canDeleteForm(actor, template) ? (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => openDeleteDialog(template)}
+                        >
+                          Delete
+                        </Button>
+                      ) : null}
                     </ListRowActions>
                   </ResizableDataTableActionsCell>
                 </ResizableDataTableRow>
