@@ -242,7 +242,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
   const displayName = formatContactDisplayName(contact);
 
   return (
-    <div className="flex w-full max-w-5xl flex-col gap-6">
+    <div className="flex w-full max-w-6xl flex-col gap-6">
       <ConfirmDeleteDialog
         open={deleteDialogOpen}
         objectType="contact"

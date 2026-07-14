@@ -21,7 +21,7 @@ export function FormsSectionLayout({
   }
 
   return (
-    <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6 px-5 py-8">
+    <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-6 px-5 py-8">
       <FormsNav active={active} />
       {children}
     </div>

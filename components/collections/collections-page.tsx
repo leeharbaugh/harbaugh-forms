@@ -663,7 +663,7 @@ export function CollectionsPage() {
                           </Badge>
                         ) : packet.scope === "PRIVATE" ? (
                           <Badge variant="secondary" className="shrink-0">
-                            Mine
+                            Private
                           </Badge>
                         ) : null}
                         {deleted && (

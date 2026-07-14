@@ -505,7 +505,7 @@ export function FormsPage() {
                         </Badge>
                       ) : template.scope === "PRIVATE" ? (
                         <Badge variant="secondary" className="shrink-0">
-                          Mine
+                          Private
                         </Badge>
                       ) : null}
                     </div>

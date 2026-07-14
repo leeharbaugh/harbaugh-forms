@@ -8,7 +8,7 @@ export default function ListingAgreementsLayout({
   return (
     <main className="min-h-screen">
       <AppNav active="packets" />
-      <div className="mx-auto flex max-w-5xl flex-col px-5 py-8">{children}</div>
+      <div className="mx-auto flex max-w-6xl flex-col px-5 py-8">{children}</div>
     </main>
   );
 }

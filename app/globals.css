@@ -4,25 +4,33 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
+    /* Warm-neutral light theme — Harbaugh Forms UI foundation */
+    --background: 38 33% 95%; /* #f7f4ef */
+    --foreground: 24 10% 10%; /* #1c1917 */
+    --card: 0 0% 100%; /* #ffffff */
+    --card-foreground: 24 10% 10%; /* #1c1917 */
+    --popover: 0 0% 100%; /* #ffffff */
+    --popover-foreground: 24 10% 10%; /* #1c1917 */
+    --primary: 12 6% 15%; /* #292524 */
+    --primary-foreground: 60 9% 98%; /* #fafaf9 */
+    --secondary: 37 30% 92%; /* #f0ebe3 */
+    --secondary-foreground: 30 6% 25%; /* #44403c */
+    --muted: 37 30% 92%; /* #f0ebe3 */
+    --muted-foreground: 25 5% 45%; /* #78716c */
+    --accent: 37 30% 92%; /* #f0ebe3 */
+    --accent-foreground: 24 10% 10%; /* #1c1917 */
+    --destructive: 0 72% 51%; /* #dc2626 */
+    --destructive-foreground: 0 0% 100%;
+    --destructive-hover: 0 72% 42%; /* #b91c1c */
+    --border: 37 25% 86%; /* #e4ddd2 */
+    --input: 36 21% 80%; /* #d6cdc0 */
+    --ring: 24 10% 10%; /* #1c1917 */
+    --success: 161 93% 24%; /* #047857 */
+    --success-foreground: 0 0% 100%;
+    --warning: 26 90% 37%; /* #b45309 */
+    --warning-foreground: 0 0% 100%;
+    --info: 215 25% 27%; /* #334155 */
+    --info-foreground: 0 0% 100%;
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
@@ -47,9 +55,16 @@
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
+    --destructive-hover: 0 62.8% 38%;
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 0 0% 83.1%;
+    --success: 161 60% 35%;
+    --success-foreground: 0 0% 98%;
+    --warning: 26 70% 45%;
+    --warning-foreground: 0 0% 98%;
+    --info: 215 25% 45%;
+    --info-foreground: 0 0% 98%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;

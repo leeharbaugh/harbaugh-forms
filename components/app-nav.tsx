@@ -26,7 +26,7 @@ export function AppNav({ active }: AppNavProps) {
     <>
       {hasEnvVars && <EnsureProfile />}
       <nav className="border-b border-b-foreground/10">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-5 text-sm">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 text-sm">
           <div className="flex items-center gap-6">
             <Link href="/" className="font-semibold">
               Harbaugh Forms

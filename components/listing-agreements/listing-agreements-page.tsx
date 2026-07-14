@@ -447,7 +447,7 @@ export function ListingAgreementsPage() {
         : "Read-only view of the listing representation agreement.";
 
   return (
-    <div className="flex w-full max-w-5xl flex-col gap-6">
+    <div className="flex w-full max-w-6xl flex-col gap-6">
       {duplicateDialog}
       <ConfirmDeleteDialog
         open={agreementPendingDelete != null}

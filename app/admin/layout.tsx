@@ -9,7 +9,7 @@ async function AdminAuthorizedShell({
 }) {
   await requireAppAdminPage();
   return (
-    <div className="mx-auto flex max-w-5xl flex-col px-5 py-8">{children}</div>
+    <div className="mx-auto flex max-w-6xl flex-col px-5 py-8">{children}</div>
   );
 }
 
@@ -23,7 +23,7 @@ export default function AdminLayout({
       <AppNav active="admin" />
       <Suspense
         fallback={
-          <div className="mx-auto max-w-5xl px-5 py-8 text-sm text-muted-foreground">
+          <div className="mx-auto max-w-6xl px-5 py-8 text-sm text-muted-foreground">
             Checking administrator access…
           </div>
         }
