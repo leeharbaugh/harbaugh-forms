@@ -30,7 +30,9 @@ export function AppNav({ active }: AppNavProps) {
             Harbaugh Forms
           </Link>
           <div className="flex items-center gap-4">
-            <ContactsNavLink className={linkClass("contacts")} />
+            <Suspense fallback={null}>
+              <ContactsNavLink className={linkClass("contacts")} />
+            </Suspense>
             <Link href="/properties" className={linkClass("properties")}>
               Properties
             </Link>
