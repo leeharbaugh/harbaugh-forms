@@ -28,11 +28,6 @@ export type ResolvedStoragePath = {
   usedFallback: boolean;
 };
 
-type LedgerPathRow = {
-  old_path: string;
-  new_path: string;
-};
-
 async function objectExists(
   supabase: SupabaseClient,
   bucket: string,
@@ -62,46 +57,6 @@ async function objectExists(
   }
 
   return (data ?? []).some((entry) => entry.name === name);
-}
-
-async function lookupLedgerFallbackPath(
-  supabase: SupabaseClient,
-  options: {
-    bucket: string;
-    entityType: StorageEntityType;
-    entityId: number;
-    currentPath: string;
-  },
-): Promise<string | null> {
-  const { data, error } = await supabase
-    .from("storage_path_migrations")
-    .select("old_path, new_path")
-    .eq("bucket_name", options.bucket)
-    .eq("entity_type", options.entityType)
-    .eq("entity_id", options.entityId)
-    .eq("status", "ACTIVE")
-    .in("migration_state", ["VERIFIED", "DB_UPDATED", "COPIED"])
-    .limit(20);
-
-  if (error) {
-    throw new Error(
-      `[storage-resolve] Ledger lookup failed for ${options.entityType} ${options.entityId}: ${error.message}`,
-    );
-  }
-
-  const rows = (data as LedgerPathRow[] | null) ?? [];
-  const current = options.currentPath.trim();
-
-  for (const row of rows) {
-    if (row.new_path === current && row.old_path && row.old_path !== current) {
-      return row.old_path;
-    }
-    if (row.old_path === current && row.new_path && row.new_path !== current) {
-      return row.new_path;
-    }
-  }
-
-  return null;
 }
 
 function deterministicFormFallbackPath(options: {
@@ -244,12 +199,8 @@ export async function resolveFormStoragePath(
   },
 ): Promise<ResolvedStoragePath> {
   const primaryPath = options.path.trim();
-  const ledgerFallback = await lookupLedgerFallbackPath(supabase, {
-    bucket: FORM_TEMPLATES_BUCKET,
-    entityType: "FORM",
-    entityId: options.formId,
-    currentPath: primaryPath,
-  });
+  // Phase C: do not query storage_path_migrations from the browser.
+  // Fallback is deterministic only (new ↔ legacy path shapes).
   const deterministic = deterministicFormFallbackPath({
     currentPath: primaryPath,
     formId: options.formId,
@@ -263,7 +214,7 @@ export async function resolveFormStoragePath(
     entityType: "FORM",
     entityId: options.formId,
     primaryPath,
-    candidates: [ledgerFallback, deterministic],
+    candidates: [deterministic],
   });
 }
 
@@ -279,12 +230,6 @@ export async function resolvePacketFormStoragePath(
   },
 ): Promise<ResolvedStoragePath> {
   const primaryPath = options.path.trim();
-  const ledgerFallback = await lookupLedgerFallbackPath(supabase, {
-    bucket: GENERATED_DOCUMENTS_BUCKET,
-    entityType: "PACKET_FORM",
-    entityId: options.packetFormId,
-    currentPath: primaryPath,
-  });
   const deterministic = deterministicPacketFallbackPath({
     currentPath: primaryPath,
     ownerUserId: options.ownerUserId,
@@ -299,7 +244,7 @@ export async function resolvePacketFormStoragePath(
     entityType: "PACKET_FORM",
     entityId: options.packetFormId,
     primaryPath,
-    candidates: [ledgerFallback, deterministic],
+    candidates: [deterministic],
   });
 }
 
