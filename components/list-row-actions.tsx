@@ -30,5 +30,6 @@ export function ListRowActions({
 export const listTableActionsHeaderClass =
   "min-w-0 whitespace-nowrap px-4 py-3 text-right";
 
+/** Contain nowrap action controls so they cannot paint over adjacent columns. */
 export const listTableActionsCellClass =
-  "min-w-0 max-w-0 whitespace-nowrap px-4 py-3 align-middle text-right";
+  "min-w-0 max-w-0 overflow-hidden whitespace-nowrap px-4 py-3 align-middle text-right";

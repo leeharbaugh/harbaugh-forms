@@ -14,6 +14,28 @@ export type UserPreferencesRow = {
   preferences: UserPreferencesDocument;
 };
 
+/** Shared floor/ceiling when a column omits minWidth/maxWidth. */
+export const DEFAULT_TABLE_COLUMN_MIN_WIDTH = 56;
+export const DEFAULT_TABLE_COLUMN_MAX_WIDTH = 640;
+
+export type ColumnWidthConstraint = {
+  id: string;
+  defaultWidth: number;
+  minWidth?: number;
+  maxWidth?: number;
+};
+
+export function clampColumnWidth(
+  width: number,
+  column: ColumnWidthConstraint,
+  defaultMinWidth = DEFAULT_TABLE_COLUMN_MIN_WIDTH,
+  defaultMaxWidth = DEFAULT_TABLE_COLUMN_MAX_WIDTH,
+): number {
+  const minWidth = column.minWidth ?? defaultMinWidth;
+  const maxWidth = column.maxWidth ?? defaultMaxWidth;
+  return Math.min(maxWidth, Math.max(minWidth, width));
+}
+
 export function getTableColumnWidthsFromPreferences(
   preferences: UserPreferencesDocument | null | undefined,
   tableKey: string,
@@ -33,25 +55,37 @@ export function getTableColumnWidthsFromPreferences(
   return Object.keys(normalized).length > 0 ? normalized : null;
 }
 
+/**
+ * Merge saved widths onto column defaults and clamp to each column's
+ * min/max so stale preferences cannot collapse Forms or overflow Actions.
+ */
 export function mergeColumnWidthsWithDefaults(
-  columns: Array<{ id: string; defaultWidth: number }>,
+  columns: ColumnWidthConstraint[],
   savedWidths: TableColumnWidths | null | undefined,
+  options?: {
+    defaultMinWidth?: number;
+    defaultMaxWidth?: number;
+  },
 ): Record<string, number> {
-  const defaults = Object.fromEntries(
-    columns.map((column) => [column.id, column.defaultWidth]),
-  );
+  const defaultMinWidth =
+    options?.defaultMinWidth ?? DEFAULT_TABLE_COLUMN_MIN_WIDTH;
+  const defaultMaxWidth =
+    options?.defaultMaxWidth ?? DEFAULT_TABLE_COLUMN_MAX_WIDTH;
 
-  if (!savedWidths) {
-    return defaults;
-  }
+  const merged: Record<string, number> = {};
 
-  const validIds = new Set(columns.map((column) => column.id));
-  const merged = { ...defaults };
-
-  for (const [id, width] of Object.entries(savedWidths)) {
-    if (validIds.has(id) && typeof width === "number" && Number.isFinite(width)) {
-      merged[id] = width;
-    }
+  for (const column of columns) {
+    const saved = savedWidths?.[column.id];
+    const candidate =
+      typeof saved === "number" && Number.isFinite(saved)
+        ? saved
+        : column.defaultWidth;
+    merged[column.id] = clampColumnWidth(
+      candidate,
+      column,
+      defaultMinWidth,
+      defaultMaxWidth,
+    );
   }
 
   return merged;

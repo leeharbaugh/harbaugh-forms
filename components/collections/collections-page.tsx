@@ -55,13 +55,20 @@ const COLLECTION_TABLE_COLUMNS: ResizableDataTableColumn[] = [
   { id: "id", label: "ID", defaultWidth: 72, minWidth: 48 },
   { id: "name", label: "Packet name", defaultWidth: 200 },
   { id: "type", label: "Packet type", defaultWidth: 140 },
-  { id: "description", label: "Description", defaultWidth: 260 },
-  { id: "forms", label: "Forms", defaultWidth: 80, minWidth: 64 },
+  { id: "description", label: "Description", defaultWidth: 240, minWidth: 120 },
+  {
+    id: "forms",
+    label: "Forms",
+    defaultWidth: 96,
+    minWidth: 72,
+    maxWidth: 160,
+  },
   {
     id: "actions",
     label: "Actions",
-    defaultWidth: 320,
-    minWidth: 260,
+    defaultWidth: 280,
+    minWidth: 220,
+    maxWidth: 400,
     isActions: true,
   },
 ];
@@ -682,7 +689,7 @@ export function CollectionsPage() {
                     >
                       {description}
                     </ResizableDataTableCell>
-                    <ResizableDataTableCell>
+                    <ResizableDataTableCell className="tabular-nums text-muted-foreground">
                       {getActiveFormLinkCount(packet)}
                     </ResizableDataTableCell>
                     <ResizableDataTableActionsCell>
@@ -699,11 +706,11 @@ export function CollectionsPage() {
                             variant="outline"
                             size="sm"
                             disabled={isCloningId === packet.id}
+                            title="Copy to My Collections"
+                            aria-label="Copy to My Collections"
                             onClick={() => void handleCloneCollection(packet)}
                           >
-                            {isCloningId === packet.id
-                              ? "Copying..."
-                              : "Copy to My Collections"}
+                            {isCloningId === packet.id ? "Copying..." : "Copy"}
                           </Button>
                         ) : null}
                         {!deleted && canEditCollection(actor, packet) ? (

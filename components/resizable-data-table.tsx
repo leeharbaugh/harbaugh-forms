@@ -9,7 +9,11 @@ import {
   loadTableColumnWidthsForUser,
   saveTableColumnWidthsForUser,
 } from "@/lib/user-preferences";
-import { mergeColumnWidthsWithDefaults } from "@/lib/types/user-preferences";
+import {
+  DEFAULT_TABLE_COLUMN_MAX_WIDTH,
+  DEFAULT_TABLE_COLUMN_MIN_WIDTH,
+  mergeColumnWidthsWithDefaults,
+} from "@/lib/types/user-preferences";
 import { cn } from "@/lib/utils";
 import {
   useCallback,
@@ -30,8 +34,8 @@ export type ResizableDataTableColumn = {
   isActions?: boolean;
 };
 
-const DEFAULT_MIN_COLUMN_WIDTH = 56;
-const DEFAULT_MAX_COLUMN_WIDTH = 640;
+const DEFAULT_MIN_COLUMN_WIDTH = DEFAULT_TABLE_COLUMN_MIN_WIDTH;
+const DEFAULT_MAX_COLUMN_WIDTH = DEFAULT_TABLE_COLUMN_MAX_WIDTH;
 const PREFERENCES_SAVE_DEBOUNCE_MS = 400;
 
 function buildDefaultWidths(
