@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Input } from "@/components/ui/input";
 import { createActiveField } from "@/lib/field-catalog";
-import { getFormPdfSignedUrl } from "@/lib/form-storage";
+import { createFormSignedUrlWithFallback } from "@/lib/storage-path-resolve";
 import { extractPdfFieldInventory } from "@/lib/pdf-field-extract";
 import {
   type ApplyPdfFieldInventoryResult,
@@ -416,10 +416,13 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
       if (showFullScreenLoading) {
         try {
-          const signedUrl = await getFormPdfSignedUrl(
-            supabase,
-            nextTemplate.source_storage_path,
-          );
+          const { signedUrl } = await createFormSignedUrlWithFallback(supabase, {
+            formId: nextTemplate.id,
+            path: nextTemplate.source_storage_path,
+            formCode: nextTemplate.form_code,
+            scope: nextTemplate.scope,
+            ownerUserId: nextTemplate.owner_user_id,
+          });
 
           if (!request.isCurrent()) {
             return;

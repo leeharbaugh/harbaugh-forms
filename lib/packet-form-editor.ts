@@ -5,7 +5,7 @@ import {
   revertFieldInstanceToResolvedValue,
   type FieldResolutionDiagnostic,
 } from "@/lib/field-resolver";
-import { createPacketFormDownloadUrl } from "@/lib/packet-form-storage";
+import { createPacketFormSignedUrlWithFallback } from "@/lib/storage-path-resolve";
 import {
   ensureFieldInstancesForPacketForm,
   fieldInstancesByFieldId,
@@ -64,6 +64,7 @@ export async function loadPacketFormEditorData(
       form_id,
       document_name,
       storage_path,
+      owner_user_id,
       status,
       forms(
         id,
@@ -134,7 +135,17 @@ export async function loadPacketFormEditorData(
 
   let pdfUrl: string | null = null;
   if (packetForm.storage_path) {
-    pdfUrl = await createPacketFormDownloadUrl(supabase, packetForm.storage_path);
+    const { signedUrl } = await createPacketFormSignedUrlWithFallback(supabase, {
+      packetFormId: packetForm.id,
+      packetId: packetForm.packet_id,
+      path: packetForm.storage_path,
+      ownerUserId:
+        (packetFormData as { owner_user_id?: string | null }).owner_user_id ??
+        null,
+      formId: packetForm.form_id,
+      documentName: packetForm.document_name,
+    });
+    pdfUrl = signedUrl;
   }
 
   return {

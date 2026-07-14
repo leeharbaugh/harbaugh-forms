@@ -7,6 +7,9 @@
     "lint": "eslint .",
     "test:mapbox": "node --experimental-strip-types --test lib/mapbox-address.test.ts",
     "test:amount-format": "node --experimental-strip-types --test lib/amount-format.test.ts lib/acroform-field-type-inference.test.ts",
+    "test:storage-paths": "node --experimental-strip-types --test lib/form-storage.test.ts lib/storage-path-resolve.test.ts lib/packet-form-storage.test.ts lib/packet-form-download.test.ts",
+    "migrate:storage-paths": "node --experimental-strip-types --env-file=.env.local scripts/migrate-storage-paths.ts",
+    "migrate:storage-paths:cli": "node --experimental-strip-types scripts/migrate-storage-paths-cli.ts",
     "postinstall": "node scripts/copy-pdf-worker.js"
   },
   "dependencies": {

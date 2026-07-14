@@ -7,9 +7,12 @@ import {
 } from "@/lib/packet-form-download-names";
 import {
   GENERATED_DOCUMENTS_BUCKET,
-  createPacketFormDownloadUrl,
   triggerBrowserDownload,
 } from "@/lib/packet-form-storage";
+import {
+  createPacketFormSignedUrlWithFallback,
+  downloadStorageBytesWithFallback,
+} from "@/lib/storage-path-resolve";
 import type { PacketFormFieldView } from "@/lib/types/packet-form-editor";
 import type { PacketForm } from "@/lib/types/packet";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -17,7 +20,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export type PacketFormDownloadTarget = Pick<
   PacketForm,
   "id" | "packet_id" | "form_id" | "document_name" | "storage_path"
->;
+> & {
+  owner_user_id?: string | null;
+};
 
 export type DownloadAllProgress = {
   completed: number;
@@ -43,18 +48,24 @@ export function supportsDirectoryPicker(): boolean {
 
 async function downloadStoragePdfBytes(
   supabase: SupabaseClient,
-  storagePath: string,
+  document: PacketFormDownloadTarget,
 ): Promise<Uint8Array> {
-  const { data, error } = await supabase.storage
-    .from(GENERATED_DOCUMENTS_BUCKET)
-    .download(storagePath.trim());
-
-  if (error || !data) {
-    throw new Error(error?.message ?? "Failed to download packet form PDF.");
+  if (!document.storage_path?.trim()) {
+    throw new Error("Packet form storage path is missing.");
   }
 
-  const buffer = await data.arrayBuffer();
-  return new Uint8Array(buffer);
+  const { bytes } = await downloadStorageBytesWithFallback(supabase, {
+    bucket: GENERATED_DOCUMENTS_BUCKET,
+    entityType: "PACKET_FORM",
+    entityId: document.id,
+    packetId: document.packet_id,
+    path: document.storage_path,
+    ownerUserId: document.owner_user_id,
+    formId: document.form_id,
+    documentName: document.document_name,
+  });
+
+  return bytes;
 }
 
 function triggerFilledPdfDownload(
@@ -96,13 +107,10 @@ export async function getFilledPacketFormPdfBytes(
   }
 
   if (document.form_id == null) {
-    return downloadStoragePdfBytes(supabase, document.storage_path);
+    return downloadStoragePdfBytes(supabase, document);
   }
 
-  const sourceBytesPromise = downloadStoragePdfBytes(
-    supabase,
-    document.storage_path,
-  );
+  const sourceBytesPromise = downloadStoragePdfBytes(supabase, document);
 
   let fields = options?.fields;
   if (!fields) {
@@ -136,12 +144,16 @@ export async function downloadFilledPacketFormPdf(
   }
 
   if (document.form_id == null) {
-    const url = await createPacketFormDownloadUrl(
-      supabase,
-      document.storage_path,
-    );
+    const { signedUrl } = await createPacketFormSignedUrlWithFallback(supabase, {
+      packetFormId: document.id,
+      packetId: document.packet_id,
+      path: document.storage_path,
+      ownerUserId: document.owner_user_id,
+      formId: document.form_id,
+      documentName: document.document_name,
+    });
     triggerBrowserDownload(
-      url,
+      signedUrl,
       options?.fileName
         ? sanitizeHumanPdfFileName(options.fileName)
         : document.document_name,

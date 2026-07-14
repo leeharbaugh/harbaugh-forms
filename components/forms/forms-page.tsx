@@ -19,7 +19,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import { uploadFormPdf } from "@/lib/form-storage";
+import {
+  buildFormStoragePath,
+  buildPendingFormStoragePath,
+  removeFormStorageObject,
+  uploadFormPdfToPath,
+} from "@/lib/form-storage";
 import { createClient } from "@/lib/supabase/client";
 import {
   type Form,
@@ -146,34 +151,6 @@ export function FormsPage() {
     setFormError(null);
   };
 
-  const resolveStoragePath = async (
-    normalized: ReturnType<typeof normalizeFormInput>,
-    templateId: number | null,
-  ) => {
-    const supabase = createClient();
-    const folderKey = normalized.form_code || String(templateId ?? "template");
-
-    if (formMode === "create") {
-      if (!pdfFile) {
-        throw new Error("A PDF file is required when creating a form template.");
-      }
-      return uploadFormPdf(supabase, pdfFile, folderKey);
-    }
-
-    if (replacePdf) {
-      if (!pdfFile) {
-        throw new Error("Select a PDF file to replace the current template.");
-      }
-      return uploadFormPdf(supabase, pdfFile, folderKey);
-    }
-
-    if (!existingStoragePath?.trim()) {
-      throw new Error("A stored PDF is required for this form template.");
-    }
-
-    return existingStoragePath;
-  };
-
   const handleSave = async () => {
     const validationError = validateFormInput(formValue, {
       mode: formMode === "create" ? "create" : "edit",
@@ -195,31 +172,113 @@ export function FormsPage() {
 
     try {
       if (formMode === "create") {
-        const sourceStoragePath = await resolveStoragePath(normalized, null);
+        if (!pdfFile) {
+          throw new Error("A PDF file is required when creating a form template.");
+        }
 
         const {
           data: { user },
         } = await supabase.auth.getUser();
 
-        const { error } = await supabase.from("forms").insert({
-          ...normalized,
-          source_storage_path: sourceStoragePath,
-          scope: "PRIVATE",
-          owner_user_id: user?.id ?? null,
-        });
+        if (!user?.id) {
+          throw new Error("You must be signed in to create a form.");
+        }
 
-        if (error) {
-          setFormError(error.message);
+        const pendingPath = buildPendingFormStoragePath(
+          globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`,
+        );
+
+        const { data: created, error: insertError } = await supabase
+          .from("forms")
+          .insert({
+            ...normalized,
+            source_storage_path: pendingPath,
+            scope: "PRIVATE",
+            owner_user_id: user.id,
+          })
+          .select("id")
+          .single();
+
+        if (insertError || !created?.id) {
+          setFormError(insertError?.message ?? "Failed to create form.");
           setIsSubmitting(false);
           return;
+        }
+
+        const formId = created.id as number;
+        let uploadedPath: string | null = null;
+        try {
+          const storagePath = buildFormStoragePath({
+            scope: "PRIVATE",
+            formId,
+            fileName: pdfFile.name,
+            ownerUserId: user.id,
+          });
+          uploadedPath = await uploadFormPdfToPath(supabase, pdfFile, storagePath);
+          const { error: updateError } = await supabase
+            .from("forms")
+            .update({ source_storage_path: uploadedPath })
+            .eq("id", formId);
+
+          if (updateError) {
+            throw new Error(updateError.message);
+          }
+        } catch (uploadError) {
+          if (uploadedPath) {
+            try {
+              await removeFormStorageObject(supabase, uploadedPath);
+            } catch (cleanupError) {
+              console.error(
+                "[forms-page] Failed to remove orphan form PDF after create error",
+                cleanupError,
+              );
+            }
+          }
+          await supabase
+            .from("forms")
+            .update({ status: "DELETED" })
+            .eq("id", formId);
+          throw uploadError;
         }
       }
 
       if (formMode === "edit" && editingTemplateId !== null) {
-        const sourceStoragePath = await resolveStoragePath(
-          normalized,
-          editingTemplateId,
-        );
+        let sourceStoragePath = existingStoragePath?.trim() || "";
+
+        if (replacePdf) {
+          if (!pdfFile) {
+            throw new Error("Select a PDF file to replace the current template.");
+          }
+
+          const { data: existingForm, error: existingError } = await supabase
+            .from("forms")
+            .select("id, scope, owner_user_id")
+            .eq("id", editingTemplateId)
+            .eq("status", "ACTIVE")
+            .single();
+
+          if (existingError || !existingForm) {
+            throw new Error(existingError?.message ?? "Form not found.");
+          }
+
+          const storagePath = buildFormStoragePath({
+            scope: (existingForm.scope as "GLOBAL" | "PRIVATE" | "ORGANIZATION") ?? "PRIVATE",
+            formId: editingTemplateId,
+            fileName: pdfFile.name,
+            ownerUserId: existingForm.owner_user_id,
+          });
+
+          sourceStoragePath = await uploadFormPdfToPath(
+            supabase,
+            pdfFile,
+            storagePath,
+            { upsert: true },
+          );
+        }
+
+        if (!sourceStoragePath) {
+          throw new Error("A stored PDF is required for this form template.");
+        }
 
         const { error } = await supabase
           .from("forms")

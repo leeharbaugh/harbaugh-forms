@@ -448,7 +448,9 @@ const COLLECTION_FOR_GENERATION_SELECT = `
       id,
       form_name,
       form_code,
-      source_storage_path
+      source_storage_path,
+      scope,
+      owner_user_id
     )
   )
 `;
