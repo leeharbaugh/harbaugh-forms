@@ -24,7 +24,27 @@ export async function ensureUserProfile(
   }
 
   if (existing) {
-    return existing as Profile;
+    const typed = existing as Profile;
+
+    // Activate invited profiles without overwriting admin-provisioned fields.
+    if (
+      typed.status === "ACTIVE" &&
+      typed.onboarding_status === "INVITED"
+    ) {
+      const { data: activated, error: activateError } = await supabase.rpc(
+        "activate_invited_profile",
+      );
+
+      if (activateError) {
+        throw new Error(activateError.message);
+      }
+
+      if (activated) {
+        return activated as Profile;
+      }
+    }
+
+    return typed;
   }
 
   const metadata = user.user_metadata ?? {};
@@ -37,7 +57,15 @@ export async function ensureUserProfile(
       typeof metadata.middle_name === "string" ? metadata.middle_name : null,
     last_name:
       typeof metadata.last_name === "string" ? metadata.last_name : null,
+    preferred_name:
+      typeof metadata.preferred_name === "string"
+        ? metadata.preferred_name
+        : null,
+    display_name:
+      typeof metadata.display_name === "string" ? metadata.display_name : null,
     app_role: "USER" as const,
+    onboarding_status: "ACTIVE" as const,
+    activated_at: new Date().toISOString(),
   };
 
   const { data: created, error: insertError } = await supabase

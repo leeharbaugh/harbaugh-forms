@@ -83,8 +83,19 @@ If you wish to just develop locally and not deploy to Vercel, [follow the steps 
 
   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`) is safe for browser and client-side code.
   - `SUPABASE_SECRET_KEY` (`sb_secret_...`) is server-only — use via `lib/supabase/admin.ts`, never in client components.
+  - Locally, `SUPABASE_SERVICE_ROLE_KEY` is accepted as a fallback when `SUPABASE_SECRET_KEY` is unset.
 
   Keys are in [your Supabase project's API settings](https://supabase.com/dashboard/project/_?showConnect=true)
+
+  For beta invitations, also disable public email signup in the Supabase Dashboard:
+
+  **Authentication → Providers → Email → uncheck “Enable sign ups”**
+
+  Keep invite/password recovery emails enabled. Add redirect allowlist URLs for:
+
+  - `http://localhost:3000/auth/confirm**`
+  - `http://localhost:3000/auth/update-password`
+  - your Vercel production/preview equivalents
 
 5. You can now run the Next.js local development server:
 

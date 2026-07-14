@@ -2,12 +2,18 @@ export type ProfileStatus = "ACTIVE" | "INACTIVE" | "DELETED";
 
 export type AppRole = "ADMIN" | "USER";
 
+export type OnboardingStatus = "INVITED" | "ACTIVE" | "DISABLED";
+
 export type Profile = {
   id: string;
   create_date: string;
   update_date: string;
   status: ProfileStatus;
   app_role: AppRole;
+  onboarding_status: OnboardingStatus;
+  invited_at: string | null;
+  activated_at: string | null;
+  invited_by_user_id: string | null;
   first_name: string | null;
   middle_name: string | null;
   last_name: string | null;
