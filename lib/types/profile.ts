@@ -59,6 +59,11 @@ export function formatProfileDisplayName(profile: ProfileNameFields): string {
   return profile.email?.trim() || "User";
 }
 
+/** Quiet AppNav greeting using the same name-resolution priority. */
+export function formatSignedInGreeting(profile: ProfileNameFields): string {
+  return `Hello, ${formatProfileDisplayName(profile)}`;
+}
+
 export function formatProfileLegalName(profile: Profile): string {
   const parts = [profile.first_name, profile.middle_name, profile.last_name]
     .filter(Boolean)

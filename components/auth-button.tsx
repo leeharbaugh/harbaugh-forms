@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Button } from "./ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { LogoutButton } from "./logout-button";
-import { formatProfileDisplayName } from "@/lib/types/profile";
+import { formatSignedInGreeting } from "@/lib/types/profile";
 
 export async function AuthButton() {
   const supabase = await createClient();
@@ -29,7 +29,7 @@ export async function AuthButton() {
     .eq("id", user.id)
     .maybeSingle();
 
-  const identity = formatProfileDisplayName({
+  const greeting = formatSignedInGreeting({
     preferred_name: profile?.preferred_name ?? null,
     display_name: profile?.display_name ?? null,
     first_name: profile?.first_name ?? null,
@@ -42,10 +42,10 @@ export async function AuthButton() {
     <div className="flex max-w-[14rem] items-center gap-2 sm:max-w-none sm:gap-3">
       <span
         className="truncate text-xs text-muted-foreground"
-        title={user.email ?? identity}
+        title={user.email ?? greeting}
+        aria-label={greeting}
       >
-        <span className="sr-only">Signed in as </span>
-        {identity}
+        {greeting}
       </span>
       <LogoutButton />
     </div>
