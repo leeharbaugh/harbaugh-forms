@@ -20,8 +20,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { copyFormToGlobalLibrary } from "@/lib/admin/copy-form-to-global";
+import {
+  canOfferCopyToGlobalLibrary,
+  presentFormOwnership,
+  resolveFormOwnerDisplayName,
+  type FormOwnerProfile,
+} from "@/lib/form-owner-display";
 import {
   buildFormStoragePath,
   buildPendingFormStoragePath,
@@ -47,36 +55,47 @@ import {
 } from "@/lib/types/form";
 import { useLibraryActor } from "@/lib/use-library-actor";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 type FormMode = "hidden" | "create" | "edit";
 
+type FormListItem = Form & {
+  ownerDisplayName?: string | null;
+};
+
 const FORM_TABLE_COLUMNS: ResizableDataTableColumn[] = [
   { id: "id", label: "ID", defaultWidth: 72, minWidth: 48 },
-  { id: "form_name", label: "Template name", defaultWidth: 200 },
+  { id: "form_name", label: "Template name", defaultWidth: 220 },
   { id: "form_code", label: "Template code", defaultWidth: 140 },
   { id: "category", label: "Category", defaultWidth: 120 },
   { id: "version", label: "Version", defaultWidth: 100, minWidth: 72 },
-  { id: "storage_path", label: "Storage path", defaultWidth: 220 },
+  { id: "storage_path", label: "Storage path", defaultWidth: 200 },
   {
     id: "actions",
     label: "Actions",
-    defaultWidth: 300,
-    minWidth: 260,
+    defaultWidth: 360,
+    minWidth: 280,
+    maxWidth: 480,
     isActions: true,
   },
 ];
 
 export function FormsPage() {
   const { actor } = useLibraryActor();
-  const [templates, setTemplates] = useState<Form[]>([]);
+  const router = useRouter();
+  const [templates, setTemplates] = useState<FormListItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [listMessage, setListMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<FormMode>("hidden");
   const [editingTemplateId, setEditingTemplateId] = useState<number | null>(
+    null,
+  );
+  const [editingOwnerLabel, setEditingOwnerLabel] = useState<string | null>(
     null,
   );
   const [formValue, setFormValue] = useState(emptyFormInput());
@@ -88,6 +107,8 @@ export function FormsPage() {
   const [templatePendingDelete, setTemplatePendingDelete] =
     useState<Form | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [copyTarget, setCopyTarget] = useState<FormListItem | null>(null);
+  const [isCopying, setIsCopying] = useState(false);
 
   const loadTemplates = useCallback(async () => {
     const supabase = createClient();
@@ -118,12 +139,54 @@ export function FormsPage() {
     if (error) {
       setListError(error.message);
       setTemplates([]);
-    } else {
-      setTemplates((data as Form[]) ?? []);
+      setIsLoading(false);
+      return;
     }
 
+    const rows = (data as Form[]) ?? [];
+    let enriched: FormListItem[] = rows;
+
+    if (actor?.isActiveAdmin) {
+      const ownerIds = [
+        ...new Set(
+          rows
+            .map((row) => row.owner_user_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+
+      if (ownerIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select(
+            "id, display_name, preferred_name, first_name, last_name, email, status, onboarding_status",
+          )
+          .in("id", ownerIds);
+
+        const byId = new Map(
+          ((profiles ?? []) as (FormOwnerProfile & { id: string })[]).map(
+            (profile) => [profile.id, profile],
+          ),
+        );
+
+        enriched = rows.map((row) => {
+          if (!row.owner_user_id) {
+            return row;
+          }
+          const profile = byId.get(row.owner_user_id);
+          return {
+            ...row,
+            ownerDisplayName: resolveFormOwnerDisplayName(profile, {
+              authEmail: profile?.email,
+            }),
+          };
+        });
+      }
+    }
+
+    setTemplates(enriched);
     setIsLoading(false);
-  }, [searchQuery]);
+  }, [searchQuery, actor?.isActiveAdmin]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -139,6 +202,7 @@ export function FormsPage() {
     setPdfFile(null);
     setReplacePdf(false);
     setFormError(null);
+    setEditingOwnerLabel(null);
   };
 
   const closeForm = () => {
@@ -153,7 +217,7 @@ export function FormsPage() {
     resetFormState();
   };
 
-  const openEditForm = (template: Form) => {
+  const openEditForm = (template: FormListItem) => {
     if (!canEditForm(actor, template)) {
       setListError(LIBRARY_PERMISSION_DENIED);
       return;
@@ -165,6 +229,75 @@ export function FormsPage() {
     setPdfFile(null);
     setReplacePdf(false);
     setFormError(null);
+
+    const ownership = presentFormOwnership({
+      scope: template.scope,
+      ownerUserId: template.owner_user_id,
+      viewerUserId: actor?.userId ?? null,
+      isActiveAdmin: Boolean(actor?.isActiveAdmin),
+      ownerDisplayName: template.ownerDisplayName,
+    });
+    setEditingOwnerLabel(ownership.detailLine);
+  };
+
+  const ownershipFor = useCallback(
+    (template: FormListItem) =>
+      presentFormOwnership({
+        scope: template.scope,
+        ownerUserId: template.owner_user_id,
+        viewerUserId: actor?.userId ?? null,
+        isActiveAdmin: Boolean(actor?.isActiveAdmin),
+        ownerDisplayName: template.ownerDisplayName,
+      }),
+    [actor?.isActiveAdmin, actor?.userId],
+  );
+
+  const openCopyDialog = (template: FormListItem) => {
+    if (
+      !canOfferCopyToGlobalLibrary({
+        isActiveAdmin: Boolean(actor?.isActiveAdmin),
+        scope: template.scope,
+        status: template.status,
+        ownerUserId: template.owner_user_id,
+        sourceStoragePath: template.source_storage_path,
+      })
+    ) {
+      setListError("You do not have permission to copy this form.");
+      return;
+    }
+    setCopyTarget(template);
+    setListError(null);
+    setListMessage(null);
+  };
+
+  const closeCopyDialog = () => {
+    if (isCopying) {
+      return;
+    }
+    setCopyTarget(null);
+  };
+
+  const handleConfirmCopy = async () => {
+    if (!copyTarget) {
+      return;
+    }
+    setIsCopying(true);
+    setListError(null);
+    setListMessage(null);
+
+    const result = await copyFormToGlobalLibrary(copyTarget.id);
+    setIsCopying(false);
+
+    if (!result.ok) {
+      setListError(result.error);
+      setCopyTarget(null);
+      return;
+    }
+
+    setCopyTarget(null);
+    setListMessage(result.message);
+    await loadTemplates();
+    router.push(`/forms/${result.newFormId}/editor`);
   };
 
   const handleSave = async () => {
@@ -402,7 +535,12 @@ export function FormsPage() {
   const formDescription =
     formMode === "create"
       ? "Upload a blank PDF and register it as a reusable form template."
-      : "Update template details or replace the stored PDF.";
+      : editingOwnerLabel
+        ? editingOwnerLabel
+        : "Update template details or replace the stored PDF.";
+
+  const copyOwnerName =
+    copyTarget?.ownerDisplayName?.trim() || "this user";
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
@@ -419,6 +557,23 @@ export function FormsPage() {
         confirmingLabel="Deleting…"
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
+      />
+      <ConfirmDialog
+        open={copyTarget != null}
+        title="Copy to Global Library?"
+        message={
+          copyTarget
+            ? `This will create a separate Global copy of “${copyTarget.form_name}.” The original private form owned by ${copyOwnerName} will remain unchanged.`
+            : undefined
+        }
+        confirmLabel="Copy to Global Library"
+        cancelLabel="Cancel"
+        isConfirming={isCopying}
+        confirmingLabel="Copying…"
+        onConfirm={() => void handleConfirmCopy()}
+        onCancel={closeCopyDialog}
+        variant="default"
+        initialFocus="confirm"
       />
       <ListPageHeader
         title="Form Templates"
@@ -471,6 +626,9 @@ export function FormsPage() {
           />
 
           {listError && <p className="text-sm text-destructive">{listError}</p>}
+          {listMessage && (
+            <p className="text-sm text-muted-foreground">{listMessage}</p>
+          )}
 
           {isLoading ? (
             <p className="text-sm text-muted-foreground">
@@ -494,75 +652,106 @@ export function FormsPage() {
               tablePreferencesKey="forms_list"
               columns={FORM_TABLE_COLUMNS}
             >
-              {templates.map((template) => (
-                <ResizableDataTableRow key={template.id}>
-                  <ResizableDataTableCell className="text-muted-foreground">
-                    {formatFormReference(template.id)}
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell>
-                    <div className="flex min-w-0 items-center gap-2">
+              {templates.map((template) => {
+                const ownership = ownershipFor(template);
+                const showCopy = canOfferCopyToGlobalLibrary({
+                  isActiveAdmin: Boolean(actor?.isActiveAdmin),
+                  scope: template.scope,
+                  status: template.status,
+                  ownerUserId: template.owner_user_id,
+                  sourceStoragePath: template.source_storage_path,
+                });
+
+                return (
+                  <ResizableDataTableRow key={template.id}>
+                    <ResizableDataTableCell className="text-muted-foreground">
+                      {formatFormReference(template.id)}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className="line-clamp-2 font-medium leading-snug"
+                            title={template.form_name}
+                          >
+                            {template.form_name}
+                          </span>
+                          {ownership.isOtherUserPrivate ? (
+                            <span
+                              className="shrink-0 rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
+                              title={ownership.detailLine ?? undefined}
+                            >
+                              {ownership.primaryLabel}
+                            </span>
+                          ) : (
+                            <LibraryScopeBadge scope={template.scope} />
+                          )}
+                        </div>
+                      </div>
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell>
                       <span
-                        className="line-clamp-2 font-medium leading-snug"
-                        title={template.form_name}
+                        className="line-clamp-2 break-all font-mono text-xs leading-snug"
+                        title={template.form_code}
                       >
-                        {template.form_name}
+                        {template.form_code}
                       </span>
-                      <LibraryScopeBadge scope={template.scope} />
-                    </div>
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell>
-                    <span
-                      className="line-clamp-2 break-all font-mono text-xs leading-snug"
-                      title={template.form_code}
-                    >
-                      {template.form_code}
-                    </span>
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell truncate>
-                    {formatFormCategory(template.form_category)}
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell truncate>
-                    {template.version_label ?? "—"}
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell>
-                    <span
-                      className="line-clamp-2 break-all font-mono text-xs leading-snug text-muted-foreground"
-                      title={template.source_storage_path}
-                    >
-                      {template.source_storage_path}
-                    </span>
-                  </ResizableDataTableCell>
-                  <ResizableDataTableActionsCell>
-                    <ListRowActions>
-                      {canMapFormFields(actor, template) ? (
-                        <Button variant="outline" size="sm" asChild>
-                          <Link href={`/forms/${template.id}/editor`}>
-                            Map fields
-                          </Link>
-                        </Button>
-                      ) : null}
-                      {canEditForm(actor, template) ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openEditForm(template)}
-                        >
-                          Edit
-                        </Button>
-                      ) : null}
-                      {canDeleteForm(actor, template) ? (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => openDeleteDialog(template)}
-                        >
-                          Delete
-                        </Button>
-                      ) : null}
-                    </ListRowActions>
-                  </ResizableDataTableActionsCell>
-                </ResizableDataTableRow>
-              ))}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell truncate>
+                      {formatFormCategory(template.form_category)}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell truncate>
+                      {template.version_label ?? "—"}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell>
+                      <span
+                        className="line-clamp-2 break-all font-mono text-xs leading-snug text-muted-foreground"
+                        title={template.source_storage_path}
+                      >
+                        {template.source_storage_path}
+                      </span>
+                    </ResizableDataTableCell>
+                    <ResizableDataTableActionsCell>
+                      <ListRowActions>
+                        {canMapFormFields(actor, template) ? (
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={`/forms/${template.id}/editor`}>
+                              Map fields
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {showCopy ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openCopyDialog(template)}
+                          >
+                            Copy to Global Library
+                          </Button>
+                        ) : null}
+                        {canEditForm(actor, template) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditForm(template)}
+                          >
+                            Edit
+                          </Button>
+                        ) : null}
+                        {canDeleteForm(actor, template) ? (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => openDeleteDialog(template)}
+                          >
+                            Delete
+                          </Button>
+                        ) : null}
+                      </ListRowActions>
+                    </ResizableDataTableActionsCell>
+                  </ResizableDataTableRow>
+                );
+              })}
             </ResizableDataTable>
           )}
         </CardContent>
