@@ -20,10 +20,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { RecordStatusBadge } from "@/components/ui/list-badges";
 import { createClient } from "@/lib/supabase/client";
 import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
+import {
+  assertNoLiveAddressConflict,
+  isUniqueViolationError,
+  PROPERTY_DUPLICATE_ADDRESS_MESSAGE,
+  restoreProperty,
+} from "@/lib/property-uniqueness";
 import {
   type Property,
   emptyPropertyInput,
@@ -58,6 +67,7 @@ const PROPERTY_TABLE_COLUMNS: ResizableDataTableColumn[] = [
 export function PropertiesPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showDeleted, setShowDeleted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -72,6 +82,7 @@ export function PropertiesPage() {
   const [propertyPendingDelete, setPropertyPendingDelete] =
     useState<Property | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRestoringId, setIsRestoringId] = useState<number | null>(null);
 
   const loadProperties = useCallback(async () => {
     const supabase = createClient();
@@ -81,9 +92,14 @@ export function PropertiesPage() {
     let query = supabase
       .from("properties")
       .select("*")
-      .eq("status", "ACTIVE")
       .order("street_address", { ascending: true })
       .order("city", { ascending: true });
+
+    if (showDeleted) {
+      query = query.in("status", ["ACTIVE", "DELETED"]);
+    } else {
+      query = query.eq("status", "ACTIVE");
+    }
 
     const trimmedSearch = searchQuery.trim();
     if (trimmedSearch) {
@@ -111,7 +127,7 @@ export function PropertiesPage() {
     }
 
     setIsLoading(false);
-  }, [searchQuery]);
+  }, [searchQuery, showDeleted]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -155,32 +171,57 @@ export function PropertiesPage() {
 
     const supabase = createClient();
 
-    if (formMode === "create") {
-      const createdPropertyId = await saveNewPropertyWithDuplicateHandling(
-        supabase,
-        formValue,
-        promptDuplicate,
+    try {
+      if (formMode === "create") {
+        const createdPropertyId = await saveNewPropertyWithDuplicateHandling(
+          supabase,
+          formValue,
+          promptDuplicate,
+        );
+
+        if (createdPropertyId === null) {
+          setIsSubmitting(false);
+          closeForm();
+          return;
+        }
+      }
+
+      if (formMode === "edit" && editingPropertyId !== null) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        await assertNoLiveAddressConflict(
+          supabase,
+          formValue,
+          user?.id ?? null,
+          editingPropertyId,
+        );
+
+        const { error } = await supabase
+          .from("properties")
+          .update(normalized)
+          .eq("id", editingPropertyId)
+          .eq("status", "ACTIVE");
+
+        if (error) {
+          if (isUniqueViolationError(error)) {
+            setFormError(PROPERTY_DUPLICATE_ADDRESS_MESSAGE);
+          } else {
+            setFormError(error.message);
+          }
+          setIsSubmitting(false);
+          return;
+        }
+      }
+    } catch (saveError) {
+      setFormError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to save property.",
       );
-
-      if (createdPropertyId === null) {
-        setIsSubmitting(false);
-        closeForm();
-        return;
-      }
-    }
-
-    if (formMode === "edit" && editingPropertyId !== null) {
-      const { error } = await supabase
-        .from("properties")
-        .update(normalized)
-        .eq("id", editingPropertyId)
-        .eq("status", "ACTIVE");
-
-      if (error) {
-        setFormError(error.message);
-        setIsSubmitting(false);
-        return;
-      }
+      setIsSubmitting(false);
+      return;
     }
 
     setIsSubmitting(false);
@@ -229,6 +270,24 @@ export function PropertiesPage() {
     await loadProperties();
   };
 
+  const handleRestore = async (property: Property) => {
+    setIsRestoringId(property.id);
+    setListError(null);
+    const supabase = createClient();
+    try {
+      await restoreProperty(supabase, property.id);
+      await loadProperties();
+    } catch (restoreError) {
+      setListError(
+        restoreError instanceof Error
+          ? restoreError.message
+          : "Failed to restore property.",
+      );
+    } finally {
+      setIsRestoringId(null);
+    }
+  };
+
   const formTitle =
     formMode === "create"
       ? "Add property"
@@ -262,7 +321,7 @@ export function PropertiesPage() {
       />
       <ListPageHeader
         title="Properties"
-        description="Manage active properties for Harbaugh Forms."
+        description="Manage properties for Harbaugh Forms."
         action={
           formMode === "hidden" ? (
             <Button onClick={openCreateForm}>Add property</Button>
@@ -293,18 +352,33 @@ export function PropertiesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Active properties</CardTitle>
+          <CardTitle>
+            {showDeleted ? "Properties" : "Active properties"}
+          </CardTitle>
           <CardDescription>
             Search by street address, city, ZIP, county, MLS number, tax ID, or
             addition.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Input
-            placeholder="Search properties..."
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Input
+              placeholder="Search properties..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="flex-1"
+            />
+            <div className="flex items-center gap-2">
+              <AppCheckbox
+                id="show-deleted-properties"
+                checked={showDeleted}
+                onCheckedChange={(checked) => setShowDeleted(checked === true)}
+              />
+              <Label htmlFor="show-deleted-properties" className="text-sm">
+                Show deleted
+              </Label>
+            </div>
+          </div>
 
           {listError && <p className="text-sm text-destructive">{listError}</p>}
 
@@ -328,68 +402,94 @@ export function PropertiesPage() {
               tablePreferencesKey="properties_list"
               columns={PROPERTY_TABLE_COLUMNS}
             >
-              {properties.map((property) => (
-                <ResizableDataTableRow key={property.id}>
-                  <ResizableDataTableCell className="text-muted-foreground">
-                    {formatPropertyReference(property.id)}
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell
-                    truncate
-                    title={property.street_address}
-                    className="font-medium"
+              {properties.map((property) => {
+                const deleted = property.status === "DELETED";
+                return (
+                  <ResizableDataTableRow
+                    key={property.id}
+                    className={deleted ? "bg-muted/30" : undefined}
                   >
-                    {property.street_address}
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell truncate title={property.unit ?? undefined}>
-                    {property.unit ?? "—"}
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell truncate title={property.city}>
-                    {property.city}
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell>{property.state}</ResizableDataTableCell>
-                  <ResizableDataTableCell>{property.zip}</ResizableDataTableCell>
-                  <ResizableDataTableCell
-                    truncate
-                    title={property.county ?? undefined}
-                  >
-                    {property.county ?? "—"}
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell truncate>
-                    {formatPropertyType(property.property_type)}
-                  </ResizableDataTableCell>
-                  <ResizableDataTableCell
-                    truncate
-                    title={property.mls_number ?? undefined}
-                  >
-                    {property.mls_number ?? "—"}
-                  </ResizableDataTableCell>
-                  <ResizableDataTableActionsCell>
-                    <ListRowActions>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openPropertyForm(property, "view")}
-                      >
-                        View
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openPropertyForm(property, "edit")}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => openDeleteDialog(property)}
-                      >
-                        Delete
-                      </Button>
-                    </ListRowActions>
-                  </ResizableDataTableActionsCell>
-                </ResizableDataTableRow>
-              ))}
+                    <ResizableDataTableCell className="text-muted-foreground">
+                      {formatPropertyReference(property.id)}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell
+                      truncate
+                      title={property.street_address}
+                      className="font-medium"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate">{property.street_address}</span>
+                        {deleted ? (
+                          <RecordStatusBadge status="DELETED" />
+                        ) : null}
+                      </div>
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell truncate title={property.unit ?? undefined}>
+                      {property.unit ?? "—"}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell truncate title={property.city}>
+                      {property.city}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell>{property.state}</ResizableDataTableCell>
+                    <ResizableDataTableCell>{property.zip}</ResizableDataTableCell>
+                    <ResizableDataTableCell
+                      truncate
+                      title={property.county ?? undefined}
+                    >
+                      {property.county ?? "—"}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell truncate>
+                      {formatPropertyType(property.property_type)}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell
+                      truncate
+                      title={property.mls_number ?? undefined}
+                    >
+                      {property.mls_number ?? "—"}
+                    </ResizableDataTableCell>
+                    <ResizableDataTableActionsCell>
+                      <ListRowActions>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openPropertyForm(property, "view")}
+                        >
+                          View
+                        </Button>
+                        {!deleted ? (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openPropertyForm(property, "edit")}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => openDeleteDialog(property)}
+                            >
+                              Delete
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isRestoringId === property.id}
+                            onClick={() => void handleRestore(property)}
+                          >
+                            {isRestoringId === property.id
+                              ? "Restoring…"
+                              : "Restore"}
+                          </Button>
+                        )}
+                      </ListRowActions>
+                    </ResizableDataTableActionsCell>
+                  </ResizableDataTableRow>
+                );
+              })}
             </ResizableDataTable>
           )}
         </CardContent>

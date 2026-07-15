@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   canCloneCollection,
+  canCreateOrganizationCollection,
   canDeleteCollection,
   canDeleteForm,
   canEditCollection,
@@ -21,6 +22,22 @@ const admin: LibraryActor = {
 const userA: LibraryActor = {
   userId: "user-a",
   isActiveAdmin: false,
+  memberOrganizationIds: ["org-1"],
+  orgAdminOrganizationIds: [],
+};
+
+const orgAdminA: LibraryActor = {
+  userId: "org-admin-a",
+  isActiveAdmin: false,
+  memberOrganizationIds: ["org-1"],
+  orgAdminOrganizationIds: ["org-1"],
+};
+
+const outsider: LibraryActor = {
+  userId: "outsider",
+  isActiveAdmin: false,
+  memberOrganizationIds: ["org-2"],
+  orgAdminOrganizationIds: [],
 };
 
 const userB: LibraryActor = {
@@ -43,6 +60,13 @@ const privateFormA = {
 const globalCollection = {
   scope: "GLOBAL",
   owner_user_id: null,
+  status: "ACTIVE",
+};
+
+const orgCollection = {
+  scope: "ORGANIZATION",
+  owner_user_id: null,
+  organization_id: "org-1",
   status: "ACTIVE",
 };
 
@@ -75,11 +99,36 @@ describe("form library permissions", () => {
 });
 
 describe("collection library permissions", () => {
-  it("allows users to view and clone global collections but not edit them", () => {
+  it("allows active org members to view and clone organization collections but not edit", () => {
+    assert.equal(canViewCollection(userA, orgCollection), true);
+    assert.equal(canCloneCollection(userA, orgCollection), true);
+    assert.equal(canEditCollection(userA, orgCollection), false);
+    assert.equal(canDeleteCollection(userA, orgCollection), false);
+  });
+
+  it("allows ORG_ADMIN to edit organization collections for their org", () => {
+    assert.equal(canEditCollection(orgAdminA, orgCollection), true);
+    assert.equal(canDeleteCollection(orgAdminA, orgCollection), true);
+    assert.equal(
+      canCreateOrganizationCollection(orgAdminA, "org-1"),
+      true,
+    );
+    assert.equal(
+      canCreateOrganizationCollection(orgAdminA, "org-2"),
+      false,
+    );
+  });
+
+  it("denies outsiders organization collection access", () => {
+    assert.equal(canViewCollection(outsider, orgCollection), false);
+    assert.equal(canCloneCollection(outsider, orgCollection), false);
+    assert.equal(canEditCollection(outsider, orgCollection), false);
+  });
+
+  it("allows legacy global collection view/clone for compatibility", () => {
     assert.equal(canViewCollection(userA, globalCollection), true);
     assert.equal(canCloneCollection(userA, globalCollection), true);
     assert.equal(canEditCollection(userA, globalCollection), false);
-    assert.equal(canDeleteCollection(userA, globalCollection), false);
   });
 
   it("allows owners to edit private collections and denies others", () => {
@@ -89,8 +138,9 @@ describe("collection library permissions", () => {
     assert.equal(canCloneCollection(userA, privateCollectionA), false);
   });
 
-  it("allows admins to edit global collections", () => {
-    assert.equal(canEditCollection(admin, globalCollection), true);
+  it("allows admins to manage organization collections", () => {
+    assert.equal(canEditCollection(admin, orgCollection), true);
+    assert.equal(canCreateOrganizationCollection(admin, "org-1"), true);
   });
 });
 

@@ -17,17 +17,35 @@ type CompactBadgeProps = {
 
 export function LibraryScopeBadge({
   scope,
+  organizationName,
   className,
-}: CompactBadgeProps & { scope: string | null | undefined }) {
+}: CompactBadgeProps & {
+  scope: string | null | undefined;
+  /** When set for organization collections, shown as the badge label. */
+  organizationName?: string | null;
+}) {
   if (!scope) {
     return null;
   }
+
+  const label =
+    scope === "ORGANIZATION" && organizationName?.trim()
+      ? organizationName.trim()
+      : libraryScopeLabel(scope);
+
   return (
     <Badge
       variant={libraryScopeVariant(scope)}
       className={cn("shrink-0 font-medium", className)}
+      title={
+        scope === "ORGANIZATION"
+          ? organizationName
+            ? `Organization · ${organizationName}`
+            : "Organization"
+          : undefined
+      }
     >
-      {libraryScopeLabel(scope)}
+      {label}
     </Badge>
   );
 }

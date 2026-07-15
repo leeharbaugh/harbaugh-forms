@@ -1,3 +1,5 @@
+import { normalizePropertyState } from "@/lib/property-address-normalize";
+
 export type PropertyType =
   | "SINGLE_FAMILY"
   | "CONDO"
@@ -485,7 +487,7 @@ export function normalizePropertyInput(input: PropertyInput) {
     street_address: trim(input.street_address),
     unit: trim(input.unit) || null,
     city: trim(input.city),
-    state: trim(input.state) || "TX",
+    state: normalizePropertyState(trim(input.state) || "TX"),
     zip: trim(input.zip),
     county: trim(input.county) || null,
     parcel_id: trim(input.parcel_id) || null,

@@ -11,6 +11,7 @@
     "test:admin-invite": "node --experimental-strip-types --test lib/admin/invite-validation.test.ts lib/admin/signup-disabled.test.ts",
     "test:admin-orgs": "node --experimental-strip-types --test lib/admin/manage-organizations.test.ts",
     "test:library-permissions": "node --experimental-strip-types --test lib/library-permissions.test.ts",
+    "test:property-address": "node --experimental-strip-types --test lib/property-address-normalize.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",
     "test:ui-lists": "node --experimental-strip-types --test lib/ui/list-badges.test.ts lib/ui/nav-styles.test.ts lib/types/profile.test.ts lib/ui/dialogs-polish.test.ts",
     "test:form-controls": "node --experimental-strip-types --test lib/ui/form-controls.test.ts lib/types/packet-workflow.test.ts",

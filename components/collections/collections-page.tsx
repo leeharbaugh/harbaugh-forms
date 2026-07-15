@@ -31,6 +31,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   assertCanEditCollection,
   canCloneCollection,
+  canCreateOrganizationCollection,
   canDeleteCollection,
   canEditCollection,
   COLLECTION_PERMISSION_DENIED,
@@ -38,7 +39,7 @@ import {
 import {
   type CollectionDetail,
   type CollectionListItem,
-  cloneGlobalCollection,
+  cloneLibraryCollection,
   deleteCollection,
   emptyCollectionInput,
   formatCollectionReference,
@@ -52,9 +53,20 @@ import {
   validateCollectionInput,
 } from "@/lib/types/collection";
 import { useLibraryActor } from "@/lib/use-library-actor";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type FormMode = "hidden" | "create" | "edit" | "view";
+type OrganizationOption = { id: string; name: string };
+
+function collectionScopeForDisplay(
+  scope: string | null | undefined,
+): string {
+  // Legacy GLOBAL collections should not appear as "Global" in the UI.
+  if (scope === "GLOBAL") {
+    return "ORGANIZATION";
+  }
+  return scope ?? "PRIVATE";
+}
 
 const COLLECTION_TABLE_COLUMNS: ResizableDataTableColumn[] = [
   { id: "id", label: "ID", defaultWidth: 72, minWidth: 48 },
@@ -80,6 +92,7 @@ const COLLECTION_TABLE_COLUMNS: ResizableDataTableColumn[] = [
 
 const PACKET_LIST_SELECT = `
   *,
+  organizations(name),
   collection_forms(
     id,
     status
@@ -88,6 +101,7 @@ const PACKET_LIST_SELECT = `
 
 const PACKET_DETAIL_SELECT = `
   *,
+  organizations(name),
   collection_forms(
     id,
     form_id,
@@ -106,6 +120,9 @@ const PACKET_DETAIL_SELECT = `
 export function CollectionsPage() {
   const { actor } = useLibraryActor();
   const [packets, setPackets] = useState<CollectionListItem[]>([]);
+  const [organizationOptions, setOrganizationOptions] = useState<
+    OrganizationOption[]
+  >([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -119,10 +136,59 @@ export function CollectionsPage() {
   const [formMode, setFormMode] = useState<FormMode>("hidden");
   const [editingPacketId, setEditingPacketId] = useState<number | null>(null);
   const [viewingPacketStatus, setViewingPacketStatus] = useState<string>("ACTIVE");
+  const [viewingPacketScope, setViewingPacketScope] = useState<string>("PRIVATE");
+  const [viewingOrganizationName, setViewingOrganizationName] = useState<
+    string | null
+  >(null);
   const [formValue, setFormValue] = useState(emptyCollectionInput());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [packetPendingDelete, setPacketPendingDelete] =
     useState<CollectionListItem | null>(null);
+
+  const createOrganizationOptions = useMemo(() => {
+    if (!actor) {
+      return [];
+    }
+    if (actor.isActiveAdmin) {
+      return organizationOptions;
+    }
+    const adminIds = new Set(actor.orgAdminOrganizationIds ?? []);
+    return organizationOptions.filter((org) => adminIds.has(org.id));
+  }, [actor, organizationOptions]);
+
+  const loadOrganizationOptions = useCallback(async () => {
+    if (!actor) {
+      setOrganizationOptions([]);
+      return;
+    }
+
+    const supabase = createClient();
+    let query = supabase
+      .from("organizations")
+      .select("id, name")
+      .eq("status", "ACTIVE")
+      .order("name", { ascending: true });
+
+    if (!actor.isActiveAdmin) {
+      const ids = actor.orgAdminOrganizationIds ?? [];
+      if (ids.length === 0) {
+        setOrganizationOptions([]);
+        return;
+      }
+      query = query.in("id", ids);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      setOrganizationOptions([]);
+      return;
+    }
+    setOrganizationOptions((data as OrganizationOption[]) ?? []);
+  }, [actor]);
+
+  useEffect(() => {
+    void loadOrganizationOptions();
+  }, [loadOrganizationOptions]);
 
   const loadPackets = useCallback(async () => {
     const supabase = createClient();
@@ -176,6 +242,8 @@ export function CollectionsPage() {
     setFormValue(emptyCollectionInput());
     setFormError(null);
     setViewingPacketStatus("ACTIVE");
+    setViewingPacketScope("PRIVATE");
+    setViewingOrganizationName(null);
   };
 
   const closeForm = () => {
@@ -185,9 +253,20 @@ export function CollectionsPage() {
   };
 
   const openCreateForm = () => {
+    const defaultOrgId =
+      createOrganizationOptions.length === 1
+        ? createOrganizationOptions[0].id
+        : null;
     setFormMode("create");
     setEditingPacketId(null);
     resetFormState();
+    if (defaultOrgId && canCreateOrganizationCollection(actor, defaultOrgId)) {
+      setFormValue({
+        ...emptyCollectionInput(),
+        scope: "PRIVATE",
+        organization_id: null,
+      });
+    }
   };
 
   const openPacketForm = async (packetId: number, mode: "edit" | "view") => {
@@ -208,6 +287,7 @@ export function CollectionsPage() {
     }
 
     const packet = data as CollectionDetail;
+    const orgName = packet.organizations?.name ?? null;
 
     if (mode === "edit") {
       if (isCollectionDeleted(packet)) {
@@ -221,6 +301,8 @@ export function CollectionsPage() {
         setFormMode("view");
         setEditingPacketId(packet.id);
         setViewingPacketStatus(packet.status);
+        setViewingPacketScope(collectionScopeForDisplay(packet.scope));
+        setViewingOrganizationName(orgName);
         setFormValue(collectionToInput(packet));
         return;
       }
@@ -229,6 +311,8 @@ export function CollectionsPage() {
     setFormMode(mode);
     setEditingPacketId(packet.id);
     setViewingPacketStatus(packet.status);
+    setViewingPacketScope(collectionScopeForDisplay(packet.scope));
+    setViewingOrganizationName(orgName);
     setFormValue(collectionToInput(packet));
   };
 
@@ -246,7 +330,7 @@ export function CollectionsPage() {
     const supabase = createClient();
 
     try {
-      const newId = await cloneGlobalCollection(supabase, packet.id);
+      const newId = await cloneLibraryCollection(supabase, packet.id);
       setCloneMessage(
         `Copied “${packet.collection_name}” to your private collections.`,
       );
@@ -278,13 +362,17 @@ export function CollectionsPage() {
 
     const packet = data as CollectionDetail;
     setViewingPacketStatus(packet.status);
+    setViewingPacketScope(collectionScopeForDisplay(packet.scope));
+    setViewingOrganizationName(packet.organizations?.name ?? null);
     setFormValue(collectionToInput(packet));
     setFormMode("view");
     setEditingPacketId(packet.id);
   };
 
   const handleSave = async () => {
-    const validationError = validateCollectionInput(formValue);
+    const validationError = validateCollectionInput(formValue, {
+      forCreate: formMode === "create",
+    });
     if (validationError) {
       setFormError(validationError);
       return;
@@ -298,17 +386,49 @@ export function CollectionsPage() {
 
     try {
       if (formMode === "create") {
+        if (normalized.scope === "ORGANIZATION") {
+          if (
+            !canCreateOrganizationCollection(actor, normalized.organization_id)
+          ) {
+            throw new Error(COLLECTION_PERMISSION_DENIED);
+          }
+        } else if (normalized.scope !== "PRIVATE") {
+          throw new Error("Collections may only be Private or Organization.");
+        }
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        const insertPayload: {
+          collection_name: string;
+          collection_type: typeof normalized.collection_type;
+          description: string | null;
+          scope: "PRIVATE" | "ORGANIZATION";
+          organization_id: string | null;
+          owner_user_id: string | null;
+        } =
+          normalized.scope === "ORGANIZATION"
+            ? {
+                collection_name: normalized.collection_name,
+                collection_type: normalized.collection_type,
+                description: normalized.description,
+                scope: "ORGANIZATION",
+                organization_id: normalized.organization_id,
+                owner_user_id: null,
+              }
+            : {
+                collection_name: normalized.collection_name,
+                collection_type: normalized.collection_type,
+                description: normalized.description,
+                scope: "PRIVATE",
+                organization_id: null,
+                owner_user_id: user?.id ?? null,
+              };
+
         const { data: createdPacket, error: createError } = await supabase
           .from("collections")
-          .insert({
-            collection_name: normalized.collection_name,
-            collection_type: normalized.collection_type,
-            description: normalized.description,
-            scope: "PRIVATE",
-            owner_user_id: (
-              await supabase.auth.getUser()
-            ).data.user?.id ?? null,
-          })
+          .insert(insertPayload)
           .select("id")
           .single();
 
@@ -328,7 +448,7 @@ export function CollectionsPage() {
       if (formMode === "edit" && editingPacketId !== null) {
         const { data: existing, error: existingError } = await supabase
           .from("collections")
-          .select("id, status, scope, owner_user_id")
+          .select("id, status, scope, owner_user_id, organization_id")
           .eq("id", editingPacketId)
           .single();
 
@@ -532,28 +652,28 @@ export function CollectionsPage() {
               mode={formMode === "view" ? "view" : formMode}
               packetTemplateId={editingPacketId}
               status={viewingPacketStatus}
+              organizationOptions={createOrganizationOptions}
+              organizationName={viewingOrganizationName}
+              existingScope={viewingPacketScope}
               onDelete={
                 formMode === "view" &&
                 !isCollectionDeleted({ status: viewingPacketStatus }) &&
                 editingPacketId !== null &&
                 canDeleteCollection(
                   actor,
-                  packets.find((item) => item.id === editingPacketId) ?? {
-                    id: editingPacketId,
-                    collection_name: formValue.collection_name,
-                    collection_type: formValue.collection_type,
-                    description: formValue.description || null,
-                    create_date: "",
-                    update_date: "",
-                    status: viewingPacketStatus,
-                    scope:
-                      packets.find((item) => item.id === editingPacketId)
-                        ?.scope ?? "PRIVATE",
-                    owner_user_id:
-                      packets.find((item) => item.id === editingPacketId)
-                        ?.owner_user_id ?? actor?.userId ?? null,
-                    organization_id: null,
-                  },
+                  (() => {
+                    const packet = packets.find(
+                      (item) => item.id === editingPacketId,
+                    );
+                    return {
+                      scope: packet?.scope ?? viewingPacketScope,
+                      owner_user_id:
+                        packet?.owner_user_id ?? actor?.userId ?? null,
+                      organization_id:
+                        packet?.organization_id ?? formValue.organization_id,
+                      status: packet?.status ?? viewingPacketStatus,
+                    };
+                  })(),
                 )
                   ? () => {
                       const packet = packets.find(
@@ -572,9 +692,9 @@ export function CollectionsPage() {
                         create_date: "",
                         update_date: "",
                         status: viewingPacketStatus,
-                        scope: "PRIVATE",
+                        scope: viewingPacketScope as CollectionListItem["scope"],
                         owner_user_id: actor?.userId ?? null,
-                        organization_id: null,
+                        organization_id: formValue.organization_id,
                       });
                     }
                   : undefined
@@ -679,7 +799,10 @@ export function CollectionsPage() {
                         >
                           {packet.collection_name}
                         </span>
-                        <LibraryScopeBadge scope={packet.scope} />
+                        <LibraryScopeBadge
+                          scope={collectionScopeForDisplay(packet.scope)}
+                          organizationName={packet.organizations?.name}
+                        />
                         {deleted ? (
                           <RecordStatusBadge status="DELETED" />
                         ) : null}

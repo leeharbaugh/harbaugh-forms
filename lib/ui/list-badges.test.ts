@@ -15,8 +15,10 @@ describe("list badge labels", () => {
   it("normalizes library scope labels and variants", () => {
     assert.equal(libraryScopeLabel("GLOBAL"), "Global");
     assert.equal(libraryScopeLabel("PRIVATE"), "Private");
+    assert.equal(libraryScopeLabel("ORGANIZATION"), "Organization");
     assert.equal(libraryScopeVariant("GLOBAL"), "outline");
     assert.equal(libraryScopeVariant("PRIVATE"), "secondary");
+    assert.equal(libraryScopeVariant("ORGANIZATION"), "info");
   });
 
   it("normalizes record status labels and variants", () => {

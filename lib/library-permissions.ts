@@ -10,13 +10,38 @@ export const COLLECTION_PERMISSION_DENIED =
 export type LibraryActor = {
   userId: string;
   isActiveAdmin: boolean;
+  /** Organizations where the user has any ACTIVE membership. */
+  memberOrganizationIds?: readonly string[];
+  /** Organizations where the user is an ACTIVE ORG_ADMIN. */
+  orgAdminOrganizationIds?: readonly string[];
 };
 
 export type LibraryEntityRef = {
   scope: VisibilityScope | string | null | undefined;
   owner_user_id?: string | null;
+  organization_id?: string | null;
   status?: string | null;
 };
+
+function isMemberOf(
+  actor: LibraryActor,
+  organizationId: string | null | undefined,
+): boolean {
+  if (!organizationId) {
+    return false;
+  }
+  return (actor.memberOrganizationIds ?? []).includes(organizationId);
+}
+
+function isOrgAdminOf(
+  actor: LibraryActor,
+  organizationId: string | null | undefined,
+): boolean {
+  if (!organizationId) {
+    return false;
+  }
+  return (actor.orgAdminOrganizationIds ?? []).includes(organizationId);
+}
 
 export function isActiveAppAdmin(profile: {
   status?: ProfileStatus | string | null;
@@ -83,6 +108,10 @@ export function canViewCollection(
   if (actor.isActiveAdmin) {
     return true;
   }
+  if (collection.scope === "ORGANIZATION") {
+    return isMemberOf(actor, collection.organization_id);
+  }
+  // Legacy GLOBAL collections (should not be created going forward).
   if (collection.scope === "GLOBAL") {
     return collection.status == null || collection.status === "ACTIVE";
   }
@@ -100,6 +129,9 @@ export function canEditCollection(
   }
   if (actor.isActiveAdmin) {
     return true;
+  }
+  if (collection.scope === "ORGANIZATION") {
+    return isOrgAdminOf(actor, collection.organization_id);
   }
   return (
     collection.scope === "PRIVATE" && collection.owner_user_id === actor.userId
@@ -120,13 +152,29 @@ export function canCloneCollection(
   if (!actor || !collection) {
     return false;
   }
-  if (collection.scope !== "GLOBAL") {
-    return false;
-  }
   if (collection.status != null && collection.status !== "ACTIVE") {
     return false;
   }
+  if (
+    collection.scope !== "ORGANIZATION" &&
+    collection.scope !== "GLOBAL"
+  ) {
+    return false;
+  }
   return canViewCollection(actor, collection);
+}
+
+export function canCreateOrganizationCollection(
+  actor: LibraryActor | null | undefined,
+  organizationId: string | null | undefined,
+): boolean {
+  if (!actor || !organizationId) {
+    return false;
+  }
+  if (actor.isActiveAdmin) {
+    return true;
+  }
+  return isOrgAdminOf(actor, organizationId);
 }
 
 export function canEditField(

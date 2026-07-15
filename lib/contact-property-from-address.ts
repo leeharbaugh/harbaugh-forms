@@ -145,54 +145,23 @@ export function validateContactPropertyCreation(
   return validatePropertyInput(propertyInput);
 }
 
-function propertyAddressKeyFromParts(parts: {
-  street_address: string;
-  unit: string | null | undefined;
-  city: string;
-  state: string;
-  zip: string;
-}): string {
-  return [
-    parts.street_address.trim().toLowerCase(),
-    (parts.unit ?? "").trim().toLowerCase(),
-    parts.city.trim().toLowerCase(),
-    parts.state.trim().toUpperCase(),
-    parts.zip.trim().toLowerCase(),
-  ].join("|");
-}
-
 export async function findExistingActivePropertyByAddress(
   supabase: SupabaseClient,
   propertyInput: PropertyInput,
   ownerUserId?: string | null,
 ): Promise<number | null> {
-  const normalized = normalizePropertyInput(propertyInput);
-  const targetKey = propertyAddressKeyFromParts(normalized);
-
-  let query = supabase
-    .from("properties")
-    .select("id, street_address, unit, city, state, zip, owner_user_id")
-    .eq("status", "ACTIVE")
-    .ilike("street_address", normalized.street_address)
-    .ilike("city", normalized.city)
-    .eq("state", normalized.state)
-    .ilike("zip", normalized.zip);
-
-  if (ownerUserId) {
-    query = query.eq("owner_user_id", ownerUserId);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const match = (data ?? []).find(
-    (row) => propertyAddressKeyFromParts(row) === targetKey,
+  const { findExistingLivePropertyByAddress } = await import(
+    "@/lib/property-uniqueness"
   );
-
-  return match?.id ?? null;
+  const conflict = await findExistingLivePropertyByAddress(
+    supabase,
+    propertyInput,
+    ownerUserId,
+  );
+  if (!conflict || conflict.status !== "ACTIVE") {
+    return null;
+  }
+  return conflict.id;
 }
 
 export async function ensurePropertyFromContactAddress(
@@ -224,6 +193,11 @@ export async function ensurePropertyFromContactAddress(
     .single();
 
   if (error || !data) {
+    const { isUniqueViolationError, PROPERTY_DUPLICATE_ADDRESS_MESSAGE } =
+      await import("@/lib/property-address-normalize");
+    if (isUniqueViolationError(error)) {
+      throw new Error(PROPERTY_DUPLICATE_ADDRESS_MESSAGE);
+    }
     throw new Error(error?.message ?? "Failed to create property.");
   }
 

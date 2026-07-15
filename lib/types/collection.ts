@@ -4,7 +4,41 @@ import {
   assertCanEditCollection,
   COLLECTION_PERMISSION_DENIED,
   isActiveAppAdmin,
+  type LibraryActor,
 } from "@/lib/library-permissions";
+
+async function loadLibraryActor(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<LibraryActor> {
+  const [{ data: profile }, { data: memberships }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("status, app_role, onboarding_status")
+      .eq("id", userId)
+      .maybeSingle(),
+    supabase
+      .from("organization_members")
+      .select("organization_id, membership_role, status")
+      .eq("user_id", userId)
+      .eq("status", "ACTIVE"),
+  ]);
+
+  const rows = memberships ?? [];
+  return {
+    userId,
+    isActiveAdmin: isActiveAppAdmin(profile),
+    memberOrganizationIds: rows.map(
+      (row: { organization_id: string }) => row.organization_id,
+    ),
+    orgAdminOrganizationIds: rows
+      .filter(
+        (row: { membership_role: string }) =>
+          row.membership_role === "ORG_ADMIN",
+      )
+      .map((row: { organization_id: string }) => row.organization_id),
+  };
+}
 
 export type CollectionType =
   | "BUYER_REP_PACKET"
@@ -40,10 +74,12 @@ export type CollectionFormLink = {
 
 export type CollectionListItem = Collection & {
   collection_forms?: Pick<CollectionFormLink, "id" | "status">[];
+  organizations?: { name: string } | null;
 };
 
 export type CollectionDetail = Collection & {
   collection_forms?: CollectionFormLink[];
+  organizations?: { name: string } | null;
 };
 
 export type CollectionFormSelection = {
@@ -51,11 +87,16 @@ export type CollectionFormSelection = {
   is_required: boolean;
 };
 
+export type CollectionCreateScope = "PRIVATE" | "ORGANIZATION";
+
 export type CollectionInput = {
   collection_name: string;
   collection_type: CollectionType;
   description: string;
   forms: CollectionFormSelection[];
+  /** Create-only: PRIVATE (default) or ORGANIZATION. */
+  scope: CollectionCreateScope;
+  organization_id: string | null;
 };
 
 export const COLLECTION_TYPES: CollectionType[] = [
@@ -79,6 +120,8 @@ export const emptyCollectionInput = (): CollectionInput => ({
   collection_type: "BUYER_REP_PACKET",
   description: "",
   forms: [],
+  scope: "PRIVATE",
+  organization_id: null,
 });
 
 export function formatCollectionReference(id: number): string {
@@ -113,15 +156,11 @@ export async function deleteCollection(
     throw new Error("Authentication required.");
   }
 
-  const [{ data: profile }, { data, error: fetchError }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("status, app_role, onboarding_status")
-      .eq("id", user.id)
-      .maybeSingle(),
+  const [{ data: actor }, { data, error: fetchError }] = await Promise.all([
+    loadLibraryActor(supabase, user.id).then((value) => ({ data: value })),
     supabase
       .from("collections")
-      .select("id, status, scope, owner_user_id")
+      .select("id, status, scope, owner_user_id, organization_id")
       .eq("id", collectionId)
       .single(),
   ]);
@@ -130,13 +169,7 @@ export async function deleteCollection(
     throw new Error("Collection not found.");
   }
 
-  assertCanEditCollection(
-    {
-      userId: user.id,
-      isActiveAdmin: isActiveAppAdmin(profile),
-    },
-    data,
-  );
+  assertCanEditCollection(actor, data);
 
   if (data.status === "DELETED") {
     throw new Error("Collection is already deleted.");
@@ -170,15 +203,11 @@ export async function restoreCollection(
     throw new Error("Authentication required.");
   }
 
-  const [{ data: profile }, { data, error: fetchError }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("status, app_role, onboarding_status")
-      .eq("id", user.id)
-      .maybeSingle(),
+  const [{ data: actor }, { data, error: fetchError }] = await Promise.all([
+    loadLibraryActor(supabase, user.id).then((value) => ({ data: value })),
     supabase
       .from("collections")
-      .select("id, status, scope, owner_user_id")
+      .select("id, status, scope, owner_user_id, organization_id")
       .eq("id", collectionId)
       .single(),
   ]);
@@ -187,13 +216,7 @@ export async function restoreCollection(
     throw new Error("Collection not found.");
   }
 
-  assertCanEditCollection(
-    {
-      userId: user.id,
-      isActiveAdmin: isActiveAppAdmin(profile),
-    },
-    data,
-  );
+  assertCanEditCollection(actor, data);
 
   if (data.status !== "DELETED") {
     throw new Error("Only deleted collections can be restored.");
@@ -238,11 +261,15 @@ export function collectionToInput(
       form_id: link.form_id,
       is_required: link.is_required,
     })),
+    scope:
+      collection.scope === "ORGANIZATION" ? "ORGANIZATION" : "PRIVATE",
+    organization_id: collection.organization_id,
   };
 }
 
 export function validateCollectionInput(
   input: CollectionInput,
+  options?: { forCreate?: boolean },
 ): string | null {
   if (!input.collection_name.trim()) {
     return "Collection name is required.";
@@ -261,11 +288,22 @@ export function validateCollectionInput(
     return "Each form can only be selected once.";
   }
 
+  if (options?.forCreate) {
+    if (input.scope !== "PRIVATE" && input.scope !== "ORGANIZATION") {
+      return "Collections may only be Private or Organization.";
+    }
+    if (input.scope === "ORGANIZATION" && !input.organization_id) {
+      return "Select an organization for this collection.";
+    }
+  }
+
   return null;
 }
 
 export function normalizeCollectionInput(input: CollectionInput) {
   const trim = (value: string) => value.trim();
+  const scope: CollectionCreateScope =
+    input.scope === "ORGANIZATION" ? "ORGANIZATION" : "PRIVATE";
 
   return {
     collection_name: trim(input.collection_name),
@@ -275,6 +313,9 @@ export function normalizeCollectionInput(input: CollectionInput) {
       form_id: form.form_id,
       is_required: form.is_required,
     })),
+    scope,
+    organization_id:
+      scope === "ORGANIZATION" ? input.organization_id : null,
   };
 }
 
@@ -291,16 +332,12 @@ export async function syncCollectionForms(
     throw new Error("Authentication required.");
   }
 
-  const [{ data: profile }, { data: collection, error: collectionError }] =
+  const [{ data: actor }, { data: collection, error: collectionError }] =
     await Promise.all([
-      supabase
-        .from("profiles")
-        .select("status, app_role, onboarding_status")
-        .eq("id", user.id)
-        .maybeSingle(),
+      loadLibraryActor(supabase, user.id).then((value) => ({ data: value })),
       supabase
         .from("collections")
-        .select("id, status, scope, owner_user_id")
+        .select("id, status, scope, owner_user_id, organization_id")
         .eq("id", collectionId)
         .single(),
     ]);
@@ -309,13 +346,7 @@ export async function syncCollectionForms(
     throw new Error(collectionError?.message ?? "Collection not found.");
   }
 
-  assertCanEditCollection(
-    {
-      userId: user.id,
-      isActiveAdmin: isActiveAppAdmin(profile),
-    },
-    collection,
-  );
+  assertCanEditCollection(actor, collection);
 
   const { error: deleteError } = await supabase
     .from("collection_forms")
@@ -347,16 +378,28 @@ export async function syncCollectionForms(
   }
 }
 
-export async function cloneGlobalCollection(
+export async function cloneLibraryCollection(
   supabase: SupabaseClient,
   sourceCollectionId: number,
 ): Promise<number> {
-  const { data, error } = await supabase.rpc("clone_global_collection", {
+  const { data, error } = await supabase.rpc("clone_library_collection", {
     p_source_collection_id: sourceCollectionId,
   });
 
   if (error) {
-    throw new Error(error.message);
+    // Fall back to legacy RPC name if migration not yet applied.
+    const legacy = await supabase.rpc("clone_global_collection", {
+      p_source_collection_id: sourceCollectionId,
+    });
+    if (legacy.error) {
+      throw new Error(error.message);
+    }
+    const legacyId =
+      typeof legacy.data === "number" ? legacy.data : Number(legacy.data);
+    if (!Number.isFinite(legacyId)) {
+      throw new Error("Clone succeeded but no collection id was returned.");
+    }
+    return legacyId;
   }
 
   const newId = typeof data === "number" ? data : Number(data);
@@ -365,4 +408,12 @@ export async function cloneGlobalCollection(
   }
 
   return newId;
+}
+
+/** @deprecated Prefer cloneLibraryCollection */
+export async function cloneGlobalCollection(
+  supabase: SupabaseClient,
+  sourceCollectionId: number,
+): Promise<number> {
+  return cloneLibraryCollection(supabase, sourceCollectionId);
 }

@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { findExistingActivePropertyByAddress } from "@/lib/contact-property-from-address";
+import {
+  findExistingLivePropertyByAddress,
+  isUniqueViolationError,
+  PROPERTY_DUPLICATE_ADDRESS_MESSAGE,
+} from "@/lib/property-uniqueness";
 import {
   formatPropertyAddress,
   normalizePropertyInput,
@@ -19,13 +23,13 @@ export type PropertyDuplicatePromptInfo = {
 export function formatPropertyDuplicateConfirmMessage(
   formattedAddress: string,
 ): string {
-  return `A property at ${formattedAddress} already exists. Would you like to update that property with the information you entered?`;
+  return `You already have a property at this address (${formattedAddress}). Would you like to update that property with the information you entered?`;
 }
 
 export function formatPropertyDuplicateInfoMessage(
   formattedAddress: string,
 ): string {
-  return `A property at ${formattedAddress} already exists. No new property was created.`;
+  return `You already have a property at this address (${formattedAddress}). No new property was created.`;
 }
 
 export async function saveNewPropertyWithDuplicateHandling(
@@ -45,16 +49,20 @@ export async function saveNewPropertyWithDuplicateHandling(
   } = await supabase.auth.getUser();
 
   const normalized = normalizePropertyInput(propertyInput);
-  const existingPropertyId = await findExistingActivePropertyByAddress(
+  const conflict = await findExistingLivePropertyByAddress(
     supabase,
     propertyInput,
     user?.id ?? null,
   );
 
-  if (existingPropertyId != null) {
+  if (conflict != null) {
+    if (conflict.status !== "ACTIVE") {
+      throw new Error(PROPERTY_DUPLICATE_ADDRESS_MESSAGE);
+    }
+
     const formattedAddress = formatPropertyAddress(normalized);
     const choice = await onDuplicate({
-      existingPropertyId,
+      existingPropertyId: conflict.id,
       formattedAddress,
     });
 
@@ -65,14 +73,14 @@ export async function saveNewPropertyWithDuplicateHandling(
     const { error } = await supabase
       .from("properties")
       .update(normalized)
-      .eq("id", existingPropertyId)
+      .eq("id", conflict.id)
       .eq("status", "ACTIVE");
 
     if (error) {
       throw new Error(error.message);
     }
 
-    return existingPropertyId;
+    return conflict.id;
   }
 
   const { data, error } = await supabase
@@ -85,6 +93,9 @@ export async function saveNewPropertyWithDuplicateHandling(
     .single();
 
   if (error || !data) {
+    if (isUniqueViolationError(error)) {
+      throw new Error(PROPERTY_DUPLICATE_ADDRESS_MESSAGE);
+    }
     throw new Error(error?.message ?? "Failed to create property.");
   }
 

@@ -10,6 +10,9 @@ export function libraryScopeLabel(scope: string | null | undefined): string {
   if (scope === "PRIVATE") {
     return "Private";
   }
+  if (scope === "ORGANIZATION") {
+    return "Organization";
+  }
   return scope?.trim() || "—";
 }
 
@@ -21,6 +24,9 @@ export function libraryScopeVariant(
   }
   if (scope === "PRIVATE") {
     return "secondary";
+  }
+  if (scope === "ORGANIZATION") {
+    return "info";
   }
   return "outline";
 }
