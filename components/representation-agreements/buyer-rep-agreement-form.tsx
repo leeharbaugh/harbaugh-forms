@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   type AgreementLifecycleStatus,
   type BuyerRepAgreementInput,
@@ -12,7 +14,6 @@ import {
   formatAgreementReference,
   validateBuyerRepAgreementInput,
 } from "@/lib/types/buyer-rep-agreement";
-import { cn } from "@/lib/utils";
 
 type BuyerRepAgreementFormProps = {
   value: BuyerRepAgreementInput;
@@ -24,9 +25,6 @@ type BuyerRepAgreementFormProps = {
   mode: "create" | "edit" | "view";
   agreementId?: number | null;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 const agreementStatuses: AgreementLifecycleStatus[] = [
   "ACTIVE",
@@ -91,9 +89,8 @@ export function BuyerRepAgreementForm({
           )}
           <div className="space-y-2">
             <Label htmlFor="agreement_status">Agreement status</Label>
-            <select
-              id="agreement_status"
-              className={fieldClassName}
+            <Select
+              id="agreement_status"
               value={value.agreement_status}
               onChange={(event) =>
                 setField(
@@ -108,7 +105,7 @@ export function BuyerRepAgreementForm({
                   {status.charAt(0) + status.slice(1).toLowerCase()}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="effective_date">Effective date *</Label>
@@ -165,9 +162,8 @@ export function BuyerRepAgreementForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="representation_kind">Representation kind *</Label>
-            <select
-              id="representation_kind"
-              className={fieldClassName}
+            <Select
+              id="representation_kind"
               value={value.representation_kind}
               onChange={(event) =>
                 setField(
@@ -183,7 +179,7 @@ export function BuyerRepAgreementForm({
                   {kind.charAt(0) + kind.slice(1).toLowerCase()}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="market_area">Market area</Label>
@@ -368,10 +364,9 @@ export function BuyerRepAgreementForm({
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="special_provisions">Special provisions</Label>
-            <textarea
+            <Textarea
               id="special_provisions"
-              rows={3}
-              className={cn(fieldClassName, "min-h-24 py-2")}
+              rows={3}
               value={value.special_provisions}
               onChange={(event) =>
                 setField("special_provisions", event.target.value)
@@ -421,10 +416,9 @@ export function BuyerRepAgreementForm({
             <Label htmlFor="add_other_document_description">
               Other document description
             </Label>
-            <textarea
+            <Textarea
               id="add_other_document_description"
-              rows={3}
-              className={cn(fieldClassName, "min-h-24 py-2")}
+              rows={3}
               value={value.add_other_document_description}
               onChange={(event) =>
                 setField("add_other_document_description", event.target.value)

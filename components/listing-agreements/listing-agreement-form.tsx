@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   type AgreementLifecycleStatus,
   type ListingAgreementInput,
@@ -13,7 +15,6 @@ import {
   formatAgreementReference,
   validateListingAgreementInput,
 } from "@/lib/types/listing-agreement";
-import { cn } from "@/lib/utils";
 
 type ListingAgreementFormProps = {
   value: ListingAgreementInput;
@@ -25,9 +26,6 @@ type ListingAgreementFormProps = {
   mode: "create" | "edit" | "view";
   agreementId?: number | null;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 const agreementStatuses: AgreementLifecycleStatus[] = [
   "ACTIVE",
@@ -92,9 +90,8 @@ export function ListingAgreementForm({
           )}
           <div className="space-y-2">
             <Label htmlFor="agreement_status">Agreement status</Label>
-            <select
-              id="agreement_status"
-              className={fieldClassName}
+            <Select
+              id="agreement_status"
               value={value.agreement_status}
               onChange={(event) =>
                 setField(
@@ -109,7 +106,7 @@ export function ListingAgreementForm({
                   {status.charAt(0) + status.slice(1).toLowerCase()}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="effective_date">Effective date *</Label>
@@ -184,9 +181,8 @@ export function ListingAgreementForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="representation_kind">Representation kind *</Label>
-            <select
-              id="representation_kind"
-              className={fieldClassName}
+            <Select
+              id="representation_kind"
               value={value.representation_kind}
               onChange={(event) =>
                 setField(
@@ -202,7 +198,7 @@ export function ListingAgreementForm({
                   {kind.charAt(0) + kind.slice(1).toLowerCase()}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="list_price">
@@ -304,10 +300,10 @@ export function ListingAgreementForm({
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="exclusions">Exclusions</Label>
-            <textarea
+            <Textarea
               id="exclusions"
               rows={2}
-              className={cn(fieldClassName, "min-h-20 py-2")}
+              className="min-h-20"
               value={value.exclusions}
               onChange={(event) => setField("exclusions", event.target.value)}
               disabled={readOnly}
@@ -317,10 +313,10 @@ export function ListingAgreementForm({
             <Label htmlFor="included_personal_property">
               Included personal property
             </Label>
-            <textarea
+            <Textarea
               id="included_personal_property"
               rows={2}
-              className={cn(fieldClassName, "min-h-20 py-2")}
+              className="min-h-20"
               value={value.included_personal_property}
               onChange={(event) =>
                 setField("included_personal_property", event.target.value)
@@ -330,10 +326,10 @@ export function ListingAgreementForm({
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="access_notes">Access notes</Label>
-            <textarea
+            <Textarea
               id="access_notes"
               rows={2}
-              className={cn(fieldClassName, "min-h-20 py-2")}
+              className="min-h-20"
               value={value.access_notes}
               onChange={(event) => setField("access_notes", event.target.value)}
               disabled={readOnly}

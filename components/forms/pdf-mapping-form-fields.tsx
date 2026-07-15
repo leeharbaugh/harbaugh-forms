@@ -4,6 +4,7 @@ import { CatalogFieldPicker } from "@/components/forms/catalog-field-picker";
 import { PdfPlacementFormFields } from "@/components/forms/pdf-placement-form-fields";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import type { Field } from "@/lib/types/field";
 import {
   FIELD_DATA_TYPES,
@@ -22,9 +23,6 @@ type PdfMappingFormFieldsProps = {
   showLayoutFields?: boolean;
   layoutReadOnly?: boolean;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 export function PdfMappingFormFields({
   value,
@@ -147,9 +145,8 @@ export function PdfMappingFormFields({
           </div>
           <div className="space-y-2">
             <Label htmlFor="quick_field_data_type">Data type *</Label>
-            <select
-              id="quick_field_data_type"
-              className={fieldClassName}
+            <Select
+              id="quick_field_data_type"
               value={value.quick_create.field_data_type}
               onChange={(event) =>
                 setQuickCreateField("field_data_type", event.target.value)
@@ -161,13 +158,12 @@ export function PdfMappingFormFields({
                   {formatFieldDataType(dataType)}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="quick_field_widget_type">Widget type *</Label>
-            <select
-              id="quick_field_widget_type"
-              className={fieldClassName}
+            <Select
+              id="quick_field_widget_type"
               value={value.quick_create.field_widget_type}
               onChange={(event) =>
                 setQuickCreateField("field_widget_type", event.target.value)
@@ -179,7 +175,7 @@ export function PdfMappingFormFields({
                   {formatFieldWidgetType(widgetType)}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
       )}

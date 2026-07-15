@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import type { FieldAdminInput } from "@/lib/types/field";
 import {
   CUSTOM_RESOLVER_KEYS,
@@ -27,9 +28,6 @@ type FieldSourceFormFieldsProps = {
   /** When false, omit atomic-field guidance (e.g. catalog page subtitle already shows it). */
   showValueMappingGuidance?: boolean;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 export function FieldSourceFormFields({
   value,
@@ -88,9 +86,8 @@ export function FieldSourceFormFields({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="source_type">Source type</Label>
-          <select
-            id="source_type"
-            className={fieldClassName}
+          <Select
+            id="source_type"
             value={sourceType}
             onChange={(event) =>
               setSourceType(event.target.value as FieldSourceType | "")
@@ -103,7 +100,7 @@ export function FieldSourceFormFields({
                 {formatFieldSourceType(type)}
               </option>
             ))}
-          </select>
+          </Select>
           {!sourceType && (
             <p className="text-xs text-muted-foreground">
               {sourceStatus.helperText}
@@ -116,9 +113,8 @@ export function FieldSourceFormFields({
             {pathOptions.length > 0 && (
               <div className="space-y-2">
                 <Label htmlFor="source_path_preset">Source path preset</Label>
-                <select
-                  id="source_path_preset"
-                  className={fieldClassName}
+                <Select
+                  id="source_path_preset"
                   value={sourcePathPresetValue}
                   onChange={(event) => {
                     const nextPath = event.target.value;
@@ -144,7 +140,7 @@ export function FieldSourceFormFields({
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             )}
 
@@ -179,9 +175,8 @@ export function FieldSourceFormFields({
         {showResolverKey && (
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="resolver_key">Resolver key</Label>
-            <select
-              id="resolver_key"
-              className={fieldClassName}
+            <Select
+              id="resolver_key"
               value={value.resolver_key}
               onChange={(event) =>
                 onChange({ ...value, resolver_key: event.target.value })
@@ -194,7 +189,7 @@ export function FieldSourceFormFields({
                   {key}
                 </option>
               ))}
-            </select>
+            </Select>
             <p className="text-xs text-muted-foreground">
               Combined computed values only — e.g. when one PDF blank must show a
               full name. Prefer{" "}

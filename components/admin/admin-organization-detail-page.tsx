@@ -17,8 +17,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { FormActions } from "@/components/ui/form-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import type { AdminMembershipListItem } from "@/lib/admin/manage-memberships";
 import type { OrganizationInput } from "@/lib/admin/manage-organizations";
 import { formatPhoneInput } from "@/lib/phone-format";
@@ -35,10 +37,6 @@ type AdminOrganizationDetailPageProps = {
   userOptions: UserOption[];
   initialEdit?: boolean;
 };
-
-function fieldClassName() {
-  return "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-sm";
-}
 
 export function AdminOrganizationDetailPage({
   organization,
@@ -311,11 +309,11 @@ export function AdminOrganizationDetailPage({
             </div>
           ))}
           {editing ? (
-            <div className="md:col-span-2">
+            <FormActions className="md:col-span-2">
               <Button type="button" disabled={isPending} onClick={onSave}>
                 {isPending ? "Saving…" : "Save changes"}
               </Button>
-            </div>
+            </FormActions>
           ) : null}
         </CardContent>
       </Card>
@@ -330,9 +328,8 @@ export function AdminOrganizationDetailPage({
         <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="grid flex-1 gap-2">
             <Label htmlFor="add-user">User</Label>
-            <select
+            <Select
               id="add-user"
-              className={fieldClassName()}
               value={addUserId}
               onChange={(e) => setAddUserId(e.target.value)}
             >
@@ -342,13 +339,12 @@ export function AdminOrganizationDetailPage({
                   {user.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="add-role">Role</Label>
-            <select
+            <Select
               id="add-role"
-              className={fieldClassName()}
               value={addRole}
               onChange={(e) =>
                 setAddRole(e.target.value as "MEMBER" | "ORG_ADMIN")
@@ -356,7 +352,7 @@ export function AdminOrganizationDetailPage({
             >
               <option value="MEMBER">MEMBER</option>
               <option value="ORG_ADMIN">ORG_ADMIN</option>
-            </select>
+            </Select>
           </div>
           <Button type="button" disabled={isPending} onClick={onAddMember}>
             Add
@@ -504,8 +500,7 @@ function MembershipTable({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <select
-                        className={fieldClassName()}
+                      <Select
                         value={row.membership_role}
                         disabled={isPending}
                         onChange={(e) =>
@@ -517,7 +512,7 @@ function MembershipTable({
                       >
                         <option value="MEMBER">MEMBER</option>
                         <option value="ORG_ADMIN">ORG_ADMIN</option>
-                      </select>
+                      </Select>
                     </td>
                     <td className="px-4 py-3">
                       <RecordStatusBadge status={row.status} />

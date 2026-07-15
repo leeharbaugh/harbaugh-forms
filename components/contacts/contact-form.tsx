@@ -4,8 +4,12 @@ import { AddressAutofillFields } from "@/components/address-autofill-fields";
 import { PhoneInput } from "@/components/phone-input";
 import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
+import { FormActions } from "@/components/ui/form-actions";
+import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { contactHasAddressInfo } from "@/lib/contact-property-from-address";
 import {
   type ContactInput,
@@ -13,8 +17,7 @@ import {
   formatContactDateOfBirth,
   validateContactInput,
 } from "@/lib/types/contact";
-import { cn } from "@/lib/utils";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef } from "react";
 
 type ContactFormProps = {
   value: ContactInput;
@@ -29,9 +32,6 @@ type ContactFormProps = {
   showActions?: boolean;
 };
 
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
-
 const PREFERRED_CONTACT_METHOD_OPTIONS = [
   "",
   "Email",
@@ -39,28 +39,6 @@ const PREFERRED_CONTACT_METHOD_OPTIONS = [
   "Text",
   "Mail",
 ] as const;
-
-function ContactSection({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-4 border-t pt-6 first:border-t-0 first:pt-0">
-      <div>
-        <h3 className="text-sm font-semibold">{title}</h3>
-        {description && (
-          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-        )}
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">{children}</div>
-    </section>
-  );
-}
 
 function ViewField({
   label,
@@ -130,7 +108,16 @@ export function ContactForm({
       {...(showActions ? { onSubmit: handleSubmit } : {})}
       className="space-y-6"
     >
-      <ContactSection title="Identity">
+      {!readOnly && (
+        <p className="text-xs text-muted-foreground">
+          Required fields are marked with *
+        </p>
+      )}
+
+      <FormSection
+        title="Identity"
+        className={!readOnly ? "border-t-0 pt-0" : undefined}
+      >
         {readOnly ? (
           <>
             <ViewField
@@ -161,9 +148,8 @@ export function ContactForm({
           <>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="contact_type">Contact type</Label>
-              <select
+              <Select
                 id="contact_type"
-                className={fieldClassName}
                 value={value.contact_type}
                 onChange={(event) =>
                   setField("contact_type", event.target.value as ContactType)
@@ -171,7 +157,7 @@ export function ContactForm({
               >
                 <option value="INDIVIDUAL">Individual</option>
                 <option value="ENTITY">Entity</option>
-              </select>
+              </Select>
             </div>
 
             {isIndividual ? (
@@ -263,9 +249,9 @@ export function ContactForm({
             )}
           </>
         )}
-      </ContactSection>
+      </FormSection>
 
-      <ContactSection title="Contact methods">
+      <FormSection title="Contact methods">
         {readOnly ? (
           <>
             <ViewField label="Email" value={value.email} />
@@ -321,9 +307,8 @@ export function ContactForm({
               <Label htmlFor="preferred_contact_method">
                 Preferred contact method
               </Label>
-              <select
+              <Select
                 id="preferred_contact_method"
-                className={fieldClassName}
                 value={value.preferred_contact_method ?? ""}
                 onChange={(event) =>
                   setField(
@@ -337,13 +322,13 @@ export function ContactForm({
                     {option || "—"}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           </>
         )}
-      </ContactSection>
+      </FormSection>
 
-      <ContactSection
+      <FormSection
         title="Mailing address"
         description="Used for correspondence and many form mappings."
       >
@@ -368,50 +353,50 @@ export function ContactForm({
           <div className="sm:col-span-2">
             <AddressAutofillFields
               line1={{
-              id: "mailing_address_line_1",
-              label: "Address line 1",
-              value: value.mailing_address_line_1 ?? "",
-              onChange: (fieldValue) =>
-                setField("mailing_address_line_1", fieldValue),
-            }}
-            line2={{
-              id: "mailing_address_line_2",
-              label: "Address line 2",
-              value: value.mailing_address_line_2 ?? "",
-              onChange: (fieldValue) =>
-                setField("mailing_address_line_2", fieldValue),
-            }}
-            city={{
-              id: "mailing_city",
-              label: "City",
-              value: value.mailing_city ?? "",
-              onChange: (fieldValue) => setField("mailing_city", fieldValue),
-            }}
-            state={{
-              id: "mailing_state",
-              label: "State",
-              value: value.mailing_state ?? "TX",
-              onChange: (fieldValue) => setField("mailing_state", fieldValue),
-              maxLength: 2,
-            }}
-            zip={{
-              id: "mailing_zip",
-              label: "ZIP",
-              value: value.mailing_zip ?? "",
-              onChange: (fieldValue) => setField("mailing_zip", fieldValue),
-            }}
-            county={{
-              id: "county",
-              label: "County",
-              value: value.county ?? "",
-              onChange: (fieldValue) => setField("county", fieldValue),
-            }}
+                id: "mailing_address_line_1",
+                label: "Address line 1",
+                value: value.mailing_address_line_1 ?? "",
+                onChange: (fieldValue) =>
+                  setField("mailing_address_line_1", fieldValue),
+              }}
+              line2={{
+                id: "mailing_address_line_2",
+                label: "Address line 2",
+                value: value.mailing_address_line_2 ?? "",
+                onChange: (fieldValue) =>
+                  setField("mailing_address_line_2", fieldValue),
+              }}
+              city={{
+                id: "mailing_city",
+                label: "City",
+                value: value.mailing_city ?? "",
+                onChange: (fieldValue) => setField("mailing_city", fieldValue),
+              }}
+              state={{
+                id: "mailing_state",
+                label: "State",
+                value: value.mailing_state ?? "TX",
+                onChange: (fieldValue) => setField("mailing_state", fieldValue),
+                maxLength: 2,
+              }}
+              zip={{
+                id: "mailing_zip",
+                label: "ZIP",
+                value: value.mailing_zip ?? "",
+                onChange: (fieldValue) => setField("mailing_zip", fieldValue),
+              }}
+              county={{
+                id: "county",
+                label: "County",
+                value: value.county ?? "",
+                onChange: (fieldValue) => setField("county", fieldValue),
+              }}
             />
           </div>
         )}
-      </ContactSection>
+      </FormSection>
 
-      <ContactSection
+      <FormSection
         title="Street address"
         description="Physical or property-related address when different from mailing."
       >
@@ -436,45 +421,45 @@ export function ContactForm({
             <AddressAutofillFields
               section="shipping"
               line1={{
-              id: "street_address_line_1",
-              label: "Address line 1",
-              value: value.street_address_line_1 ?? "",
-              onChange: (fieldValue) =>
-                setField("street_address_line_1", fieldValue),
-            }}
-            line2={{
-              id: "street_address_line_2",
-              label: "Address line 2",
-              value: value.street_address_line_2 ?? "",
-              onChange: (fieldValue) =>
-                setField("street_address_line_2", fieldValue),
-            }}
-            city={{
-              id: "street_city",
-              label: "City",
-              value: value.street_city ?? "",
-              onChange: (fieldValue) => setField("street_city", fieldValue),
-            }}
-            state={{
-              id: "street_state",
-              label: "State",
-              value: value.street_state ?? "TX",
-              onChange: (fieldValue) => setField("street_state", fieldValue),
-              maxLength: 2,
-            }}
-            zip={{
-              id: "street_zip",
-              label: "ZIP",
-              value: value.street_zip ?? "",
-              onChange: (fieldValue) => setField("street_zip", fieldValue),
-            }}
+                id: "street_address_line_1",
+                label: "Address line 1",
+                value: value.street_address_line_1 ?? "",
+                onChange: (fieldValue) =>
+                  setField("street_address_line_1", fieldValue),
+              }}
+              line2={{
+                id: "street_address_line_2",
+                label: "Address line 2",
+                value: value.street_address_line_2 ?? "",
+                onChange: (fieldValue) =>
+                  setField("street_address_line_2", fieldValue),
+              }}
+              city={{
+                id: "street_city",
+                label: "City",
+                value: value.street_city ?? "",
+                onChange: (fieldValue) => setField("street_city", fieldValue),
+              }}
+              state={{
+                id: "street_state",
+                label: "State",
+                value: value.street_state ?? "TX",
+                onChange: (fieldValue) => setField("street_state", fieldValue),
+                maxLength: 2,
+              }}
+              zip={{
+                id: "street_zip",
+                label: "ZIP",
+                value: value.street_zip ?? "",
+                onChange: (fieldValue) => setField("street_zip", fieldValue),
+              }}
             />
           </div>
         )}
-      </ContactSection>
+      </FormSection>
 
       {showAddAsPropertyOption && (
-        <ContactSection
+        <FormSection
           title="Property"
           description="Optionally create a property record from this contact's address."
         >
@@ -497,10 +482,10 @@ export function ContactForm({
               </p>
             </div>
           </div>
-        </ContactSection>
+        </FormSection>
       )}
 
-      <ContactSection title="Professional & personal">
+      <FormSection title="Professional & personal">
         {readOnly ? (
           <>
             <ViewField label="Company name" value={value.company_name} />
@@ -574,9 +559,9 @@ export function ContactForm({
             </div>
           </>
         )}
-      </ContactSection>
+      </FormSection>
 
-      <ContactSection title="Notes">
+      <FormSection title="Notes">
         {readOnly ? (
           <ViewField
             label="Notes"
@@ -586,30 +571,22 @@ export function ContactForm({
         ) : (
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="notes">Notes</Label>
-            <textarea
+            <Textarea
               id="notes"
               rows={3}
-              className={cn(fieldClassName, "min-h-24 py-2")}
               value={value.notes ?? ""}
               onChange={(event) => setField("notes", event.target.value)}
             />
           </div>
         )}
-      </ContactSection>
+      </FormSection>
 
       {!readOnly && (error || validationError) && (
         <p className="text-sm text-destructive">{error ?? validationError}</p>
       )}
 
       {showActions && !readOnly && (
-        <div className="flex flex-wrap gap-2">
-          <Button type="submit" disabled={isSubmitting || !!validationError}>
-            {isSubmitting
-              ? "Saving..."
-              : mode === "create"
-                ? "Add Contact"
-                : "Save changes"}
-          </Button>
+        <FormActions>
           {onCancel && (
             <Button
               type="button"
@@ -620,7 +597,14 @@ export function ContactForm({
               Cancel
             </Button>
           )}
-        </div>
+          <Button type="submit" disabled={isSubmitting || !!validationError}>
+            {isSubmitting
+              ? "Saving..."
+              : mode === "create"
+                ? "Add Contact"
+                : "Save changes"}
+          </Button>
+        </FormActions>
       )}
     </FormWrapper>
   );

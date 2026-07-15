@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { createClient } from "@/lib/supabase/client";
 import { formatContactDisplayName } from "@/lib/types/contact";
 import {
@@ -33,9 +34,6 @@ type PacketContactsLiveEditorProps = {
   disabled?: boolean;
   onContactsChange: () => void;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 export function PacketContactsLiveEditor({
   packetId,
@@ -265,9 +263,8 @@ export function PacketContactsLiveEditor({
                     <Label htmlFor={`role_${row.id}`} className="sr-only">
                       Role
                     </Label>
-                    <select
-                      id={`role_${row.id}`}
-                      className={fieldClassName}
+                    <Select
+                      id={`role_${row.id}`}
                       value={row.packet_role}
                       onChange={(event) =>
                         void handleRoleChange(
@@ -282,7 +279,7 @@ export function PacketContactsLiveEditor({
                           {formatPacketContactRole(role)}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                 ) : (
                   <Badge variant="outline">

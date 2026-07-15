@@ -3,6 +3,8 @@
 import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { FieldSourceFormFields } from "@/components/forms/field-source-form-fields";
 import {
   FIELD_DATA_TYPES,
@@ -13,16 +15,12 @@ import {
   formatFieldWidgetType,
   isBooleanField,
 } from "@/lib/types/field";
-import { cn } from "@/lib/utils";
 import { useMemo } from "react";
 
 type FieldMergeCanonicalFormFieldsProps = {
   value: FieldAdminInput;
   onChange: (value: FieldAdminInput) => void;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 export function FieldMergeCanonicalFormFields({
   value,
@@ -92,9 +90,8 @@ export function FieldMergeCanonicalFormFields({
 
         <div className="space-y-2">
           <Label htmlFor="merge_field_data_type">Data type *</Label>
-          <select
-            id="merge_field_data_type"
-            className={fieldClassName}
+          <Select
+            id="merge_field_data_type"
             value={value.field_data_type}
             onChange={(event) =>
               setField("field_data_type", event.target.value)
@@ -105,14 +102,13 @@ export function FieldMergeCanonicalFormFields({
                 {formatFieldDataType(dataType)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="merge_field_widget_type">Widget type *</Label>
-          <select
-            id="merge_field_widget_type"
-            className={fieldClassName}
+          <Select
+            id="merge_field_widget_type"
             value={value.field_widget_type}
             onChange={(event) =>
               setField("field_widget_type", event.target.value)
@@ -123,7 +119,7 @@ export function FieldMergeCanonicalFormFields({
                 {formatFieldWidgetType(widgetType)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-2 sm:col-span-2">
@@ -165,10 +161,9 @@ export function FieldMergeCanonicalFormFields({
 
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="merge_notes">Notes</Label>
-          <textarea
+          <Textarea
             id="merge_notes"
-            rows={3}
-            className={cn(fieldClassName, "min-h-24 py-2")}
+            rows={3}
             value={value.notes}
             onChange={(event) => setField("notes", event.target.value)}
           />

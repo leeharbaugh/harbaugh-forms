@@ -3,6 +3,8 @@
 import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   MAPPABLE_FIELD_WIDGET_TYPES,
   MAPPING_ALIGNMENT_OPTIONS,
@@ -11,7 +13,6 @@ import {
   formatFieldWidgetType,
 } from "@/lib/types/pdf-field-mapping-editor";
 import { CHECKBOX_MAPPING_SIZE_PX, CHECKBOX_VISUAL_SIZE_PX } from "@/lib/checkbox-constants";
-import { cn } from "@/lib/utils";
 
 type PdfPlacementFormFieldsProps = {
   value: PdfMappingEditorInput;
@@ -20,9 +21,6 @@ type PdfPlacementFormFieldsProps = {
   showLayoutFields?: boolean;
   layoutReadOnly?: boolean;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 export function PdfPlacementFormFields({
   value,
@@ -70,9 +68,8 @@ export function PdfPlacementFormFields({
 
       <div className="space-y-2">
         <Label htmlFor="mapping_widget_type">Placement widget type *</Label>
-        <select
-          id="mapping_widget_type"
-          className={fieldClassName}
+        <Select
+          id="mapping_widget_type"
           value={value.field_widget_type}
           onChange={(event) => handleWidgetTypeChange(event.target.value)}
           disabled={readOnly}
@@ -82,7 +79,7 @@ export function PdfPlacementFormFields({
               {formatFieldWidgetType(widgetType)}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       <div className="space-y-2">
@@ -99,9 +96,8 @@ export function PdfPlacementFormFields({
 
       <div className="space-y-2">
         <Label htmlFor="mapping_alignment">Alignment</Label>
-        <select
-          id="mapping_alignment"
-          className={fieldClassName}
+        <Select
+          id="mapping_alignment"
           value={value.alignment}
           onChange={(event) => setField("alignment", event.target.value)}
           disabled={readOnly}
@@ -111,7 +107,7 @@ export function PdfPlacementFormFields({
               {alignment.charAt(0).toUpperCase() + alignment.slice(1)}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {showLayoutFields && (
@@ -209,10 +205,9 @@ export function PdfPlacementFormFields({
 
       <div className="space-y-2 sm:col-span-2">
         <Label htmlFor="mapping_notes">Notes</Label>
-        <textarea
+        <Textarea
           id="mapping_notes"
-          rows={3}
-          className={cn(fieldClassName, "min-h-24 py-2")}
+          rows={3}
           value={value.notes}
           onChange={(event) => setField("notes", event.target.value)}
           disabled={readOnly}

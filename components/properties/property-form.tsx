@@ -5,8 +5,12 @@ import { PhoneInput } from "@/components/phone-input";
 import { CadSearchButton } from "@/components/properties/cad-search-button";
 import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
+import { FormActions } from "@/components/ui/form-actions";
+import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   PROPERTY_BOOLEAN_FIELDS,
   PROPERTY_BOOLEAN_FIELD_LABELS,
@@ -17,8 +21,7 @@ import {
   formatPropertyType,
   validatePropertyInput,
 } from "@/lib/types/property";
-import { cn } from "@/lib/utils";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef } from "react";
 
 type PropertyFormProps = {
   value: PropertyInput;
@@ -31,9 +34,6 @@ type PropertyFormProps = {
   propertyId?: number | null;
   showActions?: boolean;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 const propertyTypes: PropertyType[] = [
   "SINGLE_FAMILY",
@@ -60,28 +60,6 @@ const HOA_DUES_FREQUENCY_OPTIONS = [
   "Semi-Annually",
   "Annually",
 ] as const;
-
-function PropertySection({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-4 border-t pt-6 first:border-t-0 first:pt-0">
-      <div>
-        <h3 className="text-sm font-semibold">{title}</h3>
-        {description && (
-          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-        )}
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">{children}</div>
-    </section>
-  );
-}
 
 export function PropertyForm({
   value,
@@ -130,9 +108,18 @@ export function PropertyForm({
       {...(showActions
         ? { onSubmit: handleSubmit }
         : { role: "group", "aria-label": "Property details" })}
-      className="space-y-2"
+      className="space-y-6"
     >
-      <PropertySection title="Address">
+      {!readOnly && (
+        <p className="text-xs text-muted-foreground">
+          Required fields are marked with *
+        </p>
+      )}
+
+      <FormSection
+        title="Address"
+        className={!readOnly ? "border-t-0 pt-0" : undefined}
+      >
         {propertyId != null && (
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="property_reference_id">ID</Label>
@@ -234,9 +221,8 @@ export function PropertyForm({
 
         <div className="space-y-2">
           <Label htmlFor="property_type">Property type *</Label>
-          <select
+          <Select
             id="property_type"
-            className={fieldClassName}
             value={value.property_type}
             onChange={(event) =>
               setField("property_type", event.target.value as PropertyType)
@@ -249,7 +235,7 @@ export function PropertyForm({
                 {formatPropertyType(type)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <CadSearchButton county={value.county} />
@@ -287,9 +273,9 @@ export function PropertyForm({
             disabled={readOnly}
           />
         </div>
-      </PropertySection>
+      </FormSection>
 
-      <PropertySection
+      <FormSection
         title="Legal & identifiers"
         description="Plat references, tax identifiers, and legal description."
       >
@@ -365,10 +351,9 @@ export function PropertyForm({
 
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="legal_description">Legal description</Label>
-          <textarea
+          <Textarea
             id="legal_description"
             rows={3}
-            className={cn(fieldClassName, "min-h-24 py-2")}
             value={value.legal_description}
             onChange={(event) =>
               setField("legal_description", event.target.value)
@@ -376,9 +361,9 @@ export function PropertyForm({
             disabled={readOnly}
           />
         </div>
-      </PropertySection>
+      </FormSection>
 
-      <PropertySection title="Structure & size">
+      <FormSection title="Structure & size">
         <div className="space-y-2">
           <Label htmlFor="bedrooms">Bedrooms</Label>
           <Input
@@ -483,9 +468,8 @@ export function PropertyForm({
 
         <div className="space-y-2">
           <Label htmlFor="occupancy_status">Occupancy status</Label>
-          <select
+          <Select
             id="occupancy_status"
-            className={fieldClassName}
             value={value.occupancy_status}
             onChange={(event) =>
               setField("occupancy_status", event.target.value)
@@ -497,11 +481,11 @@ export function PropertyForm({
                 {option || "—"}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
-      </PropertySection>
+      </FormSection>
 
-      <PropertySection
+      <FormSection
         title="Features"
         description="Property characteristics commonly referenced on Texas forms."
       >
@@ -520,9 +504,9 @@ export function PropertyForm({
             </Label>
           </div>
         ))}
-      </PropertySection>
+      </FormSection>
 
-      <PropertySection title="Utilities">
+      <FormSection title="Utilities">
         <div className="space-y-2">
           <Label htmlFor="electric_provider">Electric provider</Label>
           <Input
@@ -568,9 +552,9 @@ export function PropertyForm({
             disabled={readOnly}
           />
         </div>
-      </PropertySection>
+      </FormSection>
 
-      <PropertySection title="HOA">
+      <FormSection title="HOA">
         <div className="flex items-center gap-2 sm:col-span-2">
           <AppCheckbox
             id="property_has_hoa"
@@ -667,9 +651,8 @@ export function PropertyForm({
 
         <div className="space-y-2">
           <Label htmlFor="hoa_dues_frequency">Dues frequency</Label>
-          <select
+          <Select
             id="hoa_dues_frequency"
-            className={fieldClassName}
             value={value.hoa_dues_frequency}
             onChange={(event) =>
               setField("hoa_dues_frequency", event.target.value)
@@ -681,30 +664,37 @@ export function PropertyForm({
                 {option || "—"}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
-      </PropertySection>
+      </FormSection>
 
-      <PropertySection title="Notes">
+      <FormSection title="Notes">
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="notes">Notes</Label>
-          <textarea
+          <Textarea
             id="notes"
             rows={3}
-            className={cn(fieldClassName, "min-h-24 py-2")}
             value={value.notes}
             onChange={(event) => setField("notes", event.target.value)}
             disabled={readOnly}
           />
         </div>
-      </PropertySection>
+      </FormSection>
 
       {(error || validationError) && (
         <p className="pt-2 text-sm text-destructive">{error ?? validationError}</p>
       )}
 
       {showActions && onCancel && (
-        <div className="flex flex-wrap gap-2 pt-4">
+        <FormActions>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
+            {readOnly ? "Close" : "Cancel"}
+          </Button>
           {!readOnly && onSubmit && (
             <Button
               type="submit"
@@ -717,15 +707,7 @@ export function PropertyForm({
                   : "Save changes"}
             </Button>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            disabled={isSubmitting}
-          >
-            {readOnly ? "Close" : "Cancel"}
-          </Button>
-        </div>
+        </FormActions>
       )}
     </FormWrapper>
   );

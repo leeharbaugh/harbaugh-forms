@@ -17,8 +17,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FormActions } from "@/components/ui/form-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import type { AdminUserDetail } from "@/lib/admin/manage-user-detail";
 import { formatPhoneInput } from "@/lib/phone-format";
 import Link from "next/link";
@@ -264,8 +266,7 @@ export function AdminUserDetailPage({
           </div>
           <div className="grid gap-2">
             <Label>Primary organization</Label>
-            <select
-              className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-sm"
+            <Select
               value={primaryOrganizationId}
               onChange={(e) => setPrimaryOrganizationId(e.target.value)}
             >
@@ -275,9 +276,9 @@ export function AdminUserDetailPage({
                   {org.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
-          <div className="md:col-span-2">
+          <FormActions className="md:col-span-2">
             <Button
               type="button"
               disabled={isPending}
@@ -307,7 +308,7 @@ export function AdminUserDetailPage({
             >
               Save profile
             </Button>
-          </div>
+          </FormActions>
         </CardContent>
       </Card>
 
@@ -419,7 +420,7 @@ export function AdminUserDetailPage({
             <Label>Title</Label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
-          <div className="md:col-span-2">
+          <FormActions className="md:col-span-2">
             <Button
               type="button"
               disabled={isPending}
@@ -458,7 +459,7 @@ export function AdminUserDetailPage({
             >
               Save agent settings
             </Button>
-          </div>
+          </FormActions>
         </CardContent>
       </Card>
 

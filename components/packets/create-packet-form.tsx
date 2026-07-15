@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { createClient } from "@/lib/supabase/client";
 import {
   type BuyerRepAgreementListItem,
@@ -39,9 +40,6 @@ type CreatePacketFromAgreementFormProps = {
   agreementId: number;
   onCancel: () => void;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 const PACKET_TEMPLATE_SELECT = `
   *,
@@ -229,9 +227,8 @@ export function CreatePacketFromAgreementForm({
             Create one under Collections first.
           </p>
         ) : (
-          <select
-            id="collection_id"
-            className={fieldClassName}
+          <Select
+            id="collection_id"
             value={selectedTemplateId ?? ""}
             onChange={(event) =>
               setSelectedTemplateId(
@@ -246,7 +243,7 @@ export function CreatePacketFromAgreementForm({
                 {template.collection_name}
               </option>
             ))}
-          </select>
+          </Select>
         )}
       </div>
 

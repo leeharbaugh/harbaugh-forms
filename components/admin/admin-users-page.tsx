@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/list-badges";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
@@ -217,9 +218,8 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="primaryOrganizationId">Primary organization</Label>
-            <select
-              id="primaryOrganizationId"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            <Select
+              id="primaryOrganizationId"
               value={primaryOrganizationId}
               onChange={(e) => setPrimaryOrganizationId(e.target.value)}
             >
@@ -229,13 +229,12 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
                   {org.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="membershipRole">Membership role</Label>
-            <select
-              id="membershipRole"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+            <Select
+              id="membershipRole"
               value={membershipRole}
               onChange={(e) =>
                 setMembershipRole(e.target.value as "MEMBER" | "ORG_ADMIN")
@@ -243,7 +242,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
             >
               <option value="MEMBER">MEMBER</option>
               <option value="ORG_ADMIN">ORG_ADMIN</option>
-            </select>
+            </Select>
             <p className="text-xs text-muted-foreground">
               Does not grant application-level business-data access.
             </p>

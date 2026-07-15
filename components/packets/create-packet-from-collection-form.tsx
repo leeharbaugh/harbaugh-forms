@@ -5,7 +5,9 @@ import { PacketFormsDraftEditor } from "@/components/packets/packet-forms-draft-
 import { PropertyPicker } from "@/components/properties/property-picker";
 import { usePropertyDuplicateConfirm } from "@/components/properties/use-property-duplicate-confirm";
 import { Button } from "@/components/ui/button";
+import { FormActions } from "@/components/ui/form-actions";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { createClient } from "@/lib/supabase/client";
 import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
 import { type CollectionFormLink } from "@/lib/types/collection";
@@ -50,9 +52,6 @@ type CreatePacketFromCollectionFormProps = {
 };
 
 type CreateStep = "details" | "forms";
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 const COLLECTION_SELECT = `
   *,
@@ -330,9 +329,11 @@ export function CreatePacketFromCollectionForm({
     return (
       <div className="space-y-4">
         <p className="text-sm text-destructive">{loadError}</p>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
+        <FormActions>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        </FormActions>
       </div>
     );
   }
@@ -374,14 +375,7 @@ export function CreatePacketFromCollectionForm({
           <p className="text-sm text-destructive">{submitError}</p>
         )}
 
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            onClick={() => void handleCreate()}
-            disabled={isSubmitting || !!formsValidationError}
-          >
-            {isSubmitting ? "Creating..." : "Create packet"}
-          </Button>
+        <FormActions>
           <Button
             type="button"
             variant="outline"
@@ -390,7 +384,14 @@ export function CreatePacketFromCollectionForm({
           >
             Cancel
           </Button>
-        </div>
+          <Button
+            type="button"
+            onClick={() => void handleCreate()}
+            disabled={isSubmitting || !!formsValidationError}
+          >
+            {isSubmitting ? "Creating..." : "Create packet"}
+          </Button>
+        </FormActions>
       </div>
       </>
     );
@@ -399,12 +400,12 @@ export function CreatePacketFromCollectionForm({
   return (
     <>
       {duplicateDialog}
-      <div className="space-y-6">
-      <div className="space-y-2">
+      <div className="space-y-8">
+      <div className="space-y-1.5">
         <h2 className="text-lg font-semibold">
           {getPacketCreateTitle(workflowType)}
         </h2>
-        <ol className="list-none space-y-1 text-sm text-muted-foreground">
+        <ol className="list-none space-y-0.5 text-xs text-muted-foreground">
           {createFlow.steps.map((stepText) => (
             <li key={stepText}>{stepText}</li>
           ))}
@@ -420,9 +421,8 @@ export function CreatePacketFromCollectionForm({
             {NO_COLLECTIONS_MESSAGE}
           </p>
         ) : (
-          <select
+          <Select
             id="collection_id"
-            className={fieldClassName}
             value={selectedCollectionId ?? ""}
             onChange={(event) =>
               handleCollectionChange(
@@ -437,7 +437,7 @@ export function CreatePacketFromCollectionForm({
                 {collection.collection_name}
               </option>
             ))}
-          </select>
+          </Select>
         )}
       </div>
 
@@ -494,7 +494,15 @@ export function CreatePacketFromCollectionForm({
         </p>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <FormActions>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={isSubmitting}
+        >
+          Cancel
+        </Button>
         <Button
           type="button"
           onClick={handleContinueToForms}
@@ -508,15 +516,7 @@ export function CreatePacketFromCollectionForm({
         >
           Continue to review forms
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCancel}
-          disabled={isSubmitting}
-        >
-          Cancel
-        </Button>
-      </div>
+      </FormActions>
     </div>
     </>
   );

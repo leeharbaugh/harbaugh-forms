@@ -2,6 +2,8 @@
 
 import { PhoneInput } from "@/components/phone-input";
 import { Button } from "@/components/ui/button";
+import { FormActions } from "@/components/ui/form-actions";
+import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -43,7 +45,11 @@ export function AgentProfileForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <p className="text-xs text-muted-foreground">
+        Required fields are marked with *
+      </p>
+
+      <FormSection title="Identity" className="border-t-0 pt-0">
         <div className="space-y-2">
           <Label htmlFor="agent_first_name">First name *</Label>
           <Input
@@ -81,6 +87,9 @@ export function AgentProfileForm({
             required
           />
         </div>
+      </FormSection>
+
+      <FormSection title="Contact & address">
         <div className="space-y-2">
           <Label htmlFor="agent_phone">Phone *</Label>
           <PhoneInput
@@ -133,15 +142,17 @@ export function AgentProfileForm({
             onChange={(event) => setField("agent_zip", event.target.value)}
           />
         </div>
-      </div>
+      </FormSection>
 
       {(error || validationError) && (
         <p className="text-sm text-destructive">{error ?? validationError}</p>
       )}
 
-      <Button type="submit" disabled={isSubmitting || Boolean(validationError)}>
-        {isSubmitting ? "Saving..." : "Save agent profile"}
-      </Button>
+      <FormActions>
+        <Button type="submit" disabled={isSubmitting || Boolean(validationError)}>
+          {isSubmitting ? "Saving..." : "Save agent profile"}
+        </Button>
+      </FormActions>
     </form>
   );
 }

@@ -2,8 +2,11 @@
 
 import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
+import { FormActions } from "@/components/ui/form-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   FORM_CATEGORIES,
   type FormCategory,
@@ -12,7 +15,6 @@ import {
   formatFormReference,
   validateFormInput,
 } from "@/lib/types/form";
-import { cn } from "@/lib/utils";
 
 type FormFormProps = {
   value: FormInput;
@@ -30,9 +32,6 @@ type FormFormProps = {
   onReplacePdfChange: (replacePdf: boolean) => void;
   hideFooterActions?: boolean;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 export function FormForm({
   value,
@@ -125,9 +124,8 @@ export function FormForm({
 
         <div className="space-y-2">
           <Label htmlFor="form_category">Form category *</Label>
-          <select
+          <Select
             id="form_category"
-            className={fieldClassName}
             value={value.form_category}
             onChange={(event) =>
               setField("form_category", event.target.value as FormCategory)
@@ -140,7 +138,7 @@ export function FormForm({
                 {formatFormCategory(category)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-2">
@@ -167,10 +165,9 @@ export function FormForm({
 
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="description">Description</Label>
-          <textarea
+          <Textarea
             id="description"
             rows={3}
-            className={cn(fieldClassName, "min-h-24 py-2")}
             value={value.description}
             onChange={(event) => setField("description", event.target.value)}
             disabled={readOnly}
@@ -230,7 +227,17 @@ export function FormForm({
         <p className="text-sm text-destructive">{error ?? validationError}</p>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <FormActions>
+        {!hideFooterActions && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
+            {readOnly ? "Close" : "Cancel"}
+          </Button>
+        )}
         {!readOnly && (
           <Button
             type="submit"
@@ -243,17 +250,7 @@ export function FormForm({
                 : "Save changes"}
           </Button>
         )}
-        {!hideFooterActions && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            disabled={isSubmitting}
-          >
-            {readOnly ? "Close" : "Cancel"}
-          </Button>
-        )}
-      </div>
+      </FormActions>
     </form>
   );
 }

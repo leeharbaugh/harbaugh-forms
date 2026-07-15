@@ -10,7 +10,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FormActions } from "@/components/ui/form-actions";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatAgreementReference,
@@ -46,9 +48,6 @@ type CreatePacketWizardProps = {
   onCancel: () => void;
   onSelectWorkflowType?: (type: PacketWorkflowType) => void;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 const BUYER_REP_AGREEMENT_SELECT = `
   id,
@@ -187,7 +186,7 @@ export function CreatePacketWizard({
             <button
               key={type}
               type="button"
-              className="rounded-lg border p-4 text-left transition-colors hover:border-foreground/30 hover:bg-muted/40"
+              className="rounded-md border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => {
                 if (onSelectWorkflowType) {
                   onSelectWorkflowType(type);
@@ -204,9 +203,11 @@ export function CreatePacketWizard({
           ))}
         </div>
 
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
+        <FormActions>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        </FormActions>
       </div>
     );
   }
@@ -298,9 +299,8 @@ export function CreatePacketWizard({
               </CardContent>
             </Card>
           ) : (
-            <select
+            <Select
               id="agreement_id"
-              className={fieldClassName}
               value={draftAgreementId ?? ""}
               onChange={(event) =>
                 setDraftAgreementId(
@@ -319,11 +319,14 @@ export function CreatePacketWizard({
                   )
                 </option>
               ))}
-            </select>
+            </Select>
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <FormActions>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
           <Button
             type="button"
             disabled={draftAgreementId === null || agreements.length === 0}
@@ -335,10 +338,7 @@ export function CreatePacketWizard({
           >
             Continue with legacy agreement
           </Button>
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-        </div>
+        </FormActions>
       </div>
     );
   }

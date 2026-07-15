@@ -3,8 +3,11 @@
 import { FormPicker } from "@/components/collections/form-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FormActions } from "@/components/ui/form-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   COLLECTION_TYPES,
   type CollectionInput,
@@ -15,7 +18,6 @@ import {
   isCollectionDeleted,
   validateCollectionInput,
 } from "@/lib/types/collection";
-import { cn } from "@/lib/utils";
 
 type CollectionFormProps = {
   value: CollectionInput;
@@ -32,9 +34,6 @@ type CollectionFormProps = {
   isDeleting?: boolean;
   isRestoring?: boolean;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 export function CollectionForm({
   value,
@@ -123,9 +122,8 @@ export function CollectionForm({
 
         <div className="space-y-2">
           <Label htmlFor="collection_type">Collection type *</Label>
-          <select
+          <Select
             id="collection_type"
-            className={fieldClassName}
             value={value.collection_type}
             onChange={(event) =>
               setField("collection_type", event.target.value as CollectionType)
@@ -138,15 +136,14 @@ export function CollectionForm({
                 {formatCollectionType(type)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="description">Description</Label>
-          <textarea
+          <Textarea
             id="description"
             rows={3}
-            className={cn(fieldClassName, "min-h-24 py-2")}
             value={value.description}
             onChange={(event) => setField("description", event.target.value)}
             disabled={readOnly}
@@ -167,19 +164,15 @@ export function CollectionForm({
         </p>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {!readOnly && (
-          <Button
-            type="submit"
-            disabled={isSubmitting || !!validationError}
-          >
-            {isSubmitting
-              ? "Saving..."
-              : mode === "create"
-                ? "Add packet template"
-                : "Save changes"}
-          </Button>
-        )}
+      <FormActions>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={isSubmitting || isDeleting || isRestoring}
+        >
+          {readOnly ? "Close" : "Cancel"}
+        </Button>
         {readOnly && !isDeleted && onDelete && (
           <Button
             type="button"
@@ -199,15 +192,19 @@ export function CollectionForm({
             {isRestoring ? "Restoring..." : "Restore"}
           </Button>
         )}
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCancel}
-          disabled={isSubmitting || isDeleting || isRestoring}
-        >
-          {readOnly ? "Close" : "Cancel"}
-        </Button>
-      </div>
+        {!readOnly && (
+          <Button
+            type="submit"
+            disabled={isSubmitting || !!validationError}
+          >
+            {isSubmitting
+              ? "Saving..."
+              : mode === "create"
+                ? "Add packet template"
+                : "Save changes"}
+          </Button>
+        )}
+      </FormActions>
     </form>
   );
 }

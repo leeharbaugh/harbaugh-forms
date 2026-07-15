@@ -46,54 +46,48 @@ export type PacketCreateFlowCopy = {
 const CREATE_FLOW_COPY: Record<PacketWorkflowType, PacketCreateFlowCopy> = {
   buyer_rep: {
     steps: [
-      "Step 1: Choose the buyer rep collection you want to use.",
-      "Step 2: Search for each buyer by name, email, or phone.",
-      "Step 3: Select the correct buyer to add them to the packet.",
-      "Step 4: Continue to review the forms before generating the packet.",
+      "Choose a buyer rep collection.",
+      "Add one or more buyers.",
+      "Review forms, then create the packet.",
     ],
     collectionLabel: "1. Choose buyer rep collection",
     propertyLabel: null,
     contacts: {
       search: "2. Search and add buyers",
       selected: "3. Buyers assigned to this packet",
-      empty:
-        "No buyers have been added to this packet yet. Search above to add one or more buyers.",
+      empty: "No buyers added yet. Search above to add buyers.",
       required: "Add at least one buyer before continuing.",
     },
   },
   listing: {
     steps: [
-      "Step 1: Choose the listing collection you want to use.",
-      "Step 2: Search for each seller by name, email, or phone.",
-      "Step 3: Select the correct seller to add them to the packet.",
-      "Step 4: Choose the property for this listing.",
-      "Step 5: Continue to review the forms before generating the packet.",
+      "Choose a listing collection.",
+      "Add one or more sellers.",
+      "Choose the property.",
+      "Review forms, then create the packet.",
     ],
     collectionLabel: "1. Choose listing collection",
     propertyLabel: "4. Choose property",
     contacts: {
       search: "2. Search and add sellers",
       selected: "3. Sellers assigned to this packet",
-      empty:
-        "No sellers have been added to this packet yet. Search above to add one or more sellers.",
+      empty: "No sellers added yet. Search above to add sellers.",
       required: "Add at least one seller before continuing.",
     },
   },
   contract_offer: {
     steps: [
-      "Step 1: Choose the contract offer collection you want to use.",
-      "Step 2: Search for each contact by name, email, or phone.",
-      "Step 3: Select the correct contact to add them to the packet.",
-      "Step 4: Choose the property for this offer.",
-      "Step 5: Continue to review the forms before generating the packet.",
+      "Choose a contract offer collection.",
+      "Add one or more contacts.",
+      "Choose the property.",
+      "Review forms, then create the packet.",
     ],
     collectionLabel: "1. Choose contract offer collection",
     propertyLabel: "4. Choose property",
     contacts: {
       search: "2. Search and add contacts",
       selected: "3. Contacts assigned to this packet",
-      empty:
-        "No contacts have been added to this packet yet. Search above to add one or more contacts.",
+      empty: "No contacts added yet. Search above to add contacts.",
       required: "Add at least one contact before continuing.",
     },
   },
@@ -101,19 +95,17 @@ const CREATE_FLOW_COPY: Record<PacketWorkflowType, PacketCreateFlowCopy> = {
 
 const LEASE_LISTING_CREATE_FLOW_COPY: PacketCreateFlowCopy = {
   steps: [
-    "Step 1: Choose the listing collection you want to use.",
-    "Step 2: Search for each landlord by name, email, or phone.",
-    "Step 3: Select the correct landlord to add them to the packet.",
-    "Step 4: Choose the property for this listing.",
-    "Step 5: Continue to review the forms before generating the packet.",
+    "Choose a listing collection.",
+    "Add one or more landlords.",
+    "Choose the property.",
+    "Review forms, then create the packet.",
   ],
   collectionLabel: "1. Choose listing collection",
   propertyLabel: "4. Choose property",
   contacts: {
     search: "2. Search landlords",
     selected: "3. Landlords assigned to this packet",
-    empty:
-      "No landlords have been added to this packet yet. Search above to add one or more landlords.",
+    empty: "No landlords added yet. Search above to add landlords.",
     required: "Add at least one landlord before continuing.",
   },
 };

@@ -30,6 +30,7 @@ describe("getPacketCreateFlowCopy listing owner kind", () => {
     const copy = getPacketCreateFlowCopy("listing", "seller");
     assert.match(copy.contacts.search, /sellers/i);
     assert.match(copy.contacts.required, /seller/i);
+    assert.ok(copy.propertyLabel);
   });
 
   it("uses landlord copy for lease listing packets", () => {
@@ -43,5 +44,12 @@ describe("getPacketCreateFlowCopy listing owner kind", () => {
       copy.contacts.required,
       "Add at least one landlord before continuing.",
     );
+    assert.match(copy.steps.join(" "), /landlord/i);
+  });
+
+  it("excludes property selection copy for buyer rep packets", () => {
+    const copy = getPacketCreateFlowCopy("buyer_rep");
+    assert.equal(copy.propertyLabel, null);
+    assert.match(copy.contacts.search, /buyers/i);
   });
 });

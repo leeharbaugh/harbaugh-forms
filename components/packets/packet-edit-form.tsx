@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { createClient } from "@/lib/supabase/client";
 import { formatCollectionType, type CollectionType } from "@/lib/types/collection";
 import {
@@ -52,9 +53,6 @@ type CollectionOption = {
   collection_name: string;
   collection_type: string;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 export function PacketEditForm({ packetId }: PacketEditFormProps) {
   const router = useRouter();
@@ -271,9 +269,8 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
 
           <div className="space-y-2">
             <Label htmlFor="packet_type">Packet type</Label>
-            <select
-              id="packet_type"
-              className={fieldClassName}
+            <Select
+              id="packet_type"
               value={packetType}
               onChange={(event) => {
                 const nextType = event.target.value as PacketWorkflowType | "";
@@ -290,14 +287,13 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
                   {formatPacketWorkflowType(type)}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="collection_id">Collection *</Label>
-            <select
-              id="collection_id"
-              className={fieldClassName}
+            <Select
+              id="collection_id"
               value={collectionId ?? ""}
               onChange={(event) =>
                 setCollectionId(
@@ -316,7 +312,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
                   )
                 </option>
               ))}
-            </select>
+            </Select>
             {hasLegacyAgreement && packet.collections && (
               <p className="text-xs text-muted-foreground">
                 Locked to {packet.collections.collection_name} (legacy agreement
@@ -337,16 +333,15 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
 
           <div className="space-y-2">
             <Label htmlFor="packet_status">Status</Label>
-            <select
-              id="packet_status"
-              className={fieldClassName}
+            <Select
+              id="packet_status"
               value={status}
               onChange={(event) => setStatus(event.target.value)}
               disabled={isSaving}
             >
               <option value="ACTIVE">Active</option>
               <option value="INACTIVE">Inactive</option>
-            </select>
+            </Select>
           </div>
 
           {showPropertySelection && (

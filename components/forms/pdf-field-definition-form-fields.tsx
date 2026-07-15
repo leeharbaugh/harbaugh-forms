@@ -3,6 +3,7 @@
 import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { FieldSourceFormFields } from "@/components/forms/field-source-form-fields";
 import {
   FIELD_DATA_TYPES,
@@ -18,9 +19,6 @@ type PdfFieldDefinitionFormFieldsProps = {
   onChange: (value: FieldInput) => void;
   readOnly?: boolean;
 };
-
-const fieldClassName =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm";
 
 export function PdfFieldDefinitionFormFields({
   value,
@@ -69,9 +67,9 @@ export function PdfFieldDefinitionFormFields({
 
         <div className="space-y-2">
           <Label htmlFor="edit_field_data_type">Data type *</Label>
-          <select
+          <Select
             id="edit_field_data_type"
-            className={fieldClassName}
+
             value={value.field_data_type}
             onChange={(event) =>
               setField("field_data_type", event.target.value)
@@ -83,14 +81,14 @@ export function PdfFieldDefinitionFormFields({
                 {formatFieldDataType(dataType)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="edit_field_widget_type">Widget type *</Label>
-          <select
+          <Select
             id="edit_field_widget_type"
-            className={fieldClassName}
+
             value={value.field_widget_type}
             onChange={(event) =>
               setField("field_widget_type", event.target.value)
@@ -102,7 +100,7 @@ export function PdfFieldDefinitionFormFields({
                 {formatFieldWidgetType(widgetType)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-2 sm:col-span-2">
@@ -135,7 +133,8 @@ export function PdfFieldDefinitionFormFields({
       <FieldSourceFormFields
         value={{ ...value, status: "ACTIVE" }}
         onChange={(nextValue) => {
-          const { status: _status, ...fieldInput } = nextValue;
+          const { status, ...fieldInput } = nextValue;
+          void status;
           onChange(fieldInput);
         }}
         readOnly={readOnly}
