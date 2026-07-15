@@ -5,6 +5,10 @@ import "server-only";
 import { nextUniqueGlobalFormIdentity } from "@/lib/admin/global-form-identity";
 import { requireAppAdmin } from "@/lib/admin/require-app-admin";
 import {
+  classifyPrivateFieldForGlobalization,
+  isStructuralMappingDefaultOverride,
+} from "@/lib/field-defaults";
+import {
   buildGlobalFormStoragePath,
   buildPendingFormStoragePath,
   extractPdfFileNameFromStoragePath,
@@ -17,6 +21,19 @@ import { randomUUID } from "crypto";
 export type CopyFormToGlobalResult =
   | { ok: true; newFormId: number; message: string }
   | { ok: false; error: string };
+
+export type CopyToGlobalPreview = {
+  formName: string;
+  reusableGlobalFieldKeys: string[];
+  privateFieldsToCreateAsGlobal: string[];
+  blockedFields: Array<{ fieldKey: string; reason: string }>;
+  defaultsExcludedNote: string;
+  structuralMappingOverridesKept: number;
+  preferenceMappingOverridesStripped: number;
+};
+
+const DEFAULTS_EXCLUDED_NOTE =
+  "Private and organization preference defaults will not be copied. The original form’s defaults remain unchanged.";
 
 type SourceFormRow = {
   id: number;
@@ -80,133 +97,18 @@ type FieldRow = {
   organization_id: string | null;
 };
 
+type AdminClient = ReturnType<typeof createAdminClient>;
+
 async function softDeleteForm(
-  admin: ReturnType<typeof createAdminClient>,
+  admin: AdminClient,
   formId: number,
 ): Promise<void> {
   await admin.from("forms").update({ status: "DELETED" }).eq("id", formId);
 }
 
-async function resolveOrCopyFieldId(
-  admin: ReturnType<typeof createAdminClient>,
-  sourceField: FieldRow,
-  fieldIdMap: Map<string, string>,
-  createdFieldIds: string[],
-): Promise<string> {
-  const cached = fieldIdMap.get(sourceField.id);
-  if (cached) {
-    return cached;
-  }
-
-  // Shared GLOBAL catalog fields are referenced, not duplicated.
-  if (sourceField.scope === "GLOBAL" && sourceField.status === "ACTIVE") {
-    fieldIdMap.set(sourceField.id, sourceField.id);
-    return sourceField.id;
-  }
-
-  // Prefer an existing ACTIVE GLOBAL field with the same key.
-  const { data: existingGlobal } = await admin
-    .from("fields")
-    .select("id")
-    .eq("status", "ACTIVE")
-    .eq("scope", "GLOBAL")
-    .eq("field_key", sourceField.field_key)
-    .maybeSingle();
-
-  if (existingGlobal?.id) {
-    fieldIdMap.set(sourceField.id, existingGlobal.id as string);
-    return existingGlobal.id as string;
-  }
-
-  // Create an independent GLOBAL field copy of private (or org) metadata.
-  let attempt = 0;
-  while (attempt < 50) {
-    const candidate =
-      attempt === 0
-        ? sourceField.field_key
-        : `${sourceField.field_key}_COPY${attempt === 1 ? "" : attempt}`.slice(
-            0,
-            100,
-          );
-
-    const { data: inserted, error } = await admin
-      .from("fields")
-      .insert({
-        field_key: candidate,
-        field_name: sourceField.field_name,
-        field_label: sourceField.field_label,
-        field_data_type: sourceField.field_data_type,
-        field_widget_type: sourceField.field_widget_type,
-        default_value: sourceField.default_value,
-        default_checked: sourceField.default_checked,
-        required: sourceField.required,
-        notes: sourceField.notes,
-        source_type: sourceField.source_type,
-        source_path: sourceField.source_path,
-        resolver_key: sourceField.resolver_key,
-        fallback_value: sourceField.fallback_value,
-        field_resolver_id: sourceField.field_resolver_id,
-        status: "ACTIVE",
-        scope: "GLOBAL",
-        owner_user_id: null,
-        organization_id: null,
-      })
-      .select("id")
-      .single();
-
-    if (!error && inserted?.id) {
-      const newId = inserted.id as string;
-      fieldIdMap.set(sourceField.id, newId);
-      createdFieldIds.push(newId);
-      return newId;
-    }
-
-    if (error?.code === "23505" || /duplicate|unique/i.test(error?.message ?? "")) {
-      attempt += 1;
-      continue;
-    }
-
-    throw new Error(error?.message ?? "Failed to copy a form field.");
-  }
-
-  throw new Error("Unable to allocate a unique GLOBAL field key.");
-}
-
-/**
- * Copy a private user form into the statewide Global library.
- * Application ADMIN only. Source form is never mutated.
- */
-export async function copyFormToGlobalLibrary(
-  sourceFormId: number,
-): Promise<CopyFormToGlobalResult> {
-  if (!Number.isInteger(sourceFormId) || sourceFormId <= 0) {
-    return { ok: false, error: "A valid source form is required." };
-  }
-
-  let admin;
-  let adminUser;
-  try {
-    adminUser = await requireAppAdmin();
-    admin = createAdminClient();
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Administrator access required.";
-    return { ok: false, error: message };
-  }
-
-  const { data: source, error: sourceError } = await admin
-    .from("forms")
-    .select(
-      "id, form_code, form_name, form_category, state_code, version_label, source_storage_path, description, status, scope, owner_user_id, organization_id, update_date",
-    )
-    .eq("id", sourceFormId)
-    .maybeSingle();
-
-  if (sourceError) {
-    return { ok: false, error: sourceError.message };
-  }
-
-  const sourceForm = source as SourceFormRow | null;
+function validatePrivateSourceForm(
+  sourceForm: SourceFormRow | null,
+): { ok: true; sourceForm: SourceFormRow } | { ok: false; error: string } {
   if (!sourceForm) {
     return { ok: false, error: "Source form was not found." };
   }
@@ -239,6 +141,341 @@ export async function copyFormToGlobalLibrary(
     };
   }
 
+  return { ok: true, sourceForm };
+}
+
+async function loadSourceForm(
+  admin: AdminClient,
+  sourceFormId: number,
+): Promise<{ ok: true; sourceForm: SourceFormRow } | { ok: false; error: string }> {
+  const { data: source, error: sourceError } = await admin
+    .from("forms")
+    .select(
+      "id, form_code, form_name, form_category, state_code, version_label, source_storage_path, description, status, scope, owner_user_id, organization_id, update_date",
+    )
+    .eq("id", sourceFormId)
+    .maybeSingle();
+
+  if (sourceError) {
+    return { ok: false, error: sourceError.message };
+  }
+
+  return validatePrivateSourceForm(source as SourceFormRow | null);
+}
+
+async function loadActiveMappingsAndFields(
+  admin: AdminClient,
+  formId: number,
+): Promise<
+  | { ok: true; mappingRows: MappingRow[]; fields: FieldRow[] }
+  | { ok: false; error: string }
+> {
+  const { data: mappings, error: mappingsError } = await admin
+    .from("form_field_mappings")
+    .select(
+      "id, field_id, mapping_name, occurrence_index, page_number, x, y, width, height, page_width, page_height, font_size, alignment, field_widget_type, default_value_override, required, notes, status, pdf_field_name, pdf_field_type, pdf_export_value",
+    )
+    .eq("form_id", formId)
+    .eq("status", "ACTIVE");
+
+  if (mappingsError) {
+    return { ok: false, error: mappingsError.message };
+  }
+
+  const mappingRows = (mappings ?? []) as MappingRow[];
+  const fieldIds = [
+    ...new Set(
+      mappingRows
+        .map((row) => row.field_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+
+  if (fieldIds.length === 0) {
+    return { ok: true, mappingRows, fields: [] };
+  }
+
+  const { data: fields, error: fieldsError } = await admin
+    .from("fields")
+    .select(
+      "id, field_key, field_name, field_label, field_data_type, field_widget_type, default_value, default_checked, required, notes, source_type, source_path, resolver_key, fallback_value, field_resolver_id, status, scope, owner_user_id, organization_id",
+    )
+    .in("id", fieldIds);
+
+  if (fieldsError) {
+    return { ok: false, error: fieldsError.message };
+  }
+
+  return {
+    ok: true,
+    mappingRows,
+    fields: (fields ?? []) as FieldRow[],
+  };
+}
+
+type FieldPlan = {
+  reusableGlobalFieldKeys: string[];
+  privateFieldsToCreateAsGlobal: string[];
+  blockedFields: Array<{ fieldKey: string; reason: string }>;
+};
+
+async function planFieldGlobalization(
+  admin: AdminClient,
+  fields: FieldRow[],
+): Promise<FieldPlan> {
+  const reusableGlobalFieldKeys: string[] = [];
+  const privateFieldsToCreateAsGlobal: string[] = [];
+  const blockedFields: Array<{ fieldKey: string; reason: string }> = [];
+  const seenKeys = new Set<string>();
+
+  for (const field of fields) {
+    if (seenKeys.has(field.field_key)) {
+      continue;
+    }
+    seenKeys.add(field.field_key);
+
+    if (field.scope === "GLOBAL" && field.status === "ACTIVE") {
+      reusableGlobalFieldKeys.push(field.field_key);
+      continue;
+    }
+
+    const { data: existingGlobal } = await admin
+      .from("fields")
+      .select("id")
+      .eq("status", "ACTIVE")
+      .eq("scope", "GLOBAL")
+      .eq("field_key", field.field_key)
+      .maybeSingle();
+
+    if (existingGlobal?.id) {
+      reusableGlobalFieldKeys.push(field.field_key);
+      continue;
+    }
+
+    const classification = classifyPrivateFieldForGlobalization(field);
+    if (!classification.safe) {
+      blockedFields.push({
+        fieldKey: field.field_key,
+        reason: classification.reason,
+      });
+      continue;
+    }
+
+    privateFieldsToCreateAsGlobal.push(field.field_key);
+  }
+
+  return {
+    reusableGlobalFieldKeys,
+    privateFieldsToCreateAsGlobal,
+    blockedFields,
+  };
+}
+
+function countMappingOverrideHandling(mappingRows: MappingRow[]): {
+  structuralMappingOverridesKept: number;
+  preferenceMappingOverridesStripped: number;
+} {
+  let structuralMappingOverridesKept = 0;
+  let preferenceMappingOverridesStripped = 0;
+
+  for (const row of mappingRows) {
+    if (isStructuralMappingDefaultOverride(row.default_value_override)) {
+      structuralMappingOverridesKept += 1;
+    } else {
+      preferenceMappingOverridesStripped += 1;
+    }
+  }
+
+  return {
+    structuralMappingOverridesKept,
+    preferenceMappingOverridesStripped,
+  };
+}
+
+function mappingDefaultValueOverride(
+  value: string | null,
+): string | null {
+  return isStructuralMappingDefaultOverride(value) ? value : null;
+}
+
+function formatBlockedFieldsError(
+  blockedFields: Array<{ fieldKey: string; reason: string }>,
+): string {
+  const keys = blockedFields.map((row) => row.fieldKey).join(", ");
+  return `Cannot copy to Global: these fields need admin review before becoming Global catalog fields: ${keys}`;
+}
+
+async function resolveOrCopyFieldId(
+  admin: AdminClient,
+  sourceField: FieldRow,
+  fieldIdMap: Map<string, string>,
+  createdFieldIds: string[],
+): Promise<string> {
+  const cached = fieldIdMap.get(sourceField.id);
+  if (cached) {
+    return cached;
+  }
+
+  // Shared GLOBAL catalog fields are referenced, not duplicated.
+  if (sourceField.scope === "GLOBAL" && sourceField.status === "ACTIVE") {
+    fieldIdMap.set(sourceField.id, sourceField.id);
+    return sourceField.id;
+  }
+
+  // Prefer an existing ACTIVE GLOBAL field with the same key.
+  // Leave that Global field untouched (do not import private defaults).
+  const { data: existingGlobal } = await admin
+    .from("fields")
+    .select("id")
+    .eq("status", "ACTIVE")
+    .eq("scope", "GLOBAL")
+    .eq("field_key", sourceField.field_key)
+    .maybeSingle();
+
+  if (existingGlobal?.id) {
+    fieldIdMap.set(sourceField.id, existingGlobal.id as string);
+    return existingGlobal.id as string;
+  }
+
+  const classification = classifyPrivateFieldForGlobalization(sourceField);
+  if (!classification.safe) {
+    throw new Error(
+      `Cannot promote field "${sourceField.field_key}" to Global: ${classification.reason}`,
+    );
+  }
+
+  // Create an independent GLOBAL field copy of private (or org) metadata.
+  // Preference defaults are excluded; source resolution paths remain.
+  let attempt = 0;
+  while (attempt < 50) {
+    const candidate =
+      attempt === 0
+        ? sourceField.field_key
+        : `${sourceField.field_key}_COPY${attempt === 1 ? "" : attempt}`.slice(
+            0,
+            100,
+          );
+
+    const { data: inserted, error } = await admin
+      .from("fields")
+      .insert({
+        field_key: candidate,
+        field_name: sourceField.field_name,
+        field_label: sourceField.field_label,
+        field_data_type: sourceField.field_data_type,
+        field_widget_type: sourceField.field_widget_type,
+        default_value: null,
+        default_checked: null,
+        required: sourceField.required,
+        notes: sourceField.notes,
+        source_type: sourceField.source_type,
+        source_path: sourceField.source_path,
+        resolver_key: sourceField.resolver_key,
+        fallback_value: null,
+        field_resolver_id: sourceField.field_resolver_id,
+        status: "ACTIVE",
+        scope: "GLOBAL",
+        owner_user_id: null,
+        organization_id: null,
+      })
+      .select("id")
+      .single();
+
+    if (!error && inserted?.id) {
+      const newId = inserted.id as string;
+      fieldIdMap.set(sourceField.id, newId);
+      createdFieldIds.push(newId);
+      return newId;
+    }
+
+    if (error?.code === "23505" || /duplicate|unique/i.test(error?.message ?? "")) {
+      attempt += 1;
+      continue;
+    }
+
+    throw new Error(error?.message ?? "Failed to copy a form field.");
+  }
+
+  throw new Error("Unable to allocate a unique GLOBAL field key.");
+}
+
+/**
+ * Preview how a private form would be copied into the Global library,
+ * without creating records. Application ADMIN only.
+ */
+export async function previewCopyFormToGlobalLibrary(
+  sourceFormId: number,
+): Promise<{ ok: true; preview: CopyToGlobalPreview } | { ok: false; error: string }> {
+  if (!Number.isInteger(sourceFormId) || sourceFormId <= 0) {
+    return { ok: false, error: "A valid source form is required." };
+  }
+
+  let admin: AdminClient;
+  try {
+    await requireAppAdmin();
+    admin = createAdminClient();
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Administrator access required.";
+    return { ok: false, error: message };
+  }
+
+  const loaded = await loadSourceForm(admin, sourceFormId);
+  if (!loaded.ok) {
+    return loaded;
+  }
+
+  const mapped = await loadActiveMappingsAndFields(admin, loaded.sourceForm.id);
+  if (!mapped.ok) {
+    return mapped;
+  }
+
+  const fieldPlan = await planFieldGlobalization(admin, mapped.fields);
+  const overrideCounts = countMappingOverrideHandling(mapped.mappingRows);
+
+  return {
+    ok: true,
+    preview: {
+      formName: loaded.sourceForm.form_name,
+      reusableGlobalFieldKeys: fieldPlan.reusableGlobalFieldKeys,
+      privateFieldsToCreateAsGlobal: fieldPlan.privateFieldsToCreateAsGlobal,
+      blockedFields: fieldPlan.blockedFields,
+      defaultsExcludedNote: DEFAULTS_EXCLUDED_NOTE,
+      structuralMappingOverridesKept: overrideCounts.structuralMappingOverridesKept,
+      preferenceMappingOverridesStripped:
+        overrideCounts.preferenceMappingOverridesStripped,
+    },
+  };
+}
+
+/**
+ * Copy a private user form into the statewide Global library.
+ * Application ADMIN only. Source form is never mutated.
+ */
+export async function copyFormToGlobalLibrary(
+  sourceFormId: number,
+): Promise<CopyFormToGlobalResult> {
+  if (!Number.isInteger(sourceFormId) || sourceFormId <= 0) {
+    return { ok: false, error: "A valid source form is required." };
+  }
+
+  let admin: AdminClient;
+  let adminUser;
+  try {
+    adminUser = await requireAppAdmin();
+    admin = createAdminClient();
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Administrator access required.";
+    return { ok: false, error: message };
+  }
+
+  const loaded = await loadSourceForm(admin, sourceFormId);
+  if (!loaded.ok) {
+    return loaded;
+  }
+  const sourceForm = loaded.sourceForm;
+
   // Verify source PDF exists.
   const { data: sourceProbe, error: probeError } = await admin.storage
     .from(FORM_TEMPLATES_BUCKET)
@@ -249,6 +486,16 @@ export async function copyFormToGlobalLibrary(
       ok: false,
       error: "The source PDF could not be read. Copy was not started.",
     };
+  }
+
+  const mapped = await loadActiveMappingsAndFields(admin, sourceForm.id);
+  if (!mapped.ok) {
+    return mapped;
+  }
+
+  const fieldPlan = await planFieldGlobalization(admin, mapped.fields);
+  if (fieldPlan.blockedFields.length > 0) {
+    return { ok: false, error: formatBlockedFieldsError(fieldPlan.blockedFields) };
   }
 
   const { data: existingGlobal, error: existingError } = await admin
@@ -347,43 +594,10 @@ export async function copyFormToGlobalLibrary(
       throw new Error(pathUpdateError.message);
     }
 
-    const { data: mappings, error: mappingsError } = await admin
-      .from("form_field_mappings")
-      .select(
-        "id, field_id, mapping_name, occurrence_index, page_number, x, y, width, height, page_width, page_height, font_size, alignment, field_widget_type, default_value_override, required, notes, status, pdf_field_name, pdf_field_type, pdf_export_value",
-      )
-      .eq("form_id", sourceForm.id)
-      .eq("status", "ACTIVE");
-
-    if (mappingsError) {
-      throw new Error(mappingsError.message);
-    }
-
-    const mappingRows = (mappings ?? []) as MappingRow[];
-    const fieldIds = [
-      ...new Set(
-        mappingRows
-          .map((row) => row.field_id)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    ];
-
+    const mappingRows = mapped.mappingRows;
     const fieldIdMap = new Map<string, string>();
-    if (fieldIds.length > 0) {
-      const { data: fields, error: fieldsError } = await admin
-        .from("fields")
-        .select(
-          "id, field_key, field_name, field_label, field_data_type, field_widget_type, default_value, default_checked, required, notes, source_type, source_path, resolver_key, fallback_value, field_resolver_id, status, scope, owner_user_id, organization_id",
-        )
-        .in("id", fieldIds);
-
-      if (fieldsError) {
-        throw new Error(fieldsError.message);
-      }
-
-      for (const field of (fields ?? []) as FieldRow[]) {
-        await resolveOrCopyFieldId(admin, field, fieldIdMap, createdFieldIds);
-      }
+    for (const field of mapped.fields) {
+      await resolveOrCopyFieldId(admin, field, fieldIdMap, createdFieldIds);
     }
 
     if (mappingRows.length > 0) {
@@ -404,7 +618,9 @@ export async function copyFormToGlobalLibrary(
         font_size: row.font_size,
         alignment: row.alignment,
         field_widget_type: row.field_widget_type,
-        default_value_override: row.default_value_override,
+        default_value_override: mappingDefaultValueOverride(
+          row.default_value_override,
+        ),
         required: row.required,
         notes: row.notes,
         status: "ACTIVE",

@@ -210,28 +210,39 @@ export function FieldForm({
         </div>
 
         <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="default_value">Default value</Label>
+          <Label htmlFor="default_value">Structural default value</Label>
           <Input
             id="default_value"
             value={value.default_value}
             onChange={(event) => setField("default_value", event.target.value)}
             disabled={readOnly}
           />
+          <p className="text-sm text-muted-foreground">
+            Catalog defaults may only hold universal form structure (for example
+            NA). Agent or brokerage preferences belong in Private or Organization
+            defaults—never Global.
+          </p>
         </div>
 
         {showDefaultChecked && (
-          <div className="flex items-center gap-2 sm:col-span-2">
-            <AppCheckbox
-              id="default_checked"
-              checked={value.default_checked}
-              onCheckedChange={(checked) =>
-                setField("default_checked", checked === true)
-              }
-              disabled={readOnly}
-            />
-            <Label htmlFor="default_checked" className="font-normal">
-              Default checked
-            </Label>
+          <div className="space-y-2 sm:col-span-2">
+            <div className="flex items-center gap-2">
+              <AppCheckbox
+                id="default_checked"
+                checked={value.default_checked}
+                onCheckedChange={(checked) =>
+                  setField("default_checked", checked === true)
+                }
+                disabled={readOnly}
+              />
+              <Label htmlFor="default_checked" className="font-normal">
+                Structural default checked
+              </Label>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Use this only for promulgated checkbox structure, not personal or
+              brokerage preferences.
+            </p>
           </div>
         )}
 

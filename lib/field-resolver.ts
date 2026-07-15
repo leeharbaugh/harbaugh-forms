@@ -98,6 +98,13 @@ import {
   resolveContractSurveyOptionSelected,
   type ContractDetailsRow,
 } from "@/lib/types/contract-field-resolution";
+import {
+  buildScopedDefaultLookup,
+  loadScopedFieldDefaultsForActor,
+  resolveActingOrganizationIdForDefaults,
+  resolveScopedPreferenceDefault,
+  type ScopedDefaultLookup,
+} from "@/lib/field-defaults";
 
 export type FieldResolverSource =
   | "manual_override"
@@ -105,6 +112,8 @@ export type FieldResolverSource =
   | "property"
   | "packet"
   | "settings"
+  | "private_default"
+  | "organization_default"
   | "mapping_override"
   | "fallback"
   | "field_default"
@@ -120,6 +129,14 @@ export type ResolvedFieldValue = {
 export type FieldResolverContext = {
   packetId: number;
   packetFormId?: number;
+  /**
+   * Packet owner / acting business user whose Private and Organization
+   * defaults apply. Never the viewing admin unless they own the packet.
+   */
+  actingUserId: string | null;
+  actingOrganizationId: string | null;
+  formId: number | null;
+  scopedDefaults: ScopedDefaultLookup | null;
   packet: Pick<
     Packet,
     | "id"
@@ -128,6 +145,7 @@ export type FieldResolverContext = {
     | "packet_type"
     | "create_date"
     | "representation_agreement_id"
+    | "owner_user_id"
   > & {
     properties?: Property | null;
   };
@@ -208,6 +226,7 @@ export type FieldResolutionDiagnostic = {
 
 const PACKET_RESOLVER_SELECT = `
   id,
+  owner_user_id,
   property_id,
   label,
   packet_type,
@@ -1436,8 +1455,9 @@ function resolvePacketInstanceValue(params: {
     FieldInstance,
     "value" | "value_json" | "is_override"
   > | null;
+  context?: FieldResolverContext | null;
 }): ResolvedFieldValue {
-  const { field, mapping, existingInstance } = params;
+  const { field, mapping, existingInstance, context } = params;
 
   if (existingInstance) {
     const instanceValue = existingInstance.value ?? "";
@@ -1463,39 +1483,7 @@ function resolvePacketInstanceValue(params: {
     }
   }
 
-  const fallback = field.fallback_value?.trim();
-  if (fallback) {
-    return {
-      value: fallback,
-      value_json: null,
-      source: "fallback",
-    };
-  }
-
-  if (isBooleanField(field)) {
-    const checked = field.default_checked === true;
-    return {
-      value: checked ? "true" : "false",
-      value_json: { checked },
-      source: "field_default_checked",
-    };
-  }
-
-  const defaultValue =
-    field.default_value?.trim() || mapping?.default_value_override?.trim() || "";
-  if (defaultValue) {
-    return {
-      value: defaultValue,
-      value_json: null,
-      source: "field_default",
-    };
-  }
-
-  return {
-    value: "",
-    value_json: null,
-    source: "empty",
-  };
+  return resolveDefaultChain({ field, mapping, context });
 }
 
 function resolveContactRoleFieldKey(
@@ -1619,8 +1607,26 @@ export function registerFieldKeyHandler(
 function resolveDefaultChain(params: {
   field: Field;
   mapping?: FormFieldMapping | null;
+  context?: FieldResolverContext | null;
 }): ResolvedFieldValue {
-  const { field, mapping } = params;
+  const { field, mapping, context } = params;
+
+  // 1–2. Scoped preference defaults (Private beats Organization).
+  const scoped = resolveScopedPreferenceDefault({
+    lookup: context?.scopedDefaults,
+    fieldId: field.id,
+    formId: context?.formId ?? mapping?.form_id ?? null,
+    mappingId: mapping?.id ?? null,
+  });
+  if (scoped) {
+    return {
+      value: scoped.value,
+      value_json: scoped.value_json,
+      source: scoped.source,
+    };
+  }
+
+  // 3. Structural static fallback on the catalog field.
   const fallback = field.fallback_value?.trim();
 
   if (fallback) {
@@ -1640,6 +1646,7 @@ function resolveDefaultChain(params: {
     };
   }
 
+  // 4. Structural mapping override (e.g. promulgated Off).
   const mappingOverride = mapping?.default_value_override?.trim();
 
   if (mappingOverride) {
@@ -1650,6 +1657,7 @@ function resolveDefaultChain(params: {
     };
   }
 
+  // 5. Structural catalog default on the field record.
   const fieldDefault = field.default_value?.trim();
   if (fieldDefault) {
     return {
@@ -1736,14 +1744,14 @@ export function resolveFieldValueFromContext(params: {
 
   if (field.source_type === "manual_only") {
     return finalizeResolvedValue(
-      resolveDefaultChain({ field, mapping }),
+      resolveDefaultChain({ field, mapping, context }),
       field,
     );
   }
 
   if (field.source_type === "packet_instance") {
     return finalizeResolvedValue(
-      resolvePacketInstanceValue({ field, mapping, existingInstance }),
+      resolvePacketInstanceValue({ field, mapping, existingInstance, context }),
       field,
     );
   }
@@ -1755,7 +1763,7 @@ export function resolveFieldValueFromContext(params: {
     }
 
     return finalizeResolvedValue(
-      resolveDefaultChain({ field, mapping }),
+      resolveDefaultChain({ field, mapping, context }),
       field,
     );
   }
@@ -1770,7 +1778,7 @@ export function resolveFieldValueFromContext(params: {
   }
 
   return finalizeResolvedValue(
-    resolveDefaultChain({ field, mapping }),
+    resolveDefaultChain({ field, mapping, context }),
     field,
   );
 }
@@ -2030,6 +2038,7 @@ export async function loadFieldResolverContext(
   const packetRow = packetResult.data as unknown as Pick<
     Packet,
     | "id"
+    | "owner_user_id"
     | "property_id"
     | "label"
     | "packet_type"
@@ -2117,11 +2126,52 @@ export async function loadFieldResolverContext(
     packetForms: packetRow.packet_forms,
   });
 
+  let formId: number | null = null;
+  if (packetFormId != null) {
+    const packetForm = await getPacketFormFieldContext(supabase, packetFormId);
+    formId = packetForm.form_id;
+  }
+
+  const actingUserId = packetRow.owner_user_id?.trim() || null;
+  let actingOrganizationId: string | null = null;
+  let scopedDefaults: ScopedDefaultLookup | null = null;
+
+  if (actingUserId) {
+    actingOrganizationId = await resolveActingOrganizationIdForDefaults(
+      supabase,
+      actingUserId,
+    );
+
+    let fieldIds: string[] = [];
+    if (formId != null) {
+      const mappings = await loadActiveFormFieldMappingsForForm(supabase, formId);
+      fieldIds = mappings
+        .map((row) => row.field_id)
+        .filter((id): id is string => Boolean(id));
+    }
+
+    if (fieldIds.length > 0) {
+      const rows = await loadScopedFieldDefaultsForActor(supabase, {
+        actingUserId,
+        organizationId: actingOrganizationId,
+        fieldIds,
+      });
+      scopedDefaults = buildScopedDefaultLookup(rows);
+    } else {
+      scopedDefaults = buildScopedDefaultLookup([]);
+    }
+  }
+
   return {
     packetId,
     packetFormId,
+    actingUserId,
+    actingOrganizationId,
+    formId,
+    scopedDefaults,
     packet: {
       id: packetRow.id,
+      owner_user_id: packetRow.owner_user_id,
       property_id: packetRow.property_id,
       label: packetRow.label,
       packet_type: packetRow.packet_type,

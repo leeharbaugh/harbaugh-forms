@@ -23,7 +23,11 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import { copyFormToGlobalLibrary } from "@/lib/admin/copy-form-to-global";
+import {
+  copyFormToGlobalLibrary,
+  previewCopyFormToGlobalLibrary,
+  type CopyToGlobalPreview,
+} from "@/lib/admin/copy-form-to-global";
 import {
   canOfferCopyToGlobalLibrary,
   presentFormOwnership,
@@ -56,7 +60,7 @@ import {
 import { useLibraryActor } from "@/lib/use-library-actor";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type FormMode = "hidden" | "create" | "edit";
 
@@ -108,7 +112,12 @@ export function FormsPage() {
     useState<Form | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [copyTarget, setCopyTarget] = useState<FormListItem | null>(null);
+  const [copyPreview, setCopyPreview] = useState<CopyToGlobalPreview | null>(
+    null,
+  );
+  const [isCopyPreviewLoading, setIsCopyPreviewLoading] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
+  const copyPreviewFormIdRef = useRef<number | null>(null);
 
   const loadTemplates = useCallback(async () => {
     const supabase = createClient();
@@ -266,15 +275,34 @@ export function FormsPage() {
       return;
     }
     setCopyTarget(template);
+    setCopyPreview(null);
+    setIsCopyPreviewLoading(true);
     setListError(null);
     setListMessage(null);
+    copyPreviewFormIdRef.current = template.id;
+
+    void previewCopyFormToGlobalLibrary(template.id).then((result) => {
+      if (copyPreviewFormIdRef.current !== template.id) {
+        return;
+      }
+      setIsCopyPreviewLoading(false);
+      if (result.ok) {
+        setCopyPreview(result.preview);
+        return;
+      }
+      setCopyPreview(null);
+      setListError(result.error);
+    });
   };
 
   const closeCopyDialog = () => {
     if (isCopying) {
       return;
     }
+    copyPreviewFormIdRef.current = null;
     setCopyTarget(null);
+    setCopyPreview(null);
+    setIsCopyPreviewLoading(false);
   };
 
   const handleConfirmCopy = async () => {
@@ -291,10 +319,12 @@ export function FormsPage() {
     if (!result.ok) {
       setListError(result.error);
       setCopyTarget(null);
+      setCopyPreview(null);
       return;
     }
 
     setCopyTarget(null);
+    setCopyPreview(null);
     setListMessage(result.message);
     await loadTemplates();
     router.push(`/forms/${result.newFormId}/editor`);
@@ -542,6 +572,24 @@ export function FormsPage() {
   const copyOwnerName =
     copyTarget?.ownerDisplayName?.trim() || "this user";
 
+  const copyPreviewSummary = (() => {
+    if (!copyPreview) {
+      return isCopyPreviewLoading ? " Loading field preview…" : "";
+    }
+    const parts = [
+      `${copyPreview.reusableGlobalFieldKeys.length} global field(s) reused`,
+      `${copyPreview.privateFieldsToCreateAsGlobal.length} created`,
+    ];
+    if (copyPreview.blockedFields.length > 0) {
+      parts.push(
+        `${copyPreview.blockedFields.length} blocked (${copyPreview.blockedFields
+          .map((row) => row.fieldKey)
+          .join(", ")})`,
+      );
+    }
+    return ` ${parts.join("; ")}.`;
+  })();
+
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
       <ConfirmDeleteDialog
@@ -563,13 +611,17 @@ export function FormsPage() {
         title="Copy to Global Library?"
         message={
           copyTarget
-            ? `This will create a separate Global copy of “${copyTarget.form_name}.” The original private form owned by ${copyOwnerName} will remain unchanged.`
+            ? `This will create a separate Global copy of “${copyTarget.form_name}.” The original private form owned by ${copyOwnerName} will remain unchanged. Preference defaults will not be copied.${copyPreviewSummary}`
             : undefined
         }
         confirmLabel="Copy to Global Library"
         cancelLabel="Cancel"
         isConfirming={isCopying}
         confirmingLabel="Copying…"
+        confirmDisabled={
+          isCopyPreviewLoading ||
+          (copyPreview != null && copyPreview.blockedFields.length > 0)
+        }
         onConfirm={() => void handleConfirmCopy()}
         onCancel={closeCopyDialog}
         variant="default"

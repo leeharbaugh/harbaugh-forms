@@ -69,7 +69,7 @@ export function PdfPlacementFormFields({
       <div className="space-y-2">
         <Label htmlFor="mapping_widget_type">Placement widget type *</Label>
         <Select
-          id="mapping_widget_type"
+          id="mapping_widget_type"
           value={value.field_widget_type}
           onChange={(event) => handleWidgetTypeChange(event.target.value)}
           disabled={readOnly}
@@ -83,7 +83,9 @@ export function PdfPlacementFormFields({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="default_value_override">Default value override</Label>
+        <Label htmlFor="default_value_override">
+          Structural default override
+        </Label>
         <Input
           id="default_value_override"
           value={value.default_value_override}
@@ -92,12 +94,16 @@ export function PdfPlacementFormFields({
           }
           disabled={readOnly}
         />
+        <p className="text-sm text-muted-foreground">
+          Use structural values only (for example Off). Do not store agent or
+          brokerage preference literals on Global form mappings.
+        </p>
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="mapping_alignment">Alignment</Label>
         <Select
-          id="mapping_alignment"
+          id="mapping_alignment"
           value={value.alignment}
           onChange={(event) => setField("alignment", event.target.value)}
           disabled={readOnly}
@@ -207,7 +213,7 @@ export function PdfPlacementFormFields({
         <Label htmlFor="mapping_notes">Notes</Label>
         <Textarea
           id="mapping_notes"
-          rows={3}
+          rows={3}
           value={value.notes}
           onChange={(event) => setField("notes", event.target.value)}
           disabled={readOnly}
