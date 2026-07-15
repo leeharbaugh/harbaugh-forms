@@ -16,6 +16,13 @@ import { formatPhoneInput } from "@/lib/phone-format";
 import { membershipRoleLabel } from "@/lib/ui/list-badges";
 import { Button } from "@/components/ui/button";
 import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
   AppRoleBadge,
   OnboardingStatusBadge,
   RecordStatusBadge,
@@ -158,8 +165,15 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      <section className="flex flex-col gap-4 rounded-lg border border-foreground/10 p-5">
-        <h2 className="text-lg font-medium">Invite user</h2>
+      <Card>
+        <CardHeader>
+          <CardTitle>Invite user</CardTitle>
+          <CardDescription>
+            Send an invitation and optionally assign a primary organization
+            membership.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="grid gap-2">
             <Label htmlFor="loginEmail">Login email</Label>
@@ -219,7 +233,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
           <div className="grid gap-2">
             <Label htmlFor="primaryOrganizationId">Primary organization</Label>
             <Select
-              id="primaryOrganizationId"
+              id="primaryOrganizationId"
               value={primaryOrganizationId}
               onChange={(e) => setPrimaryOrganizationId(e.target.value)}
             >
@@ -234,7 +248,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
           <div className="grid gap-2">
             <Label htmlFor="membershipRole">Membership role</Label>
             <Select
-              id="membershipRole"
+              id="membershipRole"
               value={membershipRole}
               onChange={(e) =>
                 setMembershipRole(e.target.value as "MEMBER" | "ORG_ADMIN")
@@ -328,17 +342,25 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
             {isPending ? "Working..." : "Send invitation"}
           </Button>
         </div>
-      </section>
+        </CardContent>
+      </Card>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">User directory</h2>
+      <Card>
+        <CardHeader>
+          <CardTitle>User directory</CardTitle>
+          <CardDescription>
+            Profiles, invitation status, organization membership, and agent
+            details.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
         {sortedUsers.length === 0 ? (
           <ListEmptyState
             title="No users yet"
             description="Invite a user to provision a profile and optional organization membership."
           />
         ) : (
-          <div className="overflow-x-auto rounded-md border border-border bg-card">
+          <div className="overflow-x-auto rounded-md border border-border">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-border bg-secondary/70 text-xs font-medium text-muted-foreground">
                 <tr>
@@ -354,7 +376,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
                   <th className="px-3 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-border bg-card">
                 {sortedUsers.map((user) => (
                   <tr
                     key={user.id}
@@ -569,7 +591,8 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
           </Link>{" "}
           after confirmation.
         </p>
-      </section>
+        </CardContent>
+      </Card>
     </div>
   );
 }
