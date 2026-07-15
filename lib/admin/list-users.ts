@@ -144,27 +144,12 @@ export async function listAdminUsers(): Promise<AdminUserListItem[]> {
     const profile = profileById.get(user.id);
     const displayName = profile
       ? formatProfileDisplayName({
-          id: user.id,
-          create_date: profile.create_date as string,
-          update_date: profile.create_date as string,
-          status: profile.status as ProfileStatus,
-          app_role: profile.app_role as AppRole,
-          onboarding_status: (profile.onboarding_status as OnboardingStatus) ?? "ACTIVE",
-          invited_at: (profile.invited_at as string | null) ?? null,
-          activated_at: (profile.activated_at as string | null) ?? null,
-          invited_by_user_id: null,
           first_name: (profile.first_name as string | null) ?? null,
           middle_name: (profile.middle_name as string | null) ?? null,
           last_name: (profile.last_name as string | null) ?? null,
           preferred_name: (profile.preferred_name as string | null) ?? null,
           display_name: (profile.display_name as string | null) ?? null,
           email: (profile.email as string | null) ?? user.email ?? null,
-          phone: null,
-          trec_license_number: null,
-          brokerage_name: null,
-          notes: null,
-          primary_organization_id:
-            (profile.primary_organization_id as string | null) ?? null,
         })
       : user.email ?? user.id;
 

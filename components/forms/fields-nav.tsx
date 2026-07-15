@@ -1,28 +1,29 @@
 "use client";
 
 import Link from "next/link";
+import { navLinkClass } from "@/lib/ui/nav-styles";
 
 type FieldsNavProps = {
   active: "catalog" | "cleanup";
 };
 
 export function FieldsNav({ active }: FieldsNavProps) {
-  const linkClass = (section: FieldsNavProps["active"]) =>
-    section === active
-      ? "border-b-2 border-foreground font-medium text-foreground"
-      : "border-b-2 border-transparent text-muted-foreground hover:text-foreground";
-
   return (
-    <nav className="flex gap-5 border-b border-border text-sm">
+    <nav
+      className="flex gap-1 overflow-x-auto border-b border-border pb-3 text-sm"
+      aria-label="Fields sections"
+    >
       <Link
         href="/forms/fields"
-        className={`-mb-px pb-2 ${linkClass("catalog")}`}
+        className={navLinkClass(active === "catalog")}
+        aria-current={active === "catalog" ? "page" : undefined}
       >
         Catalog
       </Link>
       <Link
         href="/forms/fields/cleanup"
-        className={`-mb-px pb-2 ${linkClass("cleanup")}`}
+        className={navLinkClass(active === "cleanup")}
+        aria-current={active === "cleanup" ? "page" : undefined}
       >
         Merge Fields
       </Link>

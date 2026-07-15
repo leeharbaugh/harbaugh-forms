@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  CONTACTS_LIST_RESET_EVENT,
   dispatchContactsListReset,
   isContactsRoute,
 } from "@/lib/contacts-list-reset";
@@ -10,9 +9,10 @@ import { usePathname, useRouter } from "next/navigation";
 
 type ContactsNavLinkProps = {
   className?: string;
+  active?: boolean;
 };
 
-export function ContactsNavLink({ className }: ContactsNavLinkProps) {
+export function ContactsNavLink({ className, active }: ContactsNavLinkProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -20,6 +20,7 @@ export function ContactsNavLink({ className }: ContactsNavLinkProps) {
     <Link
       href="/contacts"
       className={className}
+      aria-current={active ? "page" : undefined}
       onClick={(event) => {
         if (!isContactsRoute(pathname)) {
           return;

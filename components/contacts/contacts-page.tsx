@@ -1,6 +1,8 @@
 "use client";
 
 import { ContactForm } from "@/components/contacts/contact-form";
+import { ListEmptyState } from "@/components/list-empty-state";
+import { ListPageHeader } from "@/components/list-page-header";
 import { ListRowActions } from "@/components/list-row-actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -270,17 +272,15 @@ export function ContactsPage() {
         message={propertyDuplicateMessage ?? ""}
         onClose={() => setPropertyDuplicateMessage(null)}
       />
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Contacts</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage active contacts for Harbaugh Forms.
-          </p>
-        </div>
-        {formMode === "hidden" && (
-          <Button onClick={openCreateForm}>Add contact</Button>
-        )}
-      </div>
+      <ListPageHeader
+        title="Contacts"
+        description="Manage active contacts for Harbaugh Forms."
+        action={
+          formMode === "hidden" ? (
+            <Button onClick={openCreateForm}>Add contact</Button>
+          ) : undefined
+        }
+      />
 
       {formMode !== "hidden" && (
         <Card ref={formPanelRef} className="scroll-mt-6">
@@ -327,24 +327,38 @@ export function ContactsPage() {
           {listError && <p className="text-sm text-destructive">{listError}</p>}
 
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading contacts...</p>
+            <p className="text-sm text-muted-foreground">Loading contacts…</p>
           ) : contacts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No active contacts found.
-            </p>
+            <ListEmptyState
+              title="No contacts yet"
+              description="Add your first contact to begin building a packet."
+              action={
+                formMode === "hidden" ? (
+                  <Button size="sm" onClick={openCreateForm}>
+                    Add contact
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
-            <div className="divide-y rounded-md border">
+            <div className="divide-y divide-border overflow-hidden rounded-md border border-border bg-card">
               {contacts.map((contact) => (
                 <div
                   key={contact.id}
-                  className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 focus-within:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="space-y-1">
-                    <p className="font-medium">{formatContactDisplayName(contact)}</p>
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="font-medium text-foreground">
+                      {formatContactDisplayName(contact)}
+                    </p>
                     <p className="text-sm text-muted-foreground">
-                      {contact.contact_type === "ENTITY" ? "Entity" : "Individual"}
+                      {contact.contact_type === "ENTITY"
+                        ? "Entity"
+                        : "Individual"}
                       {contact.email ? ` · ${contact.email}` : ""}
-                      {contact.phone_primary ? ` · ${contact.phone_primary}` : ""}
+                      {contact.phone_primary
+                        ? ` · ${contact.phone_primary}`
+                        : ""}
                     </p>
                     {(contact.mailing_city || contact.mailing_state) && (
                       <p className="text-sm text-muted-foreground">

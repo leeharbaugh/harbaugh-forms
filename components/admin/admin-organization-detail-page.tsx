@@ -7,7 +7,7 @@ import {
   setOrganizationStatusAction,
 } from "@/app/admin/actions";
 import { AdminSectionNav } from "@/components/admin/admin-section-nav";
-import { Badge } from "@/components/ui/badge";
+import { RecordStatusBadge } from "@/components/ui/list-badges";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -205,13 +205,7 @@ export function AdminOrganizationDetailPage({
             {organization.name}
           </h1>
           <div className="mt-2 flex items-center gap-2">
-            <Badge
-              variant={
-                organization.status === "ACTIVE" ? "secondary" : "outline"
-              }
-            >
-              {organization.status}
-            </Badge>
+            <RecordStatusBadge status={organization.status} />
             {organization.organization_type ? (
               <span className="text-sm text-muted-foreground">
                 {organization.organization_type}
@@ -526,7 +520,7 @@ function MembershipTable({
                       </select>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline">{row.status}</Badge>
+                      <RecordStatusBadge status={row.status} />
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       <div>{row.trecLicenseNumber ?? "—"}</div>

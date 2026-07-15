@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { navLinkClass } from "@/lib/ui/nav-styles";
 
 type AdminSectionNavProps = {
   active: "users" | "organizations";
@@ -7,27 +8,25 @@ type AdminSectionNavProps = {
 };
 
 export function AdminSectionNav({ active, className }: AdminSectionNavProps) {
-  const linkClass = (section: AdminSectionNavProps["active"]) =>
-    section === active
-      ? "border-b-2 border-foreground font-medium text-foreground"
-      : "border-b-2 border-transparent text-muted-foreground hover:text-foreground";
-
   return (
     <nav
       className={cn(
-        "flex gap-6 border-b border-border text-sm",
+        "flex gap-1 overflow-x-auto border-b border-border pb-3",
         className,
       )}
+      aria-label="Admin sections"
     >
       <Link
         href="/admin/users"
-        className={cn("-mb-px pb-3", linkClass("users"))}
+        className={navLinkClass(active === "users")}
+        aria-current={active === "users" ? "page" : undefined}
       >
         Users / Agents
       </Link>
       <Link
         href="/admin/organizations"
-        className={cn("-mb-px pb-3", linkClass("organizations"))}
+        className={navLinkClass(active === "organizations")}
+        aria-current={active === "organizations" ? "page" : undefined}
       >
         Organizations
       </Link>

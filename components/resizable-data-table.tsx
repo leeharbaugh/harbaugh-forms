@@ -270,7 +270,7 @@ export function ResizableDataTable({
   );
 
   return (
-    <div className="overflow-x-auto rounded-md border">
+    <div className="overflow-x-auto rounded-md border border-border bg-card">
       <table
         className="w-full table-fixed border-collapse"
         style={{ minWidth: totalColumnWidth }}
@@ -281,7 +281,7 @@ export function ResizableDataTable({
           ))}
         </colgroup>
         <thead>
-          <tr className="border-b bg-muted/40 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <tr className="border-b border-border bg-secondary/70 text-left text-xs font-medium text-muted-foreground">
             {columns.map((column) => {
               const width = widths[column.id] ?? column.defaultWidth;
               const resizable = column.resizable ?? !column.isActions;
@@ -305,7 +305,7 @@ export function ResizableDataTable({
                         <button
                           type="button"
                           aria-label={`Resize ${column.label} column`}
-                          className="absolute inset-y-0 left-0 z-10 w-2 cursor-col-resize border-l border-transparent hover:border-border"
+                          className="absolute inset-y-0 left-0 z-10 w-2 cursor-col-resize border-l border-transparent hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onMouseDown={(event) => {
                             event.preventDefault();
                             startResize(column, event.clientX, "left");
@@ -314,7 +314,7 @@ export function ResizableDataTable({
                         <button
                           type="button"
                           aria-label={`Resize ${column.label} column`}
-                          className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize border-r border-transparent hover:border-border"
+                          className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize border-r border-transparent hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onMouseDown={(event) => {
                             event.preventDefault();
                             startResize(column, event.clientX, "right");
@@ -332,7 +332,7 @@ export function ResizableDataTable({
                   scope="col"
                   style={{ width, minWidth: width, maxWidth: width }}
                   className={cn(
-                    "relative select-none px-4 py-3 align-bottom",
+                    "relative select-none px-3 py-2.5 align-bottom",
                     column.align === "right" && "text-right",
                     column.align === "center" && "text-center",
                   )}
@@ -342,7 +342,7 @@ export function ResizableDataTable({
                     <button
                       type="button"
                       aria-label={`Resize ${column.label} column`}
-                      className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize border-r border-transparent hover:border-border"
+                      className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize border-r border-transparent hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onMouseDown={(event) => {
                         event.preventDefault();
                         startResize(column, event.clientX);
@@ -354,7 +354,7 @@ export function ResizableDataTable({
             })}
           </tr>
         </thead>
-        <tbody className="divide-y">{children}</tbody>
+        <tbody className="divide-y divide-border">{children}</tbody>
       </table>
     </div>
   );
@@ -367,7 +367,16 @@ export function ResizableDataTableRow({
   className?: string;
   children: ReactNode;
 }) {
-  return <tr className={cn("text-sm", className)}>{children}</tr>;
+  return (
+    <tr
+      className={cn(
+        "text-sm transition-colors hover:bg-muted/40 focus-within:bg-muted/30",
+        className,
+      )}
+    >
+      {children}
+    </tr>
+  );
 }
 
 export function ResizableDataTableCell({
@@ -384,7 +393,7 @@ export function ResizableDataTableCell({
   return (
     <td
       className={cn(
-        "min-w-0 max-w-0 px-4 py-3 align-middle",
+        "min-w-0 max-w-0 px-3 py-2.5 align-middle",
         className,
       )}
     >

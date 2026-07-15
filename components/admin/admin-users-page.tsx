@@ -7,10 +7,19 @@ import {
   setUserAppRoleAction,
 } from "@/app/admin/actions";
 import { AdminSectionNav } from "@/components/admin/admin-section-nav";
+import { ListEmptyState } from "@/components/list-empty-state";
+import { ListPageHeader } from "@/components/list-page-header";
+import { ListRowActions } from "@/components/list-row-actions";
 import type { AdminUserListItem } from "@/lib/admin/list-users";
 import type { InviteUserInput } from "@/lib/admin/invite-validation";
 import { formatPhoneInput } from "@/lib/phone-format";
+import { membershipRoleLabel } from "@/lib/ui/list-badges";
 import { Button } from "@/components/ui/button";
+import {
+  AppRoleBadge,
+  OnboardingStatusBadge,
+  RecordStatusBadge,
+} from "@/components/ui/list-badges";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
@@ -126,22 +135,27 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
     <div className="flex flex-col gap-8">
       <AdminSectionNav active="users" />
 
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Users / Agents</h1>
-        <p className="text-sm text-muted-foreground">
-          Invite and manage application users and agent profile details.
-          Organization membership does not share business records between
-          members. Manage organizations on the{" "}
-          <Link href="/admin/organizations" className="underline underline-offset-2">
-            Organizations
-          </Link>{" "}
-          page.
-        </p>
-        {message ? (
-          <p className="text-sm text-emerald-700">{message}</p>
-        ) : null}
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      </div>
+      <ListPageHeader
+        title="Users / Agents"
+        description={
+          <>
+            Invite and manage application users and agent profile details.
+            Organization membership does not share business records between
+            members. Manage organizations on the{" "}
+            <Link
+              href="/admin/organizations"
+              className="underline underline-offset-2"
+            >
+              Organizations
+            </Link>{" "}
+            page.
+          </>
+        }
+      />
+      {message ? (
+        <p className="text-sm text-emerald-700">{message}</p>
+      ) : null}
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <section className="flex flex-col gap-4 rounded-lg border border-foreground/10 p-5">
         <h2 className="text-lg font-medium">Invite user</h2>
@@ -319,205 +333,236 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-medium">User directory</h2>
-        <div className="overflow-x-auto rounded-lg border border-foreground/10">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-foreground/10 bg-muted/40">
-              <tr>
-                <th className="px-3 py-2 font-medium">Name</th>
-                <th className="px-3 py-2 font-medium">Email</th>
-                <th className="px-3 py-2 font-medium">Role</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Onboarding</th>
-                <th className="px-3 py-2 font-medium">Organization</th>
-                <th className="px-3 py-2 font-medium">Agent</th>
-                <th className="px-3 py-2 font-medium">Created</th>
-                <th className="px-3 py-2 font-medium">Last sign-in</th>
-                <th className="px-3 py-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedUsers.map((user) => (
-                <tr
-                  key={user.id}
-                  className="border-b border-foreground/5 align-top"
-                >
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{user.displayName}</div>
-                    {user.preferredName ? (
-                      <div className="text-xs text-muted-foreground">
-                        Preferred: {user.preferredName}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2">{user.loginEmail ?? "—"}</td>
-                  <td className="px-3 py-2">{user.appRole ?? "—"}</td>
-                  <td className="px-3 py-2">{user.profileStatus ?? "—"}</td>
-                  <td className="px-3 py-2">
-                    <div>{user.onboardingStatus ?? "—"}</div>
-                    <div className="text-xs text-muted-foreground">
-                      Invited {formatDate(user.invitedAt)}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div>{user.primaryOrganizationName ?? "—"}</div>
-                    {user.memberships.length > 0 ? (
-                      <div className="text-xs text-muted-foreground">
-                        {user.memberships
-                          .map(
-                            (m) => `${m.organizationName} (${m.membershipRole})`,
-                          )
-                          .join(", ")}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2">
-                    <div>
-                      {user.agentSettingsComplete ? "Complete" : "Incomplete"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {[user.agentPhone, user.trecLicenseNumber]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">{formatDate(user.createdAt)}</td>
-                  <td className="px-3 py-2">{formatDate(user.lastSignInAt)}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-col gap-1">
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={`/admin/users/${user.id}`}>Open</Link>
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          isPending ||
-                          Boolean(user.emailConfirmedAt) ||
-                          Date.now() < resendCooldownUntil
-                        }
-                        onClick={() => {
-                          setMessage(null);
-                          setError(null);
-                          startTransition(async () => {
-                            const result = await resendInvitationAction(user.id);
-                            if (!result.ok) {
-                              setError(result.error);
-                              return;
-                            }
-                            setResendCooldownUntil(Date.now() + 30_000);
-                            setMessage(`Invitation resent to ${user.loginEmail}.`);
-                            router.refresh();
-                          });
-                        }}
-                      >
-                        Resend invite
-                      </Button>
-                      {user.profileStatus === "ACTIVE" ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={isPending}
-                          onClick={() => {
-                            setMessage(null);
-                            setError(null);
-                            startTransition(async () => {
-                              const result = await setUserAccountStatusAction({
-                                userId: user.id,
-                                status: "INACTIVE",
-                              });
-                              if (!result.ok) {
-                                setError(result.error);
-                                return;
-                              }
-                              setMessage(`Deactivated ${user.loginEmail}.`);
-                            });
-                          }}
-                        >
-                          Deactivate
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={isPending}
-                          onClick={() => {
-                            setMessage(null);
-                            setError(null);
-                            startTransition(async () => {
-                              const result = await setUserAccountStatusAction({
-                                userId: user.id,
-                                status: "ACTIVE",
-                              });
-                              if (!result.ok) {
-                                setError(result.error);
-                                return;
-                              }
-                              setMessage(`Reactivated ${user.loginEmail}.`);
-                            });
-                          }}
-                        >
-                          Reactivate
-                        </Button>
-                      )}
-                      {user.appRole === "USER" ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={isPending}
-                          onClick={() => {
-                            setMessage(null);
-                            setError(null);
-                            startTransition(async () => {
-                              const result = await setUserAppRoleAction({
-                                userId: user.id,
-                                appRole: "ADMIN",
-                              });
-                              if (!result.ok) {
-                                setError(result.error);
-                                return;
-                              }
-                              setMessage(`Promoted ${user.loginEmail} to ADMIN.`);
-                            });
-                          }}
-                        >
-                          Make ADMIN
-                        </Button>
-                      ) : user.appRole === "ADMIN" ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={isPending}
-                          onClick={() => {
-                            setMessage(null);
-                            setError(null);
-                            startTransition(async () => {
-                              const result = await setUserAppRoleAction({
-                                userId: user.id,
-                                appRole: "USER",
-                              });
-                              if (!result.ok) {
-                                setError(result.error);
-                                return;
-                              }
-                              setMessage(`Demoted ${user.loginEmail} to USER.`);
-                            });
-                          }}
-                        >
-                          Make USER
-                        </Button>
-                      ) : null}
-                    </div>
-                  </td>
+        {sortedUsers.length === 0 ? (
+          <ListEmptyState
+            title="No users yet"
+            description="Invite a user to provision a profile and optional organization membership."
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-md border border-border bg-card">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-border bg-secondary/70 text-xs font-medium text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2.5">Name</th>
+                  <th className="px-3 py-2.5">Login email</th>
+                  <th className="px-3 py-2.5">Role</th>
+                  <th className="px-3 py-2.5">Status</th>
+                  <th className="px-3 py-2.5">Invitation</th>
+                  <th className="px-3 py-2.5">Organization</th>
+                  <th className="px-3 py-2.5">Agent</th>
+                  <th className="px-3 py-2.5">Created</th>
+                  <th className="px-3 py-2.5">Last sign-in</th>
+                  <th className="px-3 py-2.5 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {sortedUsers.map((user) => (
+                  <tr
+                    key={user.id}
+                    className="align-top transition-colors hover:bg-muted/40 focus-within:bg-muted/30"
+                  >
+                    <td className="px-3 py-2.5">
+                      <div className="font-medium">{user.displayName}</div>
+                      {user.preferredName ? (
+                        <div className="text-xs text-muted-foreground">
+                          Preferred: {user.preferredName}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div>{user.loginEmail ?? "—"}</div>
+                      {user.agentEmail ? (
+                        <div className="text-xs text-muted-foreground">
+                          Agent: {user.agentEmail}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <AppRoleBadge role={user.appRole} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <RecordStatusBadge status={user.profileStatus} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <OnboardingStatusBadge status={user.onboardingStatus} />
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Invited {formatDate(user.invitedAt)}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div>{user.primaryOrganizationName ?? "—"}</div>
+                      {user.memberships.length > 0 ? (
+                        <div className="text-xs text-muted-foreground">
+                          {user.memberships
+                            .map(
+                              (m) =>
+                                `${m.organizationName} (${membershipRoleLabel(m.membershipRole)})`,
+                            )
+                            .join(", ")}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div>
+                        {user.agentSettingsComplete ? "Complete" : "Incomplete"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {[user.agentPhone, user.trecLicenseNumber]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-muted-foreground">
+                      {formatDate(user.createdAt)}
+                    </td>
+                    <td className="px-3 py-2.5 text-muted-foreground">
+                      {formatDate(user.lastSignInAt)}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <ListRowActions wrap>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/admin/users/${user.id}`}>Open</Link>
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={
+                            isPending ||
+                            Boolean(user.emailConfirmedAt) ||
+                            Date.now() < resendCooldownUntil
+                          }
+                          onClick={() => {
+                            setMessage(null);
+                            setError(null);
+                            startTransition(async () => {
+                              const result = await resendInvitationAction(
+                                user.id,
+                              );
+                              if (!result.ok) {
+                                setError(result.error);
+                                return;
+                              }
+                              setResendCooldownUntil(Date.now() + 30_000);
+                              setMessage(
+                                `Invitation resent to ${user.loginEmail}.`,
+                              );
+                              router.refresh();
+                            });
+                          }}
+                        >
+                          Resend invite
+                        </Button>
+                        {user.profileStatus === "ACTIVE" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isPending}
+                            onClick={() => {
+                              setMessage(null);
+                              setError(null);
+                              startTransition(async () => {
+                                const result = await setUserAccountStatusAction({
+                                  userId: user.id,
+                                  status: "INACTIVE",
+                                });
+                                if (!result.ok) {
+                                  setError(result.error);
+                                  return;
+                                }
+                                setMessage(`Deactivated ${user.loginEmail}.`);
+                              });
+                            }}
+                          >
+                            Deactivate
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isPending}
+                            onClick={() => {
+                              setMessage(null);
+                              setError(null);
+                              startTransition(async () => {
+                                const result = await setUserAccountStatusAction({
+                                  userId: user.id,
+                                  status: "ACTIVE",
+                                });
+                                if (!result.ok) {
+                                  setError(result.error);
+                                  return;
+                                }
+                                setMessage(`Reactivated ${user.loginEmail}.`);
+                              });
+                            }}
+                          >
+                            Reactivate
+                          </Button>
+                        )}
+                        {user.appRole === "USER" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isPending}
+                            onClick={() => {
+                              setMessage(null);
+                              setError(null);
+                              startTransition(async () => {
+                                const result = await setUserAppRoleAction({
+                                  userId: user.id,
+                                  appRole: "ADMIN",
+                                });
+                                if (!result.ok) {
+                                  setError(result.error);
+                                  return;
+                                }
+                                setMessage(
+                                  `Promoted ${user.loginEmail} to ADMIN.`,
+                                );
+                              });
+                            }}
+                          >
+                            Make ADMIN
+                          </Button>
+                        ) : user.appRole === "ADMIN" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isPending}
+                            onClick={() => {
+                              setMessage(null);
+                              setError(null);
+                              startTransition(async () => {
+                                const result = await setUserAppRoleAction({
+                                  userId: user.id,
+                                  appRole: "USER",
+                                });
+                                if (!result.ok) {
+                                  setError(result.error);
+                                  return;
+                                }
+                                setMessage(
+                                  `Demoted ${user.loginEmail} to USER.`,
+                                );
+                              });
+                            }}
+                          >
+                            Make USER
+                          </Button>
+                        ) : null}
+                      </ListRowActions>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
         <p className="text-xs text-muted-foreground">
           Invitation redirects use{" "}
           <Link href="/auth/update-password" className="underline">

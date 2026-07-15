@@ -5,8 +5,11 @@ import {
   setOrganizationStatusAction,
 } from "@/app/admin/actions";
 import { AdminSectionNav } from "@/components/admin/admin-section-nav";
+import { ListEmptyState } from "@/components/list-empty-state";
+import { ListPageHeader } from "@/components/list-page-header";
+import { ListRowActions } from "@/components/list-row-actions";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { RecordStatusBadge } from "@/components/ui/list-badges";
 import {
   Card,
   CardContent,
@@ -178,20 +181,15 @@ export function AdminOrganizationsPage({
 
       <AdminSectionNav active="organizations" />
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Organizations
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage brokerages and organizational entities. Membership does not
-            share business records between members.
-          </p>
-        </div>
-        <Button type="button" onClick={() => setShowCreate((v) => !v)}>
-          {showCreate ? "Cancel" : "Add organization"}
-        </Button>
-      </div>
+      <ListPageHeader
+        title="Organizations"
+        description="Manage brokerages and organizational entities. Membership does not share business records between members."
+        action={
+          <Button type="button" onClick={() => setShowCreate((v) => !v)}>
+            {showCreate ? "Cancel" : "Add organization"}
+          </Button>
+        }
+      />
 
       {message ? (
         <p className="text-sm text-emerald-700">{message}</p>
@@ -357,26 +355,35 @@ export function AdminOrganizationsPage({
         </CardHeader>
         <CardContent>
           {organizations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No organizations found.
-            </p>
+            <ListEmptyState
+              title="No organizations yet"
+              description="Create an organization to invite agents and manage memberships."
+              action={
+                <Button size="sm" type="button" onClick={() => setShowCreate(true)}>
+                  Add organization
+                </Button>
+              }
+            />
           ) : (
-            <div className="overflow-x-auto rounded-md border">
+            <div className="overflow-x-auto rounded-md border border-border bg-card">
               <table className="min-w-full text-left text-sm">
-                <thead className="border-b bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <thead className="border-b border-border bg-secondary/70 text-xs font-medium text-muted-foreground">
                   <tr>
-                    <th className="px-4 py-3">Name</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Members</th>
-                    <th className="px-4 py-3">Active agents</th>
-                    <th className="px-4 py-3">Updated</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-3 py-2.5">Name</th>
+                    <th className="px-3 py-2.5">Status</th>
+                    <th className="px-3 py-2.5">Members</th>
+                    <th className="px-3 py-2.5">Active agents</th>
+                    <th className="px-3 py-2.5">Updated</th>
+                    <th className="px-3 py-2.5 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody className="divide-y divide-border">
                   {organizations.map((org) => (
-                    <tr key={org.id}>
-                      <td className="px-4 py-3">
+                    <tr
+                      key={org.id}
+                      className="transition-colors hover:bg-muted/40 focus-within:bg-muted/30"
+                    >
+                      <td className="px-3 py-2.5">
                         <div className="font-medium">{org.name}</div>
                         {org.legal_name ? (
                           <div className="text-xs text-muted-foreground">
@@ -384,30 +391,24 @@ export function AdminOrganizationsPage({
                           </div>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3">
-                        <Badge
-                          variant={
-                            org.status === "ACTIVE" ? "secondary" : "outline"
-                          }
-                        >
-                          {org.status}
-                        </Badge>
+                      <td className="px-3 py-2.5">
+                        <RecordStatusBadge status={org.status} />
                       </td>
-                      <td className="px-4 py-3 tabular-nums">
+                      <td className="px-3 py-2.5 tabular-nums">
                         {org.activeMemberCount}
                         <span className="text-muted-foreground">
                           {" "}
                           / {org.memberCount}
                         </span>
                       </td>
-                      <td className="px-4 py-3 tabular-nums">
+                      <td className="px-3 py-2.5 tabular-nums">
                         {org.activeAgentCount}
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">
+                      <td className="px-3 py-2.5 text-muted-foreground">
                         {formatDate(org.update_date)}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap justify-end gap-2">
+                      <td className="px-3 py-2.5">
+                        <ListRowActions wrap>
                           <Button asChild variant="outline" size="sm">
                             <Link href={`/admin/organizations/${org.id}`}>
                               View
@@ -423,7 +424,7 @@ export function AdminOrganizationsPage({
                           <Button
                             type="button"
                             variant={
-                              org.status === "ACTIVE" ? "destructive" : "default"
+                              org.status === "ACTIVE" ? "destructive" : "outline"
                             }
                             size="sm"
                             disabled={isPending}
@@ -433,7 +434,7 @@ export function AdminOrganizationsPage({
                               ? "Deactivate"
                               : "Activate"}
                           </Button>
-                        </div>
+                        </ListRowActions>
                       </td>
                     </tr>
                   ))}

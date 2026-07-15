@@ -1,6 +1,8 @@
 "use client";
 
 import { FormForm } from "@/components/forms/form-form";
+import { ListEmptyState } from "@/components/list-empty-state";
+import { ListPageHeader } from "@/components/list-page-header";
 import { ListRowActions } from "@/components/list-row-actions";
 import {
   ResizableDataTable,
@@ -10,7 +12,7 @@ import {
   type ResizableDataTableColumn,
 } from "@/components/resizable-data-table";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { LibraryScopeBadge } from "@/components/ui/list-badges";
 import {
   Card,
   CardContent,
@@ -416,19 +418,15 @@ export function FormsPage() {
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Form Templates
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage blank PDF form templates for future document packets.
-          </p>
-        </div>
-        {formMode === "hidden" && (
-          <Button onClick={openCreateForm}>Add form template</Button>
-        )}
-      </div>
+      <ListPageHeader
+        title="Form Templates"
+        description="Manage blank PDF form templates for future document packets."
+        action={
+          formMode === "hidden" ? (
+            <Button onClick={openCreateForm}>Add form template</Button>
+          ) : undefined
+        }
+      />
 
       {formMode !== "hidden" && (
         <Card>
@@ -474,12 +472,20 @@ export function FormsPage() {
 
           {isLoading ? (
             <p className="text-sm text-muted-foreground">
-              Loading form templates...
+              Loading form templates…
             </p>
           ) : templates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No active form templates found.
-            </p>
+            <ListEmptyState
+              title="No private forms"
+              description="Upload a private form when you need a custom template."
+              action={
+                formMode === "hidden" ? (
+                  <Button size="sm" onClick={openCreateForm}>
+                    Add form template
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <ResizableDataTable
               storageKey="harbaugh-forms-list-column-widths"
@@ -499,15 +505,7 @@ export function FormsPage() {
                       >
                         {template.form_name}
                       </span>
-                      {template.scope === "GLOBAL" ? (
-                        <Badge variant="outline" className="shrink-0">
-                          Global
-                        </Badge>
-                      ) : template.scope === "PRIVATE" ? (
-                        <Badge variant="secondary" className="shrink-0">
-                          Private
-                        </Badge>
-                      ) : null}
+                      <LibraryScopeBadge scope={template.scope} />
                     </div>
                   </ResizableDataTableCell>
                   <ResizableDataTableCell>

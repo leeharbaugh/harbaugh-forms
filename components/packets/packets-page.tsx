@@ -1,6 +1,8 @@
 "use client";
 
 import { CreatePacketWizard } from "@/components/packets/create-packet-wizard";
+import { ListEmptyState } from "@/components/list-empty-state";
+import { ListPageHeader } from "@/components/list-page-header";
 import {
   ListRowActions,
 } from "@/components/list-row-actions";
@@ -11,7 +13,7 @@ import {
   ResizableDataTableRow,
   type ResizableDataTableColumn,
 } from "@/components/resizable-data-table";
-import { Badge } from "@/components/ui/badge";
+import { RecordStatusBadge } from "@/components/ui/list-badges";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -251,17 +253,15 @@ function PacketsPageContent() {
         onCancel={closeDeleteDialog}
       />
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Packets</h1>
-          <p className="text-sm text-muted-foreground">
-            Create and manage buyer rep, listing, and contract offer packets.
-          </p>
-        </div>
-        {!isCreateFlow && (
-          <Button onClick={openCreateFlow}>Create packet</Button>
-        )}
-      </div>
+      <ListPageHeader
+        title="Packets"
+        description="Create and manage buyer rep, listing, and contract offer packets."
+        action={
+          !isCreateFlow ? (
+            <Button onClick={openCreateFlow}>Create packet</Button>
+          ) : undefined
+        }
+      />
 
       {isCreateFlow && (
         <Card>
@@ -306,11 +306,25 @@ function PacketsPageContent() {
           {listError && <p className="text-sm text-destructive">{listError}</p>}
 
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading packets...</p>
+            <p className="text-sm text-muted-foreground">Loading packets…</p>
           ) : packets.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {showDeleted ? "No packets found." : "No active packets found."}
-            </p>
+            <ListEmptyState
+              title={
+                showDeleted ? "No packets found" : "No packets yet"
+              }
+              description={
+                showDeleted
+                  ? "Try clearing search or hide deleted packets."
+                  : "Create a packet to generate forms for a transaction."
+              }
+              action={
+                !isCreateFlow && !showDeleted ? (
+                  <Button size="sm" onClick={openCreateFlow}>
+                    Create packet
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <ResizableDataTable
               storageKey="harbaugh-packets-list-column-widths"
@@ -328,7 +342,7 @@ function PacketsPageContent() {
                 return (
                   <ResizableDataTableRow
                     key={packet.id}
-                    className={deleted ? "bg-muted/30 opacity-70" : undefined}
+                    className={deleted ? "bg-muted/30" : undefined}
                   >
                     <ResizableDataTableCell className="text-muted-foreground">
                       {formatPacketReference(packet.id)}
@@ -341,11 +355,9 @@ function PacketsPageContent() {
                         >
                           {packet.label}
                         </span>
-                        {deleted && (
-                          <Badge variant="destructive" className="shrink-0">
-                            Deleted
-                          </Badge>
-                        )}
+                        {deleted ? (
+                          <RecordStatusBadge status="DELETED" />
+                        ) : null}
                       </div>
                     </ResizableDataTableCell>
                     <ResizableDataTableCell

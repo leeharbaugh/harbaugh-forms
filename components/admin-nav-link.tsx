@@ -3,8 +3,10 @@ import Link from "next/link";
 
 export async function AdminNavLink({
   className,
+  active = false,
 }: {
   className?: string;
+  active?: boolean;
 }) {
   const supabase = await createClient();
   const {
@@ -31,7 +33,11 @@ export async function AdminNavLink({
   }
 
   return (
-    <Link href="/admin/users" className={className}>
+    <Link
+      href="/admin/users"
+      className={className}
+      aria-current={active ? "page" : undefined}
+    >
       Admin
     </Link>
   );

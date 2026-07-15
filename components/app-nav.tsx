@@ -3,6 +3,7 @@ import { AdminNavLink } from "@/components/admin-nav-link";
 import { ContactsNavLink } from "@/components/contacts-nav-link";
 import { EnsureProfile } from "@/components/ensure-profile";
 import { EnvVarWarning } from "@/components/env-var-warning";
+import { navLinkClass } from "@/lib/ui/nav-styles";
 import { hasEnvVars } from "@/lib/utils";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -19,49 +20,75 @@ type AppNavProps = {
 };
 
 export function AppNav({ active }: AppNavProps) {
-  const linkClass = (section: AppNavProps["active"]) =>
-    section === active ? "font-medium text-foreground" : "text-muted-foreground";
-
   return (
     <>
       {hasEnvVars && <EnsureProfile />}
-      <nav className="border-b border-b-foreground/10">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5 text-sm">
-          <div className="flex items-center gap-6">
-            <Link href="/" className="font-semibold">
-              Harbaugh Forms
-            </Link>
-            <div className="flex items-center gap-4">
-              <Suspense fallback={null}>
-                <ContactsNavLink className={linkClass("contacts")} />
-              </Suspense>
-              <Link href="/properties" className={linkClass("properties")}>
-                Properties
-              </Link>
-              <Link href="/forms" className={linkClass("forms")}>
-                Forms
-              </Link>
-              <Link href="/collections" className={linkClass("collections")}>
-                Collections
-              </Link>
-              <Link href="/" className={linkClass("packets")}>
-                Packets
-              </Link>
-              <Link href="/settings" className={linkClass("settings")}>
-                Settings
-              </Link>
-              <Suspense fallback={null}>
-                <AdminNavLink className={linkClass("admin")} />
-              </Suspense>
-            </div>
-          </div>
-          {!hasEnvVars ? (
-            <EnvVarWarning />
-          ) : (
-            <Suspense>
-              <AuthButton />
+      <nav className="border-b border-border bg-card">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-5 text-sm">
+          <Link
+            href="/"
+            className="shrink-0 font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            Harbaugh Forms
+          </Link>
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1">
+            <Suspense fallback={null}>
+              <ContactsNavLink
+                className={navLinkClass(active === "contacts")}
+                active={active === "contacts"}
+              />
             </Suspense>
-          )}
+            <Link
+              href="/properties"
+              className={navLinkClass(active === "properties")}
+              aria-current={active === "properties" ? "page" : undefined}
+            >
+              Properties
+            </Link>
+            <Link
+              href="/forms"
+              className={navLinkClass(active === "forms")}
+              aria-current={active === "forms" ? "page" : undefined}
+            >
+              Forms
+            </Link>
+            <Link
+              href="/collections"
+              className={navLinkClass(active === "collections")}
+              aria-current={active === "collections" ? "page" : undefined}
+            >
+              Collections
+            </Link>
+            <Link
+              href="/"
+              className={navLinkClass(active === "packets")}
+              aria-current={active === "packets" ? "page" : undefined}
+            >
+              Packets
+            </Link>
+            <Link
+              href="/settings"
+              className={navLinkClass(active === "settings")}
+              aria-current={active === "settings" ? "page" : undefined}
+            >
+              Settings
+            </Link>
+            <Suspense fallback={null}>
+              <AdminNavLink
+                className={navLinkClass(active === "admin")}
+                active={active === "admin"}
+              />
+            </Suspense>
+          </div>
+          <div className="shrink-0">
+            {!hasEnvVars ? (
+              <EnvVarWarning />
+            ) : (
+              <Suspense>
+                <AuthButton />
+              </Suspense>
+            )}
+          </div>
         </div>
       </nav>
     </>

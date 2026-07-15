@@ -1,6 +1,8 @@
 "use client";
 
 import { CollectionForm } from "@/components/collections/collection-form";
+import { ListEmptyState } from "@/components/list-empty-state";
+import { ListPageHeader } from "@/components/list-page-header";
 import { ListRowActions } from "@/components/list-row-actions";
 import {
   ResizableDataTable,
@@ -9,7 +11,10 @@ import {
   ResizableDataTableRow,
   type ResizableDataTableColumn,
 } from "@/components/resizable-data-table";
-import { Badge } from "@/components/ui/badge";
+import {
+  LibraryScopeBadge,
+  RecordStatusBadge,
+} from "@/components/ui/list-badges";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -499,20 +504,15 @@ export function CollectionsPage() {
         onCancel={closeDeleteDialog}
       />
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Packet Templates
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Define reusable groups of form templates for buyer rep, listing,
-            offer, and amendment packets.
-          </p>
-        </div>
-        {formMode === "hidden" && (
-          <Button onClick={openCreateForm}>Add packet template</Button>
-        )}
-      </div>
+      <ListPageHeader
+        title="Packet Templates"
+        description="Define reusable groups of form templates for buyer rep, listing, offer, and amendment packets."
+        action={
+          formMode === "hidden" ? (
+            <Button onClick={openCreateForm}>Add packet template</Button>
+          ) : undefined
+        }
+      />
 
       {formMode !== "hidden" && (
         <Card>
@@ -630,14 +630,28 @@ export function CollectionsPage() {
 
           {isLoading ? (
             <p className="text-sm text-muted-foreground">
-              Loading packet templates...
+              Loading packet templates…
             </p>
           ) : packets.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {showDeleted
-                ? "No packet templates found."
-                : "No active packet templates found."}
-            </p>
+            <ListEmptyState
+              title={
+                showDeleted
+                  ? "No packet templates found"
+                  : "No packet templates yet"
+              }
+              description={
+                showDeleted
+                  ? "Try clearing filters or search."
+                  : "Create a reusable collection of forms for packets."
+              }
+              action={
+                formMode === "hidden" && !showDeleted ? (
+                  <Button size="sm" onClick={openCreateForm}>
+                    Add packet template
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <ResizableDataTable
               storageKey="harbaugh-collections-list-column-widths"
@@ -651,7 +665,7 @@ export function CollectionsPage() {
                 return (
                   <ResizableDataTableRow
                     key={packet.id}
-                    className={deleted ? "bg-muted/30 opacity-70" : undefined}
+                    className={deleted ? "bg-muted/30" : undefined}
                   >
                     <ResizableDataTableCell className="text-muted-foreground">
                       {formatCollectionReference(packet.id)}
@@ -664,20 +678,10 @@ export function CollectionsPage() {
                         >
                           {packet.collection_name}
                         </span>
-                        {packet.scope === "GLOBAL" ? (
-                          <Badge variant="outline" className="shrink-0">
-                            Global
-                          </Badge>
-                        ) : packet.scope === "PRIVATE" ? (
-                          <Badge variant="secondary" className="shrink-0">
-                            Private
-                          </Badge>
+                        <LibraryScopeBadge scope={packet.scope} />
+                        {deleted ? (
+                          <RecordStatusBadge status="DELETED" />
                         ) : null}
-                        {deleted && (
-                          <Badge variant="destructive" className="shrink-0">
-                            Deleted
-                          </Badge>
-                        )}
                       </div>
                     </ResizableDataTableCell>
                     <ResizableDataTableCell truncate>

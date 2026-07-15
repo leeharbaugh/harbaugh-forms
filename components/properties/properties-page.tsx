@@ -2,6 +2,8 @@
 
 import { PropertyForm } from "@/components/properties/property-form";
 import { usePropertyDuplicateConfirm } from "@/components/properties/use-property-duplicate-confirm";
+import { ListEmptyState } from "@/components/list-empty-state";
+import { ListPageHeader } from "@/components/list-page-header";
 import { ListRowActions } from "@/components/list-row-actions";
 import {
   ResizableDataTable,
@@ -256,17 +258,15 @@ export function PropertiesPage() {
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Properties</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage active properties for Harbaugh Forms.
-          </p>
-        </div>
-        {formMode === "hidden" && (
-          <Button onClick={openCreateForm}>Add property</Button>
-        )}
-      </div>
+      <ListPageHeader
+        title="Properties"
+        description="Manage active properties for Harbaugh Forms."
+        action={
+          formMode === "hidden" ? (
+            <Button onClick={openCreateForm}>Add property</Button>
+          ) : undefined
+        }
+      />
 
       {formMode !== "hidden" && (
         <Card>
@@ -307,11 +307,19 @@ export function PropertiesPage() {
           {listError && <p className="text-sm text-destructive">{listError}</p>}
 
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading properties...</p>
+            <p className="text-sm text-muted-foreground">Loading properties…</p>
           ) : properties.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No active properties found.
-            </p>
+            <ListEmptyState
+              title="No properties yet"
+              description="Add a property address to use in packets and agreements."
+              action={
+                formMode === "hidden" ? (
+                  <Button size="sm" onClick={openCreateForm}>
+                    Add property
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <ResizableDataTable
               storageKey="harbaugh-properties-list-column-widths"

@@ -2,6 +2,7 @@
 
 import { ListingAgreementForm } from "@/components/listing-agreements/listing-agreement-form";
 import { usePropertyDuplicateConfirm } from "@/components/properties/use-property-duplicate-confirm";
+import { ListPageHeader } from "@/components/list-page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -462,19 +463,15 @@ export function ListingAgreementsPage() {
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Listing Agreements
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage listing representation agreements for Harbaugh Forms.
-          </p>
-        </div>
-        {formMode === "hidden" && (
-          <Button onClick={openCreateForm}>Create agreement</Button>
-        )}
-      </div>
+      <ListPageHeader
+        title="Listing Agreements"
+        description="Manage listing representation agreements for Harbaugh Forms."
+        action={
+          formMode === "hidden" ? (
+            <Button onClick={openCreateForm}>Create agreement</Button>
+          ) : undefined
+        }
+      />
 
       {formMode !== "hidden" && (
         <Card>

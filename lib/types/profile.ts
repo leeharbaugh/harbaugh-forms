@@ -27,7 +27,17 @@ export type Profile = {
   primary_organization_id: string | null;
 };
 
-export function formatProfileDisplayName(profile: Profile): string {
+export type ProfileNameFields = Pick<
+  Profile,
+  | "preferred_name"
+  | "display_name"
+  | "first_name"
+  | "middle_name"
+  | "last_name"
+  | "email"
+>;
+
+export function formatProfileDisplayName(profile: ProfileNameFields): string {
   const preferred = profile.preferred_name?.trim();
   if (preferred) {
     return preferred;
