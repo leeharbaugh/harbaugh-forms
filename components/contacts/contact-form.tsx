@@ -599,7 +599,7 @@ export function ContactForm({
           )}
           <Button type="submit" disabled={isSubmitting || !!validationError}>
             {isSubmitting
-              ? "Saving..."
+              ? "Saving…"
               : mode === "create"
                 ? "Add Contact"
                 : "Save changes"}

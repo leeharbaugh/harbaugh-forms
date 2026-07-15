@@ -186,12 +186,12 @@ export function FieldCleanupPage() {
       </div>
 
       {successMessage && (
-        <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-950 dark:text-emerald-100">
+        <div className="rounded-md border border-success/40 bg-success/10 px-4 py-3 text-sm text-foreground">
           {successMessage}
         </div>
       )}
 
-      <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+      <div className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-foreground">
         {FIELD_MERGE_REVIEW_WARNING} Suggested canonical names are advisory only
         and are not applied automatically.
       </div>

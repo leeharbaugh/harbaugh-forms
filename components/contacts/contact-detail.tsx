@@ -222,7 +222,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
 
   if (isLoading) {
     return (
-      <p className="text-sm text-muted-foreground">Loading contact...</p>
+      <p className="text-sm text-muted-foreground">Loading contact…</p>
     );
   }
 
@@ -247,7 +247,9 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
         open={deleteDialogOpen}
         objectType="contact"
         itemName={displayName}
+        canRestore
         isConfirming={isDeleting}
+        confirmingLabel="Deleting…"
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />
@@ -332,7 +334,7 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
           )}
 
           {isLoadingPackets ? (
-            <p className="text-sm text-muted-foreground">Loading packets...</p>
+            <p className="text-sm text-muted-foreground">Loading packets…</p>
           ) : associatedPackets.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No packets associated with this contact yet.

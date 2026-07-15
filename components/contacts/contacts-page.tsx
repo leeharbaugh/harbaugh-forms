@@ -262,7 +262,9 @@ export function ContactsPage() {
             ? formatContactDisplayName(contactPendingDelete)
             : null
         }
+        canRestore
         isConfirming={isDeleting}
+        confirmingLabel="Deleting…"
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />

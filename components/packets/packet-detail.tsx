@@ -321,7 +321,7 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
 
   if (isLoading) {
     return (
-      <p className="text-sm text-muted-foreground">Loading generated packet...</p>
+      <p className="text-sm text-muted-foreground">Loading generated packet…</p>
     );
   }
 
@@ -372,6 +372,7 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
         consequence="It will be hidden from normal use along with its generated documents and can be restored later."
         canRestore
         isConfirming={isDeleting}
+        confirmingLabel="Deleting…"
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />
@@ -433,7 +434,7 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
                 onClick={openDeleteDialog}
                 disabled={isDeleting || isRestoring}
               >
-                {isDeleting ? "Deleting..." : "Delete"}
+                {isDeleting ? "Deleting…" : "Delete"}
               </Button>
             </>
           )}
@@ -564,7 +565,7 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
                 }
                 disabled={isDownloadingAll || downloadingDocumentId !== null}
               >
-                {isDownloadingAll ? "Saving..." : "Download All Forms"}
+                {isDownloadingAll ? "Saving…" : "Download All Forms"}
               </Button>
             )}
         </CardHeader>
@@ -576,7 +577,7 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
             <p className="text-sm text-muted-foreground">{downloadNotice}</p>
           )}
           {downloadWarning && (
-            <p className="text-sm text-amber-600 dark:text-amber-500">
+            <p className="text-sm text-warning">
               {downloadWarning}
             </p>
           )}

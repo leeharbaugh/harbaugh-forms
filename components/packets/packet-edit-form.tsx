@@ -201,7 +201,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
 
   if (isLoading) {
     return (
-      <p className="text-sm text-muted-foreground">Loading packet...</p>
+      <p className="text-sm text-muted-foreground">Loading packet…</p>
     );
   }
 
@@ -418,7 +418,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
 
       <div className="flex flex-wrap gap-2">
         <Button type="button" onClick={() => void handleSave()} disabled={isSaving}>
-          {isSaving ? "Saving..." : "Save packet"}
+          {isSaving ? "Saving…" : "Save packet"}
         </Button>
         <Button type="button" variant="outline" asChild>
           <Link href={`/packets/${packetId}`}>Cancel</Link>

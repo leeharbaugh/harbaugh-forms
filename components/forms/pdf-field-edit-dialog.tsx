@@ -161,7 +161,7 @@ export function PdfFieldEditDialog({
               onClick={onDelete}
               disabled={isBusy}
             >
-              {isDeleting ? "Removing..." : "Remove from this form"}
+              {isDeleting ? "Removing…" : "Remove from this form"}
             </Button>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -173,7 +173,7 @@ export function PdfFieldEditDialog({
                 Cancel
               </Button>
               <Button type="submit" disabled={isBusy || !!validationError}>
-                {isSubmitting ? "Saving..." : "Save changes"}
+                {isSubmitting ? "Saving…" : "Save changes"}
               </Button>
             </div>
           </CardFooter>

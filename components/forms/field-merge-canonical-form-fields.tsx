@@ -51,7 +51,7 @@ export function FieldMergeCanonicalFormFields({
 
   return (
     <div className="space-y-4">
-      <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+      <p className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-foreground">
         Updating the canonical field affects this reusable field everywhere it
         is used across forms and packets.
       </p>

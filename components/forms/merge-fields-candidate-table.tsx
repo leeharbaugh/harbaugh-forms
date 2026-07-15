@@ -485,7 +485,7 @@ export function MergeFieldsCandidateTable({
               <Fragment key={rowId}>
                 <tr
                   className={cn(
-                    entry.formSpecificPrefixes.length > 0 && "bg-amber-500/5",
+                    entry.formSpecificPrefixes.length > 0 && "bg-warning/5",
                   )}
                 >
                   <td className="px-3 py-3 text-center align-middle">
@@ -526,7 +526,7 @@ export function MergeFieldsCandidateTable({
                     </TooltipCell>
                     {entry.formSpecificPrefixes.length > 0 && (
                       <p
-                        className="mt-1 break-words text-xs text-amber-700 dark:text-amber-300"
+                        className="mt-1 break-words text-xs text-warning"
                         title={`Form-specific prefixes: ${entry.formSpecificPrefixes.join(", ")}`}
                       >
                         Prefix: {entry.formSpecificPrefixes.join(", ")}

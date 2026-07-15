@@ -17,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { FormActions } from "@/components/ui/form-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,6 +54,7 @@ export function AdminUserDetailPage({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [pendingDeactivate, setPendingDeactivate] = useState(false);
 
   const profile = detail.profile;
   const agent = detail.agentSettings;
@@ -100,6 +102,34 @@ export function AdminUserDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <ConfirmDialog
+        open={pendingDeactivate}
+        title="Deactivate user?"
+        message="This user will no longer be able to access the application until reactivated."
+        confirmLabel="Deactivate"
+        confirmingLabel="Deactivating…"
+        variant="destructive"
+        isConfirming={isPending}
+        onCancel={() => setPendingDeactivate(false)}
+        onConfirm={() => {
+          setMessage(null);
+          setError(null);
+          startTransition(async () => {
+            const result = await setUserAccountStatusAction({
+              userId: detail.id,
+              status: "INACTIVE",
+            });
+            if (!result.ok) {
+              setError(result.error);
+              return;
+            }
+            setPendingDeactivate(false);
+            setMessage("User deactivated.");
+            router.refresh();
+          });
+        }}
+      />
+
       <AdminSectionNav active="users" />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -144,34 +174,42 @@ export function AdminUserDetailPage({
           >
             Resend invite
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={isPending}
-            onClick={() => {
-              setMessage(null);
-              setError(null);
-              startTransition(async () => {
-                const next =
-                  profile?.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
-                const result = await setUserAccountStatusAction({
-                  userId: detail.id,
-                  status: next,
+          {profile?.status === "ACTIVE" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isPending}
+              onClick={() => setPendingDeactivate(true)}
+            >
+              Deactivate
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isPending}
+              onClick={() => {
+                setMessage(null);
+                setError(null);
+                startTransition(async () => {
+                  const result = await setUserAccountStatusAction({
+                    userId: detail.id,
+                    status: "ACTIVE",
+                  });
+                  if (!result.ok) {
+                    setError(result.error);
+                    return;
+                  }
+                  setMessage("User reactivated.");
+                  router.refresh();
                 });
-                if (!result.ok) {
-                  setError(result.error);
-                  return;
-                }
-                setMessage(
-                  next === "ACTIVE" ? "User reactivated." : "User deactivated.",
-                );
-                router.refresh();
-              });
-            }}
-          >
-            {profile?.status === "ACTIVE" ? "Deactivate" : "Activate"}
-          </Button>
+              }}
+            >
+              Activate
+            </Button>
+          )}
           <Button
             type="button"
             size="sm"
@@ -201,7 +239,7 @@ export function AdminUserDetailPage({
       </div>
 
       {message ? (
-        <p className="text-sm text-emerald-700">{message}</p>
+        <p className="text-sm text-success">{message}</p>
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 

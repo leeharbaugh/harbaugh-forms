@@ -282,7 +282,7 @@ export function CreatePacketWizard({
         <div className="space-y-2">
           <Label htmlFor="agreement_id">Representation agreement *</Label>
           {isLoadingAgreements ? (
-            <p className="text-sm text-muted-foreground">Loading agreements...</p>
+            <p className="text-sm text-muted-foreground">Loading agreements…</p>
           ) : loadError ? (
             <p className="text-sm text-destructive">{loadError}</p>
           ) : agreements.length === 0 ? (

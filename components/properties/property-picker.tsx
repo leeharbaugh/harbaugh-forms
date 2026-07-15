@@ -289,7 +289,7 @@ export function PropertyPicker({
                 <div className="rounded-md border">
                   {isLoadingList ? (
                     <p className="p-3 text-sm text-muted-foreground">
-                      Loading properties...
+                      Loading properties…
                     </p>
                   ) : listError ? (
                     <p className="p-3 text-sm text-destructive">{listError}</p>
@@ -342,7 +342,7 @@ export function PropertyPicker({
               <Label>Selected property</Label>
               {isLoadingSelected ? (
                 <p className="text-sm text-muted-foreground">
-                  Loading property...
+                  Loading property…
                 </p>
               ) : propertyId == null ? (
                 <p className="text-sm text-muted-foreground">

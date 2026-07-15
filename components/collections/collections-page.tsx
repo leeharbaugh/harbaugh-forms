@@ -500,6 +500,7 @@ export function CollectionsPage() {
         consequence="It will be hidden from normal use and can be restored later. Historical generated packets are unchanged."
         canRestore
         isConfirming={isDeleting}
+        confirmingLabel="Deleting…"
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />
@@ -625,7 +626,7 @@ export function CollectionsPage() {
 
           {listError && <p className="text-sm text-destructive">{listError}</p>}
           {cloneMessage && (
-            <p className="text-sm text-emerald-700">{cloneMessage}</p>
+            <p className="text-sm text-success">{cloneMessage}</p>
           )}
 
           {isLoading ? (
@@ -714,7 +715,7 @@ export function CollectionsPage() {
                             aria-label="Copy to My Collections"
                             onClick={() => void handleCloneCollection(packet)}
                           >
-                            {isCloningId === packet.id ? "Copying..." : "Copy"}
+                            {isCloningId === packet.id ? "Copying…" : "Copy"}
                           </Button>
                         ) : null}
                         {!deleted && canEditCollection(actor, packet) ? (

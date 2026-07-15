@@ -172,7 +172,7 @@ export function SettingsPage() {
       )}
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading settings...</p>
+        <p className="text-sm text-muted-foreground">Loading settings…</p>
       ) : (
         <div className="space-y-6">
           <Card>

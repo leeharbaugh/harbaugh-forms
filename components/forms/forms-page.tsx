@@ -414,7 +414,9 @@ export function FormsPage() {
             ? `${templatePendingDelete.form_name} (${formatFormReference(templatePendingDelete.id)})`
             : null
         }
+        canRestore
         isConfirming={isDeleting}
+        confirmingLabel="Deleting…"
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />

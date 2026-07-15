@@ -54,7 +54,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   isConfirming = false,
-  confirmingLabel = "Working...",
+  confirmingLabel = "Working…",
   confirmDisabled = false,
   onConfirm,
   onCancel,
@@ -93,6 +93,9 @@ export function ConfirmDialog({
         ? cancelButtonRef.current
         : confirmButtonRef.current;
     focusTarget?.focus();
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -143,6 +146,7 @@ export function ConfirmDialog({
     document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
       previouslyFocusedRef.current?.focus?.();
     };
   }, [open, resolvedInitialFocus]);

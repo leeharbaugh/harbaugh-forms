@@ -463,7 +463,7 @@ export function PacketFormsDraftEditor({
           <p className="text-sm text-destructive">{externalError}</p>
         )}
         {externalWarning && (
-          <p className="text-sm text-amber-600 dark:text-amber-500">
+          <p className="text-sm text-warning">
             {externalWarning}
           </p>
         )}

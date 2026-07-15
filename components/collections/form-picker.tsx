@@ -219,7 +219,7 @@ export function FormPicker({
       <div className="space-y-2">
         <Label>Selected forms *</Label>
         {isLoadingSelected ? (
-          <p className="text-sm text-muted-foreground">Loading forms...</p>
+          <p className="text-sm text-muted-foreground">Loading forms…</p>
         ) : selectedTemplates.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No form templates selected yet.

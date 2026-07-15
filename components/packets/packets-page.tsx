@@ -249,6 +249,7 @@ function PacketsPageContent() {
         consequence="It will be hidden from normal use along with its generated documents and can be restored later."
         canRestore
         isConfirming={isDeleting}
+        confirmingLabel="Deleting…"
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />
@@ -431,7 +432,7 @@ function PacketsPageContent() {
 function PacketsPageFallback() {
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
-      <p className="text-sm text-muted-foreground">Loading packets...</p>
+      <p className="text-sm text-muted-foreground">Loading packets…</p>
     </div>
   );
 }

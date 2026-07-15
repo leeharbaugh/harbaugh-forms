@@ -153,6 +153,7 @@ export function AdminOrganizationsPage({
             : ""
         }
         confirmLabel="Deactivate"
+        confirmingLabel="Deactivating…"
         variant="destructive"
         isConfirming={isPending}
         onCancel={() => setPendingDeactivate(null)}
@@ -161,7 +162,6 @@ export function AdminOrganizationsPage({
             return;
           }
           const org = pendingDeactivate;
-          setPendingDeactivate(null);
           setMessage(null);
           setError(null);
           startTransition(async () => {
@@ -173,6 +173,7 @@ export function AdminOrganizationsPage({
               setError(result.error);
               return;
             }
+            setPendingDeactivate(null);
             setMessage(`Deactivated ${org.name}.`);
             router.refresh();
           });
@@ -192,7 +193,7 @@ export function AdminOrganizationsPage({
       />
 
       {message ? (
-        <p className="text-sm text-emerald-700">{message}</p>
+        <p className="text-sm text-success">{message}</p>
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 

@@ -72,7 +72,7 @@ export function PacketFormFieldsSidebar({
           onClick={onSaveChanges}
         >
           {isSaving
-            ? "Saving..."
+            ? "Saving…"
             : hasUnsavedChanges
               ? `Save changes (${dirtyInstanceIds.length})`
               : "Save changes"}

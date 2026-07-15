@@ -18,9 +18,9 @@ function ConfidenceBadge({
       className={cn(
         "rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
         confidence === "high" &&
-          "border-emerald-500/40 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100",
+          "border-success/40 bg-success/10 text-success",
         confidence === "medium" &&
-          "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100",
+          "border-warning/40 bg-warning/10 text-warning",
         confidence === "low" &&
           "border-muted-foreground/30 bg-muted/40 text-muted-foreground",
       )}
@@ -84,8 +84,8 @@ export function FieldMergeCanonicalNameAdvicePanel({
   }
 
   return (
-    <div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
-      <p className="font-medium">{FIELD_MERGE_REVIEW_WARNING}</p>
+    <div className="space-y-3 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-foreground">
+      <p className="font-medium text-warning">{FIELD_MERGE_REVIEW_WARNING}</p>
 
       {advice.primary ? (
         <SuggestionBlock suggestion={advice.primary} title="Suggested canonical name" />

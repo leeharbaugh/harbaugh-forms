@@ -229,7 +229,7 @@ export function BrokerageProfileForm({
 
       <FormActions>
         <Button type="submit" disabled={isSubmitting || Boolean(validationError)}>
-          {isSubmitting ? "Saving..." : "Save brokerage profile"}
+          {isSubmitting ? "Saving…" : "Save brokerage profile"}
         </Button>
       </FormActions>
     </form>

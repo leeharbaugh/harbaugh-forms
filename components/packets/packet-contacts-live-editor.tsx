@@ -188,6 +188,7 @@ export function PacketContactsLiveEditor({
       <ConfirmDeleteDialog
         open={contactPendingRemove != null}
         objectType="packet contact"
+        title="Remove packet contact?"
         itemName={
           contactPendingRemove?.contacts
             ? formatContactDisplayName(contactPendingRemove.contacts)
@@ -197,7 +198,7 @@ export function PacketContactsLiveEditor({
         }
         consequence="It will be removed from this packet and can be added again later."
         confirmLabel="Remove"
-        confirmingLabel="Removing..."
+        confirmingLabel="Removing…"
         isConfirming={isRemoving}
         onConfirm={() => void handleConfirmRemove()}
         onCancel={closeRemoveDialog}

@@ -701,7 +701,7 @@ export function PropertyForm({
               disabled={isSubmitting || !!validationError}
             >
               {isSubmitting
-                ? "Saving..."
+                ? "Saving…"
                 : mode === "create"
                   ? "Add property"
                   : "Save changes"}

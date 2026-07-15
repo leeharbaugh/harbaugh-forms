@@ -180,7 +180,7 @@ export function CollectionForm({
             onClick={onDelete}
             disabled={isDeleting || isRestoring}
           >
-            {isDeleting ? "Deleting..." : "Delete"}
+            {isDeleting ? "Deleting…" : "Delete"}
           </Button>
         )}
         {readOnly && isDeleted && onRestore && (
@@ -198,7 +198,7 @@ export function CollectionForm({
             disabled={isSubmitting || !!validationError}
           >
             {isSubmitting
-              ? "Saving..."
+              ? "Saving…"
               : mode === "create"
                 ? "Add packet template"
                 : "Save changes"}

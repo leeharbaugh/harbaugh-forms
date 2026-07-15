@@ -52,7 +52,7 @@ export function FieldRetireConfirmDialog({
       open={open}
       title="Retire field globally?"
       confirmLabel="Retire field globally"
-      confirmingLabel="Retiring..."
+      confirmingLabel="Retiring…"
       cancelLabel="Cancel"
       variant="destructive"
       isConfirming={isConfirming}
@@ -66,15 +66,14 @@ export function FieldRetireConfirmDialog({
           {fieldLabel} ({formatFieldReference(field.id)})
         </p>
         {isLoadingUsage ? (
-          <p className="text-muted-foreground">Checking field usage...</p>
+          <p className="text-muted-foreground">Checking field usage…</p>
         ) : inUse ? (
           <>
             <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
               This field is currently used on one or more forms and/or packet
-              forms. Deleting it will remove it from all form templates, packet
-              form values, and packet-specific placement overrides. This action
-              should only be used when you truly want to retire this field
-              globally.
+              forms. Retiring it will remove it from all form templates, packet
+              form values, and packet-specific placement overrides. Use this
+              only when you truly want to retire this field globally.
             </p>
 
             {usage && (
@@ -95,16 +94,16 @@ export function FieldRetireConfirmDialog({
               </div>
             )}
 
-            <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-              <p className="font-medium">Safer alternatives</p>
-              <ul className="list-disc space-y-1 pl-4 text-amber-900/90 dark:text-amber-100/90">
+            <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-foreground">
+              <p className="font-medium text-warning">Safer alternatives</p>
+              <ul className="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
                 <li>
                   If you only want to remove this field from one form, open
                   that form&apos;s PDF editor and choose Remove From This Form.
                 </li>
                 <li>
                   If you only want to rename the field or change its label,
-                  edit the field instead of deleting it.
+                  edit the field instead of retiring it.
                 </li>
               </ul>
             </div>
@@ -112,7 +111,7 @@ export function FieldRetireConfirmDialog({
         ) : (
           <p className="text-muted-foreground">
             This field is not currently used on any form templates or packet
-            forms. Deleting will retire the field definition globally.
+            forms. Retiring will mark the field definition as deleted globally.
           </p>
         )}
       </div>

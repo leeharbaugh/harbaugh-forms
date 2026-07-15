@@ -257,10 +257,11 @@ export function PacketFormsLiveEditor({
       <ConfirmDeleteDialog
         open={formPendingRemove != null}
         objectType="packet form"
+        title="Remove packet form?"
         itemName={formPendingRemove?.document_name}
         consequence="It will be removed from this packet and can be added again later."
         confirmLabel="Remove"
-        confirmingLabel="Removing..."
+        confirmingLabel="Removing…"
         isConfirming={isRemoving}
         onConfirm={() => void handleConfirmRemoveForm()}
         onCancel={closeRemoveDialog}
@@ -389,7 +390,7 @@ export function PacketFormsLiveEditor({
               onClick={() => void handleUploadExternal()}
               disabled={isSubmitting}
             >
-              {isSubmitting ? "Uploading..." : "Upload to packet"}
+              {isSubmitting ? "Uploading…" : "Upload to packet"}
             </Button>
           </div>
         </div>
@@ -397,7 +398,7 @@ export function PacketFormsLiveEditor({
 
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
       {actionWarning && (
-        <p className="text-sm text-amber-600 dark:text-amber-500">
+        <p className="text-sm text-warning">
           {actionWarning}
         </p>
       )}

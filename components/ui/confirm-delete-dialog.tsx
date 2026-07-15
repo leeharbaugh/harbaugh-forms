@@ -1,6 +1,7 @@
 "use client";
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { buildSoftDeleteMessage } from "@/lib/ui/soft-delete-message";
 
 function titleCaseObjectType(objectType: string): string {
   return objectType
@@ -10,26 +11,7 @@ function titleCaseObjectType(objectType: string): string {
     .join(" ");
 }
 
-export function buildSoftDeleteMessage(options: {
-  objectType: string;
-  itemName?: string | null;
-  consequence?: string;
-  canRestore?: boolean;
-}): string {
-  const { objectType, itemName, consequence, canRestore = false } = options;
-  const trimmedName = itemName?.trim();
-  const removeLine = trimmedName
-    ? `This will remove ${trimmedName}.`
-    : `This will remove this ${objectType.toLowerCase()}.`;
-
-  const consequenceLine =
-    consequence ??
-    (canRestore
-      ? "It will be hidden from normal use and can be restored later."
-      : "This marks it as deleted and hides it from normal use.");
-
-  return `${removeLine} ${consequenceLine}`;
-}
+export { buildSoftDeleteMessage };
 
 type ConfirmDeleteDialogProps = {
   open: boolean;
@@ -42,6 +24,8 @@ type ConfirmDeleteDialogProps = {
   consequence?: string;
   /** When true, default wording mentions restore. */
   canRestore?: boolean;
+  /** Override the auto-generated title (e.g. "Remove packet form?"). */
+  title?: string;
   confirmLabel?: string;
   cancelLabel?: string;
   isConfirming?: boolean;
@@ -58,15 +42,16 @@ export function ConfirmDeleteDialog({
   description,
   consequence,
   canRestore = false,
+  title,
   confirmLabel = "Delete",
   cancelLabel = "Cancel",
   isConfirming = false,
-  confirmingLabel = "Deleting...",
+  confirmingLabel = "Deleting…",
   onConfirm,
   onCancel,
   elevated = false,
 }: ConfirmDeleteDialogProps) {
-  const title = `Delete ${titleCaseObjectType(objectType)}?`;
+  const resolvedTitle = title ?? `Delete ${titleCaseObjectType(objectType)}?`;
   const message =
     description ??
     buildSoftDeleteMessage({
@@ -79,7 +64,7 @@ export function ConfirmDeleteDialog({
   return (
     <ConfirmDialog
       open={open}
-      title={title}
+      title={resolvedTitle}
       message={message}
       confirmLabel={confirmLabel}
       cancelLabel={cancelLabel}

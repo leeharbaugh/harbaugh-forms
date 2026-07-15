@@ -326,8 +326,8 @@ export function FieldMergeDialog({
               </div>
 
               {hasTypeMismatch && (
-                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-                  <p className="font-medium text-amber-950 dark:text-amber-100">
+                <div className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3">
+                  <p className="font-medium text-warning">
                     Data/widget type warnings
                   </p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
@@ -352,8 +352,8 @@ export function FieldMergeDialog({
               )}
 
               {hasConflicts && (
-                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-                  <p className="font-medium text-amber-950 dark:text-amber-100">
+                <div className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3">
+                  <p className="font-medium text-warning">
                     Placement conflicts detected
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">

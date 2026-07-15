@@ -51,6 +51,9 @@ export function AdminOrganizationDetailPage({
   const [isPending, startTransition] = useTransition();
   const [pendingRemove, setPendingRemove] =
     useState<AdminMembershipListItem | null>(null);
+  const [pendingOrgDeactivate, setPendingOrgDeactivate] = useState(false);
+  const [pendingMembershipDeactivate, setPendingMembershipDeactivate] =
+    useState<AdminMembershipListItem | null>(null);
 
   const [form, setForm] = useState<OrganizationInput>(() => ({
     name: organization.name,
@@ -162,6 +165,7 @@ export function AdminOrganizationDetailPage({
             : ""
         }
         confirmLabel="Remove"
+        confirmingLabel="Removing…"
         variant="destructive"
         isConfirming={isPending}
         onCancel={() => setPendingRemove(null)}
@@ -170,7 +174,6 @@ export function AdminOrganizationDetailPage({
             return;
           }
           const membership = pendingRemove;
-          setPendingRemove(null);
           setMessage(null);
           setError(null);
           startTransition(async () => {
@@ -184,7 +187,74 @@ export function AdminOrganizationDetailPage({
               setError(result.error);
               return;
             }
+            setPendingRemove(null);
             setMessage("Membership removed.");
+            router.refresh();
+          });
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingOrgDeactivate}
+        title="Deactivate organization?"
+        message={`This will deactivate “${organization.name}”. Memberships remain on record but the organization will be treated as inactive.`}
+        confirmLabel="Deactivate"
+        confirmingLabel="Deactivating…"
+        variant="destructive"
+        isConfirming={isPending}
+        onCancel={() => setPendingOrgDeactivate(false)}
+        onConfirm={() => {
+          setMessage(null);
+          setError(null);
+          startTransition(async () => {
+            const result = await setOrganizationStatusAction({
+              organizationId: organization.id,
+              status: "INACTIVE",
+            });
+            if (!result.ok) {
+              setError(result.error);
+              return;
+            }
+            setPendingOrgDeactivate(false);
+            setMessage("Organization deactivated.");
+            router.refresh();
+          });
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingMembershipDeactivate != null}
+        title="Deactivate membership?"
+        message={
+          pendingMembershipDeactivate
+            ? `This will deactivate ${pendingMembershipDeactivate.displayName}'s membership in ${organization.name}. They will no longer be treated as an active member until reactivated.`
+            : ""
+        }
+        confirmLabel="Deactivate"
+        confirmingLabel="Deactivating…"
+        variant="destructive"
+        isConfirming={isPending}
+        onCancel={() => setPendingMembershipDeactivate(null)}
+        onConfirm={() => {
+          if (!pendingMembershipDeactivate) {
+            return;
+          }
+          const membership = pendingMembershipDeactivate;
+          setMessage(null);
+          setError(null);
+          startTransition(async () => {
+            const result = await updateOrganizationMembershipAction({
+              membershipId: membership.id,
+              organizationId: organization.id,
+              userId: membership.user_id,
+              status: "INACTIVE",
+            });
+            if (!result.ok) {
+              setError(result.error);
+              return;
+            }
+            setPendingMembershipDeactivate(null);
+            setMessage("Membership deactivated.");
             router.refresh();
           });
         }}
@@ -226,23 +296,22 @@ export function AdminOrganizationDetailPage({
             }
             disabled={isPending}
             onClick={() => {
+              if (organization.status === "ACTIVE") {
+                setPendingOrgDeactivate(true);
+                return;
+              }
               setMessage(null);
               setError(null);
               startTransition(async () => {
                 const result = await setOrganizationStatusAction({
                   organizationId: organization.id,
-                  status:
-                    organization.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                  status: "ACTIVE",
                 });
                 if (!result.ok) {
                   setError(result.error);
                   return;
                 }
-                setMessage(
-                  organization.status === "ACTIVE"
-                    ? "Organization deactivated."
-                    : "Organization activated.",
-                );
+                setMessage("Organization activated.");
                 router.refresh();
               });
             }}
@@ -253,7 +322,7 @@ export function AdminOrganizationDetailPage({
       </div>
 
       {message ? (
-        <p className="text-sm text-emerald-700">{message}</p>
+        <p className="text-sm text-success">{message}</p>
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
@@ -387,6 +456,10 @@ export function AdminOrganizationDetailPage({
             setPendingRemove(membership);
             return;
           }
+          if (status === "INACTIVE") {
+            setPendingMembershipDeactivate(membership);
+            return;
+          }
           setMessage(null);
           setError(null);
           startTransition(async () => {
@@ -429,6 +502,10 @@ export function AdminOrganizationDetailPage({
           });
         }}
         onSetStatus={(membership, status) => {
+          if (status === "DELETED") {
+            setPendingRemove(membership);
+            return;
+          }
           setMessage(null);
           setError(null);
           startTransition(async () => {

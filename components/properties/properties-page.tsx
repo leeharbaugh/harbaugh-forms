@@ -254,7 +254,9 @@ export function PropertiesPage() {
             ? `${formatPropertyReference(propertyPendingDelete.id)} at ${propertyPendingDelete.street_address}, ${propertyPendingDelete.city}`
             : null
         }
+        canRestore
         isConfirming={isDeleting}
+        confirmingLabel="Deleting…"
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />

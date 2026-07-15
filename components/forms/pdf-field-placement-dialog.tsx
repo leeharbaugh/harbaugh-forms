@@ -100,7 +100,7 @@ export function PdfFieldPlacementDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting || !!validationError}>
-              {isSubmitting ? "Saving..." : "Add placement"}
+              {isSubmitting ? "Saving…" : "Add placement"}
             </Button>
           </CardFooter>
         </form>

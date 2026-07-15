@@ -244,7 +244,7 @@ export function FormForm({
             disabled={isSubmitting || !!validationError}
           >
             {isSubmitting
-              ? "Saving..."
+              ? "Saving…"
               : mode === "create"
                 ? "Add form template"
                 : "Save changes"}

@@ -440,7 +440,7 @@ export function BuyerRepAgreementForm({
             disabled={isSubmitting || !!validationError}
           >
             {isSubmitting
-              ? "Saving..."
+              ? "Saving…"
               : mode === "create"
                 ? "Create agreement"
                 : "Save changes"}

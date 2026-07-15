@@ -150,7 +150,7 @@ export function AgentProfileForm({
 
       <FormActions>
         <Button type="submit" disabled={isSubmitting || Boolean(validationError)}>
-          {isSubmitting ? "Saving..." : "Save agent profile"}
+          {isSubmitting ? "Saving…" : "Save agent profile"}
         </Button>
       </FormActions>
     </form>

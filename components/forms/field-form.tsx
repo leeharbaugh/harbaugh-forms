@@ -106,7 +106,7 @@ export function FieldForm({
       </p>
 
       {mode === "create" && similarFields.length > 0 && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+        <div className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-foreground">
           <p>{SIMILAR_FIELD_WARNING}</p>
           <ul className="mt-2 space-y-1 text-xs">
             {similarFields.slice(0, 5).map((field) => (
@@ -304,7 +304,7 @@ export function FieldForm({
         {!readOnly && (
           <Button type="submit" disabled={isSubmitting || !!validationError}>
             {isSubmitting
-              ? "Saving..."
+              ? "Saving…"
               : mode === "create"
                 ? "Add field"
                 : "Save changes"}

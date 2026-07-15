@@ -1803,6 +1803,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       <ConfirmDeleteDialog
         open={mappingPendingDelete != null}
         objectType="field placement"
+        title="Remove field placement?"
         itemName={
           mappingPendingDelete
             ? formatMappingOverlayLabel(mappingPendingDelete)
@@ -1810,7 +1811,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         }
         consequence="This removes the placement from this form template and does not delete the reusable field definition."
         confirmLabel="Remove"
-        confirmingLabel="Removing..."
+        confirmingLabel="Removing…"
         isConfirming={isDeletingId === mappingPendingDelete?.id}
         onConfirm={() => void handleConfirmKeyboardDelete()}
         onCancel={() => setMappingPendingDelete(null)}

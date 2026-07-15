@@ -54,7 +54,7 @@ function UsageCountPanel({
     <div className="space-y-2 rounded-md border p-3">
       <p className="text-sm font-medium">{title}</p>
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading usage...</p>
+        <p className="text-sm text-muted-foreground">Loading usage…</p>
       ) : usage ? (
         <dl className="space-y-1 text-sm">
           <div className="flex items-center justify-between gap-4">
@@ -435,8 +435,8 @@ export function FieldCatalogMergeDialog({
               )}
 
               {validation.warnings.length > 0 && (
-                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-                  <p className="font-medium text-amber-950 dark:text-amber-100">
+                <div className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+                  <p className="font-medium text-warning">
                     Warnings
                   </p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
@@ -505,8 +505,8 @@ export function FieldCatalogMergeDialog({
               </div>
 
               {hasTypeMismatch && (
-                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-                  <p className="font-medium text-amber-950 dark:text-amber-100">
+                <div className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3">
+                  <p className="font-medium text-warning">
                     Data/widget type warnings
                   </p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
@@ -534,8 +534,8 @@ export function FieldCatalogMergeDialog({
               )}
 
               {hasConflicts && (
-                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-                  <p className="font-medium text-amber-950 dark:text-amber-100">
+                <div className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3">
+                  <p className="font-medium text-warning">
                     Placement conflicts detected
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">

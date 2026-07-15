@@ -321,7 +321,7 @@ export function CreatePacketFromCollectionForm({
 
   if (isLoading) {
     return (
-      <p className="text-sm text-muted-foreground">Loading collections...</p>
+      <p className="text-sm text-muted-foreground">Loading collections…</p>
     );
   }
 
@@ -389,7 +389,7 @@ export function CreatePacketFromCollectionForm({
             onClick={() => void handleCreate()}
             disabled={isSubmitting || !!formsValidationError}
           >
-            {isSubmitting ? "Creating..." : "Create packet"}
+            {isSubmitting ? "Creating…" : "Create packet"}
           </Button>
         </FormActions>
       </div>

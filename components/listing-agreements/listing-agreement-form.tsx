@@ -373,7 +373,7 @@ export function ListingAgreementForm({
             disabled={isSubmitting || !!validationError}
           >
             {isSubmitting
-              ? "Saving..."
+              ? "Saving…"
               : mode === "create"
                 ? "Create agreement"
                 : "Save changes"}

@@ -22,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   AppRoleBadge,
   OnboardingStatusBadge,
@@ -58,6 +59,8 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [resendCooldownUntil, setResendCooldownUntil] = useState(0);
+  const [pendingDeactivate, setPendingDeactivate] =
+    useState<AdminUserListItem | null>(null);
 
   const [loginEmail, setLoginEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -141,6 +144,46 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
 
   return (
     <div className="flex flex-col gap-8">
+      <ConfirmDialog
+        open={pendingDeactivate != null}
+        title="Deactivate user?"
+        message={
+          pendingDeactivate
+            ? `This user will no longer be able to access the application until reactivated${
+                pendingDeactivate.loginEmail
+                  ? ` (${pendingDeactivate.loginEmail})`
+                  : ""
+              }.`
+            : ""
+        }
+        confirmLabel="Deactivate"
+        confirmingLabel="Deactivating…"
+        variant="destructive"
+        isConfirming={isPending}
+        onCancel={() => setPendingDeactivate(null)}
+        onConfirm={() => {
+          if (!pendingDeactivate) {
+            return;
+          }
+          const user = pendingDeactivate;
+          setMessage(null);
+          setError(null);
+          startTransition(async () => {
+            const result = await setUserAccountStatusAction({
+              userId: user.id,
+              status: "INACTIVE",
+            });
+            if (!result.ok) {
+              setError(result.error);
+              return;
+            }
+            setPendingDeactivate(null);
+            setMessage(`Deactivated ${user.loginEmail}.`);
+            router.refresh();
+          });
+        }}
+      />
+
       <AdminSectionNav active="users" />
 
       <ListPageHeader
@@ -161,7 +204,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
         }
       />
       {message ? (
-        <p className="text-sm text-emerald-700">{message}</p>
+        <p className="text-sm text-success">{message}</p>
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
@@ -339,7 +382,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
         </div>
         <div>
           <Button type="button" disabled={isPending} onClick={onInvite}>
-            {isPending ? "Working..." : "Send invitation"}
+            {isPending ? "Sending invitation…" : "Send invitation"}
           </Button>
         </div>
         </CardContent>
@@ -480,21 +523,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
                             size="sm"
                             variant="outline"
                             disabled={isPending}
-                            onClick={() => {
-                              setMessage(null);
-                              setError(null);
-                              startTransition(async () => {
-                                const result = await setUserAccountStatusAction({
-                                  userId: user.id,
-                                  status: "INACTIVE",
-                                });
-                                if (!result.ok) {
-                                  setError(result.error);
-                                  return;
-                                }
-                                setMessage(`Deactivated ${user.loginEmail}.`);
-                              });
-                            }}
+                            onClick={() => setPendingDeactivate(user)}
                           >
                             Deactivate
                           </Button>

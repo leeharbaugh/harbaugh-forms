@@ -401,8 +401,10 @@ export function RepresentationAgreementsPage() {
             ? `${getOrderedContactNames(agreementPendingDelete)} (${formatAgreementReference(agreementPendingDelete.id)})`
             : null
         }
-        consequence="This marks the agreement and related records as deleted and hides them from normal use."
+        canRestore
+        consequence="Related records will also be hidden. It can be restored later."
         isConfirming={isDeleting}
+        confirmingLabel="Deleting…"
         onConfirm={() => void handleConfirmDelete()}
         onCancel={closeDeleteDialog}
       />
@@ -450,7 +452,7 @@ export function RepresentationAgreementsPage() {
           )}
 
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading agreements...</p>
+            <p className="text-sm text-muted-foreground">Loading agreements…</p>
           ) : agreements.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No active buyer rep agreements found.

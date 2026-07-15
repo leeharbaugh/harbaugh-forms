@@ -192,7 +192,7 @@ export function CreatePacketFromAgreementForm({
 
   if (isLoading) {
     return (
-      <p className="text-sm text-muted-foreground">Loading generation options...</p>
+      <p className="text-sm text-muted-foreground">Loading generation options…</p>
     );
   }
 
@@ -315,7 +315,7 @@ export function CreatePacketFromAgreementForm({
             !!formsValidationError
           }
         >
-          {isSubmitting ? "Generating..." : "Generate packet"}
+          {isSubmitting ? "Generating…" : "Generate packet"}
         </Button>
         <Button
           type="button"

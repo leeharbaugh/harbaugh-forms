@@ -5,6 +5,7 @@ import { FieldDetailDialog } from "@/components/forms/field-detail-dialog";
 import { FieldFormDialog } from "@/components/forms/field-form-dialog";
 import { FieldRetireConfirmDialog } from "@/components/forms/field-retire-confirm-dialog";
 import { FieldsNav } from "@/components/forms/fields-nav";
+import { ListEmptyState } from "@/components/list-empty-state";
 import { ListRowActions, listTableActionsCellClass, listTableActionsHeaderClass } from "@/components/list-row-actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -434,17 +435,18 @@ export function FieldsPage() {
 
           {listError && <p className="text-sm text-destructive">{listError}</p>}
           {successMessage && (
-            <p className="text-sm text-green-700 dark:text-green-400">
+            <p className="text-sm text-success">
               {successMessage}
             </p>
           )}
 
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading fields...</p>
+            <p className="text-sm text-muted-foreground">Loading fields…</p>
           ) : fields.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No fields found. Add a field to build your catalog.
-            </p>
+            <ListEmptyState
+              title="No fields found"
+              description="Add a field to build your catalog."
+            />
           ) : (
             <div className="max-w-full overflow-x-auto rounded-md border">
               <table className="w-full table-auto border-collapse">

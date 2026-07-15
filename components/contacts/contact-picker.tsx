@@ -202,7 +202,7 @@ export function ContactPicker({
       <div className="space-y-2">
         <Label>{selectedLabel}</Label>
         {isLoadingSelected ? (
-          <p className="text-sm text-muted-foreground">Loading contacts...</p>
+          <p className="text-sm text-muted-foreground">Loading contacts…</p>
         ) : selectedContacts.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {emptySelectedMessage}
