@@ -1,12 +1,12 @@
 "use client";
 
 import {
-  createOrganizationAction,
   inviteUserAction,
   resendInvitationAction,
   setUserAccountStatusAction,
   setUserAppRoleAction,
 } from "@/app/admin/actions";
+import { AdminSectionNav } from "@/components/admin/admin-section-nav";
 import type { AdminUserListItem } from "@/lib/admin/list-users";
 import type { InviteUserInput } from "@/lib/admin/invite-validation";
 import { formatPhoneInput } from "@/lib/phone-format";
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
 type OrgOption = { id: string; name: string };
@@ -35,7 +36,7 @@ function formatDate(value: string | null): string {
 }
 
 export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
-  const [orgs, setOrgs] = useState(organizations);
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -62,12 +63,6 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
   const [city, setCity] = useState("");
   const [state, setState] = useState("TX");
   const [zip, setZip] = useState("");
-
-  const [newOrgName, setNewOrgName] = useState("");
-  const [newOrgLegalName, setNewOrgLegalName] = useState("");
-  const [newOrgEmail, setNewOrgEmail] = useState("");
-  const [newOrgPhone, setNewOrgPhone] = useState("");
-  const [newOrgLicense, setNewOrgLicense] = useState("");
 
   const sortedUsers = useMemo(() => users, [users]);
 
@@ -123,51 +118,29 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
       setAddressLine2("");
       setCity("");
       setZip("");
-    });
-  };
-
-  const onCreateOrg = () => {
-    setMessage(null);
-    setError(null);
-    startTransition(async () => {
-      const result = await createOrganizationAction({
-        name: newOrgName,
-        legalName: newOrgLegalName || null,
-        email: newOrgEmail || null,
-        phone: newOrgPhone || null,
-        brokerageLicenseNumber: newOrgLicense || null,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      setOrgs((current) =>
-        [...current, { id: result.organization.id, name: result.organization.name }].sort(
-          (a, b) => a.name.localeCompare(b.name),
-        ),
-      );
-      setPrimaryOrganizationId(result.organization.id);
-      setNewOrgName("");
-      setNewOrgLegalName("");
-      setNewOrgEmail("");
-      setNewOrgPhone("");
-      setNewOrgLicense("");
-      setMessage(`Created organization ${result.organization.name}.`);
+      router.refresh();
     });
   };
 
   return (
-    <div className="flex flex-col gap-10">
+    <div className="flex flex-col gap-8">
+      <AdminSectionNav active="users" />
+
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">Users</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Users / Agents</h1>
         <p className="text-sm text-muted-foreground">
-          Invite and manage application users. Organization membership does not
-          share business records between members.
+          Invite and manage application users and agent profile details.
+          Organization membership does not share business records between
+          members. Manage organizations on the{" "}
+          <Link href="/admin/organizations" className="underline underline-offset-2">
+            Organizations
+          </Link>{" "}
+          page.
         </p>
         {message ? (
           <p className="text-sm text-emerald-700">{message}</p>
         ) : null}
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
       </div>
 
       <section className="flex flex-col gap-4 rounded-lg border border-foreground/10 p-5">
@@ -237,7 +210,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
               onChange={(e) => setPrimaryOrganizationId(e.target.value)}
             >
               <option value="">Select organization</option>
-              {orgs.map((org) => (
+              {organizations.map((org) => (
                 <option key={org.id} value={org.id}>
                   {org.name}
                 </option>
@@ -344,63 +317,6 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
         </div>
       </section>
 
-      <section className="flex flex-col gap-4 rounded-lg border border-foreground/10 p-5">
-        <h2 className="text-lg font-medium">Create organization</h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="grid gap-2">
-            <Label htmlFor="newOrgName">Name</Label>
-            <Input
-              id="newOrgName"
-              value={newOrgName}
-              onChange={(e) => setNewOrgName(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="newOrgLegalName">Legal name</Label>
-            <Input
-              id="newOrgLegalName"
-              value={newOrgLegalName}
-              onChange={(e) => setNewOrgLegalName(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="newOrgEmail">Email</Label>
-            <Input
-              id="newOrgEmail"
-              type="email"
-              value={newOrgEmail}
-              onChange={(e) => setNewOrgEmail(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="newOrgPhone">Phone</Label>
-            <Input
-              id="newOrgPhone"
-              value={newOrgPhone}
-              onChange={(e) => setNewOrgPhone(formatPhoneInput(e.target.value))}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="newOrgLicense">Brokerage license</Label>
-            <Input
-              id="newOrgLicense"
-              value={newOrgLicense}
-              onChange={(e) => setNewOrgLicense(e.target.value)}
-            />
-          </div>
-        </div>
-        <div>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isPending || !newOrgName.trim()}
-            onClick={onCreateOrg}
-          >
-            Create organization
-          </Button>
-        </div>
-      </section>
-
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-medium">User directory</h2>
         <div className="overflow-x-auto rounded-lg border border-foreground/10">
@@ -414,6 +330,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
                 <th className="px-3 py-2 font-medium">Onboarding</th>
                 <th className="px-3 py-2 font-medium">Organization</th>
                 <th className="px-3 py-2 font-medium">Agent</th>
+                <th className="px-3 py-2 font-medium">Created</th>
                 <th className="px-3 py-2 font-medium">Last sign-in</th>
                 <th className="px-3 py-2 font-medium">Actions</th>
               </tr>
@@ -454,11 +371,22 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
                     ) : null}
                   </td>
                   <td className="px-3 py-2">
-                    {user.agentSettingsComplete ? "Complete" : "Incomplete"}
+                    <div>
+                      {user.agentSettingsComplete ? "Complete" : "Incomplete"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {[user.agentPhone, user.trecLicenseNumber]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </div>
                   </td>
+                  <td className="px-3 py-2">{formatDate(user.createdAt)}</td>
                   <td className="px-3 py-2">{formatDate(user.lastSignInAt)}</td>
                   <td className="px-3 py-2">
                     <div className="flex flex-col gap-1">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/admin/users/${user.id}`}>Open</Link>
+                      </Button>
                       <Button
                         type="button"
                         size="sm"
@@ -479,6 +407,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
                             }
                             setResendCooldownUntil(Date.now() + 30_000);
                             setMessage(`Invitation resent to ${user.loginEmail}.`);
+                            router.refresh();
                           });
                         }}
                       >

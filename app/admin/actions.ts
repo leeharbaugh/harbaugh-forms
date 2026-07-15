@@ -9,11 +9,26 @@ import {
   resendUserInvitation,
   retryProvisionInvitedUser,
 } from "@/lib/admin/invite-user";
+import type { InviteUserInput } from "@/lib/admin/invite-validation";
 import {
-  wouldRemoveFinalActiveAdmin,
-  type InviteUserInput,
-} from "@/lib/admin/invite-validation";
+  addOrganizationMembership,
+  updateOrganizationMembership,
+} from "@/lib/admin/manage-memberships";
+import {
+  createOrganization,
+  setOrganizationStatus,
+  updateOrganization,
+  type OrganizationInput,
+} from "@/lib/admin/manage-organizations";
+import {
+  assertCanChangeAdminAccess,
+  updateAdminUserProfile,
+  upsertAdminAgentSettings,
+  type UpdateAdminAgentSettingsInput,
+  type UpdateAdminProfileInput,
+} from "@/lib/admin/manage-user-detail";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { MembershipRole } from "@/lib/types/organization";
 import type { AppRole, ProfileStatus } from "@/lib/types/profile";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -26,6 +41,14 @@ function toErrorMessage(error: unknown): string {
     return error.message;
   }
   return "Unexpected error.";
+}
+
+function revalidateAdminPaths(extra?: string[]) {
+  revalidatePath("/admin/users");
+  revalidatePath("/admin/organizations");
+  for (const path of extra ?? []) {
+    revalidatePath(path);
+  }
 }
 
 async function resolveOrigin(): Promise<string> {
@@ -52,7 +75,7 @@ export async function inviteUserAction(input: InviteUserInput) {
       origin,
     });
     if (result.ok) {
-      revalidatePath("/admin/users");
+      revalidateAdminPaths();
     }
     return result;
   } catch (error) {
@@ -72,7 +95,7 @@ export async function retryProvisionUserAction(options: {
       input: options.input,
     });
     if (result.ok) {
-      revalidatePath("/admin/users");
+      revalidateAdminPaths([`/admin/users/${options.userId}`]);
     }
     return result;
   } catch (error) {
@@ -84,8 +107,7 @@ export async function resendInvitationAction(userId: string) {
   try {
     await requireAppAdmin();
     const origin = await resolveOrigin();
-    const result = await resendUserInvitation({ userId, origin });
-    return result;
+    return await resendUserInvitation({ userId, origin });
   } catch (error) {
     return { ok: false as const, error: toErrorMessage(error) };
   }
@@ -97,62 +119,20 @@ export async function setUserAccountStatusAction(options: {
 }) {
   try {
     const actor = await requireAppAdmin();
-    if (options.userId === actor.userId && options.status === "INACTIVE") {
-      return {
-        ok: false as const,
-        error: "You cannot deactivate your own admin account.",
-      };
+    const nextOnboarding =
+      options.status === "ACTIVE" ? ("ACTIVE" as const) : ("DISABLED" as const);
+
+    const guard = await assertCanChangeAdminAccess({
+      actorUserId: actor.userId,
+      targetUserId: options.userId,
+      nextStatus: options.status,
+      nextOnboarding,
+    });
+    if (!guard.ok) {
+      return guard;
     }
 
     const admin = createAdminClient();
-    const { data: target, error: targetError } = await admin
-      .from("profiles")
-      .select("id, status, app_role, onboarding_status")
-      .eq("id", options.userId)
-      .maybeSingle();
-
-    if (targetError || !target) {
-      return {
-        ok: false as const,
-        error: targetError?.message ?? "Profile not found.",
-      };
-    }
-
-    const { count, error: countError } = await admin
-      .from("profiles")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "ACTIVE")
-      .eq("app_role", "ADMIN")
-      .eq("onboarding_status", "ACTIVE");
-
-    if (countError) {
-      return { ok: false as const, error: countError.message };
-    }
-
-    const currentlyActiveAdmin =
-      target.status === "ACTIVE" &&
-      target.app_role === "ADMIN" &&
-      target.onboarding_status === "ACTIVE";
-    const nextOnboarding =
-      options.status === "ACTIVE" ? "ACTIVE" : "DISABLED";
-    const nextWouldBeActiveAdmin =
-      options.status === "ACTIVE" &&
-      target.app_role === "ADMIN" &&
-      nextOnboarding === "ACTIVE";
-
-    if (
-      wouldRemoveFinalActiveAdmin({
-        activeAdminCount: count ?? 0,
-        currentlyActiveAdmin,
-        nextIsActiveAdmin: nextWouldBeActiveAdmin,
-      })
-    ) {
-      return {
-        ok: false as const,
-        error: "Cannot disable the final active application administrator.",
-      };
-    }
-
     const { error: updateError } = await admin
       .from("profiles")
       .update({
@@ -178,7 +158,7 @@ export async function setUserAccountStatusAction(options: {
       });
     }
 
-    revalidatePath("/admin/users");
+    revalidateAdminPaths([`/admin/users/${options.userId}`]);
     return { ok: true as const };
   } catch (error) {
     return { ok: false as const, error: toErrorMessage(error) };
@@ -195,60 +175,16 @@ export async function setUserAppRoleAction(options: {
       return { ok: false as const, error: "Invalid application role." };
     }
 
-    if (options.userId === actor.userId && options.appRole !== "ADMIN") {
-      return {
-        ok: false as const,
-        error: "You cannot demote your own admin role.",
-      };
+    const guard = await assertCanChangeAdminAccess({
+      actorUserId: actor.userId,
+      targetUserId: options.userId,
+      nextAppRole: options.appRole,
+    });
+    if (!guard.ok) {
+      return guard;
     }
 
     const admin = createAdminClient();
-    const { data: target, error: targetError } = await admin
-      .from("profiles")
-      .select("id, status, app_role, onboarding_status")
-      .eq("id", options.userId)
-      .maybeSingle();
-
-    if (targetError || !target) {
-      return {
-        ok: false as const,
-        error: targetError?.message ?? "Profile not found.",
-      };
-    }
-
-    const { count, error: countError } = await admin
-      .from("profiles")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "ACTIVE")
-      .eq("app_role", "ADMIN")
-      .eq("onboarding_status", "ACTIVE");
-
-    if (countError) {
-      return { ok: false as const, error: countError.message };
-    }
-
-    const currentlyActiveAdmin =
-      target.status === "ACTIVE" &&
-      target.app_role === "ADMIN" &&
-      target.onboarding_status === "ACTIVE";
-    const nextIsActiveAdmin =
-      target.status === "ACTIVE" &&
-      options.appRole === "ADMIN" &&
-      target.onboarding_status === "ACTIVE";
-
-    if (
-      wouldRemoveFinalActiveAdmin({
-        activeAdminCount: count ?? 0,
-        currentlyActiveAdmin,
-        nextIsActiveAdmin,
-      })
-    ) {
-      return {
-        ok: false as const,
-        error: "Cannot demote the final active application administrator.",
-      };
-    }
-
     const { error: updateError } = await admin
       .from("profiles")
       .update({ app_role: options.appRole })
@@ -258,71 +194,138 @@ export async function setUserAppRoleAction(options: {
       return { ok: false as const, error: updateError.message };
     }
 
-    revalidatePath("/admin/users");
+    revalidateAdminPaths([`/admin/users/${options.userId}`]);
     return { ok: true as const };
   } catch (error) {
     return { ok: false as const, error: toErrorMessage(error) };
   }
 }
 
-export async function createOrganizationAction(input: {
-  name: string;
-  legalName?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  addressLine1?: string | null;
-  addressLine2?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zip?: string | null;
-  brokerageLicenseNumber?: string | null;
-  brokerFirstName?: string | null;
-  brokerMiddleName?: string | null;
-  brokerLastName?: string | null;
-  brokerLicenseNumber?: string | null;
-  brokerPhone?: string | null;
-  brokerEmail?: string | null;
+export async function createOrganizationAction(input: OrganizationInput) {
+  try {
+    await requireAppAdmin();
+    const result = await createOrganization(input);
+    if (result.ok) {
+      revalidateAdminPaths([`/admin/organizations/${result.organization.id}`]);
+    }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function updateOrganizationAction(options: {
+  organizationId: string;
+  input: OrganizationInput;
 }) {
   try {
     await requireAppAdmin();
-    const name = input.name?.trim();
-    if (!name) {
-      return { ok: false as const, error: "Organization name is required." };
+    const result = await updateOrganization(
+      options.organizationId,
+      options.input,
+    );
+    if (result.ok) {
+      revalidateAdminPaths([`/admin/organizations/${options.organizationId}`]);
     }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
 
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from("organizations")
-      .insert({
-        name,
-        legal_name: input.legalName?.trim() || null,
-        organization_type: "BROKERAGE",
-        email: input.email?.trim() || null,
-        phone: input.phone?.trim() || null,
-        address_line_1: input.addressLine1?.trim() || null,
-        address_line_2: input.addressLine2?.trim() || null,
-        city: input.city?.trim() || null,
-        state: input.state?.trim()?.toUpperCase() || "TX",
-        zip: input.zip?.trim() || null,
-        brokerage_license_number: input.brokerageLicenseNumber?.trim() || null,
-        broker_first_name: input.brokerFirstName?.trim() || null,
-        broker_middle_name: input.brokerMiddleName?.trim() || null,
-        broker_last_name: input.brokerLastName?.trim() || null,
-        broker_license_number: input.brokerLicenseNumber?.trim() || null,
-        broker_phone: input.brokerPhone?.trim() || null,
-        broker_email: input.brokerEmail?.trim() || null,
-        status: "ACTIVE",
-      })
-      .select("id, name")
-      .single();
-
-    if (error) {
-      return { ok: false as const, error: error.message };
+export async function setOrganizationStatusAction(options: {
+  organizationId: string;
+  status: "ACTIVE" | "INACTIVE";
+}) {
+  try {
+    await requireAppAdmin();
+    const result = await setOrganizationStatus(
+      options.organizationId,
+      options.status,
+    );
+    if (result.ok) {
+      revalidateAdminPaths([`/admin/organizations/${options.organizationId}`]);
     }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
 
-    revalidatePath("/admin/users");
-    revalidatePath("/admin/users/invite");
-    return { ok: true as const, organization: data };
+export async function addOrganizationMembershipAction(options: {
+  organizationId: string;
+  userId: string;
+  membershipRole: MembershipRole;
+}) {
+  try {
+    await requireAppAdmin();
+    const result = await addOrganizationMembership(options);
+    if (result.ok) {
+      revalidateAdminPaths([
+        `/admin/organizations/${options.organizationId}`,
+        `/admin/users/${options.userId}`,
+      ]);
+    }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function updateOrganizationMembershipAction(options: {
+  membershipId: string;
+  organizationId: string;
+  userId?: string;
+  membershipRole?: MembershipRole;
+  status?: "ACTIVE" | "INACTIVE" | "DELETED";
+}) {
+  try {
+    await requireAppAdmin();
+    const result = await updateOrganizationMembership({
+      membershipId: options.membershipId,
+      membershipRole: options.membershipRole,
+      status: options.status,
+    });
+    if (result.ok) {
+      const paths = [`/admin/organizations/${options.organizationId}`];
+      if (options.userId) {
+        paths.push(`/admin/users/${options.userId}`);
+      }
+      revalidateAdminPaths(paths);
+    }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function updateAdminUserProfileAction(options: {
+  userId: string;
+  input: UpdateAdminProfileInput;
+}) {
+  try {
+    await requireAppAdmin();
+    const result = await updateAdminUserProfile(options.userId, options.input);
+    if (result.ok) {
+      revalidateAdminPaths([`/admin/users/${options.userId}`]);
+    }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function upsertAdminAgentSettingsAction(options: {
+  userId: string;
+  input: UpdateAdminAgentSettingsInput;
+}) {
+  try {
+    await requireAppAdmin();
+    const result = await upsertAdminAgentSettings(options.userId, options.input);
+    if (result.ok) {
+      revalidateAdminPaths([`/admin/users/${options.userId}`]);
+    }
+    return result;
   } catch (error) {
     return { ok: false as const, error: toErrorMessage(error) };
   }

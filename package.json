@@ -9,6 +9,7 @@
     "test:amount-format": "node --experimental-strip-types --test lib/amount-format.test.ts lib/acroform-field-type-inference.test.ts",
     "test:storage-paths": "node --experimental-strip-types --test lib/form-storage.test.ts lib/storage-path-resolve.test.ts lib/packet-form-storage.test.ts lib/packet-form-download.test.ts",
     "test:admin-invite": "node --experimental-strip-types --test lib/admin/invite-validation.test.ts lib/admin/signup-disabled.test.ts",
+    "test:admin-orgs": "node --experimental-strip-types --test lib/admin/manage-organizations.test.ts",
     "test:library-permissions": "node --experimental-strip-types --test lib/library-permissions.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",
     "migrate:storage-paths": "node --experimental-strip-types --env-file=.env.local scripts/migrate-storage-paths.ts",

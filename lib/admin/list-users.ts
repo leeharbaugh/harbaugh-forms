@@ -26,6 +26,9 @@ export type AdminUserListItem = {
   createdAt: string | null;
   lastSignInAt: string | null;
   agentSettingsComplete: boolean;
+  agentPhone: string | null;
+  agentEmail: string | null;
+  trecLicenseNumber: string | null;
   emailConfirmedAt: string | null;
 };
 
@@ -189,6 +192,10 @@ export async function listAdminUsers(): Promise<AdminUserListItem[]> {
       agentSettingsComplete: isAgentSettingsComplete(
         agentByUser.get(user.id) ?? null,
       ),
+      agentPhone: (agentByUser.get(user.id)?.phone as string | null) ?? null,
+      agentEmail: (agentByUser.get(user.id)?.email as string | null) ?? null,
+      trecLicenseNumber:
+        (agentByUser.get(user.id)?.trec_license_number as string | null) ?? null,
       emailConfirmedAt: user.email_confirmed_at ?? null,
     };
   });
