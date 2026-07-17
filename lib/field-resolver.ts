@@ -105,6 +105,12 @@ import {
   resolveScopedPreferenceDefault,
   type ScopedDefaultLookup,
 } from "@/lib/field-defaults";
+import {
+  planFieldInstanceSyncMutations,
+  type FieldInstanceSyncMode,
+} from "@/lib/field-instance-sync";
+
+export type { FieldInstanceSyncMode };
 
 export type FieldResolverSource =
   | "manual_override"
@@ -2424,26 +2430,6 @@ function buildFieldInstancePersistenceRow(params: {
   };
 }
 
-function shouldRefreshInstance(
-  instance: FieldInstanceWithField,
-  resolved: ResolvedFieldValue,
-): boolean {
-  if (instance.is_override) {
-    return false;
-  }
-
-  const storedValue = instance.value ?? "";
-  const storedSource = instance.source ?? "";
-  const storedJson = JSON.stringify(instance.value_json ?? null);
-  const resolvedJson = JSON.stringify(resolved.value_json ?? null);
-
-  return (
-    storedValue !== resolved.value ||
-    storedSource !== resolved.source ||
-    storedJson !== resolvedJson
-  );
-}
-
 function isUniqueFieldInstanceViolation(error: { code?: string; message?: string }): boolean {
   return (
     error.code === "23505" ||
@@ -2513,14 +2499,42 @@ async function insertFieldInstancesForPacketForm(
 }
 
 const syncFieldInstancesInFlight = new Map<
-  number,
-  Promise<FieldInstanceWithField[]>
+  string,
+  Promise<FieldInstanceSyncResult>
 >();
 
+function syncInFlightKey(
+  packetFormId: number,
+  mode: FieldInstanceSyncMode,
+): string {
+  return `${packetFormId}:${mode}`;
+}
+
+export type FieldInstanceSyncResult = {
+  instances: FieldInstanceWithField[];
+  mode: FieldInstanceSyncMode;
+  insertedCount: number;
+  updatedCount: number;
+  /** True when any INSERT or UPDATE was issued against field_instances. */
+  wroteToDatabase: boolean;
+};
+
+/**
+ * Synchronize field instances for a packet form.
+ *
+ * Default mode `ensure_missing` (ordinary open/view/download): insert rows for
+ * newly mapped fields only. Existing snapshots are never updated, cleared, or
+ * re-sourced — including null, blank, false, and zero.
+ *
+ * Mode `refresh_non_overrides` is reserved for explicit user-authorized
+ * "Refresh values" actions. Manual overrides remain untouched.
+ */
 export async function resolvePacketFormFieldValues(
   supabase: SupabaseClient,
   packetFormId: number,
-): Promise<FieldInstanceWithField[]> {
+  options?: { mode?: FieldInstanceSyncMode },
+): Promise<FieldInstanceSyncResult> {
+  const mode: FieldInstanceSyncMode = options?.mode ?? "ensure_missing";
   const packetForm = await getPacketFormFieldContext(supabase, packetFormId);
 
   if (packetForm.status !== "ACTIVE") {
@@ -2528,7 +2542,13 @@ export async function resolvePacketFormFieldValues(
   }
 
   if (packetForm.form_id == null) {
-    return [];
+    return {
+      instances: [],
+      mode,
+      insertedCount: 0,
+      updatedCount: 0,
+      wroteToDatabase: false,
+    };
   }
 
   const [context, mappings, existingInstances] = await Promise.all([
@@ -2541,67 +2561,72 @@ export async function resolvePacketFormFieldValues(
     existingInstances.map((instance) => [instance.field_id, instance]),
   );
 
+  const eligibleMappings = mappings.filter((mapping) => {
+    if (!mapping.field_id || !mapping.fields) {
+      return false;
+    }
+    return !isAuthentisignExcludedFormFieldMapping(mapping);
+  });
+
   const fieldIds = [
     ...new Set(
-      mappings
+      eligibleMappings
         .map((mapping) => mapping.field_id)
         .filter((fieldId): fieldId is string => fieldId != null),
     ),
   ];
-  const inserts: ReturnType<typeof buildFieldInstancePersistenceRow>[] = [];
-  const updates: Array<{
-    id: string;
-    resolved: ResolvedFieldValue;
-  }> = [];
 
-  for (const fieldId of fieldIds) {
-    const mapping = mappings.find((row) => row.field_id === fieldId);
+  const resolveFresh = (fieldId: string): ResolvedFieldValue | null => {
+    const mapping = eligibleMappings.find((row) => row.field_id === fieldId);
     const field = mapping?.fields;
-    if (!field || (mapping && isAuthentisignExcludedFormFieldMapping(mapping))) {
-      continue;
+    if (!field) {
+      return null;
     }
-
-    const existingInstance = instancesByFieldId.get(fieldId) ?? null;
-    const resolved = resolveFieldValueFromContext({
+    // Always resolve without an existing instance so defaults follow the
+    // packet owner (context.actingUserId), never a viewing admin profile.
+    return resolveFieldValueFromContext({
       field,
       mapping,
       context,
-      existingInstance,
+      existingInstance: null,
     });
+  };
 
-    if (!existingInstance) {
-      inserts.push(
-        buildFieldInstancePersistenceRow({
-          packetId: packetForm.packet_id,
-          packetFormId,
-          fieldId,
-          resolved,
-        }),
-      );
-      continue;
-    }
+  const plan = planFieldInstanceSyncMutations({
+    mode,
+    fieldIds,
+    existingByFieldId: instancesByFieldId,
+    resolveForFieldId: resolveFresh,
+  });
 
-    if (shouldRefreshInstance(existingInstance, resolved)) {
-      updates.push({
-        id: existingInstance.id,
-        resolved,
-      });
-    }
-  }
+  const insertRows = plan.inserts.map((item) =>
+    buildFieldInstancePersistenceRow({
+      packetId: packetForm.packet_id,
+      packetFormId,
+      fieldId: item.fieldId,
+      resolved: {
+        value: item.resolved.value,
+        value_json: item.resolved.value_json,
+        source: item.resolved.source as FieldResolverSource,
+      },
+    }),
+  );
 
-  if (inserts.length > 0) {
+  let insertedCount = 0;
+  if (insertRows.length > 0) {
     const inserted = await insertFieldInstancesForPacketForm(
       supabase,
       packetFormId,
-      inserts,
+      insertRows,
     );
-
+    insertedCount = inserted.length;
     for (const instance of inserted) {
       instancesByFieldId.set(instance.field_id, instance);
     }
   }
 
-  for (const update of updates) {
+  let updatedCount = 0;
+  for (const update of plan.updates) {
     const { data, error } = await supabase
       .from("field_instances")
       .update({
@@ -2622,26 +2647,40 @@ export async function resolvePacketFormFieldValues(
 
     const updated = data as FieldInstanceWithField;
     instancesByFieldId.set(updated.field_id, updated);
+    updatedCount += 1;
   }
 
-  return fieldIds
+  const instances = fieldIds
     .map((fieldId) => instancesByFieldId.get(fieldId))
     .filter((instance): instance is FieldInstanceWithField => instance != null);
+
+  return {
+    instances,
+    mode,
+    insertedCount,
+    updatedCount,
+    wroteToDatabase: insertedCount > 0 || updatedCount > 0,
+  };
 }
 
 export async function syncFieldInstancesForPacketForm(
   supabase: SupabaseClient,
   packetFormId: number,
-): Promise<FieldInstanceWithField[]> {
-  const inFlight = syncFieldInstancesInFlight.get(packetFormId);
+  options?: { mode?: FieldInstanceSyncMode },
+): Promise<FieldInstanceSyncResult> {
+  const mode: FieldInstanceSyncMode = options?.mode ?? "ensure_missing";
+  const key = syncInFlightKey(packetFormId, mode);
+  const inFlight = syncFieldInstancesInFlight.get(key);
   if (inFlight) {
     return inFlight;
   }
 
-  const promise = resolvePacketFormFieldValues(supabase, packetFormId).finally(() => {
-    syncFieldInstancesInFlight.delete(packetFormId);
+  const promise = resolvePacketFormFieldValues(supabase, packetFormId, {
+    mode,
+  }).finally(() => {
+    syncFieldInstancesInFlight.delete(key);
   });
 
-  syncFieldInstancesInFlight.set(packetFormId, promise);
+  syncFieldInstancesInFlight.set(key, promise);
   return promise;
 }

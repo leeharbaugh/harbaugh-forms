@@ -126,6 +126,35 @@ Default values represent an individual agent’s preferences or a brokerage’s 
 
 ---
 
+## Packet Field-Instance Snapshots
+
+**Date:** 2026-07-17
+
+**Decision:**
+Persisted packet field instances are immutable during ordinary view/open. Resolution initializes missing instances only; existing values change only through explicit user-authorized editing or refresh.
+
+**Reason:**
+Packet forms capture the agreement state that was filled for a specific client matter. Re-resolving stored non-override values on open (for example after Global catalog defaults change) silently rewrites historical packet data and can clear values that already appeared in generated or signed documents.
+
+**Consequences:**
+
+* Ordinary packet-form open, view, load, and download may insert field instances that are genuinely missing, using the packet owner’s resolution context.
+* Ordinary open must not update, clear, or re-source any existing field instance, including null, blank, false, zero, non-override resolved values, and manual overrides.
+* Existing instance `UPDATE_DATE` must not change during ordinary open.
+* Explicit user actions (manual edits, per-field revert, and the editor “Refresh values” control) remain the only paths that may rewrite existing non-override snapshots.
+* Coordinate/mapping structural maintenance must not rewrite saved packet values.
+* Data repair for historically overwritten instances is a separate forward-only operation and must not restore preference literals onto Global catalog fields.
+
+**Related files or migrations:**
+
+* `lib/field-instance-sync.ts`
+* `lib/field-resolver.ts`
+* `lib/field-instances.ts`
+* `lib/packet-form-editor.ts`
+* Packet form editor load path
+
+---
+
 ## Default-Value Resolution Precedence
 
 **Date:** 2026-07-15

@@ -18,18 +18,18 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - Active feature branch:
   `admin-copy-user-form-to-global`
 
-- Feature branch tip commit message:
-  `Finalize scoped field defaults and global-copy safeguards`
-  (plus uncommitted Global catalog-default cleanup awaiting approval)
+- Feature branch tip commit:
+  `a75e22a` — `Clear remaining Global catalog preference literals.`
+  (plus uncommitted packet-instance containment fix awaiting approval)
 
 - Feature branch remote:
   `origin/admin-copy-user-form-to-global`
 
 - Corrective migrations on `harbaugh-forms-dev`:
   - `20260717120000_clear_global_money_zero_defaults.sql` (applied)
-  - `20260717180000_clear_all_global_catalog_defaults.sql` (apply with this cleanup)
+  - `20260717180000_clear_all_global_catalog_defaults.sql` (applied)
 
-- Automated validation for the prior commit passed. This cleanup’s automated checks must pass before smoke testing. Authenticated browser smoke testing remains outstanding. Do not merge yet.
+- Do not merge yet. Do not open existing packet forms against `harbaugh-forms-dev` until the packet-instance containment fix is running in that environment.
 
 - Restore branches:
   - `pre-ui-refresh` → `f422fce79227220377729654824930c86082107e`
@@ -92,6 +92,7 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - Final 2026-07-17 classifications:
   - `CONTRACT_PROPERTY_AS_IS` remains Lee’s PRIVATE default (`default_checked = true`).
   - All remaining ACTIVE Global catalog `default_value` / `default_checked` / `fallback_value` literals are cleared (no approved structural constants found).
+- Persisted packet field instances are immutable during ordinary view/open. Resolution initializes missing instances only; existing values change only through explicit user-authorized editing or refresh.
 
 ### Administrative Roles (audit 2026-07-17)
 
@@ -100,7 +101,7 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - These axes are distinct; `ORG_ADMIN` is not equivalent to application `ADMIN`.
 - Copy to Global Library and Global form mutation require application `ADMIN`.
 - Organization defaults RLS allows Org Admin (own org) or application Admin.
-- Missing on later branches: defaults UI, Org Admin membership UI, packet snapshot/init semantics, scoped source-mapping overrides, role-label polish.
+- Missing on later branches: defaults UI, Org Admin membership UI, scoped source-mapping overrides, role-label polish.
 
 ### Copy Private Form to Global Library
 
@@ -163,6 +164,7 @@ Before applying migrations from a different development machine, compare local a
 - Forms may be Global or Private; collections may be Organization or Private.
 - Default values may be Private or Organization, but never Global.
 - Global catalog fields must not store preference literals unless deliberately classified as structural constants.
+- Persisted packet field instances are snapshots: ordinary open must not recalculate or overwrite them.
 
 ## Current Work
 
@@ -186,13 +188,23 @@ Current behavior:
 - The packet owner determines which defaults resolve, not the viewing admin.
 - Global catalog preference literals are cleared; scoped Private/Organization `field_defaults` remain.
 - Lee’s `CONTRACT_PROPERTY_AS_IS` Private default is preserved and notes finalized.
+- **Containment (in progress on this branch):** ordinary packet-form open/view/load inserts missing field instances only and does not UPDATE existing snapshots. Explicit editor “Refresh values” remains the user-authorized non-override refresh path.
 
 This branch must not be merged until authenticated smoke tests complete and pass.
+
+### Confirmed packet-value incident (2026-07-17)
+
+After Global catalog defaults were cleared, opening existing packet forms re-resolved non-override `field_instances` and overwrote stored values (including `NA`) with blank.
+
+- Confirmed historical overwrites: **11** field instances across packets `5` (Abbas Listing Agreement) and `21` (Yahoo test).
+- At-risk (still holding prior `NA`/`0`/`field_default`, not yet reopened): **32** instances.
+- Data repair for the 11 confirmed rows is **pending** and must not run until containment is deployed to the environment linked to `harbaugh-forms-dev`.
+- **Do not open existing packet forms** against `harbaugh-forms-dev` until this containment code is running there.
 
 ## Known Issues
 
 - Authenticated browser smoke tests for Copy to Global and default resolution remain.
-- Opening an existing packet can re-resolve and overwrite non-override `field_instances` (packet snapshot/init defect). Fix on a follow-up branch.
+- **Historical packet-value damage:** 11 confirmed overwritten instances and 32 at-risk instances remain until an evidence-based forward-only repair runs (after containment deploy). Containment code stops further open-time overwrites.
 - Full My Defaults / Organization Defaults management UI is deferred.
 - Scoped source-mapping / manual-only overrides for Global forms (without editing Global PDF structure) are not implemented.
 - Organization Admin membership/settings UI is missing (membership admin lives under Global Admin `/admin` only).
@@ -205,14 +217,14 @@ This branch must not be merged until authenticated smoke tests complete and pass
 
 ## Next Steps
 
-1. Approve, commit, and push the Global catalog-default cleanup on this branch (do not merge).
-2. Run authenticated smoke tests for Copy to Global and scoped default resolution.
-3. After merge of this branch, follow-up branches in order:
-   1. Packet snapshot/init semantics (opening a packet must not recalculate or overwrite saved values).
-   2. My Defaults and Organization Defaults UI for Global forms.
-   3. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
-   4. Admin ownership demarcation and saved Include user-owned filters for packets, forms, collections, properties, and contacts.
-   5. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
+1. Approve, commit, push, and deploy the packet-instance containment fix to the environment linked to `harbaugh-forms-dev` (do not merge to `main` yet).
+2. Only after containment is live: run evidence-based repair for the 11 confirmed overwritten instances (do not bulk-restore Global catalog defaults).
+3. Run authenticated smoke tests for Copy to Global, scoped defaults, and sticky packet open.
+4. After merge of this branch, follow-up branches in order:
+   1. My Defaults and Organization Defaults UI for Global forms.
+   2. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
+   3. Admin ownership demarcation and saved Include user-owned filters for packets, forms, collections, properties, and contacts.
+   4. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
 
 ## Development Machine Checklist
 
@@ -260,8 +272,23 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Property uniqueness is enforced per owner using a normalized address.
 - Final classification (2026-07-17): Lee’s `CONTRACT_PROPERTY_AS_IS` stays Private; all Global catalog preference literals cleared unless deliberately classified as structural constants (none retained).
 - Administrative roles: Regular user / Organization Admin (`ORG_ADMIN`) / Global Admin (`profiles.app_role = ADMIN`) are distinct axes.
+- Persisted packet field instances are immutable during ordinary view/open; missing instances may be inserted, but existing snapshots change only via explicit edit/refresh.
 
 ## Session History
+
+### 2026-07-17 (packet-instance containment)
+
+- Work completed:
+  - Confirmed open/sync re-resolution overwrote historical packet values after Global catalog clear.
+  - Implemented ordinary-open insert-only synchronization (`ensure_missing`); existing snapshots are sticky.
+  - Kept editor “Refresh values” as explicit `refresh_non_overrides`.
+  - Recorded the packet-snapshot rule in `DECISIONS.md`.
+- Unresolved:
+  - Deploy containment to `harbaugh-forms-dev` environment.
+  - Evidence-based repair of 11 confirmed overwritten instances.
+  - 32 at-risk instances remain until containment is live and repair policy is approved.
+- Next action:
+  - Approve/commit/push/deploy containment before opening existing forms or repairing data.
 
 ### 2026-07-17 (Global catalog default cleanup)
 
@@ -273,9 +300,8 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
   - Documented role-model audit conclusions and follow-up branch sequence.
 - Unresolved:
   - Authenticated smoke tests.
-  - Uncommitted cleanup awaiting approval.
 - Next action:
-  - Approve/commit/push cleanup, then run smoke tests.
+  - Containment deploy, then smoke tests / data repair.
 
 ### 2026-07-17
 

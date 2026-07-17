@@ -322,7 +322,12 @@ export async function refreshPacketFormFieldValues(
   supabase: SupabaseClient,
   packetFormId: number,
 ): Promise<void> {
-  await ensureFieldInstancesForPacketForm(supabase, packetFormId);
+  const { syncFieldInstancesForPacketForm } = await import("@/lib/field-resolver");
+  // Explicit editor "Refresh values" control — may rewrite non-override
+  // snapshots from the packet owner's current resolution context.
+  await syncFieldInstancesForPacketForm(supabase, packetFormId, {
+    mode: "refresh_non_overrides",
+  });
 }
 
 export { fieldInstancesByFieldId };
