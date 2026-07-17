@@ -22,6 +22,10 @@ export type Form = {
   scope: VisibilityScope;
   owner_user_id: string | null;
   organization_id: string | null;
+  copied_from_form_id?: number | null;
+  copied_from_owner_user_id?: string | null;
+  copied_by_user_id?: string | null;
+  copied_to_global_at?: string | null;
 };
 
 export type FormInput = {

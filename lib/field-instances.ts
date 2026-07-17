@@ -142,7 +142,11 @@ export async function ensureFieldInstancesForPacketForm(
   packetFormId: number,
 ): Promise<FieldInstanceWithField[]> {
   const { syncFieldInstancesForPacketForm } = await import("@/lib/field-resolver");
-  return syncFieldInstancesForPacketForm(supabase, packetFormId);
+  // Ordinary open/view: insert missing instances only; never update snapshots.
+  const result = await syncFieldInstancesForPacketForm(supabase, packetFormId, {
+    mode: "ensure_missing",
+  });
+  return result.instances;
 }
 
 export async function getOrCreateFieldInstancesForPacketForm(
