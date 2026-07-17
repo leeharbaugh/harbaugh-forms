@@ -20,6 +20,10 @@ import {
   warnDuplicateExternalDocumentName,
 } from "@/lib/types/packet-form";
 import type { PacketForm } from "@/lib/types/packet";
+import {
+  formatPacketFormDocumentState,
+  packetFormDocumentStateVariant,
+} from "@/lib/types/packet-form-lifecycle";
 import { formatFormCategory, formatFormReference } from "@/lib/types/form";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
@@ -419,6 +423,13 @@ export function PacketFormsLiveEditor({
                   <p className="font-medium">
                     {index + 1}. {document.document_name}
                   </p>
+                  <Badge
+                    variant={packetFormDocumentStateVariant(
+                      document.document_state,
+                    )}
+                  >
+                    {formatPacketFormDocumentState(document.document_state)}
+                  </Badge>
                   <Badge variant="secondary">
                     {formatPacketFormOrigin(
                       document.origin ?? "collection",

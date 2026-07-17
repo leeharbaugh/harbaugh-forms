@@ -15,6 +15,7 @@ export type PacketFormFieldContext = {
   packet_id: number;
   form_id: number | null;
   status: string;
+  document_state: string;
 };
 
 export type ResolvedFieldInstanceValue = {
@@ -89,7 +90,7 @@ export async function getPacketFormFieldContext(
 ): Promise<PacketFormFieldContext> {
   const { data, error } = await supabase
     .from("packet_forms")
-    .select("id, packet_id, form_id, status")
+    .select("id, packet_id, form_id, status, document_state")
     .eq("id", packetFormId)
     .single();
 
@@ -142,11 +143,22 @@ export async function ensureFieldInstancesForPacketForm(
   packetFormId: number,
 ): Promise<FieldInstanceWithField[]> {
   const { syncFieldInstancesForPacketForm } = await import("@/lib/field-resolver");
-  // Ordinary open/view: insert missing instances only; never update snapshots.
+  // Ordinary open/view (DRAFT only): insert missing instances; never update snapshots.
   const result = await syncFieldInstancesForPacketForm(supabase, packetFormId, {
     mode: "ensure_missing",
   });
   return result.instances;
+}
+
+/**
+ * Load existing ACTIVE instances without inserting or updating.
+ * Used for FINAL/SIGNED/VOID ordinary open and download.
+ */
+export async function loadFieldInstancesForPacketFormWithoutSync(
+  supabase: SupabaseClient,
+  packetFormId: number,
+): Promise<FieldInstanceWithField[]> {
+  return loadActiveFieldInstancesForPacketForm(supabase, packetFormId);
 }
 
 export async function getOrCreateFieldInstancesForPacketForm(
@@ -162,7 +174,7 @@ export async function ensureFieldInstancesForPacket(
 ): Promise<FieldInstanceWithField[]> {
   const { data, error } = await supabase
     .from("packet_forms")
-    .select("id, form_id, status")
+    .select("id, form_id, status, document_state")
     .eq("packet_id", packetId)
     .eq("status", "ACTIVE")
     .not("form_id", "is", null);
@@ -172,16 +184,25 @@ export async function ensureFieldInstancesForPacket(
   }
 
   const packetForms =
-    (data as Array<{ id: number; form_id: number | null; status: string }>) ??
-    [];
+    (data as Array<{
+      id: number;
+      form_id: number | null;
+      status: string;
+      document_state: string;
+    }>) ?? [];
 
   const instances: FieldInstanceWithField[] = [];
 
   for (const packetForm of packetForms) {
-    const formInstances = await ensureFieldInstancesForPacketForm(
-      supabase,
-      packetForm.id,
-    );
+    // FINAL/SIGNED/VOID forms must not receive missing-instance inserts on
+    // packet-level ensure; load snapshots only.
+    const formInstances =
+      packetForm.document_state === "DRAFT"
+        ? await ensureFieldInstancesForPacketForm(supabase, packetForm.id)
+        : await loadFieldInstancesForPacketFormWithoutSync(
+            supabase,
+            packetForm.id,
+          );
     instances.push(...formInstances);
   }
 

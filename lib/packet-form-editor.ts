@@ -5,18 +5,25 @@ import {
   revertFieldInstanceToResolvedValue,
   type FieldResolutionDiagnostic,
 } from "@/lib/field-resolver";
+import {
+  assertFieldInstancePacketFormEditable,
+  assertPacketFormAllowsValueMutation,
+} from "@/lib/packet-form-lifecycle";
 import { createPacketFormSignedUrlWithFallback } from "@/lib/storage-path-resolve";
 import {
   ensureFieldInstancesForPacketForm,
   fieldInstancesByFieldId,
   loadActiveFormFieldMappingsForForm,
+  loadFieldInstancesForPacketFormWithoutSync,
 } from "@/lib/field-instances";
 import { filterMappableFormFieldMappings } from "@/lib/types/authentisign-excluded-fields";
 import type {
   FieldInstanceMapping,
   FieldInstanceWithField,
 } from "@/lib/types/field-instance";
+import type { DocumentState } from "@/lib/types/packet";
 import type { PacketWorkflowType } from "@/lib/types/packet-workflow";
+import { isPacketFormValueEditable } from "@/lib/types/packet-form-lifecycle";
 import {
   buildPacketFormFieldViews,
   type PacketFormEditorData,
@@ -63,6 +70,7 @@ export async function loadPacketFormEditorData(
       packet_id,
       form_id,
       document_name,
+      document_state,
       storage_path,
       owner_user_id,
       status,
@@ -83,19 +91,21 @@ export async function loadPacketFormEditorData(
 
   const rawForms = packetFormData.forms;
   const normalizedForms = Array.isArray(rawForms) ? rawForms[0] : rawForms;
+  const documentState = packetFormData.document_state as DocumentState;
 
   const packetForm: PacketFormEditorData["packetForm"] = {
     id: packetFormData.id,
     packet_id: packetFormData.packet_id,
     form_id: packetFormData.form_id,
     document_name: packetFormData.document_name,
+    document_state: documentState,
     storage_path: packetFormData.storage_path,
     status: packetFormData.status,
     forms: normalizedForms ?? null,
   };
 
   if (packetForm.status !== "ACTIVE") {
-    throw new Error("Only active packet forms can be edited.");
+    throw new Error("Only active packet forms can be opened.");
   }
 
   if (packetForm.form_id == null) {
@@ -104,9 +114,16 @@ export async function loadPacketFormEditorData(
     );
   }
 
+  const valuesEditable = isPacketFormValueEditable(
+    documentState,
+    packetForm.status,
+  );
+
   const [mappings, instances, placementOverrides] = await Promise.all([
     loadActiveFormFieldMappingsForForm(supabase, packetForm.form_id),
-    ensureFieldInstancesForPacketForm(supabase, packetFormId),
+    valuesEditable
+      ? ensureFieldInstancesForPacketForm(supabase, packetFormId)
+      : loadFieldInstancesForPacketFormWithoutSync(supabase, packetFormId),
     loadActiveFieldInstanceMappingsForPacketForm(supabase, packetFormId),
   ]);
 
@@ -165,6 +182,8 @@ export async function saveFieldInstanceValue(
   value: string,
   source: "manual_override" | "override" = "manual_override",
 ): Promise<void> {
+  await assertFieldInstancePacketFormEditable(supabase, fieldInstanceId);
+
   const normalizedValue = value.trim();
   const isCheckboxValue =
     normalizedValue === "true" ||
@@ -174,7 +193,7 @@ export async function saveFieldInstanceValue(
   const checked =
     normalizedValue === "true" || normalizedValue === "1";
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("field_instances")
     .update({
       value: normalizedValue || null,
@@ -183,10 +202,18 @@ export async function saveFieldInstanceValue(
       source,
     })
     .eq("id", fieldInstanceId)
-    .eq("status", "ACTIVE");
+    .eq("status", "ACTIVE")
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  if (!data) {
+    throw new Error(
+      "Could not save this field. The form may no longer be a Draft — reload and try again.",
+    );
   }
 }
 
@@ -231,6 +258,8 @@ export async function upsertFieldInstanceMappingPlacement(
     placement: PlacementUpdateInput;
   },
 ): Promise<FieldInstanceMapping> {
+  await assertPacketFormAllowsValueMutation(supabase, params.packetFormId);
+
   const { data: existing, error: existingError } = await supabase
     .from("field_instance_mappings")
     .select(FIELD_INSTANCE_MAPPING_SELECT)
@@ -295,6 +324,8 @@ export async function resetFieldInstanceMappingPlacement(
   packetFormId: number,
   formFieldMappingId: string,
 ): Promise<void> {
+  await assertPacketFormAllowsValueMutation(supabase, packetFormId);
+
   const { error } = await supabase
     .from("field_instance_mappings")
     .update({ status: "DELETED" })
@@ -322,6 +353,8 @@ export async function refreshPacketFormFieldValues(
   supabase: SupabaseClient,
   packetFormId: number,
 ): Promise<void> {
+  await assertPacketFormAllowsValueMutation(supabase, packetFormId);
+
   const { syncFieldInstancesForPacketForm } = await import("@/lib/field-resolver");
   // Explicit editor "Refresh values" control — may rewrite non-override
   // snapshots from the packet owner's current resolution context.
@@ -331,3 +364,8 @@ export async function refreshPacketFormFieldValues(
 }
 
 export { fieldInstancesByFieldId };
+
+export {
+  markPacketFormFinal,
+  reopenPacketFormToDraft,
+} from "@/lib/packet-form-lifecycle";

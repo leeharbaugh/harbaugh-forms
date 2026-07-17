@@ -13,25 +13,20 @@ Harbaugh Forms is a Texas real estate forms application built with:
 ## Git State
 
 - Main branch commit:
-  `b1264c9ea02b61d6894693c32ec2be1aa2d21168`
+  `5f23a3e9af08d0d6c591b1cd914cdc3631a096db`
 
 - Active feature branch:
-  `admin-copy-user-form-to-global`
+  `packet-form-lifecycle-locking` (from `origin/main`)
 
-- Feature branch tip commit:
-  `d450772` — `Preserve packet field snapshots during ordinary open`
-  (plus uncommitted repair migrations `20260717210000` and `20260717220000` awaiting approval)
-
-- Feature branch remote:
-  `origin/admin-copy-user-form-to-global`
+- Previous feature branch (merged, retained):
+  `admin-copy-user-form-to-global` @ `01d6780`
 
 - Corrective migrations on `harbaugh-forms-dev`:
   - `20260717120000_clear_global_money_zero_defaults.sql` (applied)
   - `20260717180000_clear_all_global_catalog_defaults.sql` (applied)
-  - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied; commit pending)
-  - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied; commit pending)
-
-- Containment is active in local `npm run dev` on `d450772`. Do not merge to `main` yet.
+  - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied)
+  - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied)
+  - `20260717230000_packet_form_lifecycle_locking.sql` (apply with this branch)
 
 - Restore branches:
   - `pre-ui-refresh` → `f422fce79227220377729654824930c86082107e`
@@ -232,14 +227,15 @@ After Global catalog defaults were cleared, opening existing packet forms re-res
 
 ## Next Steps
 
-1. Approve, commit, and push both repair migrations (and status/docs/tests) on this branch (do not merge to `main`).
-2. Manually verify packet forms `28` and `61` in local `npm run dev`, including the restored “seller is not a foreign person” checkbox.
-3. Run authenticated smoke tests for Copy to Global, scoped defaults, and sticky packet open.
-4. After merge of this branch, follow-up branches in order:
+1. Approve, commit, and push `packet-form-lifecycle-locking` (do not merge until smoke tests pass).
+2. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior.
+3. Follow-up branches in priority order:
    1. My Defaults and Organization Defaults UI for Global forms.
    2. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
-   3. Admin ownership demarcation and saved Include user-owned filters for packets, forms, collections, properties, and contacts.
-   4. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
+   3. Admin ownership demarcation and saved Include user-owned filters.
+   4. Refresh Values before/after field-diff preview.
+   5. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
+   6. Authentisign integration (may set `SIGNED`).
 
 ## Development Machine Checklist
 
@@ -290,6 +286,18 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Persisted packet field instances are immutable during ordinary view/open; missing instances may be inserted, but existing snapshots change only via explicit edit/refresh.
 
 ## Session History
+
+### 2026-07-17 (packet-form lifecycle locking)
+
+- Work completed (uncommitted):
+  - Branch `packet-form-lifecycle-locking` from `origin/main`.
+  - DRAFT/FINAL locking for edits, Refresh Values, and missing-instance sync.
+  - Mark Final / Reopen to Draft with confirmations; Refresh help + confirmation.
+  - DB RLS + transition trigger migration `20260717230000`.
+- Unresolved:
+  - Commit/push; authenticated UI smoke tests.
+- Next action:
+  - Approve commit/push after smoke tests.
 
 ### 2026-07-17 (checkbox + Lee Private restoration)
 

@@ -2347,6 +2347,11 @@ export async function revertFieldInstanceToResolvedValue(
     fieldInstanceId: string;
   },
 ): Promise<FieldInstanceWithField> {
+  const { assertPacketFormAllowsValueMutation } = await import(
+    "@/lib/packet-form-lifecycle"
+  );
+  await assertPacketFormAllowsValueMutation(supabase, params.packetFormId);
+
   const { data: instanceData, error: instanceError } = await supabase
     .from("field_instances")
     .select(FIELD_INSTANCE_SELECT)
@@ -2539,6 +2544,15 @@ export async function resolvePacketFormFieldValues(
 
   if (packetForm.status !== "ACTIVE") {
     throw new Error("Field values can only be resolved for active packet forms.");
+  }
+
+  if (packetForm.document_state !== "DRAFT") {
+    const { packetFormLifecycleBlockedMessage } = await import(
+      "@/lib/types/packet-form-lifecycle"
+    );
+    throw new Error(
+      packetFormLifecycleBlockedMessage(packetForm.document_state),
+    );
   }
 
   if (packetForm.form_id == null) {
