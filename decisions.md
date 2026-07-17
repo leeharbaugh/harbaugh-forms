@@ -108,6 +108,7 @@ Default values represent an individual agent’s preferences or a brokerage’s 
   * AcroForm names
   * checkbox export values
   * formatting instructions
+* Global catalog fields contain no user-preference defaults. Private and Organization defaults are stored only in scoped `field_defaults`. Global catalog `default_value`, `default_checked`, and `fallback_value` may be retained only when deliberately classified as structural constants.
 * Personal or brokerage-specific literal values must not be stored on Global forms, fields, or mappings.
 * Explicit packet values and authoritative transaction data take precedence over defaults.
 * A dedicated `field_defaults` table stores scoped preference values.
@@ -116,6 +117,8 @@ Default values represent an individual agent’s preferences or a brokerage’s 
 **Related files or migrations:**
 
 * `supabase/migrations/20260715180000_field_defaults_scoped.sql`
+* `supabase/migrations/20260717120000_clear_global_money_zero_defaults.sql`
+* `supabase/migrations/20260717180000_clear_all_global_catalog_defaults.sql`
 * `lib/types/field-default.ts`
 * `lib/field-defaults.ts`
 * Field-default resolution logic

@@ -20,13 +20,16 @@ Harbaugh Forms is a Texas real estate forms application built with:
 
 - Feature branch tip commit message:
   `Finalize scoped field defaults and global-copy safeguards`
+  (plus uncommitted Global catalog-default cleanup awaiting approval)
 
 - Feature branch remote:
   `origin/admin-copy-user-form-to-global`
 
-- Corrective migration `20260717120000_clear_global_money_zero_defaults.sql` is applied on `harbaugh-forms-dev`.
+- Corrective migrations on `harbaugh-forms-dev`:
+  - `20260717120000_clear_global_money_zero_defaults.sql` (applied)
+  - `20260717180000_clear_all_global_catalog_defaults.sql` (apply with this cleanup)
 
-- Automated validation passed (`test:field-defaults`, `test:form-copy-global`, `tsc`, targeted ESLint, `npm run build`). Authenticated browser smoke testing remains outstanding. Do not merge yet.
+- Automated validation for the prior commit passed. This cleanup’s automated checks must pass before smoke testing. Authenticated browser smoke testing remains outstanding. Do not merge yet.
 
 - Restore branches:
   - `pre-ui-refresh` → `f422fce79227220377729654824930c86082107e`
@@ -82,13 +85,22 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - Form default values may be `PRIVATE` or `ORGANIZATION`, but never `GLOBAL`.
 - Private defaults override Organization defaults.
 - Organization defaults apply only through an active primary-organization membership.
-- Global forms retain only structural field and placement metadata.
-- Copy to Global Library excludes all Private and Organization preference defaults.
+- Global catalog fields contain no user-preference defaults. Private and Organization defaults are stored only in scoped `field_defaults`. Global catalog `default_value`, `default_checked`, and `fallback_value` may be retained only when deliberately classified as structural constants.
+- Source mappings (`source_type` / `source_path` / resolver keys) are not defaults and remain on Global fields.
+- Copy to Global Library excludes all Private and Organization preference defaults and does not reintroduce catalog preference literals.
 - Default resolution uses the packet owner or intended business user, not the viewing administrator.
-- Global literal values must be audited to distinguish structural constants from personal or brokerage preferences.
-- Final 2026-07-17 classification:
+- Final 2026-07-17 classifications:
   - `CONTRACT_PROPERTY_AS_IS` remains Lee’s PRIVATE default (`default_checked = true`).
-  - `BUYER_REP_RETAINER_AMOUNT` and `CONTRACT_SERVICE_CONTRACT_REIMBURSEMENT_AMOUNT` no longer carry Global catalog `default_value = 0`.
+  - All remaining ACTIVE Global catalog `default_value` / `default_checked` / `fallback_value` literals are cleared (no approved structural constants found).
+
+### Administrative Roles (audit 2026-07-17)
+
+- Application role `profiles.app_role`: `USER` | `ADMIN` (Global Admin).
+- Organization membership role: `MEMBER` | `ORG_ADMIN` (Organization Admin).
+- These axes are distinct; `ORG_ADMIN` is not equivalent to application `ADMIN`.
+- Copy to Global Library and Global form mutation require application `ADMIN`.
+- Organization defaults RLS allows Org Admin (own org) or application Admin.
+- Missing on later branches: defaults UI, Org Admin membership UI, packet snapshot/init semantics, scoped source-mapping overrides, role-label polish.
 
 ### Copy Private Form to Global Library
 
@@ -131,6 +143,7 @@ Applied to `harbaugh-forms-dev`:
 - `20260715140000_form_copy_to_global_traceability.sql`
 - `20260715180000_field_defaults_scoped.sql`
 - `20260717120000_clear_global_money_zero_defaults.sql`
+- `20260717180000_clear_all_global_catalog_defaults.sql`
 
 Do not edit already-applied migrations. Add a new corrective migration when needed.
 
@@ -149,6 +162,7 @@ Before applying migrations from a different development machine, compare local a
 - Copying a private form to the Global library creates a separate Global copy and preserves the original.
 - Forms may be Global or Private; collections may be Organization or Private.
 - Default values may be Private or Organization, but never Global.
+- Global catalog fields must not store preference literals unless deliberately classified as structural constants.
 
 ## Current Work
 
@@ -170,7 +184,7 @@ Current behavior:
 - Default values use `field_defaults` with only `PRIVATE` or `ORGANIZATION` scope.
 - Private defaults override Organization defaults.
 - The packet owner determines which defaults resolve, not the viewing admin.
-- Corrective migration cleared the two inappropriate Global money-zero catalog defaults.
+- Global catalog preference literals are cleared; scoped Private/Organization `field_defaults` remain.
 - Lee’s `CONTRACT_PROPERTY_AS_IS` Private default is preserved and notes finalized.
 
 This branch must not be merged until authenticated smoke tests complete and pass.
@@ -178,8 +192,11 @@ This branch must not be merged until authenticated smoke tests complete and pass
 ## Known Issues
 
 - Authenticated browser smoke tests for Copy to Global and default resolution remain.
+- Opening an existing packet can re-resolve and overwrite non-override `field_instances` (packet snapshot/init defect). Fix on a follow-up branch.
 - Full My Defaults / Organization Defaults management UI is deferred.
-- Multi-organization users require a valid `profiles.primary_organization_id` to inherit Organization defaults.
+- Scoped source-mapping / manual-only overrides for Global forms (without editing Global PDF structure) are not implemented.
+- Organization Admin membership/settings UI is missing (membership admin lives under Global Admin `/admin` only).
+- Multi-organization users require a valid `profiles.primary_organization_id` with ACTIVE membership to inherit Organization defaults.
 - `listing-packet-kind.test.ts` has a pre-existing bare-Node `@/lib` import-resolution problem.
 - A pre-existing Next.js hydration warning has appeared around `AdminSectionNav` and the packet page.
 - Specialized PDF editor dialogs do not yet have the full focus-trap behavior of `ConfirmDialog` and `InfoDialog`.
@@ -188,14 +205,14 @@ This branch must not be merged until authenticated smoke tests complete and pass
 
 ## Next Steps
 
-1. Run the admin Copy to Global browser smoke test.
-2. Run Davey-organization member default-resolution smoke tests.
-3. Confirm Lee's Private defaults are invisible to other users.
-4. Confirm packet-owner default resolution when an admin views another user’s packet.
-5. Review the final branch diff after smoke tests pass.
-6. Fast-forward merge only after all checks and smoke tests pass.
-7. Build the defaults-management UI as a separate later feature.
-8. Optionally audit remaining Global catalog money zeros (for example `CONTRACT_SELLER_EXPENSE_CONTRIBUTION_AMOUNT`) in a later pass.
+1. Approve, commit, and push the Global catalog-default cleanup on this branch (do not merge).
+2. Run authenticated smoke tests for Copy to Global and scoped default resolution.
+3. After merge of this branch, follow-up branches in order:
+   1. Packet snapshot/init semantics (opening a packet must not recalculate or overwrite saved values).
+   2. My Defaults and Organization Defaults UI for Global forms.
+   3. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
+   4. Admin ownership demarcation and saved Include user-owned filters for packets, forms, collections, properties, and contacts.
+   5. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
 
 ## Development Machine Checklist
 
@@ -241,9 +258,24 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Field defaults are Private or Organization, never Global.
 - Copy to Global Library excludes all scoped preference defaults.
 - Property uniqueness is enforced per owner using a normalized address.
-- Final classification (2026-07-17): Lee’s `CONTRACT_PROPERTY_AS_IS` stays Private; retainer and service-contract reimbursement Global zeros are cleared, not converted to Organization defaults.
+- Final classification (2026-07-17): Lee’s `CONTRACT_PROPERTY_AS_IS` stays Private; all Global catalog preference literals cleared unless deliberately classified as structural constants (none retained).
+- Administrative roles: Regular user / Organization Admin (`ORG_ADMIN`) / Global Admin (`profiles.app_role = ADMIN`) are distinct axes.
 
 ## Session History
+
+### 2026-07-17 (Global catalog default cleanup)
+
+- Work completed:
+  - Audited ACTIVE Global catalog fields for `default_value`, `default_checked`, and `fallback_value`.
+  - Found no explicitly approved structural constants; cleared all remaining Global catalog preference literals.
+  - Preserved scoped Private/Organization `field_defaults` and all source/PDF mappings.
+  - Recorded the confirmed Global-catalog rule in `DECISIONS.md`.
+  - Documented role-model audit conclusions and follow-up branch sequence.
+- Unresolved:
+  - Authenticated smoke tests.
+  - Uncommitted cleanup awaiting approval.
+- Next action:
+  - Approve/commit/push cleanup, then run smoke tests.
 
 ### 2026-07-17
 

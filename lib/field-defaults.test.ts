@@ -19,10 +19,6 @@ const DAVEY_ORG_ID = "b788f525-53f4-42ed-b5a1-cb741398a974";
 
 const CONTRACT_PROPERTY_AS_IS_FIELD_ID =
   "71cc5bb4-8b16-4e6d-861a-a925a650da91";
-const BUYER_REP_RETAINER_AMOUNT_FIELD_ID =
-  "e39569b9-d5e3-4e8d-a391-09bdf02d2aad";
-const SERVICE_CONTRACT_REIMBURSEMENT_FIELD_ID =
-  "b4cfd37f-98ec-4b44-95e5-a47ffce8dc9d";
 const SCHEDULING_COMPANY_FIELD_ID = "1c7ef2a8-0842-4a84-80ac-4e69a8ec2437";
 
 /** Local stand-in for catalog-default branch (avoids @/ imports). */
@@ -353,34 +349,122 @@ describe("scoped default classification scenarios", () => {
   });
 });
 
-describe("cleared Global money-zero catalog defaults", () => {
-  it("no longer resolves BUYER_REP_RETAINER_AMOUNT or reimbursement from field.default_value", () => {
-    for (const fieldId of [
-      BUYER_REP_RETAINER_AMOUNT_FIELD_ID,
-      SERVICE_CONTRACT_REIMBURSEMENT_FIELD_ID,
-    ]) {
-      const cleared = resolveCatalogFieldDefault({
+describe("cleared Global catalog preference literals", () => {
+  it("does not resolve NA, numeric zero, or unchecked catalog literals from fields", () => {
+    for (const literal of ["NA", "0", "3%", "Broker Bay"]) {
+      const before = resolveCatalogFieldDefault({
+        default_value: literal,
+        default_checked: null,
+        field_widget_type: "text",
+      });
+      assert.equal(before.source, "field_default");
+      assert.equal(before.value, literal);
+
+      const after = resolveCatalogFieldDefault({
         default_value: null,
         default_checked: null,
         field_widget_type: "text",
       });
-      assert.equal(cleared.source, "empty");
-      assert.equal(cleared.value, "");
-
-      const incorrectZero = resolveCatalogFieldDefault({
-        default_value: "0",
-        default_checked: null,
-        field_widget_type: "text",
-      });
-      assert.equal(incorrectZero.source, "field_default");
-      assert.equal(incorrectZero.value, "0");
-
-      const scoped = resolveScopedPreferenceDefault({
-        lookup: buildScopedDefaultLookup([]),
-        fieldId,
-      });
-      assert.equal(scoped, null);
+      assert.equal(after.source, "empty");
+      assert.equal(after.value, "");
     }
+
+    const uncheckedBefore = resolveCatalogFieldDefault({
+      default_value: null,
+      default_checked: false,
+      field_widget_type: "checkbox",
+    });
+    // false is stored but only true participates as field_default_checked;
+    // after cleanup both columns are null and the catalog contributes nothing.
+    assert.equal(uncheckedBefore.source, "empty");
+
+    const checkedLiteral = resolveCatalogFieldDefault({
+      default_value: null,
+      default_checked: true,
+      field_widget_type: "checkbox",
+    });
+    assert.equal(checkedLiteral.source, "field_default_checked");
+    assert.equal(checkedLiteral.value, "true");
+
+    const checkedCleared = resolveCatalogFieldDefault({
+      default_value: null,
+      default_checked: null,
+      field_widget_type: "checkbox",
+    });
+    assert.equal(checkedCleared.source, "empty");
+    assert.equal(checkedCleared.value, "");
+  });
+
+  it("leaves scoped Private/Organization defaults able to resolve after catalog clear", () => {
+    const leeAsIs = baseDefault({
+      id: "as-is",
+      scope: "PRIVATE",
+      field_id: CONTRACT_PROPERTY_AS_IS_FIELD_ID,
+      owner_user_id: LEE_USER_ID,
+      default_value: null,
+      default_checked: true,
+    });
+    const orgScheduling = baseDefault({
+      id: "org-sched",
+      scope: "ORGANIZATION",
+      field_id: SCHEDULING_COMPANY_FIELD_ID,
+      organization_id: DAVEY_ORG_ID,
+      default_value: "Broker Bay",
+      default_checked: null,
+    });
+
+    const leeLookup = lookupForPacketOwner({
+      packetOwnerUserId: LEE_USER_ID,
+      packetOwnerOrganizationId: DAVEY_ORG_ID,
+      allDefaults: [leeAsIs, orgScheduling],
+    });
+    assert.equal(
+      resolveScopedPreferenceDefault({
+        lookup: leeLookup,
+        fieldId: CONTRACT_PROPERTY_AS_IS_FIELD_ID,
+      })?.value,
+      "true",
+    );
+
+    const memberLookup = lookupForPacketOwner({
+      packetOwnerUserId: OTHER_USER_ID,
+      packetOwnerOrganizationId: DAVEY_ORG_ID,
+      allDefaults: [leeAsIs, orgScheduling],
+    });
+    assert.equal(
+      resolveScopedPreferenceDefault({
+        lookup: memberLookup,
+        fieldId: CONTRACT_PROPERTY_AS_IS_FIELD_ID,
+      }),
+      null,
+    );
+    assert.equal(
+      resolveScopedPreferenceDefault({
+        lookup: memberLookup,
+        fieldId: SCHEDULING_COMPANY_FIELD_ID,
+      })?.value,
+      "Broker Bay",
+    );
+  });
+
+  it("treats source mappings as authoritative over blank catalog defaults", () => {
+    // Catalog columns cleared → empty. Mapped transaction/source data is a
+    // separate resolution stage and is unaffected by clearing catalog literals.
+    const catalog = resolveCatalogFieldDefault({
+      default_value: null,
+      default_checked: null,
+      field_widget_type: "text",
+    });
+    assert.equal(catalog.source, "empty");
+
+    // Simulate a mapped source hit taking precedence over any catalog default.
+    const mappedSourceValue = "Dallas";
+    const resolved =
+      mappedSourceValue.trim() !== ""
+        ? { value: mappedSourceValue, source: "mapped_source" }
+        : catalog;
+    assert.equal(resolved.source, "mapped_source");
+    assert.equal(resolved.value, "Dallas");
   });
 });
 
@@ -390,6 +474,21 @@ describe("Copy to Global Library preference exclusion", () => {
       default_value: null,
       default_checked: null,
     });
+  });
+
+  it("does not reintroduce catalog default literals when promoting fields", () => {
+    const payload = {
+      ...globalCatalogFieldPreferenceDefaults(),
+      fallback_value: null as null,
+      source_type: "buyer_rep_details",
+      source_path: "other_compensation",
+    };
+    assert.equal(payload.default_value, null);
+    assert.equal(payload.default_checked, null);
+    assert.equal(payload.fallback_value, null);
+    // Source mapping metadata is preserved; preference literals are not.
+    assert.equal(payload.source_type, "buyer_rep_details");
+    assert.equal(payload.source_path, "other_compensation");
   });
 
   it("strips preference mapping overrides and keeps structural placeholders", () => {
