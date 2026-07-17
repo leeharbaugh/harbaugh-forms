@@ -20,6 +20,7 @@ type PacketFormFieldsSidebarProps = {
   isResettingPlacementId: string | null;
   isRevertingInstanceId: string | null;
   saveError: string | null;
+  readOnly?: boolean;
   onDraftChange: (instanceId: string, value: string) => void;
   onSelectField: (fieldView: PacketFormFieldView) => void;
   onSaveChanges: () => void;
@@ -38,6 +39,7 @@ export function PacketFormFieldsSidebar({
   isResettingPlacementId,
   isRevertingInstanceId,
   saveError,
+  readOnly = false,
   onDraftChange,
   onSelectField,
   onSaveChanges,
@@ -60,10 +62,14 @@ export function PacketFormFieldsSidebar({
             <h2 className="text-sm font-semibold">Field values</h2>
             <p className="mt-1 text-xs text-muted-foreground">
               {fields.length} field{fields.length === 1 ? "" : "s"} on this
-              form. Edit values below, then save.
+              form.
+              {readOnly
+                ? " Values are read-only for this document state."
+                : " Edit values below, then save."}
             </p>
           </div>
         </div>
+        {!readOnly && (
         <Button
           type="button"
           size="sm"
@@ -77,6 +83,7 @@ export function PacketFormFieldsSidebar({
               ? `Save changes (${dirtyInstanceIds.length})`
               : "Save changes"}
         </Button>
+        )}
         {saveError && (
           <p className="mt-2 text-xs text-destructive">{saveError}</p>
         )}
@@ -169,10 +176,11 @@ export function PacketFormFieldsSidebar({
                       onChange={(nextValue) =>
                         onDraftChange(instanceId, nextValue)
                       }
-                      disabled={isSaving || isReverting}
+                      disabled={readOnly || isSaving || isReverting}
                     />
                   </div>
 
+                  {!readOnly && (
                   <div className="flex flex-wrap gap-2">
                     {showRevert && (
                       <Button
@@ -204,6 +212,7 @@ export function PacketFormFieldsSidebar({
                       </Button>
                     )}
                   </div>
+                  )}
                 </div>
               );
             })}

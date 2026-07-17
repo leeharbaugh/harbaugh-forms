@@ -141,7 +141,7 @@ Packet forms capture the agreement state that was filled for a specific client m
 * Ordinary packet-form open, view, load, and download may insert field instances that are genuinely missing, using the packet owner’s resolution context.
 * Ordinary open must not update, clear, or re-source any existing field instance, including null, blank, false, zero, non-override resolved values, and manual overrides.
 * Existing instance `UPDATE_DATE` must not change during ordinary open.
-* Explicit user actions (manual edits, per-field revert, and the editor “Refresh values” control) remain the only paths that may rewrite existing non-override snapshots.
+* Explicit user actions (manual edits, per-field revert, and the editor “Refresh Values” control) remain the only paths that may rewrite existing non-override snapshots — and only while the packet form `document_state` is `DRAFT`.
 * Coordinate/mapping structural maintenance must not rewrite saved packet values.
 * Data repair for historically overwritten instances is a separate forward-only operation and must not restore preference literals onto Global catalog fields.
 
@@ -152,6 +152,36 @@ Packet forms capture the agreement state that was filled for a specific client m
 * `lib/field-instances.ts`
 * `lib/packet-form-editor.ts`
 * Packet form editor load path
+
+---
+
+## Packet Form Document Lifecycle
+
+**Date:** 2026-07-17
+
+**Decision:**
+Packet forms use the existing `document_state` values `DRAFT`, `FINAL`, `SIGNED`, and `VOID`. Field-value mutation (edit, revert, refresh, missing-instance insert/update/delete, and placement overrides) is allowed only for `ACTIVE` forms in `DRAFT`. Users may deliberately mark a Draft form Final and reopen Final to Draft. Signed and Void remain read-only; the UI does not set those states until a real signing integration exists. Soft-delete (`status`) remains separate from `document_state`.
+
+**Reason:**
+Refresh Values and open-time initialization can rewrite packet snapshots. Agents need an explicit Final lock so completed values cannot be refreshed or silently backfilled, while still allowing deliberate reopen when corrections are required. Database RLS and transition triggers enforce the lock so a stale browser tab cannot mutate after another session marks Final.
+
+**Consequences:**
+
+* `DRAFT`: editable; Refresh Values requires confirmation; Mark Final is available.
+* `FINAL`: read-only values; Refresh blocked; ordinary open loads existing instances only (no inserts/updates); Reopen to Draft is available and does not recalculate.
+* Mark Final may insert genuinely missing mapped instances using the packet owner’s resolution context, then sets `document_state = FINAL` without updating existing instances.
+* `SIGNED` / `VOID`: read-only; no UI transition into these states in the current task; Signed cannot be reopened.
+* Authenticated field-instance and field-instance-mapping INSERT/UPDATE require an ACTIVE DRAFT parent form.
+* Privileged sessions (`auth.uid()` null) may still perform migration/admin SQL.
+* Future enhancement: before/after field-diff preview prior to Refresh Values.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260717230000_packet_form_lifecycle_locking.sql`
+* `lib/types/packet-form-lifecycle.ts`
+* `lib/packet-form-lifecycle.ts`
+* `lib/packet-form-editor.ts`
+* `components/packets/packet-form-editor.tsx`
 
 ---
 

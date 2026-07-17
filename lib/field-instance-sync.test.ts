@@ -461,4 +461,27 @@ describe("ordinary open sync contract", () => {
     assert.equal(repaired.value, "true");
     assert.equal(repaired.value_json?.checked, true);
   });
+
+  it("Mark Final ensure_missing inserts only missing rows and never updates existing", () => {
+    const existingNa = existing({
+      id: "hist-1",
+      field_id: "f-existing",
+      value: "NA",
+      source: "field_default",
+      is_override: false,
+    });
+    const plan = planFieldInstanceSyncMutations({
+      mode: "ensure_missing",
+      fieldIds: ["f-existing", "f-missing"],
+      existingByFieldId: new Map([["f-existing", existingNa]]),
+      resolveForFieldId: (fieldId) =>
+        fieldId === "f-missing"
+          ? resolved({ value: "new", source: "private_default" })
+          : resolved({ value: "changed", source: "empty" }),
+    });
+    assert.equal(plan.updates.length, 0);
+    assert.equal(plan.inserts.length, 1);
+    assert.equal(plan.inserts[0]?.fieldId, "f-missing");
+    assert.equal(existingNa.value, "NA");
+  });
 });

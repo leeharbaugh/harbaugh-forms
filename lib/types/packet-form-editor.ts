@@ -1,5 +1,6 @@
 import { sortPacketFormFieldViews } from "@/lib/pdf-field-sort";
 import type { FormFieldMapping } from "@/lib/types/form-field-mapping";
+import type { DocumentState } from "@/lib/types/packet";
 import type {
   FieldInstance,
   FieldInstanceMapping,
@@ -42,6 +43,7 @@ export type PacketFormEditorData = {
     packet_id: number;
     form_id: number;
     document_name: string;
+    document_state: DocumentState;
     storage_path: string | null;
     status: string;
     forms: {

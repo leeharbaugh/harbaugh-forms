@@ -11,16 +11,36 @@ import { PacketFormFieldsSidebar } from "@/components/packets/packet-form-fields
 import { Button } from "@/components/ui/button";
 import {
   loadPacketFormEditorData,
+  markPacketFormFinal,
   refreshPacketFormFieldValues,
+  reopenPacketFormToDraft,
   resetFieldInstanceMappingPlacement,
   revertPacketFormFieldValue,
   saveFieldInstanceValue,
   saveFieldInstanceValues,
   upsertFieldInstanceMappingPlacement,
 } from "@/lib/packet-form-editor";
+import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatAmountInput } from "@/lib/amount-format";
 import type { FieldResolutionDiagnostic } from "@/lib/field-resolver";
+import type { DocumentState } from "@/lib/types/packet";
 import type { PacketWorkflowType } from "@/lib/types/packet-workflow";
+import {
+  canMarkPacketFormFinal,
+  canReopenPacketFormToDraft,
+  formatPacketFormDocumentState,
+  isPacketFormValueEditable,
+  MARK_FINAL_CONFIRM_MESSAGE,
+  MARK_FINAL_CONFIRM_TITLE,
+  packetFormDocumentStateVariant,
+  packetFormLifecycleBlockedMessage,
+  REFRESH_VALUES_CONFIRM_MESSAGE,
+  REFRESH_VALUES_CONFIRM_TITLE,
+  REFRESH_VALUES_HELP_TEXT,
+  REOPEN_DRAFT_CONFIRM_MESSAGE,
+  REOPEN_DRAFT_CONFIRM_TITLE,
+} from "@/lib/types/packet-form-lifecycle";
 import {
   PDF_EDITOR_SIDEBAR_WIDTH,
   PDF_MIN_PAGE_WIDTH,
@@ -55,9 +75,9 @@ import {
 } from "@/lib/types/template-pdf-field";
 import { cn } from "@/lib/utils";
 import { usePdfEditorSession } from "@/lib/use-pdf-editor-session";
-import { Minus, Plus, Download, RefreshCw } from "lucide-react";
+import { CircleHelp, Minus, Plus, Download, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
 
 type PacketFormEditorProps = {
@@ -75,6 +95,7 @@ export function PacketFormEditor({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [packetFormRecordId, setPacketFormRecordId] = useState(packetFormId);
   const [documentName, setDocumentName] = useState("");
+  const [documentState, setDocumentState] = useState<DocumentState>("DRAFT");
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const [formId, setFormId] = useState<number | null>(null);
   const [formName, setFormName] = useState("");
@@ -99,6 +120,14 @@ export function PacketFormEditor({
     string | null
   >(null);
   const [isRefreshingValues, setIsRefreshingValues] = useState(false);
+  const [confirmRefreshOpen, setConfirmRefreshOpen] = useState(false);
+  const [confirmMarkFinalOpen, setConfirmMarkFinalOpen] = useState(false);
+  const [confirmReopenOpen, setConfirmReopenOpen] = useState(false);
+  const [isLifecycleTransitioning, setIsLifecycleTransitioning] =
+    useState(false);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [refreshHelpOpen, setRefreshHelpOpen] = useState(false);
+  const refreshHelpId = useId();
   const [updatingMappingId, setUpdatingMappingId] = useState<string | null>(
     null,
   );
@@ -271,6 +300,7 @@ export function PacketFormEditor({
         }
 
         setDocumentName(data.packetForm.document_name);
+        setDocumentState(data.packetForm.document_state);
         setStoragePath(data.packetForm.storage_path);
         setPacketFormRecordId(data.packetForm.id);
         setFormId(data.packetForm.form_id);
@@ -436,6 +466,9 @@ export function PacketFormEditor({
     ) ?? null;
 
   const handleDraftChange = (instanceId: string, value: string) => {
+    if (!isPacketFormValueEditable(documentState, "ACTIVE")) {
+      return;
+    }
     setDraftValuesByInstanceId((current) => ({
       ...current,
       [instanceId]: value,
@@ -558,6 +591,9 @@ export function PacketFormEditor({
 
   const handleStartInlineEdit = useCallback(
     (overlayField: PacketFormOverlayField) => {
+      if (!isPacketFormValueEditable(documentState, "ACTIVE")) {
+        return;
+      }
       void finishInlineEditForSelectionKey(overlayField.selectionKey);
 
       const currentValue =
@@ -571,7 +607,7 @@ export function PacketFormEditor({
       setEditingSelectionKey(overlayField.selectionKey);
       setInlineEditValue(nextValue);
     },
-    [draftValuesByInstanceId, finishInlineEditForSelectionKey],
+    [documentState, draftValuesByInstanceId, finishInlineEditForSelectionKey],
   );
 
   const handleInlineEditChange = useCallback(
@@ -606,6 +642,9 @@ export function PacketFormEditor({
 
   const handleCheckboxToggle = useCallback(
     async (overlayField: PacketFormOverlayField) => {
+      if (!isPacketFormValueEditable(documentState, "ACTIVE")) {
+        return;
+      }
       const currentChecked = resolveCheckboxCheckedState(
         draftValuesByInstanceId[overlayField.field_instance_id] ??
           overlayField.displayValue,
@@ -615,7 +654,7 @@ export function PacketFormEditor({
 
       await persistInlineFieldValue(overlayField, nextValue);
     },
-    [draftValuesByInstanceId, persistInlineFieldValue],
+    [documentState, draftValuesByInstanceId, persistInlineFieldValue],
   );
 
   const applyRevertedInstance = (updated: FieldInstanceWithField) => {
@@ -735,6 +774,11 @@ export function PacketFormEditor({
   };
 
   const handleSaveChanges = async () => {
+    if (!isPacketFormValueEditable(documentState, "ACTIVE")) {
+      setSaveError(packetFormLifecycleBlockedMessage(documentState));
+      return;
+    }
+
     const dirtyInstanceIds = getDirtyFieldInstanceIds(
       draftValuesByInstanceId,
       savedValuesByInstanceId,
@@ -852,6 +896,7 @@ export function PacketFormEditor({
   const handleRefreshValues = async () => {
     setIsRefreshingValues(true);
     setRefreshError(null);
+    setConfirmRefreshOpen(false);
 
     const supabase = createClient();
 
@@ -870,6 +915,44 @@ export function PacketFormEditor({
       );
     } finally {
       setIsRefreshingValues(false);
+    }
+  };
+
+  const handleMarkFinal = async () => {
+    setIsLifecycleTransitioning(true);
+    setLifecycleError(null);
+    setConfirmMarkFinalOpen(false);
+    const supabase = createClient();
+    try {
+      const row = await markPacketFormFinal(supabase, packetFormId);
+      setDocumentState(row.document_state);
+      await refreshEditorFields({ preserveScroll: true });
+    } catch (error) {
+      setLifecycleError(
+        error instanceof Error ? error.message : "Failed to mark form Final.",
+      );
+    } finally {
+      setIsLifecycleTransitioning(false);
+    }
+  };
+
+  const handleReopenToDraft = async () => {
+    setIsLifecycleTransitioning(true);
+    setLifecycleError(null);
+    setConfirmReopenOpen(false);
+    const supabase = createClient();
+    try {
+      const row = await reopenPacketFormToDraft(supabase, packetFormId);
+      setDocumentState(row.document_state);
+      await refreshEditorFields({ preserveScroll: true });
+    } catch (error) {
+      setLifecycleError(
+        error instanceof Error
+          ? error.message
+          : "Failed to reopen form as Draft.",
+      );
+    } finally {
+      setIsLifecycleTransitioning(false);
     }
   };
 
@@ -1021,6 +1104,9 @@ export function PacketFormEditor({
   };
 
   const isDevelopment = process.env.NODE_ENV === "development";
+  const valuesEditable = isPacketFormValueEditable(documentState, "ACTIVE");
+  const showMarkFinal = canMarkPacketFormFinal(documentState, "ACTIVE");
+  const showReopen = canReopenPacketFormToDraft(documentState, "ACTIVE");
   const propertyResolutionWarning =
     packetType === "buyer_rep"
       ? null
@@ -1053,16 +1139,43 @@ export function PacketFormEditor({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-background px-4 py-2">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold tracking-tight">
-            {documentName}
-          </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="truncate text-lg font-semibold tracking-tight">
+              {documentName}
+            </h1>
+            <Badge variant={packetFormDocumentStateVariant(documentState)}>
+              {formatPacketFormDocumentState(documentState)}
+            </Badge>
+          </div>
           <p className="truncate text-xs text-muted-foreground">
             {formName}
             {formId != null ? ` (${formatFormReference(formId)})` : ""} · fill
             form · packet only
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          {showMarkFinal && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirmMarkFinalOpen(true)}
+              disabled={isLifecycleTransitioning}
+            >
+              Mark Final
+            </Button>
+          )}
+          {showReopen && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirmReopenOpen(true)}
+              disabled={isLifecycleTransitioning}
+            >
+              Reopen to Draft
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -1085,6 +1198,12 @@ export function PacketFormEditor({
           )}
         </div>
       </div>
+
+      {lifecycleError && (
+        <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          {lifecycleError}
+        </div>
+      )}
 
       {downloadError && (
         <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
@@ -1194,26 +1313,61 @@ export function PacketFormEditor({
               Fit Page
             </Button>
             <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void handleRefreshValues()}
-              disabled={isRefreshingValues}
-            >
-              <RefreshCw
-                className={cn(
-                  "mr-1.5 h-4 w-4",
-                  isRefreshingValues && "animate-spin",
-                )}
-              />
-              {isRefreshingValues ? "Refreshing..." : "Refresh values"}
-            </Button>
+            {valuesEditable ? (
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmRefreshOpen(true)}
+                  disabled={isRefreshingValues}
+                  aria-describedby={refreshHelpOpen ? refreshHelpId : undefined}
+                >
+                  <RefreshCw
+                    className={cn(
+                      "mr-1.5 h-4 w-4",
+                      isRefreshingValues && "animate-spin",
+                    )}
+                  />
+                  {isRefreshingValues ? "Refreshing..." : "Refresh Values"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label="About Refresh Values"
+                  aria-expanded={refreshHelpOpen}
+                  aria-controls={refreshHelpId}
+                  onClick={() => setRefreshHelpOpen((open) => !open)}
+                >
+                  <CircleHelp className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <p className="max-w-md text-xs text-muted-foreground">
+                {documentState === "FINAL"
+                  ? "Refresh Values is unavailable because this form is Final. Reopen it as a Draft to edit or refresh values."
+                  : documentState === "SIGNED"
+                    ? "Signed forms cannot be refreshed."
+                    : packetFormLifecycleBlockedMessage(documentState)}
+              </p>
+            )}
             <p className="hidden text-xs text-muted-foreground lg:block">
-              Edit values in the sidebar. Click overlays to select fields. Drag
-              or resize to override placement for this packet form.
+              {valuesEditable
+                ? "Edit values in the sidebar. Click overlays to select fields. Drag or resize to override placement for this packet form."
+                : "This form is read-only. Download remains available."}
             </p>
           </div>
+          {refreshHelpOpen && valuesEditable && (
+            <p
+              id={refreshHelpId}
+              role="note"
+              className="border-b bg-muted/20 px-3 py-2 text-xs text-muted-foreground"
+            >
+              {REFRESH_VALUES_HELP_TEXT}
+            </p>
+          )}
 
           <div
             ref={pdfWorkspaceRef}
@@ -1316,11 +1470,13 @@ export function PacketFormEditor({
                                       overlayField.selectionKey
                                     }
                                     isUpdating={
+                                      !valuesEditable ||
                                       updatingMappingId === overlayField.id
                                     }
                                     isInlineEditing={
+                                      valuesEditable &&
                                       editingSelectionKey ===
-                                      overlayField.selectionKey
+                                        overlayField.selectionKey
                                     }
                                     inlineEditValue={inlineEditValue}
                                     isSavingValue={
@@ -1384,6 +1540,7 @@ export function PacketFormEditor({
           isResettingPlacementId={isResettingPlacementId}
           isRevertingInstanceId={isRevertingInstanceId}
           saveError={saveError}
+          readOnly={!valuesEditable}
           onDraftChange={handleDraftChange}
           onSelectField={selectFieldFromSidebar}
           listRef={sidebarListRef}
@@ -1393,6 +1550,40 @@ export function PacketFormEditor({
           fieldRefs={sidebarFieldRefs}
         />
       </div>
+
+      <ConfirmDialog
+        open={confirmRefreshOpen}
+        title={REFRESH_VALUES_CONFIRM_TITLE}
+        message={REFRESH_VALUES_CONFIRM_MESSAGE}
+        confirmLabel="Refresh Values"
+        cancelLabel="Cancel"
+        isConfirming={isRefreshingValues}
+        confirmingLabel="Refreshing…"
+        onConfirm={() => void handleRefreshValues()}
+        onCancel={() => setConfirmRefreshOpen(false)}
+      />
+      <ConfirmDialog
+        open={confirmMarkFinalOpen}
+        title={MARK_FINAL_CONFIRM_TITLE}
+        message={MARK_FINAL_CONFIRM_MESSAGE}
+        confirmLabel="Mark Final"
+        cancelLabel="Cancel"
+        isConfirming={isLifecycleTransitioning}
+        confirmingLabel="Marking Final…"
+        onConfirm={() => void handleMarkFinal()}
+        onCancel={() => setConfirmMarkFinalOpen(false)}
+      />
+      <ConfirmDialog
+        open={confirmReopenOpen}
+        title={REOPEN_DRAFT_CONFIRM_TITLE}
+        message={REOPEN_DRAFT_CONFIRM_MESSAGE}
+        confirmLabel="Reopen to Draft"
+        cancelLabel="Cancel"
+        isConfirming={isLifecycleTransitioning}
+        confirmingLabel="Reopening…"
+        onConfirm={() => void handleReopenToDraft()}
+        onCancel={() => setConfirmReopenOpen(false)}
+      />
     </div>
   );
 }
