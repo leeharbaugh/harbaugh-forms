@@ -1,8 +1,28 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
+import type { FieldDefault } from "@/lib/types/field-default";
+
+export type {
+  FieldDefault,
+  FieldDefaultInput,
+  FieldDefaultMatchKey,
+  FieldDefaultScope,
+  FieldDefaultStatus,
+  ScopedDefaultLookup,
+} from "@/lib/types/field-default";
+
+export {
+  FIELD_DEFAULT_SCOPES,
+  FIELD_DEFAULT_STATUSES,
+  buildScopedDefaultLookup,
+  classifyPrivateFieldForGlobalization,
   fieldDefaultToResolvedValue,
+  globalCatalogFieldPreferenceDefaults,
+  isFieldDefaultScope,
+  isStructuralMappingDefaultOverride,
+  mappingOverrideForGlobalCopy,
   pickBestFieldDefault,
-  type FieldDefault,
+  resolveScopedPreferenceDefault,
+  validateFieldDefaultInput,
 } from "@/lib/types/field-default";
 
 export const FIELD_DEFAULT_SELECT =
@@ -94,117 +114,4 @@ export async function loadScopedFieldDefaultsForActor(
   }
 
   return results;
-}
-
-export type ScopedDefaultLookup = {
-  privateDefaults: FieldDefault[];
-  organizationDefaults: FieldDefault[];
-};
-
-export function buildScopedDefaultLookup(
-  rows: FieldDefault[],
-): ScopedDefaultLookup {
-  return {
-    privateDefaults: rows.filter((row) => row.scope === "PRIVATE"),
-    organizationDefaults: rows.filter((row) => row.scope === "ORGANIZATION"),
-  };
-}
-
-/**
- * Private beats Organization. Mapping > form > field-only specificity.
- */
-export function resolveScopedPreferenceDefault(options: {
-  lookup: ScopedDefaultLookup | null | undefined;
-  fieldId: string;
-  formId?: number | null;
-  mappingId?: string | null;
-}): {
-  value: string;
-  value_json: Record<string, unknown> | null;
-  source: "private_default" | "organization_default";
-} | null {
-  if (!options.lookup) {
-    return null;
-  }
-
-  const key = {
-    fieldId: options.fieldId,
-    formId: options.formId,
-    mappingId: options.mappingId,
-  };
-
-  const privateHit = pickBestFieldDefault(options.lookup.privateDefaults, key);
-  if (privateHit) {
-    return {
-      ...fieldDefaultToResolvedValue(privateHit),
-      source: "private_default",
-    };
-  }
-
-  const orgHit = pickBestFieldDefault(
-    options.lookup.organizationDefaults,
-    key,
-  );
-  if (orgHit) {
-    return {
-      ...fieldDefaultToResolvedValue(orgHit),
-      source: "organization_default",
-    };
-  }
-
-  return null;
-}
-
-/** Structural PDF unchecked / placeholder mapping overrides that may stay Global. */
-export function isStructuralMappingDefaultOverride(
-  value: string | null | undefined,
-): boolean {
-  const trimmed = value?.trim() ?? "";
-  if (!trimmed) {
-    return true;
-  }
-  const normalized = trimmed.toLowerCase();
-  return (
-    normalized === "off" ||
-    normalized === "false" ||
-    normalized === "0" ||
-    normalized === "na" ||
-    normalized === "n/a" ||
-    normalized === "n.a."
-  );
-}
-
-const UNSAFE_GLOBALIZATION_PATTERN =
-  /\b(lee|davey|goosmann|harbaugh|internal[_ -]?code|office[_ -]?only|brokerage[_ -]?only)\b/i;
-
-/**
- * Private catalog fields that appear user/brokerage-specific and should not
- * be auto-promoted into the Global field catalog.
- */
-export function classifyPrivateFieldForGlobalization(field: {
-  field_key: string;
-  field_label?: string | null;
-  field_name?: string | null;
-  notes?: string | null;
-}): { safe: true } | { safe: false; reason: string } {
-  const haystack = [
-    field.field_key,
-    field.field_label,
-    field.field_name,
-    field.notes,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    // Underscores are word chars for \b; treat them as separators in keys.
-    .replace(/_/g, " ");
-
-  if (UNSAFE_GLOBALIZATION_PATTERN.test(haystack)) {
-    return {
-      safe: false,
-      reason:
-        "Field key, label, or notes appear user- or brokerage-specific and need admin review before becoming Global.",
-    };
-  }
-
-  return { safe: true };
 }

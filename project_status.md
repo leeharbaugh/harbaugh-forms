@@ -18,13 +18,15 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - Active feature branch:
   `admin-copy-user-form-to-global`
 
-- Active feature branch commit:
-  `8e85c0d2915afe250f41dac5948ed5c018ea5494`
+- Feature branch tip commit message:
+  `Finalize scoped field defaults and global-copy safeguards`
 
-- Feature branch is pushed to:
+- Feature branch remote:
   `origin/admin-copy-user-form-to-global`
 
-- Do not merge yet. Final default-value classification, authenticated browser smoke testing, and final validation remain.
+- Corrective migration `20260717120000_clear_global_money_zero_defaults.sql` is applied on `harbaugh-forms-dev`.
+
+- Automated validation passed (`test:field-defaults`, `test:form-copy-global`, `tsc`, targeted ESLint, `npm run build`). Authenticated browser smoke testing remains outstanding. Do not merge yet.
 
 - Restore branches:
   - `pre-ui-refresh` → `f422fce79227220377729654824930c86082107e`
@@ -84,6 +86,9 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - Copy to Global Library excludes all Private and Organization preference defaults.
 - Default resolution uses the packet owner or intended business user, not the viewing administrator.
 - Global literal values must be audited to distinguish structural constants from personal or brokerage preferences.
+- Final 2026-07-17 classification:
+  - `CONTRACT_PROPERTY_AS_IS` remains Lee’s PRIVATE default (`default_checked = true`).
+  - `BUYER_REP_RETAINER_AMOUNT` and `CONTRACT_SERVICE_CONTRACT_REIMBURSEMENT_AMOUNT` no longer carry Global catalog `default_value = 0`.
 
 ### Copy Private Form to Global Library
 
@@ -125,6 +130,7 @@ Applied to `harbaugh-forms-dev`:
 - `20260715120000_organization_collections_and_property_uniqueness.sql`
 - `20260715140000_form_copy_to_global_traceability.sql`
 - `20260715180000_field_defaults_scoped.sql`
+- `20260717120000_clear_global_money_zero_defaults.sql`
 
 Do not edit already-applied migrations. Add a new corrective migration when needed.
 
@@ -164,34 +170,32 @@ Current behavior:
 - Default values use `field_defaults` with only `PRIVATE` or `ORGANIZATION` scope.
 - Private defaults override Organization defaults.
 - The packet owner determines which defaults resolve, not the viewing admin.
+- Corrective migration cleared the two inappropriate Global money-zero catalog defaults.
+- Lee’s `CONTRACT_PROPERTY_AS_IS` Private default is preserved and notes finalized.
 
-This branch must not be merged until final classification corrections and authenticated smoke tests are complete.
+This branch must not be merged until authenticated smoke tests complete and pass.
 
 ## Known Issues
 
-- Final human classifications remain:
-  - `CONTRACT_PROPERTY_AS_IS` should remain Lee's Private default.
-  - `BUYER_REP_RETAINER_AMOUNT = 0` should not remain a Global structural value.
-  - `CONTRACT_SERVICE_CONTRACT_REIMBURSEMENT_AMOUNT = 0` should not remain a Global structural value.
+- Authenticated browser smoke tests for Copy to Global and default resolution remain.
 - Full My Defaults / Organization Defaults management UI is deferred.
 - Multi-organization users require a valid `profiles.primary_organization_id` to inherit Organization defaults.
 - `listing-packet-kind.test.ts` has a pre-existing bare-Node `@/lib` import-resolution problem.
 - A pre-existing Next.js hydration warning has appeared around `AdminSectionNav` and the packet page.
 - Specialized PDF editor dialogs do not yet have the full focus-trap behavior of `ConfirmDialog` and `InfoDialog`.
 - `pdf-placement-form-fields.tsx` may contain line-ending churn that should be minimized before merge.
+- Repo-wide `npm run lint` currently fails because ESLint scans `.next` build artifacts; targeted lint of changed source files is clean.
 
 ## Next Steps
 
-1. On `admin-copy-user-form-to-global`, run the final scoped-default correction prompt.
-2. Add a new corrective migration if the two Global numeric-zero defaults must be cleared.
-3. Audit all remaining Global field and mapping literals.
-4. Run the admin Copy to Global browser smoke test.
-5. Run the Davey member default-resolution smoke test.
-6. Confirm Lee's Private defaults are invisible to other users.
-7. Run TypeScript, ESLint, production build, and relevant automated tests.
-8. Review the final branch diff.
-9. Fast-forward merge only after all checks pass.
-10. Build the defaults-management UI as a separate later feature.
+1. Run the admin Copy to Global browser smoke test.
+2. Run Davey-organization member default-resolution smoke tests.
+3. Confirm Lee's Private defaults are invisible to other users.
+4. Confirm packet-owner default resolution when an admin views another user’s packet.
+5. Review the final branch diff after smoke tests pass.
+6. Fast-forward merge only after all checks and smoke tests pass.
+7. Build the defaults-management UI as a separate later feature.
+8. Optionally audit remaining Global catalog money zeros (for example `CONTRACT_SELLER_EXPENSE_CONTRIBUTION_AMOUNT`) in a later pass.
 
 ## Development Machine Checklist
 
@@ -200,7 +204,7 @@ Before making changes:
 1. Clone or pull the GitHub repository.
 2. Run `git fetch --all --prune`.
 3. Check out `admin-copy-user-form-to-global`.
-4. Confirm HEAD is `8e85c0d2915afe250f41dac5948ed5c018ea5494`.
+4. Confirm the branch includes the scoped-default corrective commit.
 5. Run `git status` and confirm the working tree is clean.
 6. Use the Node.js version declared by the repository, such as `.nvmrc` or `package.json` `engines`.
 7. Use the package manager indicated by the repository lockfile and run its clean-install command.
@@ -225,8 +229,8 @@ Document variable names only; never store values in Git.
 Known required variables:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SECRET_KEY`
 
 Confirm any additional Mapbox, application URL, and auth redirect variable names from `.env.example`, `.env.local`, and code references before beginning work on the new machine.
 
@@ -237,8 +241,37 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Field defaults are Private or Organization, never Global.
 - Copy to Global Library excludes all scoped preference defaults.
 - Property uniqueness is enforced per owner using a normalized address.
+- Final classification (2026-07-17): Lee’s `CONTRACT_PROPERTY_AS_IS` stays Private; retainer and service-contract reimbursement Global zeros are cleared, not converted to Organization defaults.
 
 ## Session History
+
+### 2026-07-17
+
+- Work completed:
+  - Inspected live `fields` / `field_defaults` for the three classified keys.
+  - Preserved Lee PRIVATE `CONTRACT_PROPERTY_AS_IS` and finalized its notes.
+  - Added and applied forward-only corrective migration clearing two Global money-zero catalog defaults.
+  - Expanded focused automated tests for resolution, ownership, and Copy-to-Global preference exclusion.
+  - Moved pure default helpers into `lib/types/field-default.ts` so Node tests resolve without `@/` value imports.
+- Files changed:
+  - `supabase/migrations/20260717120000_clear_global_money_zero_defaults.sql`
+  - `lib/types/field-default.ts`
+  - `lib/field-defaults.ts`
+  - `lib/field-defaults.test.ts`
+  - `lib/admin/copy-form-to-global.ts`
+  - `PROJECT_STATUS.md`
+- Database changes:
+  - Applied `20260717120000_clear_global_money_zero_defaults.sql` to `harbaugh-forms-dev`.
+- Tests performed:
+  - `npm run test:field-defaults` (16 pass)
+  - `npm run test:form-copy-global` (27 pass)
+  - `npx tsc --noEmit` (pass)
+  - Targeted ESLint on changed source files (pass)
+  - `npm run build` (pass)
+- Unresolved issues:
+  - Authenticated smoke tests still require manual login sessions.
+- Next action:
+  - Run the authenticated smoke-test checklist and report results before merge.
 
 ### 2026-07-15
 

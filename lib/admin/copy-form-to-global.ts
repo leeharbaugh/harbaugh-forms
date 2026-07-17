@@ -6,7 +6,9 @@ import { nextUniqueGlobalFormIdentity } from "@/lib/admin/global-form-identity";
 import { requireAppAdmin } from "@/lib/admin/require-app-admin";
 import {
   classifyPrivateFieldForGlobalization,
+  globalCatalogFieldPreferenceDefaults,
   isStructuralMappingDefaultOverride,
+  mappingOverrideForGlobalCopy,
 } from "@/lib/field-defaults";
 import {
   buildGlobalFormStoragePath,
@@ -292,12 +294,6 @@ function countMappingOverrideHandling(mappingRows: MappingRow[]): {
   };
 }
 
-function mappingDefaultValueOverride(
-  value: string | null,
-): string | null {
-  return isStructuralMappingDefaultOverride(value) ? value : null;
-}
-
 function formatBlockedFieldsError(
   blockedFields: Array<{ fieldKey: string; reason: string }>,
 ): string {
@@ -364,8 +360,7 @@ async function resolveOrCopyFieldId(
         field_label: sourceField.field_label,
         field_data_type: sourceField.field_data_type,
         field_widget_type: sourceField.field_widget_type,
-        default_value: null,
-        default_checked: null,
+        ...globalCatalogFieldPreferenceDefaults(),
         required: sourceField.required,
         notes: sourceField.notes,
         source_type: sourceField.source_type,
@@ -618,7 +613,7 @@ export async function copyFormToGlobalLibrary(
         font_size: row.font_size,
         alignment: row.alignment,
         field_widget_type: row.field_widget_type,
-        default_value_override: mappingDefaultValueOverride(
+        default_value_override: mappingOverrideForGlobalCopy(
           row.default_value_override,
         ),
         required: row.required,
