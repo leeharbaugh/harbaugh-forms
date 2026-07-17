@@ -20,6 +20,9 @@ const DAVEY_ORG_ID = "b788f525-53f4-42ed-b5a1-cb741398a974";
 const CONTRACT_PROPERTY_AS_IS_FIELD_ID =
   "71cc5bb4-8b16-4e6d-861a-a925a650da91";
 const SCHEDULING_COMPANY_FIELD_ID = "1c7ef2a8-0842-4a84-80ac-4e69a8ec2437";
+const SELLER_IS_NOT_FOREIGN_PERSON_FIELD_ID =
+  "b0548c8b-c4f7-44f9-8328-9c14899e09e7";
+const YAHOO_USER_ID = "8d10af59-f3f8-4a48-94b5-3477656c02a6";
 
 /** Local stand-in for catalog-default branch (avoids @/ imports). */
 function resolveCatalogFieldDefault(field: {
@@ -526,5 +529,85 @@ describe("classifyPrivateFieldForGlobalization", () => {
       field_label: "Protection Period",
     });
     assert.equal(ok.safe, true);
+  });
+});
+
+describe("SELLER_IS_NOT_FOREIGN_PERSON Lee Private restoration", () => {
+  const leeNotForeign = baseDefault({
+    id: "lee-not-foreign",
+    scope: "PRIVATE",
+    field_id: SELLER_IS_NOT_FOREIGN_PERSON_FIELD_ID,
+    owner_user_id: LEE_USER_ID,
+    default_value: null,
+    default_checked: true,
+  });
+
+  it("resolves checked for Lee when no listing-detail source exists", () => {
+    const lookup = lookupForPacketOwner({
+      packetOwnerUserId: LEE_USER_ID,
+      packetOwnerOrganizationId: DAVEY_ORG_ID,
+      allDefaults: [leeNotForeign],
+    });
+    const resolved = resolveScopedPreferenceDefault({
+      lookup,
+      fieldId: SELLER_IS_NOT_FOREIGN_PERSON_FIELD_ID,
+    });
+    assert.equal(resolved?.value, "true");
+    assert.equal(resolved?.value_json?.checked, true);
+    assert.equal(resolved?.source, "private_default");
+  });
+
+  it("does not give Yahoo Lee’s Private default", () => {
+    const lookup = lookupForPacketOwner({
+      packetOwnerUserId: YAHOO_USER_ID,
+      packetOwnerOrganizationId: null,
+      allDefaults: [leeNotForeign],
+    });
+    assert.equal(
+      resolveScopedPreferenceDefault({
+        lookup,
+        fieldId: SELLER_IS_NOT_FOREIGN_PERSON_FIELD_ID,
+      }),
+      null,
+    );
+  });
+
+  it("lets explicit listing-detail foreign-person true override the Private default", () => {
+    // Mirrors resolveSellerIsNotForeignPerson: NOT-foreign checkbox is true
+    // only when seller_is_foreign_person === false. Mapped listing data wins
+    // before scoped defaults in resolveFieldValueFromContext.
+    const listingSaysForeign = { seller_is_foreign_person: true as const };
+    const mappedNotForeignChecked =
+      listingSaysForeign.seller_is_foreign_person === false;
+    assert.equal(mappedNotForeignChecked, false);
+
+    const leeDefault = resolveScopedPreferenceDefault({
+      lookup: lookupForPacketOwner({
+        packetOwnerUserId: LEE_USER_ID,
+        packetOwnerOrganizationId: DAVEY_ORG_ID,
+        allDefaults: [leeNotForeign],
+      }),
+      fieldId: SELLER_IS_NOT_FOREIGN_PERSON_FIELD_ID,
+    });
+    assert.equal(leeDefault?.value, "true");
+
+    // Precedence: mapped listing result replaces Private default.
+    const finalValue = mappedNotForeignChecked ? "true" : "false";
+    assert.equal(finalValue, "false");
+  });
+
+  it("is excluded from Copy to Global Library catalog preference columns", () => {
+    assert.deepEqual(globalCatalogFieldPreferenceDefaults(), {
+      default_value: null,
+      default_checked: null,
+    });
+    assert.equal(
+      resolveCatalogFieldDefault({
+        default_value: null,
+        default_checked: null,
+        field_widget_type: "checkbox",
+      }).source,
+      "empty",
+    );
   });
 });

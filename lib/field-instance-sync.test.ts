@@ -423,4 +423,42 @@ describe("ordinary open sync contract", () => {
       );
     }
   });
+
+  it("keeps repaired SELLER_IS_NOT_FOREIGN_PERSON override checked on open and refresh", () => {
+    const fieldId = "b0548c8b-c4f7-44f9-8328-9c14899e09e7";
+    const repaired = existing({
+      id: "045341ab-61a4-4070-93db-8eb3f0a08f15",
+      field_id: fieldId,
+      value: "true",
+      value_json: { checked: true },
+      source: "manual_override",
+      is_override: true,
+      update_date: "2026-07-17T20:00:00.000Z",
+    });
+    const emptyResolve = () =>
+      resolved({
+        value: "false",
+        value_json: { checked: false },
+        source: "empty",
+      });
+
+    const openPlan = planFieldInstanceSyncMutations({
+      mode: "ensure_missing",
+      fieldIds: [fieldId],
+      existingByFieldId: new Map([[fieldId, repaired]]),
+      resolveForFieldId: emptyResolve,
+    });
+    assert.equal(openPlan.updates.length, 0);
+    assert.equal(fieldInstanceSyncWouldWrite(openPlan), false);
+
+    const refreshPlan = planFieldInstanceSyncMutations({
+      mode: "refresh_non_overrides",
+      fieldIds: [fieldId],
+      existingByFieldId: new Map([[fieldId, repaired]]),
+      resolveForFieldId: emptyResolve,
+    });
+    assert.equal(refreshPlan.updates.length, 0);
+    assert.equal(repaired.value, "true");
+    assert.equal(repaired.value_json?.checked, true);
+  });
 });

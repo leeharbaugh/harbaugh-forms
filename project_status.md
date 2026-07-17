@@ -19,8 +19,8 @@ Harbaugh Forms is a Texas real estate forms application built with:
   `admin-copy-user-form-to-global`
 
 - Feature branch tip commit:
-  `a75e22a` — `Clear remaining Global catalog preference literals.`
-  (plus uncommitted packet-instance containment fix awaiting approval)
+  `d450772` — `Preserve packet field snapshots during ordinary open`
+  (plus uncommitted repair migrations `20260717210000` and `20260717220000` awaiting approval)
 
 - Feature branch remote:
   `origin/admin-copy-user-form-to-global`
@@ -28,8 +28,10 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - Corrective migrations on `harbaugh-forms-dev`:
   - `20260717120000_clear_global_money_zero_defaults.sql` (applied)
   - `20260717180000_clear_all_global_catalog_defaults.sql` (applied)
+  - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied; commit pending)
+  - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied; commit pending)
 
-- Do not merge yet. Do not open existing packet forms against `harbaugh-forms-dev` until the packet-instance containment fix is running in that environment.
+- Containment is active in local `npm run dev` on `d450772`. Do not merge to `main` yet.
 
 - Restore branches:
   - `pre-ui-refresh` → `f422fce79227220377729654824930c86082107e`
@@ -145,6 +147,7 @@ Applied to `harbaugh-forms-dev`:
 - `20260715180000_field_defaults_scoped.sql`
 - `20260717120000_clear_global_money_zero_defaults.sql`
 - `20260717180000_clear_all_global_catalog_defaults.sql`
+- `20260717210000_repair_catalog_clear_overwritten_field_instances.sql`
 
 Do not edit already-applied migrations. Add a new corrective migration when needed.
 
@@ -188,23 +191,35 @@ Current behavior:
 - The packet owner determines which defaults resolve, not the viewing admin.
 - Global catalog preference literals are cleared; scoped Private/Organization `field_defaults` remain.
 - Lee’s `CONTRACT_PROPERTY_AS_IS` Private default is preserved and notes finalized.
-- **Containment (in progress on this branch):** ordinary packet-form open/view/load inserts missing field instances only and does not UPDATE existing snapshots. Explicit editor “Refresh values” remains the user-authorized non-override refresh path.
+- Ordinary packet-form open/view/load inserts missing field instances only (`ensure_missing`) and does not UPDATE existing snapshots. Explicit editor “Refresh values” uses `refresh_non_overrides`.
 
 This branch must not be merged until authenticated smoke tests complete and pass.
 
 ### Confirmed packet-value incident (2026-07-17)
 
-After Global catalog defaults were cleared, opening existing packet forms re-resolved non-override `field_instances` and overwrote stored values (including `NA`) with blank.
+After Global catalog defaults were cleared, opening existing packet forms re-resolved non-override `field_instances` and overwrote stored values (including `NA` and a checked checkbox) with blank/false.
 
-- Confirmed historical overwrites: **11** field instances across packets `5` (Abbas Listing Agreement) and `21` (Yahoo test).
-- At-risk (still holding prior `NA`/`0`/`field_default`, not yet reopened): **32** instances.
-- Data repair for the 11 confirmed rows is **pending** and must not run until containment is deployed to the environment linked to `harbaugh-forms-dev`.
-- **Do not open existing packet forms** against `harbaugh-forms-dev` until this containment code is running there.
+- Confirmed historical overwrites: **12** field instances total — **11** text/numeric (packet forms `28` and `61`) plus **1** checkbox (`SELLER_IS_NOT_FOREIGN_PERSON` on packet form `28`).
+- The checkbox was missed in the initial audit because damage was checked→unchecked (`true`→`false` / `value_json.checked=false`), not blank text `NA`/`0`.
+- At-risk text/numeric (still holding prior `NA`/`0`/`field_default`): unchanged by both repairs.
+- One sibling at-risk checkbox instance (packet form `46`, still checked via `field_default_checked`) — **unchanged**.
+- Five post-clear newly empty inserts — **not repaired** and remain empty.
+- **Text/numeric repair on `harbaugh-forms-dev`:** migration `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` restored all **11** rows (unchanged by the later checkbox migration).
+  - Restored values: ten `NA`, one `0` (`CONTRACT_SELLER_EXPENSE_CONTRIBUTION_AMOUNT`).
+  - Protection: `is_override = true`, `source = manual_override`.
+- **Checkbox + Lee Private repair on `harbaugh-forms-dev`:** migration `20260717220000_repair_seller_not_foreign_checkbox.sql`.
+  - Restored Abbas instance `045341ab-61a4-4070-93db-8eb3f0a08f15` to checked (`value=true`, `value_json.checked=true`, `is_override=true`, `source=manual_override`); `CREATE_DATE` preserved.
+  - Created exactly one ACTIVE Lee Private `field_defaults` row (`default_checked=true`) for field `b0548c8b-c4f7-44f9-8328-9c14899e09e7` — restoration of a pre-multi-user Lee preference omitted from `20260715180000` when the catalog UUID was cleared without a Private insert.
+  - Yahoo test user: no Private default for this field. Davey Organization defaults unchanged. Global catalog `default_checked` remains null. Opposite `seller_is_foreign_person` instance untouched.
+  - Rows skipped: **none** (instance preconditions matched; Private insert path ran with prior_active=0).
+- Manual UI verification still recommended for packet forms `28` and `61`.
+- Both repair migration files are applied remotely but **not yet committed/pushed**.
 
 ## Known Issues
 
 - Authenticated browser smoke tests for Copy to Global and default resolution remain.
-- **Historical packet-value damage:** 11 confirmed overwritten instances and 32 at-risk instances remain until an evidence-based forward-only repair runs (after containment deploy). Containment code stops further open-time overwrites.
+- Manual UI confirmation of repaired packet forms `28` and `61` remains (including restored `SELLER_IS_NOT_FOREIGN_PERSON`).
+- At-risk text/numeric instances retain historical values under containment; no bulk rewrite planned.
 - Full My Defaults / Organization Defaults management UI is deferred.
 - Scoped source-mapping / manual-only overrides for Global forms (without editing Global PDF structure) are not implemented.
 - Organization Admin membership/settings UI is missing (membership admin lives under Global Admin `/admin` only).
@@ -217,8 +232,8 @@ After Global catalog defaults were cleared, opening existing packet forms re-res
 
 ## Next Steps
 
-1. Approve, commit, push, and deploy the packet-instance containment fix to the environment linked to `harbaugh-forms-dev` (do not merge to `main` yet).
-2. Only after containment is live: run evidence-based repair for the 11 confirmed overwritten instances (do not bulk-restore Global catalog defaults).
+1. Approve, commit, and push both repair migrations (and status/docs/tests) on this branch (do not merge to `main`).
+2. Manually verify packet forms `28` and `61` in local `npm run dev`, including the restored “seller is not a foreign person” checkbox.
 3. Run authenticated smoke tests for Copy to Global, scoped defaults, and sticky packet open.
 4. After merge of this branch, follow-up branches in order:
    1. My Defaults and Organization Defaults UI for Global forms.
@@ -275,6 +290,31 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Persisted packet field instances are immutable during ordinary view/open; missing instances may be inserted, but existing snapshots change only via explicit edit/refresh.
 
 ## Session History
+
+### 2026-07-17 (checkbox + Lee Private restoration)
+
+- Work completed:
+  - Identified 12th incident damage: Abbas `SELLER_IS_NOT_FOREIGN_PERSON` checkbox overwritten to false (missed earlier due to false/null semantics).
+  - Applied forward-only `20260717220000_repair_seller_not_foreign_checkbox.sql`: restored checked override on instance `045341ab-…`; inserted Lee Private `default_checked=true` omitted from scoped migration.
+  - Verified Yahoo has no Private default; Davey org defaults fingerprint unchanged; Global catalog literals remain 0; sibling + opposite + prior 11 fingerprints unchanged.
+  - Added regression tests for Private resolution, Yahoo exclusion, listing-detail override precedence, Copy-to-Global exclusion, and override stickiness on open/refresh.
+- Unresolved:
+  - Commit/push of both repair migrations and related docs/tests.
+  - Manual UI verification of packet forms `28` and `61`.
+- Next action:
+  - Approve commit/push; smoke-test repaired checkbox + defaults locally.
+
+### 2026-07-17 (evidence-based packet-instance repair)
+
+- Work completed:
+  - Re-verified all 11 damaged instances still matched the incident blank/`empty` state.
+  - Applied forward-only migration restoring 11 historical values (10× `NA`, 1× `0`) with `is_override = true`.
+  - Confirmed 32 at-risk rows, 5 post-clear empties, Global catalog clears, scoped defaults, and mappings unchanged.
+- Unresolved:
+  - Commit/push of the repair migration.
+  - Manual UI verification of packet forms `28` and `61`.
+- Next action:
+  - Approve commit/push; smoke-test repaired forms locally.
 
 ### 2026-07-17 (packet-instance containment)
 
