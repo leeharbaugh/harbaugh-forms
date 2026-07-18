@@ -7,9 +7,13 @@ import {
   canDeleteForm,
   canEditCollection,
   canEditForm,
+  canManageOrganizationDefaults,
+  canManageOwnPrivateDefaults,
   canMapFormFields,
+  canOpenManageDefaults,
   canViewCollection,
   canViewForm,
+  canViewInheritedOrganizationDefaults,
   nextPrivateCloneCollectionName,
   type LibraryActor,
 } from "./library-permissions.ts";
@@ -95,6 +99,35 @@ describe("form library permissions", () => {
     assert.equal(canEditForm(admin, globalForm), true);
     assert.equal(canMapFormFields(admin, globalForm), true);
     assert.equal(canDeleteForm(admin, globalForm), true);
+  });
+
+  it("lets any viewer open Manage Defaults on Global forms without mapping rights", () => {
+    assert.equal(canOpenManageDefaults(userA, globalForm), true);
+    assert.equal(canMapFormFields(userA, globalForm), false);
+    assert.equal(canOpenManageDefaults(userA, privateFormA), false);
+    assert.equal(canOpenManageDefaults(admin, globalForm), true);
+  });
+});
+
+describe("scoped field-defaults permissions", () => {
+  it("allows every authenticated user to manage own Private defaults", () => {
+    assert.equal(canManageOwnPrivateDefaults(userA), true);
+    assert.equal(canManageOwnPrivateDefaults(admin), true);
+    assert.equal(canManageOwnPrivateDefaults(null), false);
+  });
+
+  it("allows members to view inherited Organization defaults for their primary org", () => {
+    assert.equal(canViewInheritedOrganizationDefaults(userA, "org-1"), true);
+    assert.equal(canViewInheritedOrganizationDefaults(outsider, "org-1"), false);
+    assert.equal(canViewInheritedOrganizationDefaults(userA, null), false);
+  });
+
+  it("allows ORG_ADMIN and app admin to manage Organization defaults for that org only", () => {
+    assert.equal(canManageOrganizationDefaults(orgAdminA, "org-1"), true);
+    assert.equal(canManageOrganizationDefaults(orgAdminA, "org-2"), false);
+    assert.equal(canManageOrganizationDefaults(userA, "org-1"), false);
+    assert.equal(canManageOrganizationDefaults(admin, "org-1"), true);
+    assert.equal(canManageOrganizationDefaults(admin, "org-2"), true);
   });
 });
 

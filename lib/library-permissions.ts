@@ -184,6 +184,67 @@ export function canEditField(
   return canEditForm(actor, field);
 }
 
+export const FIELD_DEFAULTS_PERMISSION_DENIED =
+  "You do not have permission to manage these defaults.";
+
+/** Any authenticated user who can view a Global form may open Manage Defaults. */
+export function canOpenManageDefaults(
+  actor: LibraryActor | null | undefined,
+  form: LibraryEntityRef | null | undefined,
+): boolean {
+  if (!actor || !form) {
+    return false;
+  }
+  if (form.scope !== "GLOBAL") {
+    return false;
+  }
+  if (form.status != null && form.status !== "ACTIVE") {
+    return false;
+  }
+  return canViewForm(actor, form);
+}
+
+/** Authenticated users always manage only their own Private defaults. */
+export function canManageOwnPrivateDefaults(
+  actor: LibraryActor | null | undefined,
+): boolean {
+  return Boolean(actor?.userId);
+}
+
+/**
+ * View inherited Organization defaults for the primary org when the user has
+ * an ACTIVE membership there (or is app admin).
+ */
+export function canViewInheritedOrganizationDefaults(
+  actor: LibraryActor | null | undefined,
+  primaryOrganizationId: string | null | undefined,
+): boolean {
+  if (!actor || !primaryOrganizationId) {
+    return false;
+  }
+  if (actor.isActiveAdmin) {
+    return true;
+  }
+  return isMemberOf(actor, primaryOrganizationId);
+}
+
+/**
+ * ORG_ADMIN of the primary organization, or active Global (app) admin.
+ * Does not broaden beyond the supplied organization id.
+ */
+export function canManageOrganizationDefaults(
+  actor: LibraryActor | null | undefined,
+  organizationId: string | null | undefined,
+): boolean {
+  if (!actor || !organizationId) {
+    return false;
+  }
+  if (actor.isActiveAdmin) {
+    return true;
+  }
+  return isOrgAdminOf(actor, organizationId);
+}
+
 export function nextPrivateCloneCollectionName(
   sourceName: string,
   existingActiveNames: string[],

@@ -112,7 +112,7 @@ Default values represent an individual agent’s preferences or a brokerage’s 
 * Personal or brokerage-specific literal values must not be stored on Global forms, fields, or mappings.
 * Explicit packet values and authoritative transaction data take precedence over defaults.
 * A dedicated `field_defaults` table stores scoped preference values.
-* Full user-facing management of My Defaults and Organization Defaults may be implemented separately.
+* Users manage My Defaults and Organization Defaults from Global forms via `/forms/[id]/defaults` without modifying Global catalog fields, mappings, or coordinates.
 
 **Related files or migrations:**
 
@@ -121,8 +121,55 @@ Default values represent an individual agent’s preferences or a brokerage’s 
 * `supabase/migrations/20260717180000_clear_all_global_catalog_defaults.sql`
 * `lib/types/field-default.ts`
 * `lib/field-defaults.ts`
+* `lib/types/field-defaults-manage.ts`
+* `lib/field-defaults-editor.ts`
+* `lib/field-defaults-actions.ts`
 * Field-default resolution logic
 * Packet field-resolution logic
+
+---
+
+## Manage Defaults for Global Forms
+
+**Date:** 2026-07-17
+
+**Decision:**
+Authenticated users configure preference defaults for Global forms through **Manage Defaults** (`/forms/[id]/defaults`). Writes are field-level `field_defaults` rows only (`PRIVATE` or `ORGANIZATION`). Normal v1 saves set `form_id` and `form_field_mapping_id` to null. Explicit blank Private defaults (`default_value = ''`) override Organization values. Organization Defaults target the user’s active `primary_organization_id` only. Soft-delete returns a field to inheritance. The UI never mutates Global catalog preference columns, PDF coordinates, or mappings.
+
+**Reason:**
+Agents need brokerage and personal preferences on statewide Global templates without copying forms or publishing preferences into the Global catalog.
+
+**Consequences:**
+
+* **My Defaults** is available to every authenticated viewer of a Global form.
+* **Organization Defaults** is editable only by ACTIVE `ORG_ADMIN` of the primary organization or an active Global Admin; regular members may view inherited Organization values in My Defaults.
+* Stale or missing primary organization yields no Organization fallback/edit and a clear warning — no silent org selection.
+* Per-field Save / Remove Default; no batch save or autosave in v1.
+* Shared fields warn that field-level defaults apply on every form using the field.
+* Unmapped orphan defaults (no ACTIVE mappings on any form) appear in an account-wide section so they can be reviewed or removed.
+* Form-specific/mapping-specific defaults remain supported by the resolver but are not exposed for new editing in this version.
+* Packet field instances are not modified when defaults change.
+
+Durable rules established by this feature:
+
+* Global forms remain structurally shared; Manage Defaults never edits Global PDF structure, field coordinates, catalog fields, or catalog mappings.
+* Any authenticated user may create field-level **Private** defaults for fields on Global forms.
+* **Organization** defaults may be created only by an Organization Admin (or Global Admin) for their authorized organization, and only through a valid active primary-organization membership — never a silent fallback to another organization.
+* Private defaults override Organization defaults; an explicit Private blank (`default_value = ''`) overrides an Organization value.
+* Defaults resolve for the packet owner / intended business user, never for the viewing administrator.
+* Private default ownership is always derived from the authenticated user on the server; a client-supplied owner ID is never trusted.
+* Text zero (`"0"`) and checkbox false are meaningful stored values and must never be treated as missing or coerced to inherit.
+* Removing a scoped default is a soft removal that returns the field to inheritance; it never mutates the Global catalog.
+* In this version existing defaults are field-level (`form_id`/`form_field_mapping_id` null); scoped source-mapping / manual-only overrides remain deferred.
+
+**Related files or migrations:**
+
+* `app/forms/[id]/defaults/page.tsx`
+* `components/forms/form-defaults-page.tsx`
+* `lib/types/field-defaults-manage.ts`
+* `lib/field-defaults-editor.ts`
+* `lib/field-defaults-actions.ts`
+* `lib/library-permissions.ts`
 
 ---
 

@@ -13,20 +13,21 @@ Harbaugh Forms is a Texas real estate forms application built with:
 ## Git State
 
 - Main branch commit:
-  `5f23a3e9af08d0d6c591b1cd914cdc3631a096db`
+  `ce8b59af4ca6281472126c8b089019e154fb2e71`
 
 - Active feature branch:
-  `packet-form-lifecycle-locking` (from `origin/main`)
+  `manage-scoped-field-defaults` (from `origin/main`)
 
-- Previous feature branch (merged, retained):
-  `admin-copy-user-form-to-global` @ `01d6780`
+- Retained feature branches:
+  - `packet-form-lifecycle-locking` @ `a38729c` (merged to main)
+  - `admin-copy-user-form-to-global` @ `01d6780`
 
 - Corrective migrations on `harbaugh-forms-dev`:
   - `20260717120000_clear_global_money_zero_defaults.sql` (applied)
   - `20260717180000_clear_all_global_catalog_defaults.sql` (applied)
   - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied)
   - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied)
-  - `20260717230000_packet_form_lifecycle_locking.sql` (apply with this branch)
+  - `20260717230000_packet_form_lifecycle_locking.sql` (applied)
 
 - Restore branches:
   - `pre-ui-refresh` → `f422fce79227220377729654824930c86082107e`
@@ -48,6 +49,8 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - Generated Packets
 - Organization and membership administration
 - Organization-scoped collections
+- Packet form document lifecycle locking (Draft / Final / Signed / Void)
+- Manage Defaults for Global forms (My Defaults / Organization Defaults) — in progress on branch
 - Private and organization collection copying
 - Application-admin management
 - Soft-delete patterns
@@ -168,74 +171,87 @@ Before applying migrations from a different development machine, compare local a
 
 The active feature is:
 
-**Admin Copy to Global Library with scoped field defaults**
+**Manage Defaults for Global forms (My Defaults / Organization Defaults)**
 
-Implemented on branch:
+- Branch: `manage-scoped-field-defaults` (from `origin/main` @ `ce8b59a`).
+- Feature status: implemented, committed, and pushed to
+  `origin/manage-scoped-field-defaults`. **Not merged.** Merge is blocked until the
+  full authenticated edit/isolation/permissions smoke test passes.
 
-`admin-copy-user-form-to-global`
+Route and entry point:
 
-Current behavior:
+- New route `/forms/[id]/defaults`.
+- Global Forms list exposes a **Manage Defaults** action for any viewer who can see
+  the Global form (`canOpenManageDefaults`).
 
-- Admins see `Owned by [User Name]` for another user's private form.
-- Active application admins may copy an eligible private form to the Global library.
-- The source private form remains unchanged.
-- The Global copy receives its own form record, PDF object, mappings, fields, and traceability.
-- Preference defaults are excluded from the Global copy.
-- Default values use `field_defaults` with only `PRIVATE` or `ORGANIZATION` scope.
-- Private defaults override Organization defaults.
-- The packet owner determines which defaults resolve, not the viewing admin.
-- Global catalog preference literals are cleared; scoped Private/Organization `field_defaults` remain.
-- Lee’s `CONTRACT_PROPERTY_AS_IS` Private default is preserved and notes finalized.
-- Ordinary packet-form open/view/load inserts missing field instances only (`ensure_missing`) and does not UPDATE existing snapshots. Explicit editor “Refresh values” uses `refresh_non_overrides`.
+Behavior implemented:
 
-This branch must not be merged until authenticated smoke tests complete and pass.
+- Writes go only to scoped `field_defaults` (PRIVATE / ORGANIZATION), field-level
+  (`form_id IS NULL`, `form_field_mapping_id IS NULL`).
+- My Defaults available to every authenticated user; Organization Defaults editing
+  limited to `ORG_ADMIN` of the primary org (or Global Admin); members see inherited
+  Organization values read-only.
+- Organization Defaults use the active primary organization; a missing/stale primary
+  shows a warning and never silently falls back to another organization.
+- Private beats Organization; explicit Private blank overrides an Organization value;
+  text zero and checkbox false are preserved as meaningful values.
+- Checkbox tri-state (Inherit / Checked / Unchecked), text Inherit / Use value /
+  Use blank, per-field Save and soft Remove (return to inherited), shared-field
+  warnings, and an unmapped-orphan-defaults section.
+- Does **not** modify Global catalog fields, `default_value`/`default_checked`,
+  mappings, PDF coordinates, or persisted packet snapshots.
 
-### Confirmed packet-value incident (2026-07-17)
+Verification this session:
 
-After Global catalog defaults were cleared, opening existing packet forms re-resolved non-override `field_instances` and overwrote stored values (including `NA` and a checked checkbox) with blank/false.
+- After a clean local development-server restart, the Manage Defaults page displays
+  Lee's existing Private defaults correctly (text, number, and checkbox).
+- No schema migration was required; `field_defaults` already exists on
+  `harbaugh-forms-dev` (migration `20260715180000_field_defaults_scoped.sql`, already
+  in `main`). No migration was added on this branch.
+- Automated tests, ESLint (changed files), `tsc --noEmit`, and `npm run build` all
+  pass (see Session History).
+- Database counts unchanged: Lee Private 56 ACTIVE, Yahoo Private 0, Davey
+  Organization 4 ACTIVE, Global catalog preference literals 0.
 
-- Confirmed historical overwrites: **12** field instances total — **11** text/numeric (packet forms `28` and `61`) plus **1** checkbox (`SELLER_IS_NOT_FOREIGN_PERSON` on packet form `28`).
-- The checkbox was missed in the initial audit because damage was checked→unchecked (`true`→`false` / `value_json.checked=false`), not blank text `NA`/`0`.
-- At-risk text/numeric (still holding prior `NA`/`0`/`field_default`): unchanged by both repairs.
-- One sibling at-risk checkbox instance (packet form `46`, still checked via `field_default_checked`) — **unchanged**.
-- Five post-clear newly empty inserts — **not repaired** and remain empty.
-- **Text/numeric repair on `harbaugh-forms-dev`:** migration `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` restored all **11** rows (unchanged by the later checkbox migration).
-  - Restored values: ten `NA`, one `0` (`CONTRACT_SELLER_EXPENSE_CONTRIBUTION_AMOUNT`).
-  - Protection: `is_override = true`, `source = manual_override`.
-- **Checkbox + Lee Private repair on `harbaugh-forms-dev`:** migration `20260717220000_repair_seller_not_foreign_checkbox.sql`.
-  - Restored Abbas instance `045341ab-61a4-4070-93db-8eb3f0a08f15` to checked (`value=true`, `value_json.checked=true`, `is_override=true`, `source=manual_override`); `CREATE_DATE` preserved.
-  - Created exactly one ACTIVE Lee Private `field_defaults` row (`default_checked=true`) for field `b0548c8b-c4f7-44f9-8328-9c14899e09e7` — restoration of a pre-multi-user Lee preference omitted from `20260715180000` when the catalog UUID was cleared without a Private insert.
-  - Yahoo test user: no Private default for this field. Davey Organization defaults unchanged. Global catalog `default_checked` remains null. Opposite `seller_is_foreign_person` instance untouched.
-  - Rows skipped: **none** (instance preconditions matched; Private insert path ran with prior_active=0).
-- Manual UI verification still recommended for packet forms `28` and `61`.
-- Both repair migration files are applied remotely but **not yet committed/pushed**.
+**Outstanding before merge:** full authenticated edit/isolation/permissions smoke
+test (below). Do not merge until it passes. Do not claim it has passed.
+
+Deferred (not in this version):
+
+- Form-specific (per-form) defaults editing UI.
+- Multi-organization picker for Organization Defaults.
+- Read-only PDF field highlighting.
+- Batch save / autosave.
+- Defaults for Private forms.
+- Dedicated account-level hub for unmapped orphan defaults.
+- Scoped source-mapping / manual-only overrides for Global forms.
+
+## Next Steps
+
+1. Approve, commit, and push `manage-scoped-field-defaults` after smoke tests.
+2. Follow-up branches in priority order:
+   1. Form-specific defaults editing (resolver already supports it).
+   2. Account-level hub for unmapped orphan defaults (reduce per-form redundancy).
+   3. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
+   4. Admin ownership demarcation and saved Include user-owned filters.
+   5. Refresh Values before/after field-diff preview.
+   6. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
+   7. Authentisign integration (may set `SIGNED`).
+   8. Multi-organization picker for Organization Defaults.
 
 ## Known Issues
 
-- Authenticated browser smoke tests for Copy to Global and default resolution remain.
-- Manual UI confirmation of repaired packet forms `28` and `61` remains (including restored `SELLER_IS_NOT_FOREIGN_PERSON`).
-- At-risk text/numeric instances retain historical values under containment; no bulk rewrite planned.
-- Full My Defaults / Organization Defaults management UI is deferred.
-- Scoped source-mapping / manual-only overrides for Global forms (without editing Global PDF structure) are not implemented.
+- Authenticated browser smoke tests for Manage Defaults remain.
+- At-risk historical packet text/numeric instances retain values under containment; no bulk rewrite planned.
+- Form-specific defaults editing is deferred (resolver already supports it).
+- Unmapped orphan defaults appear on each Global form defaults page (account-wide); a dedicated hub would reduce redundancy.
+- Scoped source-mapping / manual-only overrides for Global forms are not implemented.
 - Organization Admin membership/settings UI is missing (membership admin lives under Global Admin `/admin` only).
 - Multi-organization users require a valid `profiles.primary_organization_id` with ACTIVE membership to inherit Organization defaults.
 - `listing-packet-kind.test.ts` has a pre-existing bare-Node `@/lib` import-resolution problem.
 - A pre-existing Next.js hydration warning has appeared around `AdminSectionNav` and the packet page.
 - Specialized PDF editor dialogs do not yet have the full focus-trap behavior of `ConfirmDialog` and `InfoDialog`.
-- `pdf-placement-form-fields.tsx` may contain line-ending churn that should be minimized before merge.
 - Repo-wide `npm run lint` currently fails because ESLint scans `.next` build artifacts; targeted lint of changed source files is clean.
-
-## Next Steps
-
-1. Approve, commit, and push `packet-form-lifecycle-locking` (do not merge until smoke tests pass).
-2. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior.
-3. Follow-up branches in priority order:
-   1. My Defaults and Organization Defaults UI for Global forms.
-   2. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
-   3. Admin ownership demarcation and saved Include user-owned filters.
-   4. Refresh Values before/after field-diff preview.
-   5. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
-   6. Authentisign integration (may set `SIGNED`).
 
 ## Development Machine Checklist
 
@@ -243,8 +259,8 @@ Before making changes:
 
 1. Clone or pull the GitHub repository.
 2. Run `git fetch --all --prune`.
-3. Check out `admin-copy-user-form-to-global`.
-4. Confirm the branch includes the scoped-default corrective commit.
+3. Check out `manage-scoped-field-defaults`.
+4. Confirm the branch is based on latest `origin/main` (`ce8b59a` or newer).
 5. Run `git status` and confirm the working tree is clean.
 6. Use the Node.js version declared by the repository, such as `.nvmrc` or `package.json` `engines`.
 7. Use the package manager indicated by the repository lockfile and run its clean-install command.
@@ -286,6 +302,50 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Persisted packet field instances are immutable during ordinary view/open; missing instances may be inserted, but existing snapshots change only via explicit edit/refresh.
 
 ## Session History
+
+### 2026-07-17 (manage-scoped-field-defaults wrap-up)
+
+- Branch `manage-scoped-field-defaults` from `origin/main` @ `ce8b59a`.
+- Feature: Manage Defaults for Global forms (My Defaults / Organization Defaults).
+  - Route `/forms/[id]/defaults`; Forms-list **Manage Defaults** entry via
+    `canOpenManageDefaults`.
+  - Field-level scoped writes only (`form_id`/`form_field_mapping_id` null);
+    Private beats Organization; explicit Private blank override; text zero and
+    checkbox false preserved; soft remove returns to inheritance.
+  - Organization Defaults require an ACTIVE primary-organization membership; no
+    silent fallback. Global catalog fields/mappings/coordinates and packet
+    snapshots untouched.
+- Diagnosis follow-up: after a clean local dev-server restart, Lee's existing
+  Private defaults display correctly on applicable Global forms (text, number,
+  checkbox). End-to-end trace (DB → RLS → loader → DTO → initial UI state) verified
+  under Lee's authenticated session.
+- No schema migration required or added (`field_defaults` already in `main`).
+- Files changed (feature/tests/docs/config only):
+  - `app/forms/[id]/defaults/page.tsx`
+  - `components/forms/form-defaults-page.tsx`
+  - `components/forms/forms-page.tsx`
+  - `lib/field-defaults-actions.ts`
+  - `lib/field-defaults-editor.ts`
+  - `lib/library-permissions.ts`
+  - `lib/library-permissions.test.ts`
+  - `lib/types/field-defaults-manage.ts`
+  - `lib/types/field-defaults-manage.test.ts`
+  - `package.json`, `tsconfig.json`
+  - `project_status.md`, `decisions.md`
+- Validation:
+  - ESLint (changed TS/TSX): pass.
+  - `npm run test:field-defaults-manage`, `test:field-defaults`,
+    `test:packet-form-lifecycle`, `test:field-instance-sync`,
+    `test:form-copy-global`: pass.
+  - `npx tsc --noEmit`: pass. `npm run build`: pass.
+- Database (unchanged; no test/diagnostic records created):
+  - Lee Private 56 ACTIVE, Yahoo (`leeharbaugh@yahoo.com`) Private 0,
+    Davey Organization 4 ACTIVE, non-Lee Private 0, Global catalog literals 0.
+- Unresolved / merge blocker:
+  - Full authenticated edit/isolation/permissions smoke test not yet performed.
+    Do not merge until it passes.
+- Next action:
+  - Run the authenticated smoke-test checklist; only then consider merge.
 
 ### 2026-07-17 (packet-form lifecycle locking)
 

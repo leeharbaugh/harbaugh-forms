@@ -45,6 +45,7 @@ import {
   canDeleteForm,
   canEditForm,
   canMapFormFields,
+  canOpenManageDefaults,
   LIBRARY_PERMISSION_DENIED,
 } from "@/lib/library-permissions";
 import { createClient } from "@/lib/supabase/client";
@@ -78,9 +79,9 @@ const FORM_TABLE_COLUMNS: ResizableDataTableColumn[] = [
   {
     id: "actions",
     label: "Actions",
-    defaultWidth: 360,
-    minWidth: 280,
-    maxWidth: 480,
+    defaultWidth: 420,
+    minWidth: 320,
+    maxWidth: 560,
     isActions: true,
   },
 ];
@@ -765,6 +766,13 @@ export function FormsPage() {
                     </ResizableDataTableCell>
                     <ResizableDataTableActionsCell>
                       <ListRowActions>
+                        {canOpenManageDefaults(actor, template) ? (
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={`/forms/${template.id}/defaults`}>
+                              Manage Defaults
+                            </Link>
+                          </Button>
+                        ) : null}
                         {canMapFormFields(actor, template) ? (
                           <Button variant="outline" size="sm" asChild>
                             <Link href={`/forms/${template.id}/editor`}>
