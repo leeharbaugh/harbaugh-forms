@@ -108,6 +108,22 @@ describe("canOfferCopyToGlobalLibrary", () => {
     );
   });
 
+  it("denies ORG_ADMIN without application Admin (isActiveAdmin false)", () => {
+    // Organization Admin membership alone never sets isActiveAdmin; only
+    // profiles.app_role === ADMIN does. Server copyFormToGlobalLibrary also
+    // calls requireAppAdmin(), which rejects app_role !== ADMIN.
+    assert.equal(
+      canOfferCopyToGlobalLibrary({
+        isActiveAdmin: false,
+        scope: "PRIVATE",
+        status: "ACTIVE",
+        ownerUserId: "owner",
+        sourceStoragePath: "users/owner/forms/1/a.pdf",
+      }),
+      false,
+    );
+  });
+
   it("denies standard users, global forms, and missing PDF", () => {
     assert.equal(
       canOfferCopyToGlobalLibrary({

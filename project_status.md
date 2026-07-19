@@ -12,26 +12,27 @@ Harbaugh Forms is a Texas real estate forms application built with:
 
 ## Git State
 
-- Main branch commit:
-  `b1264c9ea02b61d6894693c32ec2be1aa2d21168`
+- `origin/main` tip:
+  `ce8b59a` — includes merge of `admin-copy-user-form-to-global` (`5f23a3e`) and subsequent merge of `packet-form-lifecycle-locking` (`ce8b59a`)
 
 - Active feature branch:
   `admin-copy-user-form-to-global`
 
-- Feature branch tip commit:
-  `01d6780` — `Repair packet values lost during catalog cleanup`
-  (containment landed in `d450772`; both repair migrations `20260717210000` and `20260717220000` are now committed and pushed)
+- Feature branch tip (pre-review):
+  `9dab112` — `Sync project status for committed packet-snapshot repair`
+  (feature code through `01d6780` is already on `origin/main`; this branch retained only the post-merge docs sync plus review residuals)
 
 - Feature branch remote:
-  `origin/admin-copy-user-form-to-global` (up to date with local tip `01d6780`)
+  `origin/admin-copy-user-form-to-global`
 
-- Corrective migrations on `harbaugh-forms-dev`:
+- Corrective / related migrations on `harbaugh-forms-dev`:
   - `20260717120000_clear_global_money_zero_defaults.sql` (applied)
   - `20260717180000_clear_all_global_catalog_defaults.sql` (applied)
-  - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied; committed)
-  - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied; committed)
+  - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied; on this branch and main)
+  - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied; on this branch and main)
+  - `20260717230000_packet_form_lifecycle_locking.sql` (applied on remote; exact file restored onto this branch from `origin/main` during merge review — belongs to lifecycle-locking, not this feature)
 
-- Containment is active in local `npm run dev` on `01d6780`. Do not merge to `main` yet.
+- Authenticated smoke tests on `harbaugh-forms-dev` completed 2026-07-19 (see below). Feature code is already merged to `origin/main`; residual branch work is documentation, one authorization test, and migration-file sync.
 
 - Restore branches:
   - `pre-ui-refresh` → `f422fce79227220377729654824930c86082107e`
@@ -194,7 +195,7 @@ Current behavior:
 - Lee’s `CONTRACT_PROPERTY_AS_IS` Private default is preserved and notes finalized.
 - Ordinary packet-form open/view/load inserts missing field instances only (`ensure_missing`) and does not UPDATE existing snapshots. Explicit editor “Refresh values” uses `refresh_non_overrides`.
 
-This branch must not be merged until authenticated smoke tests complete and pass.
+Authenticated smoke tests completed 2026-07-19 on `harbaugh-forms-dev`. Feature code through `01d6780` is already on `origin/main` (`5f23a3e`). Residual branch commits are documentation, an Org-Admin authorization unit test, and restoring `20260717230000` for local CLI parity — treat any further PR as docs/test/sync, not a re-landing of the feature.
 
 ### Confirmed packet-value incident (2026-07-17)
 
@@ -214,12 +215,28 @@ After Global catalog defaults were cleared, opening existing packet forms re-res
   - Yahoo test user: no Private default for this field. Davey Organization defaults unchanged. Global catalog `default_checked` remains null. Opposite `seller_is_foreign_person` instance untouched.
   - Rows skipped: **none** (instance preconditions matched; Private insert path ran with prior_active=0).
 - Manual UI verification still recommended for packet forms `28` and `61`.
-- Both repair migration files are applied remotely **and are now committed and pushed** on `admin-copy-user-form-to-global` (tip `01d6780`). Authenticated smoke tests remain outstanding; the branch must not merge yet.
+- Both repair migration files are applied remotely **and are now committed and pushed** on `admin-copy-user-form-to-global` (through `01d6780`) and already present on `origin/main` via merge `5f23a3e`.
+
+### Authenticated smoke-test results (2026-07-19, `harbaugh-forms-dev`)
+
+Driven through the Cursor browser as application Admin `lee@leeharbaugh.com` (profile `e26c8f57`, `app_role=ADMIN`, also ORG_ADMIN of "Davey Goosmann Realty"). The other dev account is `leeharbaugh@yahoo.com` (profile `8d10af59`, `app_role=USER`, MEMBER of Davey Goosmann). Both profiles display "Lee Harbaugh". DB-level evidence gathered read-only via the project's own admin Supabase client.
+
+- **Test 1 — packet form 28 (Abbas listing, packet #5, owner = admin) — PASS.** UI + DB show 7 restored `NA` text overrides (`LISTING_EXCLUSIONS`, `OTHER_FEES_REIMBURSABLE_EXPENSES`, `KNOWN_FINANCIAL_OBLIGATIONS_EXCEPTION`, `KNOWN_LIENS_EXCEPTION`, `EMPLOYER_RELOCATION_COMPANY`, `KNOWN_DISTRICTS`, `SPECIAL_PROVISIONS`) and `SELLER_IS_NOT_FOREIGN_PERSON` = checked (`value=true`, `value_json.checked=true`), opposite `seller_is_foreign_person` = unchecked. All repaired rows `is_override=true`, `source=manual_override`.
+- **Test 2 — packet form 61 (contract, packet #21, owner = Yahoo user) — PASS.** UI + DB show `CONTRACT_PROPERTY_EXCLUSIONS`, `CONTRACT_BROKER_DISCLOSURE_TEXT`, `CONTRACT_SPECIAL_PROVISIONS` = `NA` and `CONTRACT_SELLER_EXPENSE_CONTRIBUTION_AMOUNT` = `0`, all `is_override=true`, `source=manual_override`. (7 `NA` on 28 + 3 `NA` on 61 = 10 `NA`, plus 1 `0` = 11 rows, matching migration `20260717210000`.)
+- **Test 3 — sticky ordinary open — PASS.** Reopening forms 28 and 61 left all values/override flags identical. DB `update_date` on every repaired row is still `2026-07-17…` (migration time); the 2026-07-19 reopens did not bump it.
+- **Test 4 — explicit "Refresh values" — PASS.** After clicking Refresh on form 28, all overrides preserved and "Save changes" stayed disabled (no non-override drift); repaired rows' `update_date` unchanged at DB level.
+- **Test 5 — private vs organization default resolution — PASS.** On admin-owned form 28 diagnostics: `FINANCING_CONVENTIONAL`/`KEYBOX_AUTHORIZED_YES`/`MLS_FILE_LISTING` → `private_default`; `PAYMENT_COUNTY`="Dallas/Tarrant" and `PROTECTION_PERIOD_DAYS`=30 → `private_default`; `SCHEDULING_COMPANY`="Broker Bay" → `organization_default` (Davey Goosmann). Private-over-org precedence for a single field is covered by `field-defaults.test.ts` (`resolveScopedPreferenceDefault`); no field in dev carries both scopes to show it live.
+- **Test 6 — packet-owner resolution when admin views another user's packet — PASS.** On Yahoo-owned form 61 diagnostics, `CONTRACT_BUYER_POSSESSION_AT_CLOSING`, `CONTRACT_PROPERTY_AS_IS`, `CONTRACT_WATER_DISCLOSURE_NOT_REQUIRED` resolve to `false` / `empty` even though the *viewing admin* holds PRIVATE `default_checked=true` for exactly those keys. Resolution follows `context.actingUserId = packets.owner_user_id` (code invariant in `lib/field-resolver.ts`), so the admin's defaults do not leak.
+- **Test 7 — Copy to Global Library — PASS.** Non-mutating preview on private form #21 (CondoListingAddendum, owner = Yahoo user): "1 global field(s) reused; 0 created", "Preference defaults will not be copied", "original private form owned by Lee Harbaugh will remain unchanged". A prior real copy exists as end-to-end evidence: form #23 (GLOBAL, ACTIVE) has `copied_from_form_id=21`, `copied_from_owner_user_id=8d10af59`, `copied_by_user_id=e26c8f57`, `copied_to_global_at=2026-07-17T17:01:56`, storage `global/forms/23/…`; source #21 remains PRIVATE/ACTIVE with private storage path and pre-copy `update_date` (2026-07-14) — source never mutated; copy is independent.
+- **Test 8 — ownership presentation — PASS.** Admin sees an "Owned by Lee Harbaugh" badge (not a scope badge) plus "Copy to Global Library" on the Yahoo user's private form #21; all other rows show the "Global" scope badge.
+- **Test 9 — authorization for Copy to Global — PASS (admin + user); org-admin code + unit test.** App Admin: Copy button + working dialog confirmed. Regular USER (`leeharbaugh@yahoo.com`) confirmed in-app: no "Admin" nav, no "Copy to Global Library" button anywhere, no Map/Edit/Delete on Global forms, and own private form #21 renders a plain `Private` scope badge (vs the admin's "Owned by Lee Harbaugh" badge for the same row). Org-Admin-only cannot be isolated in the UI because the sole ORG_ADMIN is also the app Admin; server `requireAppAdmin()` rejects `app_role !== ADMIN`, and unit test `canOfferCopyToGlobalLibrary` with `isActiveAdmin: false` covers the UI gate. Click-test optional / non-blocking.
+
+**Overall: all eight functional areas verified; Copy-to-Global authorization confirmed for Admin and User in-app and for Org-Admin by code. No source-data mutations were performed during testing (only a non-mutating copy preview and read-only DB inspection via the project's admin client).**
 
 ## Known Issues
 
-- Authenticated browser smoke tests for Copy to Global and default resolution remain.
-- Manual UI confirmation of repaired packet forms `28` and `61` remains (including restored `SELLER_IS_NOT_FOREIGN_PERSON`).
+- Authenticated browser smoke tests completed 2026-07-19 (see "Authenticated smoke-test results" above); all eight functional areas pass. Org-Admin-only Copy authorization is code-verified and covered by an explicit unit test (`canOfferCopyToGlobalLibrary` with `isActiveAdmin: false`); click-test remains optional because no org-admin-without-app-admin account exists in dev.
+- `supabase migration list` previously showed remote-only `20260717230000` on this feature branch because the file lived on `packet-form-lifecycle-locking` / `origin/main` (`a38729c`). Exact file restored onto this branch from `origin/main` during merge review (blob `cb8ccc3…`); local and remote migration lists now both include `20260717230000`. Do not repair/rewrite migration history.
 - At-risk text/numeric instances retain historical values under containment; no bulk rewrite planned.
 - Full My Defaults / Organization Defaults management UI is deferred.
 - Scoped source-mapping / manual-only overrides for Global forms (without editing Global PDF structure) are not implemented.
@@ -230,14 +247,12 @@ After Global catalog defaults were cleared, opening existing packet forms re-res
 - Specialized PDF editor dialogs do not yet have the full focus-trap behavior of `ConfirmDialog` and `InfoDialog`.
 - `pdf-placement-form-fields.tsx` may contain line-ending churn that should be minimized before merge.
 - Repo-wide `npm run lint` currently fails because ESLint scans `.next` build artifacts; targeted lint of changed source files is clean.
-- `supabase migration list` shows a remote-only migration `20260717230000` on `harbaugh-forms-dev` with no local file (`local:""`). It was applied from another source/session and is outside this repair scope; do not repair/rewrite migration history — reconcile by pulling/committing that migration file separately before any future `supabase db push`.
 
 ## Next Steps
 
-1. Both repair migrations (with status/docs/tests) are committed and pushed on this branch (`01d6780`); do not merge to `main`.
-2. Manually verify packet forms `28` and `61` in local `npm run dev`, including the restored “seller is not a foreign person” checkbox.
-3. Run authenticated smoke tests for Copy to Global, scoped defaults, and sticky packet open.
-4. After merge of this branch, follow-up branches in order:
+1. Feature code through `01d6780` is already on `origin/main` (`5f23a3e`). Residual feature-branch commits are smoke-test documentation, an Org-Admin authorization unit test, and restoring `20260717230000` for local CLI parity.
+2. Human merge of residuals (if desired) should be treated as a docs/test/sync PR — not a re-landing of the feature.
+3. After residuals land, follow-up branches in order:
    1. My Defaults and Organization Defaults UI for Global forms.
    2. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
    3. Admin ownership demarcation and saved Include user-owned filters for packets, forms, collections, properties, and contacts.
