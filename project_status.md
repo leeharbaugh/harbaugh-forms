@@ -19,19 +19,19 @@ Harbaugh Forms is a Texas real estate forms application built with:
   `admin-copy-user-form-to-global`
 
 - Feature branch tip commit:
-  `d450772` — `Preserve packet field snapshots during ordinary open`
-  (plus uncommitted repair migrations `20260717210000` and `20260717220000` awaiting approval)
+  `01d6780` — `Repair packet values lost during catalog cleanup`
+  (containment landed in `d450772`; both repair migrations `20260717210000` and `20260717220000` are now committed and pushed)
 
 - Feature branch remote:
-  `origin/admin-copy-user-form-to-global`
+  `origin/admin-copy-user-form-to-global` (up to date with local tip `01d6780`)
 
 - Corrective migrations on `harbaugh-forms-dev`:
   - `20260717120000_clear_global_money_zero_defaults.sql` (applied)
   - `20260717180000_clear_all_global_catalog_defaults.sql` (applied)
-  - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied; commit pending)
-  - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied; commit pending)
+  - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied; committed)
+  - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied; committed)
 
-- Containment is active in local `npm run dev` on `d450772`. Do not merge to `main` yet.
+- Containment is active in local `npm run dev` on `01d6780`. Do not merge to `main` yet.
 
 - Restore branches:
   - `pre-ui-refresh` → `f422fce79227220377729654824930c86082107e`
@@ -148,6 +148,7 @@ Applied to `harbaugh-forms-dev`:
 - `20260717120000_clear_global_money_zero_defaults.sql`
 - `20260717180000_clear_all_global_catalog_defaults.sql`
 - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql`
+- `20260717220000_repair_seller_not_foreign_checkbox.sql`
 
 Do not edit already-applied migrations. Add a new corrective migration when needed.
 
@@ -213,7 +214,7 @@ After Global catalog defaults were cleared, opening existing packet forms re-res
   - Yahoo test user: no Private default for this field. Davey Organization defaults unchanged. Global catalog `default_checked` remains null. Opposite `seller_is_foreign_person` instance untouched.
   - Rows skipped: **none** (instance preconditions matched; Private insert path ran with prior_active=0).
 - Manual UI verification still recommended for packet forms `28` and `61`.
-- Both repair migration files are applied remotely but **not yet committed/pushed**.
+- Both repair migration files are applied remotely **and are now committed and pushed** on `admin-copy-user-form-to-global` (tip `01d6780`). Authenticated smoke tests remain outstanding; the branch must not merge yet.
 
 ## Known Issues
 
@@ -229,10 +230,11 @@ After Global catalog defaults were cleared, opening existing packet forms re-res
 - Specialized PDF editor dialogs do not yet have the full focus-trap behavior of `ConfirmDialog` and `InfoDialog`.
 - `pdf-placement-form-fields.tsx` may contain line-ending churn that should be minimized before merge.
 - Repo-wide `npm run lint` currently fails because ESLint scans `.next` build artifacts; targeted lint of changed source files is clean.
+- `supabase migration list` shows a remote-only migration `20260717230000` on `harbaugh-forms-dev` with no local file (`local:""`). It was applied from another source/session and is outside this repair scope; do not repair/rewrite migration history — reconcile by pulling/committing that migration file separately before any future `supabase db push`.
 
 ## Next Steps
 
-1. Approve, commit, and push both repair migrations (and status/docs/tests) on this branch (do not merge to `main`).
+1. Both repair migrations (with status/docs/tests) are committed and pushed on this branch (`01d6780`); do not merge to `main`.
 2. Manually verify packet forms `28` and `61` in local `npm run dev`, including the restored “seller is not a foreign person” checkbox.
 3. Run authenticated smoke tests for Copy to Global, scoped defaults, and sticky packet open.
 4. After merge of this branch, follow-up branches in order:
