@@ -444,10 +444,10 @@ export function FormDefaultsManager({ initialData }: FormDefaultsManagerProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-6 md:grid-cols-2">
-                  <section className="space-y-3" aria-labelledby={`private-${field.fieldId}`}>
+                  <section className="space-y-3" aria-labelledby={`private-heading-${field.fieldId}`}>
                     <div className="space-y-1">
                       <h3
-                        id={`private-${field.fieldId}`}
+                        id={`private-heading-${field.fieldId}`}
                         className="text-sm font-medium"
                       >
                         My default (Private)
@@ -498,11 +498,11 @@ export function FormDefaultsManager({ initialData }: FormDefaultsManagerProps) {
 
                   <section
                     className="space-y-3"
-                    aria-labelledby={`org-${field.fieldId}`}
+                    aria-labelledby={`org-heading-${field.fieldId}`}
                   >
                     <div className="space-y-1">
                       <h3
-                        id={`org-${field.fieldId}`}
+                        id={`org-heading-${field.fieldId}`}
                         className="text-sm font-medium"
                       >
                         Organization default

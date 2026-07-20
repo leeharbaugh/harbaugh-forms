@@ -310,6 +310,33 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 
 ## Session History
 
+### 2026-07-19 (defaults-management-ui authenticated smoke)
+
+- Work completed:
+  - Authenticated smoke tests on `harbaugh-forms-dev` for form-level defaults UI.
+  - Roles: application Admin (`lee@leeharbaugh.com`, also ORG_ADMIN) and regular USER/MEMBER (`leeharbaugh@yahoo.com`). No ORG_ADMIN-without-app-Admin account exists.
+  - Primary Global form: `#1 Buyer Rep Agreement (TXR-1501)`. Also checked `#2` (empty mapped fields), `#7` (form-scoping), `#21` Private (defaults blocked).
+  - Fixed duplicate DOM ids on Private/Organization headings vs inputs.
+- Results (summary):
+  - Entry point: Global forms offer Defaults; Private `#21` does not; direct `/forms/21/defaults` rejected.
+  - Private create/update/clear: PASS (soft-delete; CREATE_DATE preserved on update; no catalog writes).
+  - Checkbox true / false / cleared: PASS (false distinct from cleared).
+  - Currency zero vs cleared / nonzero `12.50` / `99`: PASS.
+  - Date `2026-08-15` save/reload: PASS; `NA` rejected by validation (date input also blocks free-text NA).
+  - Member org read-only + RLS denial of org/GLOBAL/other-private inserts: PASS.
+  - Private overrides Organization then clear restores Organization: PASS.
+  - Admin org selector (single org: Davey Goosmann Realty), named (no UUID in page text), org save/clear soft-delete: PASS.
+  - Form scoping: form `#1` Private default does not appear on form `#7` for same field: PASS.
+  - Legacy `form_id IS NULL` ACTIVE defaults (~60) still participate via pickBest fallback; form-scoped rows win for that form.
+  - Packet immutability: packet_form `8` instance for `buyer_rep_lease_flat_fee` unchanged after default change to `99` (value `0`, `UPDATE_DATE` 2026-07-03 unchanged).
+  - Catalog literals for tested fields remained null.
+- Unresolved / limited:
+  - No second organization for Admin selector switch UI.
+  - No ORG_ADMIN-only UI click account.
+  - Disposable missing-instance init not manufactured (avoid historical packet surgery).
+  - Admin viewer isolation relied on existing automated coverage + prior Copy-to-Global smoke.
+- Branch remains unmerged: `defaults-management-ui`.
+
 ### 2026-07-19 (defaults-management-ui)
 
 - Work completed:

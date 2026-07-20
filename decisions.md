@@ -143,6 +143,7 @@ Resolution, RLS, and storage already exist. Users need a reviewable surface atta
 * Application Admins must choose an organization explicitly when managing Organization defaults.
 * Signature / initials fields are visible but not editable as preference defaults.
 * Cross-form defaults dashboard remains deferred.
+* Legacy ACTIVE defaults with `form_id IS NULL` remain valid resolution fallbacks (mapping > form-scoped > field-only). The management UI writes form-scoped rows (`form_id` set); displayed “current” values use the same pickBest specificity as the resolver.
 
 **Related files or migrations:**
 
