@@ -313,6 +313,27 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 
 ## Session History
 
+### 2026-07-20 (defaults-management-ui reviewed Personal default restoration)
+
+- Work completed:
+  - Transition omission audit reviewed by Lee; approved Personal **form-specific** restorations created via Map Fields → Edit default (Lee session) on `harbaugh-forms-dev`.
+  - **19** Private ACTIVE form-scoped defaults created (Buyer Rep `#1`: 5; Listing `#7`: 5; One to Four `#11`: 6 including `contract_title_objection_use_activity`; Residential Lease `#18`: 3).
+  - Values: text `NA` / text `"0"` / currency `"0"` as approved; scope PRIVATE; no `form_field_mapping_id`; no Global catalog literals; no all-forms rows.
+  - Disputed Listing fields `OTHER_FEES_REIMBURSABLE_EXPENSES` and `KNOWN_DISTRICTS`: Lee reports not visible on TXR-1101; ACTIVE estimated/paragraph mappings remain; **no defaults created**; classified hidden/non-visible — structural cleanup deferred.
+  - `contract_title_objection_use_activity`: Lee explicitly chose Personal form-specific `NA` even though not a proven catalog omission.
+  - Integrity: Global catalog defaults null; mappings unchanged; packets unchanged; Lee’s **56** legacy all-forms Private unchanged; Organization **4** unchanged; no duplicate ACTIVE logical rows among the 19.
+  - Audit artifact updated: `DEFAULT_TRANSITION_AUDIT.md` (+ recovered classification companions).
+- Database changes:
+  - Data only on `harbaugh-forms-dev` (`field_defaults` inserts for the 19; one accidental `buyer_client_name_1` form-scoped row soft-deleted). No migrations. No Global preference literals.
+- Validation:
+  - `npx tsc --noEmit` — pass
+  - `npm run test:field-defaults` — 61 pass
+  - `npm run test:field-defaults-management` — 38 pass
+  - `npm run test:field-instance-sync` — 17 pass
+- Deferred:
+  - Structural review/deactivation of disputed Listing mappings; Admin Map Fields Clear control gap.
+- Branch remains unmerged: `defaults-management-ui`.
+
 ### 2026-07-20 (defaults-management-ui field source language + unified editor)
 
 - Work completed:
