@@ -14,7 +14,7 @@ export type PacketValueSourceLabel =
   | "From organization default"
   | "Blank"
   | "From form mapping"
-  | "From fallback"
+  | "Default"
   | "Unknown";
 
 export type FilledFromLabel = string;
@@ -178,7 +178,8 @@ export function formatPacketValueSourceLabel(options: {
     case "fallback":
     case "field_default":
     case "field_default_checked":
-      return "From fallback";
+      // Legacy / ambiguous catalog default snapshots — do not guess Personal vs Org.
+      return "Default";
     default:
       break;
   }
@@ -232,6 +233,7 @@ export function isRawInternalSourceCode(label: string): boolean {
     normalized === "organization_default" ||
     normalized === "field_default" ||
     normalized === "field_default_checked" ||
+    normalized === "fallback" ||
     normalized.includes(".") ||
     normalized.includes("_")
   );
@@ -269,6 +271,8 @@ export function describePacketValueProvenance(options: {
       return `This value came from your Personal default.\n\nFilled from:\n${filledFrom}\n\nDefault if blank:\n${current}`;
     case "From organization default":
       return `This value came from an Organization default.\n\nFilled from:\n${filledFrom}\n\nDefault if blank:\n${current}`;
+    case "Default":
+      return `This value came from a default.\n\nFilled from:\n${filledFrom}\n\nCurrent value:\n${current}`;
     case "Blank":
       return `This field is currently blank.\n\nFilled from:\n${filledFrom}`;
     default:

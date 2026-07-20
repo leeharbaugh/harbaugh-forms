@@ -313,6 +313,16 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 
 ## Session History
 
+### 2026-07-20 (defaults-management-ui legacy Default label)
+
+- Work completed:
+  - Packets → Fill Form user-facing provenance: generic legacy `field_default` / `fallback` / `field_default_checked` sources now display as **Default** instead of **From fallback**.
+  - Known `private_default` / `organization_default` labels unchanged (`From your default` / `From organization default`).
+  - Presentation-only: no packet instance rewrites; Why this value? avoids “fallback” wording for the generic Default case.
+- Database changes:
+  - None.
+- Branch remains unmerged: `defaults-management-ui`.
+
 ### 2026-07-20 (defaults-management-ui unified workflow smoke)
 
 - Work completed:
@@ -321,7 +331,7 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
   - **Clear defect (Admin):** Admin structural Map Fields lacked Clear; non-admin My setup already had it. Added **Clear personal default** on Admin cards, wired to existing `clearPrivateFormDefault` (form-scoped only; legacy all-forms protected). Disposable create/clear cycle verified; accidental Clear of `BUYER_REP_RETAINER_AMOUNT` during broken automation finder was restored to Personal `0`.
   - **Admin Edit separation:** Structural Edit = Section A placement + Section B Filled from + Remove from this form. Edit default = My default / Organization default write target with explicit org selector. Not confused with Clear.
   - **Yahoo (USER/MEMBER):** No Admin nav; field keys hidden; no Remove / Place field; Personal Edit only (no Organization write target). Lee’s 19 values do not appear (Retainer / Property exclusions / Service reimbursement show None).
-  - **Packet Fill Form (`#14` / form `49`):** Current value + Value source labels present; no raw source paths. Sources observed: Entered manually, From client, From property, From fallback (legacy `field_default` snapshots), Blank, Unknown. Why this value? explains stored provenance without implying recalculation.
+  - **Packet Fill Form (`#14` / form `49`):** Current value + Value source labels present; no raw source paths. Sources observed: Entered manually, From client, From property, Default (legacy `field_default` snapshots), Blank, Unknown. Why this value? explains stored provenance without implying recalculation.
   - **Snapshot safety:** field_instance `a9a87123-…` (`CONTRACT_PROPERTY_EXCLUSIONS`) unchanged after open (`value=NA`, `source=field_default`, `update_date` unchanged).
   - **Disputed Listing mappings:** ACTIVE overlays labeled `¶5E` / `¶12K` still selectable; Lee reports not visibly represented — recommend later deactivate/cleanup; not changed in this smoke.
 - Database changes:
