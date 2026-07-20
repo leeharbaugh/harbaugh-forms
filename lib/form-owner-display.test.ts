@@ -5,6 +5,7 @@ import {
   presentFormOwnership,
   resolveFormOwnerDisplayName,
 } from "./form-owner-display.ts";
+import { isActiveAppAdmin } from "./library-permissions.ts";
 
 describe("resolveFormOwnerDisplayName", () => {
   it("prefers display_name", () => {
@@ -105,6 +106,36 @@ describe("canOfferCopyToGlobalLibrary", () => {
         sourceStoragePath: "users/owner/forms/1/a.pdf",
       }),
       true,
+    );
+  });
+
+  it("denies Copy to Global for ORG_ADMIN with application role USER", () => {
+    // Organization membership role and application role are distinct axes.
+    // An Org Admin who is not an application Admin must not get Copy to Global.
+    const orgAdminWithoutAppAdmin = {
+      membershipRole: "ORG_ADMIN" as const,
+      app_role: "USER" as const,
+      status: "ACTIVE" as const,
+      onboarding_status: "ACTIVE" as const,
+    };
+
+    assert.equal(orgAdminWithoutAppAdmin.membershipRole, "ORG_ADMIN");
+    assert.equal(orgAdminWithoutAppAdmin.app_role, "USER");
+    assert.equal(isActiveAppAdmin(orgAdminWithoutAppAdmin), false);
+
+    // Production UI derives isActiveAdmin from isActiveAppAdmin(profile) only;
+    // membershipRole is never consulted for Copy to Global. Server action
+    // copyFormToGlobalLibrary → requireAppAdmin() likewise requires
+    // profiles.app_role === "ADMIN".
+    assert.equal(
+      canOfferCopyToGlobalLibrary({
+        isActiveAdmin: isActiveAppAdmin(orgAdminWithoutAppAdmin),
+        scope: "PRIVATE",
+        status: "ACTIVE",
+        ownerUserId: "owner",
+        sourceStoragePath: "users/owner/forms/1/a.pdf",
+      }),
+      false,
     );
   });
 

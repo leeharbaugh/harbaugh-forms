@@ -12,21 +12,23 @@ Harbaugh Forms is a Texas real estate forms application built with:
 
 ## Git State
 
-- Main branch commit:
-  `5f23a3e9af08d0d6c591b1cd914cdc3631a096db`
+- `origin/main` tip:
+  `ce8b59a` — includes merge of `admin-copy-user-form-to-global` (`5f23a3e`) and merge of `packet-form-lifecycle-locking` (`ce8b59a`)
 
-- Active feature branch:
-  `packet-form-lifecycle-locking` (from `origin/main`)
+- Residual documentation branch:
+  `post-copy-global-smoke-docs` (from current `origin/main`)
 
-- Previous feature branch (merged, retained):
-  `admin-copy-user-form-to-global` @ `01d6780`
+- Previous feature branch (merged; do not re-merge as a feature):
+  `admin-copy-user-form-to-global` @ `01d6780` (merged via `5f23a3e`)
 
-- Corrective migrations on `harbaugh-forms-dev`:
+- Corrective / related migrations on `harbaugh-forms-dev`:
   - `20260717120000_clear_global_money_zero_defaults.sql` (applied)
   - `20260717180000_clear_all_global_catalog_defaults.sql` (applied)
-  - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied)
-  - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied)
-  - `20260717230000_packet_form_lifecycle_locking.sql` (apply with this branch)
+  - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied; on `main`)
+  - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied; on `main`)
+  - `20260717230000_packet_form_lifecycle_locking.sql` (applied; on `main` from packet-form lifecycle locking — not a Copy-to-Global residual)
+
+- Authenticated Copy-to-Global / containment smoke tests on `harbaugh-forms-dev` completed 2026-07-19 (see below). Core feature code is already on `origin/main`.
 
 - Restore branches:
   - `pre-ui-refresh` → `f422fce79227220377729654824930c86082107e`
@@ -143,6 +145,8 @@ Applied to `harbaugh-forms-dev`:
 - `20260717120000_clear_global_money_zero_defaults.sql`
 - `20260717180000_clear_all_global_catalog_defaults.sql`
 - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql`
+- `20260717220000_repair_seller_not_foreign_checkbox.sql`
+- `20260717230000_packet_form_lifecycle_locking.sql`
 
 Do not edit already-applied migrations. Add a new corrective migration when needed.
 
@@ -188,7 +192,7 @@ Current behavior:
 - Lee’s `CONTRACT_PROPERTY_AS_IS` Private default is preserved and notes finalized.
 - Ordinary packet-form open/view/load inserts missing field instances only (`ensure_missing`) and does not UPDATE existing snapshots. Explicit editor “Refresh values” uses `refresh_non_overrides`.
 
-This branch must not be merged until authenticated smoke tests complete and pass.
+Authenticated smoke tests for Copy to Global, scoped defaults, packet-snapshot containment, and ownership presentation completed 2026-07-19 on `harbaugh-forms-dev`. Feature code through `01d6780` is already on `origin/main` (`5f23a3e`). Do not merge `admin-copy-user-form-to-global` again as a feature branch.
 
 ### Confirmed packet-value incident (2026-07-17)
 
@@ -207,13 +211,29 @@ After Global catalog defaults were cleared, opening existing packet forms re-res
   - Created exactly one ACTIVE Lee Private `field_defaults` row (`default_checked=true`) for field `b0548c8b-c4f7-44f9-8328-9c14899e09e7` — restoration of a pre-multi-user Lee preference omitted from `20260715180000` when the catalog UUID was cleared without a Private insert.
   - Yahoo test user: no Private default for this field. Davey Organization defaults unchanged. Global catalog `default_checked` remains null. Opposite `seller_is_foreign_person` instance untouched.
   - Rows skipped: **none** (instance preconditions matched; Private insert path ran with prior_active=0).
-- Manual UI verification still recommended for packet forms `28` and `61`.
-- Both repair migration files are applied remotely but **not yet committed/pushed**.
+- Manual UI verification of packet forms `28` and `61` completed during authenticated smoke tests (2026-07-19).
+- Both repair migration files are applied on `harbaugh-forms-dev` and present on `origin/main` via merge `5f23a3e`.
+
+### Authenticated smoke-test results (2026-07-19, `harbaugh-forms-dev`)
+
+Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: application Admin (also an Org Admin of the brokerage) and a regular application User (organization MEMBER). Supporting read-only DB checks used the project’s server admin client.
+
+- **Packet form 28 repaired snapshots — PASS.** Seven restored `NA` text overrides plus `SELLER_IS_NOT_FOREIGN_PERSON` checked (opposite foreign-person unchecked); rows `is_override=true`, `source=manual_override`.
+- **Packet form 61 repaired snapshots — PASS.** Three `NA` overrides plus `CONTRACT_SELLER_EXPENSE_CONTRIBUTION_AMOUNT` = `0` (11 repaired text/numeric rows total matching `20260717210000`).
+- **Sticky ordinary open — PASS.** Reopen left values and override flags unchanged; repaired rows’ `UPDATE_DATE` remained at the 2026-07-17 migration timestamps.
+- **Explicit Refresh values — PASS.** Overrides preserved; Save stayed disabled when there was no non-override drift; repaired `UPDATE_DATE` unchanged.
+- **Private vs Organization default resolution — PASS.** Admin-owned form 28 diagnostics showed `private_default` and `organization_default` sources as expected (Private beats Organization covered by unit tests).
+- **Packet-owner resolution (Admin views another user’s packet) — PASS.** On the User-owned contract form, Admin Private defaults for the same field keys resolved to empty/false — no Admin default leak (`actingUserId` = packet owner).
+- **Copy to Global Library — PASS.** Non-mutating preview excluded preference defaults and left the Private source unchanged; existing Global copy retains independent storage and traceability columns.
+- **Ownership presentation — PASS.** Admin sees readable “Owned by …” for another user’s Private form; the owner sees ordinary Private presentation (no raw UUID, never “Mine”).
+- **Authorization — PASS (Admin + User click-tested; Org-Admin-without-application-Admin automated).** Application Admin can offer Copy to Global. Regular User cannot. An `ORG_ADMIN` with application role `USER` is denied by UI gate (`isActiveAppAdmin` false → `canOfferCopyToGlobalLibrary` false) and by server `requireAppAdmin()` (`profiles.app_role === 'ADMIN'` required). Separate Org-Admin-only UI click-test remains optional.
+
+**Overall:** Copy-to-Global / defaults / containment / ownership smoke coverage complete. Migration `20260717230000` belongs to packet-form lifecycle locking and already exists on `main`. This residual branch is documentation and authorization-test coverage only.
 
 ## Known Issues
 
-- Authenticated browser smoke tests for Copy to Global and default resolution remain.
-- Manual UI confirmation of repaired packet forms `28` and `61` remains (including restored `SELLER_IS_NOT_FOREIGN_PERSON`).
+- Authenticated Copy-to-Global / containment smoke tests completed 2026-07-19 (see above). Org-Admin-without-application-Admin is covered by a focused unit test; a dedicated UI click account is optional and non-blocking.
+- Migration `20260717230000` was traced to `packet-form-lifecycle-locking` (`a38729c`) and is already on `origin/main`; it is not a Copy-to-Global residual and must not be reintroduced as a new change.
 - At-risk text/numeric instances retain historical values under containment; no bulk rewrite planned.
 - Full My Defaults / Organization Defaults management UI is deferred.
 - Scoped source-mapping / manual-only overrides for Global forms (without editing Global PDF structure) are not implemented.
@@ -227,8 +247,8 @@ After Global catalog defaults were cleared, opening existing packet forms re-res
 
 ## Next Steps
 
-1. Approve, commit, and push `packet-form-lifecycle-locking` (do not merge until smoke tests pass).
-2. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior.
+1. Land residual branch `post-copy-global-smoke-docs` (smoke-test documentation + Org-Admin authorization unit test only). Do not re-merge `admin-copy-user-form-to-global` as a feature.
+2. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
 3. Follow-up branches in priority order:
    1. My Defaults and Organization Defaults UI for Global forms.
    2. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
