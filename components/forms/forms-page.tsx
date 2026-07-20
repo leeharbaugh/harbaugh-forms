@@ -34,7 +34,7 @@ import {
   resolveFormOwnerDisplayName,
   type FormOwnerProfile,
 } from "@/lib/form-owner-display";
-import { canOfferFormDefaultsManagement, mySetupEditorPath } from "@/lib/types/field-default-management";
+import { canOfferFormDefaultsManagement, mapFieldsEditorPath } from "@/lib/types/field-default-management";
 import {
   buildFormStoragePath,
   buildPendingFormStoragePath,
@@ -766,17 +766,11 @@ export function FormsPage() {
                     </ResizableDataTableCell>
                     <ResizableDataTableActionsCell>
                       <ListRowActions>
-                        {canMapFormFields(actor, template) ? (
+                        {canMapFormFields(actor, template) ||
+                        canOfferFormDefaultsManagement(template) ? (
                           <Button variant="outline" size="sm" asChild>
-                            <Link href={`/forms/${template.id}/editor`}>
-                              Map fields
-                            </Link>
-                          </Button>
-                        ) : null}
-                        {canOfferFormDefaultsManagement(template) ? (
-                          <Button variant="outline" size="sm" asChild>
-                            <Link href={mySetupEditorPath(template.id)}>
-                              Defaults
+                            <Link href={mapFieldsEditorPath(template.id)}>
+                              Map Fields
                             </Link>
                           </Button>
                         ) : null}

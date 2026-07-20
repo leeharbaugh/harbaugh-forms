@@ -515,3 +515,44 @@ Form-scoped long lists made intact all-forms defaults look missing when sparse f
 * `lib/field-defaults-management.ts`
 * `app/forms/[id]/editor/page.tsx`
 * `app/forms/[id]/defaults/page.tsx`
+
+---
+
+## Field source language and unified Map Fields workspace
+
+**Date:** 2026-07-20
+
+**Decision:**  
+Use distinct value language for template configuration versus packet instances, and present both structural mapping and preference defaults in one **Map Fields** workspace.
+
+### Template editor (PDF Field Mapping / Map Fields)
+
+* **Filled from** — automatic business-data source (or Not connected)
+* **Default if blank** — Personal/Organization preference when automatic source is blank
+* **Default source** — Personal / Organization / None (including legacy “applies to all forms”)
+
+Do not show Current value, Value source, Manual override, or packet-instance concepts in template configuration.
+
+### Packets → Fill Form
+
+* **Current value** — stored/displayed packet field value
+* **Value source** — readable provenance (Entered manually, From property, From client, From agent profile, From brokerage, From packet, From your default, From organization default, Blank)
+
+Optional disclosure: **Why this value?** expands Filled from / precedence explanation without rewriting instances.
+
+### Workspace unification
+
+* Form Templates authorized actions: **Map Fields**, **Edit**, **Delete** (no separate Defaults / My setup).
+* Mapping configuration and defaults share one visual workspace; packet provenance appears only in Fill Form.
+* Preference defaults remain in `field_defaults` (never structural mapping columns).
+* `field_instances.source` already distinguishes `private_default` vs `organization_default` for new/synced instances — no migration required for label display.
+
+**Related files:**
+
+* `lib/types/field-provenance-labels.ts`
+* `components/forms/pdf-my-setup-editor.tsx`
+* `components/forms/pdf-field-editor.tsx`
+* `components/packets/packet-form-fields-sidebar.tsx`
+* `components/forms/forms-page.tsx`
+* `app/forms/[id]/editor/page.tsx`
+* `app/forms/[id]/defaults/page.tsx`

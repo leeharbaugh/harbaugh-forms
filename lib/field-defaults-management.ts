@@ -15,6 +15,7 @@ import {
 } from "@/lib/library-permissions";
 import { createClient } from "@/lib/supabase/server";
 import { formatFieldSourceSummary } from "@/lib/types/field-source";
+import { formatFilledFromLabel } from "@/lib/types/field-provenance-labels";
 import {
   canManageOrganizationDefault,
   canManagePrivateDefault,
@@ -47,6 +48,7 @@ export type FormDefaultsFieldRow = {
   fieldDataType: string;
   fieldWidgetType: string;
   mappingSummary: string;
+  filledFromLabel: string;
   editorKind: DefaultsEditorKind;
   privateDefault: FieldDefault | null;
   organizationDefault: FieldDefault | null;
@@ -414,6 +416,7 @@ export async function loadFormDefaultsPage(options: {
         fieldDataType: field.field_data_type,
         fieldWidgetType: field.field_widget_type,
         mappingSummary: formatFieldSourceSummary(field),
+        filledFromLabel: formatFilledFromLabel(field),
         editorKind,
         privateDefault,
         organizationDefault,

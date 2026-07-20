@@ -309,8 +309,25 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Administrative roles: Regular user / Organization Admin (`ORG_ADMIN`) / Global Admin (`profiles.app_role = ADMIN`) are distinct axes.
 - Persisted packet field instances are immutable during ordinary view/open; missing instances may be inserted, but existing snapshots change only via explicit edit/refresh.
 - Visual My setup mode is the primary Global-form defaults entry; legacy `form_id IS NULL` Personal defaults are labeled and protected from form-level Clear.
+- Unified Map Fields workspace uses template language **Filled from** / **Default if blank** / **Default source**; Packets → Fill Form uses **Current value** / **Value source**.
 
 ## Session History
+
+### 2026-07-20 (defaults-management-ui field source language + unified editor)
+
+- Work completed:
+  - Unified Form Templates entry to **Map Fields** (removed separate Defaults / My setup actions).
+  - Legacy `/forms/[id]/defaults` redirects to `/forms/[id]/editor`.
+  - Template cards use **Filled from**, **Default if blank**, **Default source**; no Current value / Value source in template editor.
+  - Role-aware Edit: regular users Personal only; Org Admins My default vs Organization default; App Admins Global automatic source (+ defaults on structural Map Fields).
+  - Fill Form shows **Current value** and **Value source** with readable labels; optional **Why this value?** disclosure.
+  - Shared pure helpers in `lib/types/field-provenance-labels.ts` (+ tests).
+  - Lee legacy `form_id IS NULL` Personal defaults remain labeled and Clear-protected; no packet snapshot rewrites.
+- Database changes:
+  - None (no migration).
+- Deferred:
+  - Personal placement overrides; Restore Global position; optional richer Fill Form Default if blank without extra queries.
+- Branch remains unmerged: `defaults-management-ui`.
 
 ### 2026-07-20 (defaults-management-ui Phase 1 visual My setup)
 

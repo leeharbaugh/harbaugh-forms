@@ -1,22 +1,18 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { mySetupEditorPath } from "@/lib/types/field-default-management";
+import { mapFieldsEditorPath } from "@/lib/types/field-default-management";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Form Defaults | Harbaugh Forms",
-  description: "Manage Private and Organization defaults for a Global form",
+  title: "Map Fields | Harbaugh Forms",
+  description: "Map fields and manage defaults for a Global form",
 };
 
 type PageProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ organizationId?: string }>;
 };
 
-/**
- * Standalone long-list Defaults UI is no longer the primary entry point.
- * Redirect into visual My setup mode.
- */
+/** Legacy Defaults route — redirect into the unified Map Fields workspace. */
 export default async function FormDefaultsPage({ params }: PageProps) {
   const { id } = await params;
   const formId = Number(id);
@@ -33,5 +29,5 @@ export default async function FormDefaultsPage({ params }: PageProps) {
     redirect("/forms");
   }
 
-  redirect(mySetupEditorPath(formId));
+  redirect(mapFieldsEditorPath(formId));
 }

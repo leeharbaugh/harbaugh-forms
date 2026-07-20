@@ -13,7 +13,7 @@ const PdfMySetupEditor = dynamic(
   {
     ssr: false,
     loading: () => (
-      <p className="text-sm text-muted-foreground">Loading My setup…</p>
+      <p className="text-sm text-muted-foreground">Loading Map Fields…</p>
     ),
   },
 );

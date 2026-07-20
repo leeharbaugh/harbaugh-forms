@@ -513,7 +513,7 @@ describe("role-aware My setup card display", () => {
       fieldLabel: "County",
       fieldKey: "PAYMENT_COUNTY",
       pageNumber: 1,
-      mappingSummary: "Buyer representation county",
+      filledFrom: "Property county",
       defaultDisplay: "Dallas/Tarrant",
       sourceLabel: "Personal — applies to all forms",
       showFieldKey: false,
@@ -521,14 +521,22 @@ describe("role-aware My setup card display", () => {
     assert.equal(userCard.fieldKey, null);
     assert.equal(userCard.title, "County");
     assert.match(userCard.pageLine, /^Page 1$/);
-    assert.doesNotMatch(userCard.mappingLine, /occurrence/i);
-    assert.doesNotMatch(userCard.mappingLine, /placement/i);
+    assert.equal(userCard.filledFromLine, "Property county");
+    assert.equal(userCard.defaultIfBlankLine, "Dallas/Tarrant");
+    assert.equal(
+      userCard.defaultSourceLine,
+      "Personal — applies to all forms",
+    );
+    assert.doesNotMatch(userCard.filledFromLine, /occurrence/i);
+    assert.doesNotMatch(userCard.defaultSourceLine, /placement/i);
+    assert.doesNotMatch(JSON.stringify(userCard), /Current value/i);
+    assert.doesNotMatch(JSON.stringify(userCard), /Value source/i);
 
     const adminCard = buildMySetupFieldCardCopy({
       fieldLabel: "County",
       fieldKey: "PAYMENT_COUNTY",
       pageNumber: 1,
-      mappingSummary: "Buyer representation county",
+      filledFrom: "Property county",
       defaultDisplay: "Dallas/Tarrant",
       sourceLabel: "Personal — applies to all forms",
       showFieldKey: true,
@@ -565,12 +573,12 @@ describe("role-aware My setup card display", () => {
   });
 });
 
-describe("My setup routing helpers", () => {
-  it("parses my-setup mode and builds redirect path", () => {
+describe("Map Fields routing helpers", () => {
+  it("parses legacy my-setup mode and builds unified editor path", () => {
     assert.equal(parseFormEditorMode("my-setup"), "my-setup");
     assert.equal(parseFormEditorMode(undefined), "global-template");
     assert.equal(parseFormEditorMode("global-template"), "global-template");
-    assert.equal(mySetupEditorPath(1), "/forms/1/editor?mode=my-setup");
+    assert.equal(mySetupEditorPath(1), "/forms/1/editor");
   });
 
   it("blocks Private and inactive forms from defaults entry", () => {

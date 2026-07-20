@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import {
   clearPrivateFormDefault,
   loadFormDefaultsPage,
+  saveOrganizationFormDefault,
+  savePrivateFormDefault,
   type FormDefaultsFieldRow,
   type FormDefaultsPageData,
 } from "@/lib/field-defaults-management";
@@ -23,7 +25,9 @@ import {
 import {
   DEFAULTS_PRECEDENCE_NOTICE,
   buildMySetupFieldCardCopy,
+  type DefaultsFieldValueDraft,
 } from "@/lib/types/field-default-management";
+import { formatFilledFromLabel } from "@/lib/types/field-provenance-labels";
 import {
   type PageMetrics,
   type PlacedPdfField,
@@ -45,6 +49,9 @@ import { ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Document, Page } from "react-pdf";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type PdfMySetupEditorProps = {
   formId: number;
@@ -61,11 +68,13 @@ type SetupCard = {
   title: string;
   fieldKey: string | null;
   pageLine: string;
-  mappingLine: string;
-  defaultLine: string;
-  sourceLine: string;
+  filledFromLine: string;
+  defaultIfBlankLine: string;
+  defaultSourceLine: string;
   legacyProtected: boolean;
   canClearFormScoped: boolean;
+  canEditPersonal: boolean;
+  canEditOrganization: boolean;
 };
 
 export function PdfMySetupEditor({
@@ -88,6 +97,15 @@ export function PdfMySetupEditor({
     null,
   );
   const [isPending, startTransition] = useTransition();
+  const [editingCard, setEditingCard] = useState<SetupCard | null>(null);
+  const [editScope, setEditScope] = useState<"PRIVATE" | "ORGANIZATION">(
+    "PRIVATE",
+  );
+  const [editDraft, setEditDraft] = useState<DefaultsFieldValueDraft>({
+    textValue: "",
+    checked: null,
+  });
+  const [clearTarget, setClearTarget] = useState<SetupCard | null>(null);
   const pdfWorkspaceRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const cardListRef = useRef<HTMLDivElement>(null);
@@ -124,6 +142,12 @@ export function PdfMySetupEditor({
       const fieldRow = mapping.field_id
         ? (defaultsByFieldId.get(mapping.field_id) ?? null)
         : null;
+      const filledFrom =
+        fieldRow?.filledFromLabel ||
+        formatFilledFromLabel({
+          source_type: null,
+          source_path: null,
+        });
       const copy = buildMySetupFieldCardCopy({
         fieldLabel:
           fieldRow?.fieldLabel ||
@@ -133,14 +157,20 @@ export function PdfMySetupEditor({
           "Field",
         fieldKey: fieldRow?.fieldKey || mapping.field_key || "—",
         pageNumber: mapping.page_number,
-        mappingSummary:
-          mapping.mapping_name?.trim() ||
-          fieldRow?.mappingSummary ||
-          "Mapped field",
+        filledFrom,
         defaultDisplay: fieldRow?.effectiveDisplay ?? "None",
         sourceLabel: fieldRow?.effectiveSourceLabel ?? "None",
         showFieldKey: defaults.showFieldKey,
       });
+      const canEditPersonal =
+        !!fieldRow &&
+        defaults.canEditPrivate &&
+        fieldRow.editorKind !== "unsupported";
+      const canEditOrganization =
+        !!fieldRow &&
+        defaults.canEditOrganization &&
+        !!defaults.selectedOrganizationId &&
+        fieldRow.editorKind !== "unsupported";
       return {
         mappingId: mapping.id,
         pageNumber: mapping.page_number,
@@ -149,15 +179,24 @@ export function PdfMySetupEditor({
         title: copy.title,
         fieldKey: copy.fieldKey,
         pageLine: copy.pageLine,
-        mappingLine: copy.mappingLine,
-        defaultLine: copy.defaultLine,
-        sourceLine: copy.sourceLine,
+        filledFromLine: copy.filledFromLine,
+        defaultIfBlankLine: copy.defaultIfBlankLine,
+        defaultSourceLine: copy.defaultSourceLine,
         legacyProtected: fieldRow?.legacyPersonalProtected ?? false,
         canClearFormScoped:
           !!fieldRow?.canClearFormScopedPersonal && defaults.canEditPrivate,
+        canEditPersonal,
+        canEditOrganization,
       };
     });
-  }, [mappings, defaultsByFieldId, defaults.showFieldKey, defaults.canEditPrivate]);
+  }, [
+    mappings,
+    defaultsByFieldId,
+    defaults.showFieldKey,
+    defaults.canEditPrivate,
+    defaults.canEditOrganization,
+    defaults.selectedOrganizationId,
+  ]);
 
   useEffect(() => {
     const element = pdfWorkspaceRef.current;
@@ -356,6 +395,70 @@ export function PdfMySetupEditor({
       } else {
         setMessage(`Cleared form-specific Personal default for ${fieldLabel}.`);
       }
+      setClearTarget(null);
+      await reloadDefaults();
+    });
+  }
+
+  function openDefaultEdit(card: SetupCard) {
+    if (!card.fieldRow) {
+      return;
+    }
+    const initialScope: "PRIVATE" | "ORGANIZATION" = card.canEditPersonal
+      ? "PRIVATE"
+      : card.canEditOrganization
+        ? "ORGANIZATION"
+        : "PRIVATE";
+    setEditingCard(card);
+    setEditScope(initialScope);
+    setEditDraft(
+      initialScope === "ORGANIZATION"
+        ? card.fieldRow.organizationDraft
+        : card.fieldRow.privateDraft,
+    );
+    setError(null);
+    setMessage(null);
+  }
+
+  function handleSaveDefault() {
+    if (!editingCard?.fieldId || !editingCard.fieldRow) {
+      return;
+    }
+    const fieldId = editingCard.fieldId;
+    const label = editingCard.fieldRow.fieldLabel;
+    setError(null);
+    setMessage(null);
+    startTransition(async () => {
+      if (editScope === "ORGANIZATION") {
+        const organizationId = defaults.selectedOrganizationId;
+        if (!organizationId) {
+          setError("Select an organization before saving an Organization default.");
+          return;
+        }
+        const result = await saveOrganizationFormDefault({
+          formId,
+          fieldId,
+          organizationId,
+          draft: editDraft,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setMessage(`Saved Organization default for ${label}.`);
+      } else {
+        const result = await savePrivateFormDefault({
+          formId,
+          fieldId,
+          draft: editDraft,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setMessage(`Saved Personal default for ${label}.`);
+      }
+      setEditingCard(null);
       await reloadDefaults();
     });
   }
@@ -365,7 +468,7 @@ export function PdfMySetupEditor({
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
         <div className="min-w-0 space-y-1">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            My setup
+            Map Fields
           </p>
           <h1 className="truncate text-lg font-semibold">
             {template
@@ -581,13 +684,13 @@ export function PdfMySetupEditor({
           onWidthChange={setSidebarWidth}
         >
           <div className="shrink-0 border-b px-4 py-3">
-            <h2 className="text-sm font-semibold">Field defaults</h2>
+            <h2 className="text-sm font-semibold">Fields</h2>
             <p className="mt-1 text-xs text-muted-foreground">
               {cards.length === 1
                 ? "1 mapped field on this form."
                 : `${cards.length} mapped fields on this form.`}{" "}
-              Legacy Personal values that apply to all forms are labeled and
-              protected from form-level Clear.
+              Defaults apply when the automatic source is blank. Legacy
+              all-forms Personal defaults are protected from form-level Clear.
             </p>
           </div>
           <div
@@ -631,21 +734,23 @@ export function PdfMySetupEditor({
                           <div>{card.pageLine}</div>
                           <div>
                             <span className="font-medium text-foreground/80">
-                              Mapping:{" "}
+                              Filled from:{" "}
                             </span>
-                            {card.mappingLine}
+                            {card.filledFromLine}
                           </div>
                           <div>
                             <span className="font-medium text-foreground/80">
-                              Default:{" "}
+                              Default if blank:{" "}
                             </span>
-                            {card.defaultLine}
+                            {card.defaultIfBlankLine === "None"
+                              ? ""
+                              : card.defaultIfBlankLine}
                           </div>
                           <div>
                             <span className="font-medium text-foreground/80">
-                              Source:{" "}
+                              Default source:{" "}
                             </span>
-                            {card.sourceLine}
+                            {card.defaultSourceLine}
                           </div>
                         </dl>
                       </button>
@@ -654,26 +759,30 @@ export function PdfMySetupEditor({
                           Applies to all forms — form-level Clear is disabled.
                         </p>
                       ) : null}
-                      {card.canClearFormScoped ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="mt-2"
-                          disabled={isPending}
-                          onClick={() => {
-                            if (!card.fieldId || !card.fieldRow) {
-                              return;
-                            }
-                            handleClearFormScoped(
-                              card.fieldId,
-                              card.fieldRow.fieldLabel,
-                            );
-                          }}
-                        >
-                          Clear personal default
-                        </Button>
-                      ) : null}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {card.canEditPersonal || card.canEditOrganization ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isPending}
+                            onClick={() => openDefaultEdit(card)}
+                          >
+                            Edit
+                          </Button>
+                        ) : null}
+                        {card.canClearFormScoped ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isPending}
+                            onClick={() => setClearTarget(card)}
+                          >
+                            Clear personal default
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   );
                 })}
@@ -682,6 +791,161 @@ export function PdfMySetupEditor({
           </div>
         </PdfEditorResizableSidebar>
       </div>
+
+      {editingCard?.fieldRow ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="default-edit-title"
+            className="w-full max-w-md rounded-lg border bg-card p-4 shadow-lg"
+          >
+            <h2 id="default-edit-title" className="text-base font-semibold">
+              Edit default — {editingCard.title}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Preference defaults apply when the automatic source is blank.
+              Saving creates or updates a form-specific default. Legacy
+              all-forms Personal defaults are not modified.
+            </p>
+            {editingCard.canEditPersonal && editingCard.canEditOrganization ? (
+              <div className="mt-4 space-y-2">
+                <Label htmlFor="edit-default-scope">Write target</Label>
+                <select
+                  id="edit-default-scope"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={editScope}
+                  onChange={(event) => {
+                    const next =
+                      event.target.value === "ORGANIZATION"
+                        ? "ORGANIZATION"
+                        : "PRIVATE";
+                    setEditScope(next);
+                    if (!editingCard.fieldRow) {
+                      return;
+                    }
+                    setEditDraft(
+                      next === "ORGANIZATION"
+                        ? editingCard.fieldRow.organizationDraft
+                        : editingCard.fieldRow.privateDraft,
+                    );
+                  }}
+                >
+                  <option value="PRIVATE">My default</option>
+                  <option value="ORGANIZATION">
+                    Organization default
+                    {defaults.selectedOrganizationName
+                      ? ` (${defaults.selectedOrganizationName})`
+                      : ""}
+                  </option>
+                </select>
+              </div>
+            ) : (
+              <p className="mt-3 text-xs font-medium text-foreground">
+                Writing:{" "}
+                {editScope === "ORGANIZATION"
+                  ? `Organization default${
+                      defaults.selectedOrganizationName
+                        ? ` (${defaults.selectedOrganizationName})`
+                        : ""
+                    }`
+                  : "My default (Personal)"}
+              </p>
+            )}
+            {editingCard.fieldRow.editorKind === "checkbox" ? (
+              <div className="mt-4 space-y-2">
+                <Label htmlFor="edit-default-checked">Default if blank</Label>
+                <select
+                  id="edit-default-checked"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={
+                    editDraft.checked === true
+                      ? "checked"
+                      : editDraft.checked === false
+                        ? "unchecked"
+                        : ""
+                  }
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setEditDraft({
+                      textValue: "",
+                      checked:
+                        value === "checked"
+                          ? true
+                          : value === "unchecked"
+                            ? false
+                            : null,
+                    });
+                  }}
+                >
+                  <option value="">Choose checked or unchecked…</option>
+                  <option value="checked">Checked</option>
+                  <option value="unchecked">Unchecked</option>
+                </select>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2">
+                <Label htmlFor="edit-default-text">Default if blank</Label>
+                <Input
+                  id="edit-default-text"
+                  value={editDraft.textValue}
+                  onChange={(event) =>
+                    setEditDraft({
+                      textValue: event.target.value,
+                      checked: null,
+                    })
+                  }
+                  autoComplete="off"
+                />
+              </div>
+            )}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isPending}
+                onClick={() => setEditingCard(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={isPending}
+                onClick={() => handleSaveDefault()}
+              >
+                {isPending
+                  ? "Saving…"
+                  : editScope === "ORGANIZATION"
+                    ? "Save Organization default"
+                    : "Save Personal default"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <ConfirmDialog
+        open={!!clearTarget}
+        title="Clear personal default?"
+        message={
+          clearTarget
+            ? `Remove the form-specific Personal default for ${clearTarget.title}? Legacy all-forms defaults are not affected.`
+            : undefined
+        }
+        confirmLabel="Clear default"
+        variant="destructive"
+        isConfirming={isPending}
+        onConfirm={() => {
+          if (!clearTarget?.fieldId || !clearTarget.fieldRow) {
+            return;
+          }
+          handleClearFormScoped(
+            clearTarget.fieldId,
+            clearTarget.fieldRow.fieldLabel,
+          );
+        }}
+        onCancel={() => setClearTarget(null)}
+      />
     </div>
   );
 }

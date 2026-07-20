@@ -511,21 +511,27 @@ export function parseFormEditorMode(
 }
 
 export function mySetupEditorPath(formId: number): string {
-  return `/forms/${formId}/editor?mode=my-setup`;
+  // Unified Map Fields workspace (legacy name retained for redirects).
+  return `/forms/${formId}/editor`;
 }
 
 export function globalTemplateEditorPath(formId: number): string {
   return `/forms/${formId}/editor`;
 }
 
+export function mapFieldsEditorPath(formId: number): string {
+  return `/forms/${formId}/editor`;
+}
+
 /**
- * Card copy for My setup mode. Does not include occurrence or placement count.
+ * Card copy for the unified Map Fields workspace.
+ * Does not include occurrence or placement count.
  */
 export function buildMySetupFieldCardCopy(options: {
   fieldLabel: string;
   fieldKey: string;
   pageNumber: number;
-  mappingSummary: string;
+  filledFrom: string;
   defaultDisplay: string;
   sourceLabel: DefaultSourceLabel;
   showFieldKey: boolean;
@@ -533,16 +539,29 @@ export function buildMySetupFieldCardCopy(options: {
   title: string;
   fieldKey: string | null;
   pageLine: string;
-  mappingLine: string;
-  defaultLine: string;
-  sourceLine: string;
+  filledFromLine: string;
+  defaultIfBlankLine: string;
+  defaultSourceLine: string;
 } {
   return {
     title: options.fieldLabel.trim() || options.fieldKey || "Field",
     fieldKey: options.showFieldKey ? options.fieldKey : null,
     pageLine: `Page ${options.pageNumber}`,
-    mappingLine: options.mappingSummary.trim() || "—",
-    defaultLine: options.defaultDisplay,
-    sourceLine: options.sourceLabel,
+    filledFromLine: options.filledFrom.trim() || "Not connected",
+    defaultIfBlankLine: options.defaultDisplay,
+    defaultSourceLine: options.sourceLabel,
   };
+}
+
+/** @deprecated Use buildMySetupFieldCardCopy; kept for transitional call sites. */
+export function buildTemplateFieldCardCopy(options: {
+  fieldLabel: string;
+  fieldKey: string;
+  pageNumber: number;
+  filledFrom: string;
+  defaultDisplay: string;
+  sourceLabel: DefaultSourceLabel;
+  showFieldKey: boolean;
+}) {
+  return buildMySetupFieldCardCopy(options);
 }
