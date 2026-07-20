@@ -126,6 +126,34 @@ Default values represent an individual agent’s preferences or a brokerage’s 
 
 ---
 
+## Form-Level Defaults Management UI
+
+**Date:** 2026-07-19
+
+**Decision:**
+Expose Private and Organization preference defaults through a form-level UI on Global forms (`/forms/[id]/defaults`), not a system-wide dashboard in the first phase. Writes target form-scoped `field_defaults` rows only. RLS remains the authoritative permission boundary; server actions mirror Private owner / ORG_ADMIN / application Admin rules. Clearing soft-deletes (`status = DELETED`). No preference literals are written back to Global catalog fields. Changing a default never refreshes or rewrites packet field instances.
+
+**Reason:**
+Resolution, RLS, and storage already exist. Users need a reviewable surface attached to the Global forms they fill. A form-scoped page matches the current Templates list architecture (no separate form-detail tabs) and avoids inventing a cross-form product surface before authenticated use proves the workflow.
+
+**Consequences:**
+
+* Entry point: **Defaults** on active Global form rows in `/forms`.
+* Private forms do not offer this workflow in this phase.
+* Application Admins must choose an organization explicitly when managing Organization defaults.
+* Signature / initials fields are visible but not editable as preference defaults.
+* Cross-form defaults dashboard remains deferred.
+
+**Related files or migrations:**
+
+* `lib/types/field-default-management.ts`
+* `lib/field-defaults-management.ts`
+* `app/forms/[id]/defaults/page.tsx`
+* `components/forms/form-defaults-manager.tsx`
+* Existing `field_defaults` RLS (no new migration)
+
+---
+
 ## Packet Field-Instance Snapshots
 
 **Date:** 2026-07-17

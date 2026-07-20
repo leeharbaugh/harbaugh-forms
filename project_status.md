@@ -13,13 +13,13 @@ Harbaugh Forms is a Texas real estate forms application built with:
 ## Git State
 
 - `origin/main` tip:
-  `ce8b59a` — includes merge of `admin-copy-user-form-to-global` (`5f23a3e`) and merge of `packet-form-lifecycle-locking` (`ce8b59a`)
+  `3c1906204d621c9e5c2571031f4065d81dd15d0a` — includes PR #1 smoke-test docs / Org-Admin authorization coverage
 
-- Residual documentation branch:
-  `post-copy-global-smoke-docs` (from current `origin/main`)
+- Active feature branch:
+  `defaults-management-ui` (from `main` @ `3c19062`) — My Defaults / Organization Defaults UI for Global forms; **not merged**
 
 - Previous feature branch (merged; do not re-merge as a feature):
-  `admin-copy-user-form-to-global` @ `01d6780` (merged via `5f23a3e`)
+  `admin-copy-user-form-to-global` @ `01d6780` (merged via `5f23a3e`); local tip may still exist for history
 
 - Corrective / related migrations on `harbaugh-forms-dev`:
   - `20260717120000_clear_global_money_zero_defaults.sql` (applied)
@@ -57,6 +57,7 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - Resizable table-column preferences
 - Global form-copy traceability
 - Scoped Private and Organization field defaults
+- Form-level My Defaults / Organization Defaults UI for Global forms (branch `defaults-management-ui`, not merged)
 - Completed UI refresh Phases 1–4
 
 ## Current Architecture
@@ -172,25 +173,25 @@ Before applying migrations from a different development machine, compare local a
 
 The active feature is:
 
-**Admin Copy to Global Library with scoped field defaults**
+**My Defaults and Organization Defaults UI for Global forms**
 
 Implemented on branch:
 
-`admin-copy-user-form-to-global`
+`defaults-management-ui` (not merged)
 
 Current behavior:
 
-- Admins see `Owned by [User Name]` for another user's private form.
-- Active application admins may copy an eligible private form to the Global library.
-- The source private form remains unchanged.
-- The Global copy receives its own form record, PDF object, mappings, fields, and traceability.
-- Preference defaults are excluded from the Global copy.
-- Default values use `field_defaults` with only `PRIVATE` or `ORGANIZATION` scope.
-- Private defaults override Organization defaults.
-- The packet owner determines which defaults resolve, not the viewing admin.
-- Global catalog preference literals are cleared; scoped Private/Organization `field_defaults` remain.
-- Lee’s `CONTRACT_PROPERTY_AS_IS` Private default is preserved and notes finalized.
-- Ordinary packet-form open/view/load inserts missing field instances only (`ensure_missing`) and does not UPDATE existing snapshots. Explicit editor “Refresh values” uses `refresh_non_overrides`.
+- Active Global form rows on `/forms` offer a **Defaults** action.
+- Route `/forms/[id]/defaults` lists mapped fields for that Global form.
+- Users manage their own Private defaults (create / edit / soft-delete clear).
+- Organization members can view applicable Organization defaults; only `ORG_ADMIN` (own org) or application Admin may edit them.
+- Application Admins select the target organization explicitly (no silent use of the Admin’s primary org when administering another).
+- Effective scoped winner shows Private / Organization / None (Private beats Organization).
+- UI explains that transaction data and packet overrides still take precedence; changing a default does not rewrite packet instances.
+- Writes go only to `field_defaults` (form-scoped rows). Catalog `fields.default_value` / `default_checked` / `fallback_value` are never updated.
+- No migration added; existing `20260715180000` schema and RLS are used.
+
+### Prior: Admin Copy to Global Library with scoped field defaults
 
 Authenticated smoke tests for Copy to Global, scoped defaults, packet-snapshot containment, and ownership presentation completed 2026-07-19 on `harbaugh-forms-dev`. Feature code through `01d6780` is already on `origin/main` (`5f23a3e`). Do not merge `admin-copy-user-form-to-global` again as a feature branch.
 
@@ -235,7 +236,9 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 - Authenticated Copy-to-Global / containment smoke tests completed 2026-07-19 (see above). Org-Admin-without-application-Admin is covered by a focused unit test; a dedicated UI click account is optional and non-blocking.
 - Migration `20260717230000` was traced to `packet-form-lifecycle-locking` (`a38729c`) and is already on `origin/main`; it is not a Copy-to-Global residual and must not be reintroduced as a new change.
 - At-risk text/numeric instances retain historical values under containment; no bulk rewrite planned.
-- Full My Defaults / Organization Defaults management UI is deferred.
+- Full My Defaults / Organization Defaults management UI is implemented on `defaults-management-ui` and awaiting authenticated smoke testing (not merged).
+- Signature / initials fields are shown but not editable as preference defaults in this phase.
+- System-wide defaults dashboard (cross-form) is deferred; this phase is form-level only.
 - Scoped source-mapping / manual-only overrides for Global forms (without editing Global PDF structure) are not implemented.
 - Organization Admin membership/settings UI is missing (membership admin lives under Global Admin `/admin` only).
 - Multi-organization users require a valid `profiles.primary_organization_id` with ACTIVE membership to inherit Organization defaults.
@@ -247,15 +250,15 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 
 ## Next Steps
 
-1. Land residual branch `post-copy-global-smoke-docs` (smoke-test documentation + Org-Admin authorization unit test only). Do not re-merge `admin-copy-user-form-to-global` as a feature.
+1. Authenticated smoke-test My Defaults / Organization Defaults UI on `defaults-management-ui` (see latest session log checklist). Do not merge until smoke tests pass.
 2. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
 3. Follow-up branches in priority order:
-   1. My Defaults and Organization Defaults UI for Global forms.
-   2. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
-   3. Admin ownership demarcation and saved Include user-owned filters.
-   4. Refresh Values before/after field-diff preview.
-   5. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
-   6. Authentisign integration (may set `SIGNED`).
+   1. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
+   2. Admin ownership demarcation and saved Include user-owned filters.
+   3. Refresh Values before/after field-diff preview.
+   4. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
+   5. Authentisign integration (may set `SIGNED`).
+   6. Optional: cross-form defaults dashboard once form-level UI is proven.
 
 ## Development Machine Checklist
 
@@ -306,6 +309,39 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Persisted packet field instances are immutable during ordinary view/open; missing instances may be inserted, but existing snapshots change only via explicit edit/refresh.
 
 ## Session History
+
+### 2026-07-19 (defaults-management-ui)
+
+- Work completed:
+  - Branch `defaults-management-ui` from synchronized `main` (`3c19062`).
+  - Form-level defaults management for Global forms at `/forms/[id]/defaults`.
+  - Server actions for load / save / clear Private and Organization defaults (soft-delete clear; no catalog writes; no packet refresh).
+  - Forms list **Defaults** entry point for active Global forms.
+  - Focused unit tests in `lib/field-defaults-management.test.ts`.
+- Files changed:
+  - `lib/types/field-default-management.ts`
+  - `lib/field-defaults-management.ts`
+  - `lib/field-defaults-management.test.ts`
+  - `app/forms/[id]/defaults/page.tsx`
+  - `components/forms/form-defaults-manager.tsx`
+  - `components/forms/forms-page.tsx`
+  - `package.json`
+  - `project_status.md`
+  - `decisions.md`
+- Database changes:
+  - None (no new migration).
+- Tests performed:
+  - `npx tsc --noEmit` — pass
+  - `npm run test:field-defaults` — pass (41)
+  - `npm run test:field-defaults-management` — pass (18)
+  - `npm run test:form-copy-global` — pass (76)
+  - `npm run test:field-instance-sync` — pass (17)
+  - Targeted ESLint on changed files — pass
+  - `npm run build` — pass
+- Unresolved issues:
+  - Authenticated smoke tests still required before merge.
+- Next action:
+  - Run the authenticated smoke-test checklist; do not merge.
 
 ### 2026-07-17 (packet-form lifecycle locking)
 
