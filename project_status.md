@@ -250,7 +250,7 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 
 ## Next Steps
 
-1. Authenticated smoke-test My Defaults / Organization Defaults UI on `defaults-management-ui` (see latest session log checklist). Do not merge until smoke tests pass.
+1. Final branch review for `defaults-management-ui` (smoke tests and smoke-data cleanup complete). Do not merge until approved.
 2. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
 3. Follow-up branches in priority order:
    1. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
@@ -335,6 +335,17 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
   - No ORG_ADMIN-only UI click account.
   - Disposable missing-instance init not manufactured (avoid historical packet surgery).
   - Admin viewer isolation relied on existing automated coverage + prior Copy-to-Global smoke.
+- Branch remains unmerged: `defaults-management-ui`.
+
+### 2026-07-20 (defaults-management-ui smoke-data cleanup)
+
+- Work completed:
+  - Read-only inventory of Form `#1` smoke-test `field_defaults` on `harbaugh-forms-dev`.
+  - Cleared two remaining ACTIVE temporary Yahoo Private rows (currency `99`, date `2026-08-15`) via soft-delete matching `clearPrivateFormDefault`.
+  - Text/checkbox/org smoke rows were already `DELETED` from the 2026-07-19 UI session; retained for audit.
+- Data integrity:
+  - Catalog fields, mappings, packet instances, legacy `form_id IS NULL` defaults (~60 ACTIVE), and Lee preexisting defaults unchanged.
+  - Yahoo has zero ACTIVE scoped defaults after cleanup; Lee legacy `PAYMENT_COUNTY` / checkbox defaults still resolve for Lee only.
 - Branch remains unmerged: `defaults-management-ui`.
 
 ### 2026-07-19 (defaults-management-ui)
