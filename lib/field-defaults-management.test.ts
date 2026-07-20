@@ -7,6 +7,7 @@ import {
 import type { DefaultsManagementActor } from "./types/field-default-management.ts";
 import {
   assertWritableDefaultScope,
+  buildMySetupFieldCardCopy,
   canManageOrganizationDefault,
   canManagePrivateDefault,
   canOfferFormDefaultsManagement,
@@ -14,8 +15,14 @@ import {
   defaultsEditorKindForField,
   draftFromFieldDefault,
   effectiveScopedDefaultWinner,
+  formatDefaultSourceLabel,
   formatDefaultsDisplayValue,
+  isFormScopedPersonalClearTarget,
+  mySetupEditorPath,
+  parseFormEditorMode,
+  resolveEffectiveDefaultPresentation,
   serializeDefaultsDraft,
+  shouldShowDefaultsFieldKey,
 } from "./types/field-default-management.ts";
 
 function makeDefault(
@@ -336,5 +343,244 @@ describe("packet safety invariants (management helpers)", () => {
     const statusForClear = "DELETED";
     assert.equal(statusForClear, "DELETED");
     assert.notEqual(statusForClear, "ACTIVE");
+  });
+});
+
+describe("legacy visibility and source labels", () => {
+  it("labels legacy form_id IS NULL Personal defaults as all-forms", () => {
+    const legacy = makeDefault({
+      id: "legacy-1",
+      scope: "PRIVATE",
+      form_id: null,
+      default_value: "Dallas/Tarrant",
+    });
+    assert.equal(
+      formatDefaultSourceLabel(legacy),
+      "Personal — applies to all forms",
+    );
+
+    const presentation = resolveEffectiveDefaultPresentation({
+      privateRows: [legacy],
+      organizationRows: [],
+      fieldId: "field-1",
+      formId: 1,
+      editorKind: "text",
+    });
+    assert.equal(presentation.displayValue, "Dallas/Tarrant");
+    assert.equal(
+      presentation.sourceLabel,
+      "Personal — applies to all forms",
+    );
+    assert.equal(presentation.specificity, "all-forms");
+    assert.equal(presentation.legacyPersonalProtected, true);
+    assert.equal(presentation.canClearFormScopedPersonal, false);
+  });
+
+  it("labels form-scoped Personal distinctly from legacy", () => {
+    const formScoped = makeDefault({
+      id: "form-1",
+      scope: "PRIVATE",
+      form_id: 1,
+      default_value: "FormOnly",
+    });
+    assert.equal(formatDefaultSourceLabel(formScoped), "Personal");
+    assert.equal(isFormScopedPersonalClearTarget(formScoped, 1), true);
+    assert.equal(isFormScopedPersonalClearTarget(formScoped, 7), false);
+  });
+
+  it("does not surface unmapped legacy fields via resolve without matching fieldId", () => {
+    const legacy = makeDefault({
+      id: "legacy-other",
+      scope: "PRIVATE",
+      form_id: null,
+      field_id: "other-field",
+      default_value: "hidden",
+    });
+    const presentation = resolveEffectiveDefaultPresentation({
+      privateRows: [legacy],
+      organizationRows: [],
+      fieldId: "field-1",
+      formId: 1,
+      editorKind: "text",
+    });
+    assert.equal(presentation.effectiveDefault, null);
+    assert.equal(presentation.sourceLabel, "None");
+    assert.equal(presentation.displayValue, "None");
+  });
+
+  it("form-scoped Personal wins over legacy without converting legacy", () => {
+    const legacy = makeDefault({
+      id: "legacy-1",
+      scope: "PRIVATE",
+      form_id: null,
+      default_value: "Dallas/Tarrant",
+    });
+    const formScoped = makeDefault({
+      id: "form-1",
+      scope: "PRIVATE",
+      form_id: 1,
+      default_value: "Form Override",
+    });
+    const presentation = resolveEffectiveDefaultPresentation({
+      privateRows: [legacy, formScoped],
+      organizationRows: [],
+      fieldId: "field-1",
+      formId: 1,
+      editorKind: "text",
+    });
+    assert.equal(presentation.displayValue, "Form Override");
+    assert.equal(presentation.sourceLabel, "Personal");
+    assert.equal(presentation.canClearFormScopedPersonal, true);
+    assert.equal(presentation.legacyPersonalProtected, false);
+    assert.equal(legacy.status, "ACTIVE");
+    assert.equal(legacy.form_id, null);
+    assert.equal(legacy.default_value, "Dallas/Tarrant");
+  });
+
+  it("labels legacy Organization defaults as all-forms", () => {
+    const orgLegacy = makeDefault({
+      id: "org-legacy",
+      scope: "ORGANIZATION",
+      form_id: null,
+      default_value: "Broker Bay",
+    });
+    assert.equal(
+      formatDefaultSourceLabel(orgLegacy),
+      "Organization — applies to all forms",
+    );
+  });
+});
+
+describe("form-level Clear safety", () => {
+  it("never treats legacy Personal as a form-scoped clear target", () => {
+    const legacy = makeDefault({
+      id: "legacy-1",
+      scope: "PRIVATE",
+      form_id: null,
+      default_checked: true,
+    });
+    assert.equal(isFormScopedPersonalClearTarget(legacy, 1), false);
+  });
+
+  it("after form-scoped clear target is gone, legacy remains effective", () => {
+    const legacy = makeDefault({
+      id: "legacy-1",
+      scope: "PRIVATE",
+      form_id: null,
+      default_value: "Dallas/Tarrant",
+    });
+    const afterClear = resolveEffectiveDefaultPresentation({
+      privateRows: [legacy],
+      organizationRows: [],
+      fieldId: "field-1",
+      formId: 1,
+      editorKind: "text",
+    });
+    assert.equal(afterClear.displayValue, "Dallas/Tarrant");
+    assert.equal(
+      afterClear.sourceLabel,
+      "Personal — applies to all forms",
+    );
+  });
+
+  it("reveals Organization when no Personal remains", () => {
+    const org = makeDefault({
+      id: "org-1",
+      scope: "ORGANIZATION",
+      form_id: 1,
+      default_value: "Org County",
+    });
+    const presentation = resolveEffectiveDefaultPresentation({
+      privateRows: [],
+      organizationRows: [org],
+      fieldId: "field-1",
+      formId: 1,
+      editorKind: "text",
+    });
+    assert.equal(presentation.displayValue, "Org County");
+    assert.equal(presentation.sourceLabel, "Organization");
+    assert.equal(presentation.winner, "Organization");
+  });
+});
+
+describe("role-aware My setup card display", () => {
+  it("hides field key for regular users and shows for admins", () => {
+    assert.equal(shouldShowDefaultsFieldKey(member), false);
+    assert.equal(shouldShowDefaultsFieldKey(orgAdmin), true);
+    assert.equal(shouldShowDefaultsFieldKey(appAdmin), true);
+
+    const userCard = buildMySetupFieldCardCopy({
+      fieldLabel: "County",
+      fieldKey: "PAYMENT_COUNTY",
+      pageNumber: 1,
+      mappingSummary: "Buyer representation county",
+      defaultDisplay: "Dallas/Tarrant",
+      sourceLabel: "Personal — applies to all forms",
+      showFieldKey: false,
+    });
+    assert.equal(userCard.fieldKey, null);
+    assert.equal(userCard.title, "County");
+    assert.match(userCard.pageLine, /^Page 1$/);
+    assert.doesNotMatch(userCard.mappingLine, /occurrence/i);
+    assert.doesNotMatch(userCard.mappingLine, /placement/i);
+
+    const adminCard = buildMySetupFieldCardCopy({
+      fieldLabel: "County",
+      fieldKey: "PAYMENT_COUNTY",
+      pageNumber: 1,
+      mappingSummary: "Buyer representation county",
+      defaultDisplay: "Dallas/Tarrant",
+      sourceLabel: "Personal — applies to all forms",
+      showFieldKey: true,
+    });
+    assert.equal(adminCard.fieldKey, "PAYMENT_COUNTY");
+  });
+
+  it("keeps Unchecked and zero distinct from None", () => {
+    assert.equal(
+      formatDefaultsDisplayValue(
+        makeDefault({
+          id: "c1",
+          scope: "PRIVATE",
+          form_id: null,
+          default_checked: false,
+        }),
+        "checkbox",
+      ),
+      "Unchecked",
+    );
+    assert.equal(
+      formatDefaultsDisplayValue(
+        makeDefault({
+          id: "n1",
+          scope: "PRIVATE",
+          form_id: null,
+          default_value: "0",
+        }),
+        "currency",
+      ),
+      "0",
+    );
+    assert.equal(formatDefaultsDisplayValue(null, "checkbox"), "None");
+  });
+});
+
+describe("My setup routing helpers", () => {
+  it("parses my-setup mode and builds redirect path", () => {
+    assert.equal(parseFormEditorMode("my-setup"), "my-setup");
+    assert.equal(parseFormEditorMode(undefined), "global-template");
+    assert.equal(parseFormEditorMode("global-template"), "global-template");
+    assert.equal(mySetupEditorPath(1), "/forms/1/editor?mode=my-setup");
+  });
+
+  it("blocks Private and inactive forms from defaults entry", () => {
+    assert.equal(
+      canOfferFormDefaultsManagement({ scope: "PRIVATE", status: "ACTIVE" }),
+      false,
+    );
+    assert.equal(
+      canOfferFormDefaultsManagement({ scope: "GLOBAL", status: "INACTIVE" }),
+      false,
+    );
   });
 });

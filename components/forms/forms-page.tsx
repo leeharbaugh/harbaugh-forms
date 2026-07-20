@@ -34,7 +34,7 @@ import {
   resolveFormOwnerDisplayName,
   type FormOwnerProfile,
 } from "@/lib/form-owner-display";
-import { canOfferFormDefaultsManagement } from "@/lib/types/field-default-management";
+import { canOfferFormDefaultsManagement, mySetupEditorPath } from "@/lib/types/field-default-management";
 import {
   buildFormStoragePath,
   buildPendingFormStoragePath,
@@ -775,7 +775,7 @@ export function FormsPage() {
                         ) : null}
                         {canOfferFormDefaultsManagement(template) ? (
                           <Button variant="outline" size="sm" asChild>
-                            <Link href={`/forms/${template.id}/defaults`}>
+                            <Link href={mySetupEditorPath(template.id)}>
                               Defaults
                             </Link>
                           </Button>

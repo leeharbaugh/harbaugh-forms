@@ -250,7 +250,7 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 
 ## Next Steps
 
-1. Final branch review for `defaults-management-ui` (smoke tests and smoke-data cleanup complete). Do not merge until approved.
+1. Phase 2 visual default editing on `defaults-management-ui` (form-scoped Personal/Org edit, Use organization default, scope selector). Do not merge until Phase 1 review is approved and Phase 2 is complete as needed.
 2. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
 3. Follow-up branches in priority order:
    1. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
@@ -259,6 +259,7 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
    4. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
    5. Authentisign integration (may set `SIGNED`).
    6. Optional: cross-form defaults dashboard once form-level UI is proven.
+   7. Phase 3 Personal placement overrides (after Phase 2).
 
 ## Development Machine Checklist
 
@@ -307,8 +308,24 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Final classification (2026-07-17): Lee’s `CONTRACT_PROPERTY_AS_IS` stays Private; all Global catalog preference literals cleared unless deliberately classified as structural constants (none retained).
 - Administrative roles: Regular user / Organization Admin (`ORG_ADMIN`) / Global Admin (`profiles.app_role = ADMIN`) are distinct axes.
 - Persisted packet field instances are immutable during ordinary view/open; missing instances may be inserted, but existing snapshots change only via explicit edit/refresh.
+- Visual My setup mode is the primary Global-form defaults entry; legacy `form_id IS NULL` Personal defaults are labeled and protected from form-level Clear.
 
 ## Session History
+
+### 2026-07-20 (defaults-management-ui Phase 1 visual My setup)
+
+- Work completed:
+  - Diagnosed apparent Lee default loss: data intact (56 ACTIVE legacy Private, `form_id IS NULL`); sparse form-scoped long-list UI made values look gone.
+  - Added visual **My setup** mode at `/forms/[id]/editor?mode=my-setup` (PDF + field cards, bidirectional selection, no Global structural edits).
+  - Legacy defaults labeled `Personal — applies to all forms`; form-level Clear cannot soft-delete legacy all-forms rows.
+  - `/forms/[id]/defaults` redirects to My setup; Forms list Defaults links updated.
+  - Role-aware field key display (admins/Org Admins only); no occurrence/placement-count on cards.
+- Database changes:
+  - None (no migration; Lee legacy rows untouched — reconfirmed 56 ACTIVE).
+- Deferred:
+  - Phase 2 form-scoped editing / Org mode / Use organization default.
+  - Phase 3 Personal placement overrides.
+- Branch remains unmerged: `defaults-management-ui`.
 
 ### 2026-07-19 (defaults-management-ui authenticated smoke)
 

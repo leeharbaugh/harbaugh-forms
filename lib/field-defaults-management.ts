@@ -22,10 +22,13 @@ import {
   canViewOrganizationDefaults,
   defaultsEditorKindForField,
   draftFromFieldDefault,
-  effectiveScopedDefaultWinner,
   formatDefaultsDisplayValue,
+  isFormScopedPersonalClearTarget,
   pickScopedDefaultForFormField,
+  resolveEffectiveDefaultPresentation,
   serializeDefaultsDraft,
+  shouldShowDefaultsFieldKey,
+  type DefaultSourceLabel,
   type DefaultsEditorKind,
   type DefaultsFieldValueDraft,
   type EffectiveScopedDefaultWinner,
@@ -50,6 +53,10 @@ export type FormDefaultsFieldRow = {
   privateDisplay: string;
   organizationDisplay: string;
   effectiveWinner: EffectiveScopedDefaultWinner;
+  effectiveDisplay: string;
+  effectiveSourceLabel: DefaultSourceLabel;
+  canClearFormScopedPersonal: boolean;
+  legacyPersonalProtected: boolean;
   privateDraft: DefaultsFieldValueDraft;
   organizationDraft: DefaultsFieldValueDraft;
 };
@@ -65,6 +72,7 @@ export type FormDefaultsPageData = {
   canEditPrivate: boolean;
   canEditOrganization: boolean;
   canSelectOrganization: boolean;
+  showFieldKey: boolean;
   organizationOptions: DefaultsOrganizationOption[];
   fields: FormDefaultsFieldRow[];
 };
@@ -388,17 +396,16 @@ export async function loadFormDefaultsPage(options: {
 
     const pageFields: FormDefaultsFieldRow[] = fields.map((field) => {
       const editorKind = defaultsEditorKindForField(field);
-      const privateDefault = pickScopedDefaultForFormField(privateRows, {
+      const presentation = resolveEffectiveDefaultPresentation({
+        privateRows,
+        organizationRows,
         fieldId: field.id,
         formId: options.formId,
-      }) as FieldDefault | null;
-      const organizationDefault = pickScopedDefaultForFormField(
-        organizationRows,
-        {
-          fieldId: field.id,
-          formId: options.formId,
-        },
-      ) as FieldDefault | null;
+        editorKind,
+      });
+      const privateDefault = presentation.privateDefault as FieldDefault | null;
+      const organizationDefault =
+        presentation.organizationDefault as FieldDefault | null;
 
       return {
         fieldId: field.id,
@@ -415,10 +422,11 @@ export async function loadFormDefaultsPage(options: {
           organizationDefault,
           editorKind,
         ),
-        effectiveWinner: effectiveScopedDefaultWinner({
-          privateDefault,
-          organizationDefault,
-        }),
+        effectiveWinner: presentation.winner,
+        effectiveDisplay: presentation.displayValue,
+        effectiveSourceLabel: presentation.sourceLabel,
+        canClearFormScopedPersonal: presentation.canClearFormScopedPersonal,
+        legacyPersonalProtected: presentation.legacyPersonalProtected,
         privateDraft: draftFromFieldDefault(privateDefault, editorKind),
         organizationDraft: draftFromFieldDefault(
           organizationDefault,
@@ -440,6 +448,7 @@ export async function loadFormDefaultsPage(options: {
         canEditPrivate,
         canEditOrganization,
         canSelectOrganization: actor.isActiveAdmin,
+        showFieldKey: shouldShowDefaultsFieldKey(actor),
         organizationOptions: actor.isActiveAdmin
           ? organizationOptions
           : organizationOptions.filter(
@@ -704,24 +713,43 @@ export async function clearPrivateFormDefault(input: {
       organizationId: null,
     });
 
-    const target =
-      (await findFormScopedActiveDefault(supabase, {
-        fieldId: input.fieldId,
-        formId: input.formId,
-        scope: "PRIVATE",
-        ownerUserId: userId,
-      })) ??
-      pickScopedDefaultForFormField(privateRows, {
+    // Form-level Clear only targets form-scoped Personal rows.
+    // Never soft-delete legacy all-forms (form_id IS NULL) Personal defaults.
+    const target = await findFormScopedActiveDefault(supabase, {
+      fieldId: input.fieldId,
+      formId: input.formId,
+      scope: "PRIVATE",
+      ownerUserId: userId,
+    });
+
+    if (!target) {
+      const legacyOrOther = pickScopedDefaultForFormField(privateRows, {
         fieldId: input.fieldId,
         formId: input.formId,
       });
-
-    if (!target) {
+      if (
+        legacyOrOther &&
+        !isFormScopedPersonalClearTarget(legacyOrOther, input.formId)
+      ) {
+        return {
+          ok: false,
+          error:
+            "This Personal default applies to all forms and cannot be cleared from a single form. Form-specific overrides are managed separately.",
+        };
+      }
       return { ok: true, data: { cleared: false } };
     }
 
     if (target.owner_user_id !== userId || target.scope !== "PRIVATE") {
       return { ok: false, error: "You can only clear your own Private defaults." };
+    }
+
+    if (!isFormScopedPersonalClearTarget(target, input.formId)) {
+      return {
+        ok: false,
+        error:
+          "This Personal default applies to all forms and cannot be cleared from a single form.",
+      };
     }
 
     const { error } = await supabase
@@ -732,13 +760,15 @@ export async function clearPrivateFormDefault(input: {
       })
       .eq("id", target.id)
       .eq("owner_user_id", userId)
-      .eq("scope", "PRIVATE");
+      .eq("scope", "PRIVATE")
+      .eq("form_id", input.formId);
 
     if (error) {
       return { ok: false, error: error.message };
     }
 
     revalidatePath(`/forms/${input.formId}/defaults`);
+    revalidatePath(`/forms/${input.formId}/editor`);
     return { ok: true, data: { cleared: true } };
   } catch (error) {
     return {

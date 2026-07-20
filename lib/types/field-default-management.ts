@@ -96,12 +96,78 @@ export type DefaultsEditorKind =
 
 export type EffectiveScopedDefaultWinner = "Private" | "Organization" | "None";
 
+export type DefaultSourceLabel =
+  | "Personal"
+  | "Personal — applies to all forms"
+  | "Organization"
+  | "Organization — applies to all forms"
+  | "None";
+
+export type DefaultSpecificity = "mapping" | "form" | "all-forms" | "none";
+
 export type DefaultsFieldValueDraft = {
   /** Text value for non-checkbox editors. Empty string means blank (not NA). */
   textValue: string;
   /** Checkbox only. null means no checkbox preference stored. */
   checked: boolean | null;
 };
+
+/**
+ * Classify how a stored default row scopes relative to a form.
+ * Legacy all-forms rows have form_id IS NULL.
+ */
+export function defaultRowSpecificity(
+  row: DefaultsManagementFieldDefault | null | undefined,
+): DefaultSpecificity {
+  if (!row || row.status !== "ACTIVE") {
+    return "none";
+  }
+  if (row.form_field_mapping_id) {
+    return "mapping";
+  }
+  if (row.form_id != null) {
+    return "form";
+  }
+  return "all-forms";
+}
+
+export function formatDefaultSourceLabel(
+  row: DefaultsManagementFieldDefault | null | undefined,
+): DefaultSourceLabel {
+  if (!row || row.status !== "ACTIVE") {
+    return "None";
+  }
+  const specificity = defaultRowSpecificity(row);
+  const isAllForms = specificity === "all-forms";
+  if (row.scope === "PRIVATE") {
+    return isAllForms
+      ? "Personal — applies to all forms"
+      : "Personal";
+  }
+  if (row.scope === "ORGANIZATION") {
+    return isAllForms
+      ? "Organization — applies to all forms"
+      : "Organization";
+  }
+  return "None";
+}
+
+/**
+ * True when an ordinary form-level Clear may soft-delete this Personal row.
+ * Legacy all-forms Personal rows are never cleared by form-level Clear.
+ */
+export function isFormScopedPersonalClearTarget(
+  row: DefaultsManagementFieldDefault | null | undefined,
+  formId: number,
+): boolean {
+  if (!row || row.status !== "ACTIVE" || row.scope !== "PRIVATE") {
+    return false;
+  }
+  return (
+    row.form_id === formId &&
+    row.form_field_mapping_id == null
+  );
+}
 
 export type SerializedDefaultPayload = {
   default_value: string | null;
@@ -279,6 +345,84 @@ export function effectiveScopedDefaultWinner(options: {
   return "None";
 }
 
+/**
+ * Resolve the effective scoped default for display using the same precedence
+ * as packet resolution: Private (mapping > form > all-forms) then Organization.
+ */
+export function resolveEffectiveDefaultPresentation(options: {
+  privateRows: DefaultsManagementFieldDefault[];
+  organizationRows: DefaultsManagementFieldDefault[];
+  fieldId: string;
+  formId: number;
+  mappingId?: string | null;
+  editorKind: DefaultsEditorKind;
+}): {
+  privateDefault: DefaultsManagementFieldDefault | null;
+  organizationDefault: DefaultsManagementFieldDefault | null;
+  effectiveDefault: DefaultsManagementFieldDefault | null;
+  displayValue: string;
+  sourceLabel: DefaultSourceLabel;
+  specificity: DefaultSpecificity;
+  winner: EffectiveScopedDefaultWinner;
+  canClearFormScopedPersonal: boolean;
+  legacyPersonalProtected: boolean;
+} {
+  const privateDefault = pickBestActiveDefault(options.privateRows, {
+    fieldId: options.fieldId,
+    formId: options.formId,
+    mappingId: options.mappingId ?? null,
+  });
+  const organizationDefault = pickBestActiveDefault(options.organizationRows, {
+    fieldId: options.fieldId,
+    formId: options.formId,
+    mappingId: options.mappingId ?? null,
+  });
+  const winner = effectiveScopedDefaultWinner({
+    privateDefault,
+    organizationDefault,
+  });
+  const effectiveDefault =
+    winner === "Private"
+      ? privateDefault
+      : winner === "Organization"
+        ? organizationDefault
+        : null;
+
+  return {
+    privateDefault,
+    organizationDefault,
+    effectiveDefault,
+    displayValue: formatDefaultsDisplayValue(
+      effectiveDefault,
+      options.editorKind,
+    ),
+    sourceLabel: formatDefaultSourceLabel(effectiveDefault),
+    specificity: defaultRowSpecificity(effectiveDefault),
+    winner,
+    canClearFormScopedPersonal: isFormScopedPersonalClearTarget(
+      privateDefault,
+      options.formId,
+    ),
+    legacyPersonalProtected:
+      !!privateDefault &&
+      privateDefault.scope === "PRIVATE" &&
+      defaultRowSpecificity(privateDefault) === "all-forms",
+  };
+}
+
+/** Field key on cards: Org Admins and application Admins only. */
+export function shouldShowDefaultsFieldKey(
+  actor: DefaultsManagementActor | null | undefined,
+): boolean {
+  if (!actor) {
+    return false;
+  }
+  if (actor.isActiveAdmin) {
+    return true;
+  }
+  return (actor.orgAdminOrganizationIds ?? []).length > 0;
+}
+
 export function pickScopedDefaultForFormField(
   rows: DefaultsManagementFieldDefault[],
   options: {
@@ -356,3 +500,49 @@ export function canOfferFormDefaultsManagement(form: {
 
 export const DEFAULTS_PRECEDENCE_NOTICE =
   "Defaults help prefill new form values. Transaction data and packet-specific values take precedence. Changing a default does not change existing packet forms.";
+
+/** Editor query mode for Global forms. */
+export type FormEditorMode = "my-setup" | "global-template";
+
+export function parseFormEditorMode(
+  value: string | null | undefined,
+): FormEditorMode {
+  return value === "my-setup" ? "my-setup" : "global-template";
+}
+
+export function mySetupEditorPath(formId: number): string {
+  return `/forms/${formId}/editor?mode=my-setup`;
+}
+
+export function globalTemplateEditorPath(formId: number): string {
+  return `/forms/${formId}/editor`;
+}
+
+/**
+ * Card copy for My setup mode. Does not include occurrence or placement count.
+ */
+export function buildMySetupFieldCardCopy(options: {
+  fieldLabel: string;
+  fieldKey: string;
+  pageNumber: number;
+  mappingSummary: string;
+  defaultDisplay: string;
+  sourceLabel: DefaultSourceLabel;
+  showFieldKey: boolean;
+}): {
+  title: string;
+  fieldKey: string | null;
+  pageLine: string;
+  mappingLine: string;
+  defaultLine: string;
+  sourceLine: string;
+} {
+  return {
+    title: options.fieldLabel.trim() || options.fieldKey || "Field",
+    fieldKey: options.showFieldKey ? options.fieldKey : null,
+    pageLine: `Page ${options.pageNumber}`,
+    mappingLine: options.mappingSummary.trim() || "—",
+    defaultLine: options.defaultDisplay,
+    sourceLine: options.sourceLabel,
+  };
+}

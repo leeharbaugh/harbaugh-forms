@@ -1,9 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { FormDefaultsManager } from "@/components/forms/form-defaults-manager";
-import { loadFormDefaultsPage } from "@/lib/field-defaults-management";
-import { Button } from "@/components/ui/button";
+import { mySetupEditorPath } from "@/lib/types/field-default-management";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -16,12 +13,12 @@ type PageProps = {
   searchParams: Promise<{ organizationId?: string }>;
 };
 
-export default async function FormDefaultsPage({
-  params,
-  searchParams,
-}: PageProps) {
+/**
+ * Standalone long-list Defaults UI is no longer the primary entry point.
+ * Redirect into visual My setup mode.
+ */
+export default async function FormDefaultsPage({ params }: PageProps) {
   const { id } = await params;
-  const { organizationId } = await searchParams;
   const formId = Number(id);
 
   const supabase = await createClient();
@@ -33,31 +30,8 @@ export default async function FormDefaultsPage({
   }
 
   if (!Number.isFinite(formId) || formId <= 0) {
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-destructive">Invalid form ID.</p>
-        <Button variant="outline" asChild>
-          <Link href="/forms">Back to templates</Link>
-        </Button>
-      </div>
-    );
+    redirect("/forms");
   }
 
-  const result = await loadFormDefaultsPage({
-    formId,
-    organizationId: organizationId ?? null,
-  });
-
-  if (!result.ok) {
-    return (
-      <div className="space-y-4">
-        <p className="text-sm text-destructive">{result.error}</p>
-        <Button variant="outline" asChild>
-          <Link href="/forms">Back to templates</Link>
-        </Button>
-      </div>
-    );
-  }
-
-  return <FormDefaultsManager initialData={result.data} />;
+  redirect(mySetupEditorPath(formId));
 }

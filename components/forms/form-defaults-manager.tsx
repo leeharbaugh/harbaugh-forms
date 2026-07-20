@@ -481,7 +481,9 @@ export function FormDefaultsManager({ initialData }: FormDefaultsManagerProps) {
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={privateSaving || !field.privateDefault}
+                          disabled={
+                            privateSaving || !field.canClearFormScopedPersonal
+                          }
                           onClick={() =>
                             setClearTarget({
                               fieldId: field.fieldId,
@@ -492,6 +494,11 @@ export function FormDefaultsManager({ initialData }: FormDefaultsManagerProps) {
                         >
                           Clear Private
                         </Button>
+                        {field.legacyPersonalProtected ? (
+                          <p className="text-xs text-muted-foreground">
+                            Applies to all forms — not cleared from this form.
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
                   </section>

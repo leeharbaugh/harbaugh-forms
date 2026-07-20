@@ -488,3 +488,30 @@ RLS remains authoritative for all collection permissions.
 * Collection permission helpers
 * Collection copy functions
 * Packet creation from collections
+
+---
+
+## Visual My setup mode for scoped defaults
+
+**Date:** 2026-07-20
+
+**Decision:**  
+Manage Personal/Organization preference defaults in a visual PDF My setup mode rather than a form-scoped long list. Legacy `form_id IS NULL` Personal defaults display as `Personal — applies to all forms` and are protected from ordinary form-level Clear. Global structural editing remains a separate Admin-only Edit Global Template mode.
+
+**Reason:**  
+Form-scoped long lists made intact all-forms defaults look missing when sparse field overlap left most rows blank. Users need PDF context and clear source labels. Form-level Clear must not destroy cross-form Personal preferences.
+
+**Consequences:**
+
+- `/forms/[id]/defaults` redirects to `/forms/[id]/editor?mode=my-setup`.
+- My setup is available to authenticated users on active Global forms; it cannot mutate Global placements or mappings.
+- Form-level Clear soft-deletes only form-scoped Personal rows.
+- Personal placement overrides and full visual default editing remain Phase 2/3.
+
+**Related files:**
+
+* `components/forms/pdf-my-setup-editor.tsx`
+* `lib/types/field-default-management.ts`
+* `lib/field-defaults-management.ts`
+* `app/forms/[id]/editor/page.tsx`
+* `app/forms/[id]/defaults/page.tsx`
