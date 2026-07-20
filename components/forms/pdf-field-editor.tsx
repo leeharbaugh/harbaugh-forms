@@ -10,10 +10,12 @@ import { PdfFieldInventoryPanel } from "@/components/forms/pdf-field-inventory-p
 import { PdfFieldOverlay } from "@/components/forms/pdf-field-overlay";
 import { PdfFieldPlacementDialog } from "@/components/forms/pdf-field-placement-dialog";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  clearPrivateFormDefault,
   loadFormDefaultsPage,
   saveOrganizationFormDefault,
   savePrivateFormDefault,
@@ -197,6 +199,13 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   const [defaultEditPending, setDefaultEditPending] = useState(false);
   const [defaultEditError, setDefaultEditError] = useState<string | null>(null);
   const [defaultEditMessage, setDefaultEditMessage] = useState<string | null>(
+    null,
+  );
+  const [clearDefaultFieldId, setClearDefaultFieldId] = useState<string | null>(
+    null,
+  );
+  const [clearDefaultPending, setClearDefaultPending] = useState(false);
+  const [clearDefaultError, setClearDefaultError] = useState<string | null>(
     null,
   );
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -1095,6 +1104,35 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     }
   };
 
+  const handleClearFormScopedDefault = async () => {
+    if (!clearDefaultFieldId || !defaultsPage) {
+      return;
+    }
+    const fieldRow = defaultsByFieldId.get(clearDefaultFieldId);
+    if (!fieldRow) {
+      return;
+    }
+    setClearDefaultPending(true);
+    setClearDefaultError(null);
+    try {
+      const result = await clearPrivateFormDefault({
+        formId,
+        fieldId: clearDefaultFieldId,
+      });
+      if (!result.ok) {
+        setClearDefaultError(result.error);
+        return;
+      }
+      setClearDefaultFieldId(null);
+      const defaultsResult = await loadFormDefaultsPage({ formId });
+      if (defaultsResult.ok) {
+        applyDefaultsPage(defaultsResult.data);
+      }
+    } finally {
+      setClearDefaultPending(false);
+    }
+  };
+
   const closeEditDialog = () => {
     if (isEditing || isDeletingId) return;
     setEditingMapping(null);
@@ -1728,6 +1766,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
             {deleteError && (
               <p className="mb-3 text-sm text-destructive">{deleteError}</p>
             )}
+            {clearDefaultError && (
+              <p className="mb-3 text-sm text-destructive">{clearDefaultError}</p>
+            )}
 
             {mappings.length === 0 ? (
               <p className="text-sm text-muted-foreground">
@@ -1747,6 +1788,11 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                     (defaultsPage.canEditPrivate ||
                       defaultsPage.canEditOrganization) &&
                     fieldRow.editorKind !== "unsupported";
+                  const canClearFormScopedDefault =
+                    !!fieldRow &&
+                    !!defaultsPage &&
+                    defaultsPage.canEditPrivate &&
+                    fieldRow.canClearFormScopedPersonal;
 
                   return (
                     <div
@@ -1916,6 +1962,19 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                             Edit default
                           </Button>
                         ) : null}
+                        {canClearFormScopedDefault && fieldRow ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={clearDefaultPending}
+                            onClick={() => {
+                              setClearDefaultError(null);
+                              setClearDefaultFieldId(fieldRow.fieldId);
+                            }}
+                          >
+                            Clear personal default
+                          </Button>
+                        ) : null}
                         <Button
                           variant="destructive"
                           size="sm"
@@ -1994,6 +2053,30 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         onConfirm={() => void handleConfirmKeyboardDelete()}
         onCancel={() => setMappingPendingDelete(null)}
         elevated={editingMapping != null}
+      />
+
+      <ConfirmDialog
+        open={!!clearDefaultFieldId}
+        title="Clear personal default?"
+        message={
+          clearDefaultFieldId
+            ? `Remove the form-specific Personal default for ${
+                defaultsByFieldId.get(clearDefaultFieldId)?.fieldLabel ??
+                "this field"
+              }? Legacy all-forms defaults are not affected.`
+            : undefined
+        }
+        confirmLabel="Clear default"
+        variant="destructive"
+        isConfirming={clearDefaultPending}
+        onConfirm={() => void handleClearFormScopedDefault()}
+        onCancel={() => {
+          if (clearDefaultPending) {
+            return;
+          }
+          setClearDefaultFieldId(null);
+          setClearDefaultError(null);
+        }}
       />
 
       {defaultEditFieldRow && defaultsPage ? (

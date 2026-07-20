@@ -313,6 +313,30 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 
 ## Session History
 
+### 2026-07-20 (defaults-management-ui unified workflow smoke)
+
+- Work completed:
+  - Authenticated smoke on `harbaugh-forms-dev` for unified Map Fields + restored Personal defaults.
+  - **Lee (App Admin + Org Admin):** Form Templates actions are `Map Fields` / `Edit` / `Delete` only (no separate Defaults / My setup). Forms `#1`, `#7`, `#11`, `#18` load the unified workspace. Cards use Filled from / Default if blank / Default source; no Current value / Value source / occurrence / placement count. Field keys visible. All **19** restored Personal form-specific defaults display correctly (`Personal`, not all-forms); zeros show as `0`; disputed Listing fields remain None.
+  - **Clear defect (Admin):** Admin structural Map Fields lacked Clear; non-admin My setup already had it. Added **Clear personal default** on Admin cards, wired to existing `clearPrivateFormDefault` (form-scoped only; legacy all-forms protected). Disposable create/clear cycle verified; accidental Clear of `BUYER_REP_RETAINER_AMOUNT` during broken automation finder was restored to Personal `0`.
+  - **Admin Edit separation:** Structural Edit = Section A placement + Section B Filled from + Remove from this form. Edit default = My default / Organization default write target with explicit org selector. Not confused with Clear.
+  - **Yahoo (USER/MEMBER):** No Admin nav; field keys hidden; no Remove / Place field; Personal Edit only (no Organization write target). Lee’s 19 values do not appear (Retainer / Property exclusions / Service reimbursement show None).
+  - **Packet Fill Form (`#14` / form `49`):** Current value + Value source labels present; no raw source paths. Sources observed: Entered manually, From client, From property, From fallback (legacy `field_default` snapshots), Blank, Unknown. Why this value? explains stored provenance without implying recalculation.
+  - **Snapshot safety:** field_instance `a9a87123-…` (`CONTRACT_PROPERTY_EXCLUSIONS`) unchanged after open (`value=NA`, `source=field_default`, `update_date` unchanged).
+  - **Disputed Listing mappings:** ACTIVE overlays labeled `¶5E` / `¶12K` still selectable; Lee reports not visibly represented — recommend later deactivate/cleanup; not changed in this smoke.
+- Database changes:
+  - No migrations. Data: Clear UI exercise only; retainer Personal `0` re-saved after accidental soft-delete during smoke.
+- Validation:
+  - `npx tsc --noEmit` — pass
+  - `npm run test:field-defaults` — 61 pass
+  - `npm run test:field-defaults-management` — 38 pass
+  - `npm run test:form-copy-global` — 88 pass
+  - `npm run test:field-instance-sync` — 17 pass
+  - Focused clear/zero/isolation/provenance — 11 pass
+  - ESLint `pdf-field-editor.tsx` — pass
+  - `npm run build` — pass
+- Branch remains unmerged: `defaults-management-ui`.
+
 ### 2026-07-20 (defaults-management-ui reviewed Personal default restoration)
 
 - Work completed:
