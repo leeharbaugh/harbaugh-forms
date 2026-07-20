@@ -10,8 +10,23 @@ import { PdfFieldInventoryPanel } from "@/components/forms/pdf-field-inventory-p
 import { PdfFieldOverlay } from "@/components/forms/pdf-field-overlay";
 import { PdfFieldPlacementDialog } from "@/components/forms/pdf-field-placement-dialog";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  clearPrivateFormDefault,
+  loadFormDefaultsPage,
+  saveOrganizationFormDefault,
+  savePrivateFormDefault,
+  type FormDefaultsFieldRow,
+  type FormDefaultsPageData,
+} from "@/lib/field-defaults-management";
+import { formatFilledFromLabel } from "@/lib/types/field-provenance-labels";
+import {
+  formatDefaultSourceLabel,
+  type DefaultsFieldValueDraft,
+} from "@/lib/types/field-default-management";
 import { createActiveField } from "@/lib/field-catalog";
 import { createFormSignedUrlWithFallback } from "@/lib/storage-path-resolve";
 import { extractPdfFieldInventory } from "@/lib/pdf-field-extract";
@@ -58,7 +73,6 @@ import {
   clampPdfPlacementToPage,
   clickToPdfCoordinates,
   formFieldMappingToPlacedPdfField,
-  getDefaultFieldDimensions,
   getEffectivePdfFieldDimensions,
   isAcroformImportedMapping,
   normalizeCheckboxPdfPlacement,
@@ -165,6 +179,35 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   const [template, setTemplate] = useState<Form | null>(null);
   const [catalogFields, setCatalogFields] = useState<Field[]>([]);
   const [mappings, setMappings] = useState<PlacedPdfField[]>([]);
+  const [defaultsByFieldId, setDefaultsByFieldId] = useState<
+    Map<string, FormDefaultsFieldRow>
+  >(() => new Map());
+  const [defaultsPage, setDefaultsPage] = useState<FormDefaultsPageData | null>(
+    null,
+  );
+  const [defaultEditFieldId, setDefaultEditFieldId] = useState<string | null>(
+    null,
+  );
+  const [defaultEditScope, setDefaultEditScope] = useState<
+    "PRIVATE" | "ORGANIZATION"
+  >("PRIVATE");
+  const [defaultEditDraft, setDefaultEditDraft] =
+    useState<DefaultsFieldValueDraft>({
+      textValue: "",
+      checked: null,
+    });
+  const [defaultEditPending, setDefaultEditPending] = useState(false);
+  const [defaultEditError, setDefaultEditError] = useState<string | null>(null);
+  const [defaultEditMessage, setDefaultEditMessage] = useState<string | null>(
+    null,
+  );
+  const [clearDefaultFieldId, setClearDefaultFieldId] = useState<string | null>(
+    null,
+  );
+  const [clearDefaultPending, setClearDefaultPending] = useState(false);
+  const [clearDefaultError, setClearDefaultError] = useState<string | null>(
+    null,
+  );
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [pageMetrics, setPageMetrics] = useState<
@@ -440,6 +483,21 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
               : "Failed to load the template PDF.",
           );
           setPdfUrl(null);
+        }
+      }
+
+      if (
+        nextTemplate.scope === "GLOBAL" &&
+        (nextTemplate.status == null || nextTemplate.status === "ACTIVE")
+      ) {
+        const defaultsResult = await loadFormDefaultsPage({ formId });
+        if (request.isCurrent() && defaultsResult.ok) {
+          setDefaultsPage(defaultsResult.data);
+          setDefaultsByFieldId(
+            new Map(
+              defaultsResult.data.fields.map((field) => [field.fieldId, field]),
+            ),
+          );
         }
       }
 
@@ -938,18 +996,6 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     [scrollPdfPageIntoView],
   );
 
-  const handleCatalogFieldCreated = useCallback((field: Field) => {
-    setCatalogFields((current) => {
-      if (current.some((item) => item.id === field.id)) {
-        return current;
-      }
-
-      return [...current, field].sort((left, right) =>
-        left.field_key.localeCompare(right.field_key),
-      );
-    });
-  }, []);
-
   const openEditDialog = (mapping: PlacedPdfField) => {
     setSelectedMappingId(mapping.id);
     setEditingMapping(mapping);
@@ -959,6 +1005,132 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       catalogField ? fieldToInput(catalogField) : emptyFieldInput(),
     );
     setEditError(null);
+  };
+
+  const applyDefaultsPage = (data: FormDefaultsPageData) => {
+    setDefaultsPage(data);
+    setDefaultsByFieldId(
+      new Map(data.fields.map((field) => [field.fieldId, field])),
+    );
+  };
+
+  const openDefaultEditDialog = (fieldRow: FormDefaultsFieldRow) => {
+    if (!defaultsPage) {
+      return;
+    }
+    const canEditPersonal =
+      defaultsPage.canEditPrivate && fieldRow.editorKind !== "unsupported";
+    const canEditOrganization =
+      defaultsPage.canEditOrganization &&
+      !!defaultsPage.selectedOrganizationId &&
+      fieldRow.editorKind !== "unsupported";
+    if (!canEditPersonal && !canEditOrganization) {
+      return;
+    }
+    const initialScope: "PRIVATE" | "ORGANIZATION" = canEditPersonal
+      ? "PRIVATE"
+      : "ORGANIZATION";
+    setDefaultEditFieldId(fieldRow.fieldId);
+    setDefaultEditScope(initialScope);
+    setDefaultEditDraft(
+      initialScope === "ORGANIZATION"
+        ? fieldRow.organizationDraft
+        : fieldRow.privateDraft,
+    );
+    setDefaultEditError(null);
+    setDefaultEditMessage(null);
+  };
+
+  const closeDefaultEditDialog = () => {
+    if (defaultEditPending) {
+      return;
+    }
+    setDefaultEditFieldId(null);
+    setDefaultEditError(null);
+    setDefaultEditMessage(null);
+  };
+
+  const handleSaveDefaultEdit = async () => {
+    if (!defaultEditFieldId || !defaultsPage) {
+      return;
+    }
+    const fieldRow = defaultsByFieldId.get(defaultEditFieldId);
+    if (!fieldRow) {
+      return;
+    }
+    const label = fieldRow.fieldLabel;
+    setDefaultEditPending(true);
+    setDefaultEditError(null);
+    setDefaultEditMessage(null);
+    try {
+      if (defaultEditScope === "ORGANIZATION") {
+        const organizationId = defaultsPage.selectedOrganizationId;
+        if (!organizationId) {
+          setDefaultEditError(
+            "Select an organization before saving an Organization default.",
+          );
+          return;
+        }
+        const result = await saveOrganizationFormDefault({
+          formId,
+          fieldId: defaultEditFieldId,
+          organizationId,
+          draft: defaultEditDraft,
+        });
+        if (!result.ok) {
+          setDefaultEditError(result.error);
+          return;
+        }
+        setDefaultEditMessage(`Saved Organization default for ${label}.`);
+      } else {
+        const result = await savePrivateFormDefault({
+          formId,
+          fieldId: defaultEditFieldId,
+          draft: defaultEditDraft,
+        });
+        if (!result.ok) {
+          setDefaultEditError(result.error);
+          return;
+        }
+        setDefaultEditMessage(`Saved Personal default for ${label}.`);
+      }
+      const defaultsResult = await loadFormDefaultsPage({ formId });
+      if (defaultsResult.ok) {
+        applyDefaultsPage(defaultsResult.data);
+      }
+      setDefaultEditFieldId(null);
+    } finally {
+      setDefaultEditPending(false);
+    }
+  };
+
+  const handleClearFormScopedDefault = async () => {
+    if (!clearDefaultFieldId || !defaultsPage) {
+      return;
+    }
+    const fieldRow = defaultsByFieldId.get(clearDefaultFieldId);
+    if (!fieldRow) {
+      return;
+    }
+    setClearDefaultPending(true);
+    setClearDefaultError(null);
+    try {
+      const result = await clearPrivateFormDefault({
+        formId,
+        fieldId: clearDefaultFieldId,
+      });
+      if (!result.ok) {
+        setClearDefaultError(result.error);
+        return;
+      }
+      setClearDefaultFieldId(null);
+      const defaultsResult = await loadFormDefaultsPage({ formId });
+      if (defaultsResult.ok) {
+        applyDefaultsPage(defaultsResult.data);
+      }
+    } finally {
+      setClearDefaultPending(false);
+    }
   };
 
   const closeEditDialog = () => {
@@ -1294,7 +1466,6 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       refreshEditorData,
       captureWorkspaceScroll,
       restoreWorkspaceScroll,
-      sortPlacedPdfFields,
     ],
   );
 
@@ -1321,16 +1492,34 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     ? pageMetrics[pendingPlacement.pageNumber]
     : null;
 
+  const defaultEditFieldRow = defaultEditFieldId
+    ? (defaultsByFieldId.get(defaultEditFieldId) ?? null)
+    : null;
+  const defaultEditCanPersonal =
+    !!defaultsPage &&
+    !!defaultEditFieldRow &&
+    defaultsPage.canEditPrivate &&
+    defaultEditFieldRow.editorKind !== "unsupported";
+  const defaultEditCanOrganization =
+    !!defaultsPage &&
+    !!defaultEditFieldRow &&
+    defaultsPage.canEditOrganization &&
+    !!defaultsPage.selectedOrganizationId &&
+    defaultEditFieldRow.editorKind !== "unsupported";
+  const defaultEditOrgLabel = defaultsPage?.selectedOrganizationName
+    ? ` (${defaultsPage.selectedOrganizationName})`
+    : "";
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-background px-4 py-2">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold tracking-tight">
-            PDF Field Mapping Editor
+            Map Fields
           </h1>
           <p className="truncate text-xs text-muted-foreground">
-            {template.form_name} ({formatFormReference(template.id)}) · template
-            placements only
+            {template.form_name} ({formatFormReference(template.id)}) · Global
+            template structure and defaults
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {FIELD_VALUE_MAPPING_GUIDANCE}
@@ -1577,6 +1766,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
             {deleteError && (
               <p className="mb-3 text-sm text-destructive">{deleteError}</p>
             )}
+            {clearDefaultError && (
+              <p className="mb-3 text-sm text-destructive">{clearDefaultError}</p>
+            )}
 
             {mappings.length === 0 ? (
               <p className="text-sm text-muted-foreground">
@@ -1587,6 +1779,20 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                 {mappings.map((mapping) => {
                   const details = templatePlacementSidebarDetails(mapping);
                   const isSelected = selectedMappingId === mapping.id;
+                  const fieldRow = mapping.field_id
+                    ? defaultsByFieldId.get(mapping.field_id)
+                    : undefined;
+                  const canEditDefault =
+                    !!fieldRow &&
+                    !!defaultsPage &&
+                    (defaultsPage.canEditPrivate ||
+                      defaultsPage.canEditOrganization) &&
+                    fieldRow.editorKind !== "unsupported";
+                  const canClearFormScopedDefault =
+                    !!fieldRow &&
+                    !!defaultsPage &&
+                    defaultsPage.canEditPrivate &&
+                    fieldRow.canClearFormScopedPersonal;
 
                   return (
                     <div
@@ -1619,16 +1825,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                           {formatMappingOverlayLabel(mapping)}
                         </div>
                         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                          <dt>Field key</dt>
-                          <dd className="font-mono">{details.field_key}</dd>
-                          {details.pdf_field_name && (
-                            <>
-                              <dt>PDF field</dt>
-                              <dd className="font-mono">{details.pdf_field_name}</dd>
-                            </>
-                          )}
-                          <dt>Label</dt>
-                          <dd>{details.field_label}</dd>
+                          <dt className="sr-only">Field key</dt>
+                          <dd className="col-span-2 font-mono text-[11px]">
+                            {details.field_key}
+                          </dd>
                           <dt>Page</dt>
                           {isSelected && !details.is_acroform ? (
                             <dd className="col-span-1">
@@ -1718,16 +1918,31 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                           ) : (
                             <dd>{details.page_number}</dd>
                           )}
-                          {details.is_acroform && (
-                            <>
-                              <dt>Source</dt>
-                              <dd>AcroForm import</dd>
-                            </>
-                          )}
-                          <dt>Mapping name</dt>
-                          <dd>{details.mapping_name ?? "—"}</dd>
-                          <dt>Occurrence</dt>
-                          <dd>{details.occurrence_index ?? 0}</dd>
+                          <dt>Filled from</dt>
+                          <dd>
+                            {(() => {
+                              if (fieldRow?.filledFromLabel) {
+                                return fieldRow.filledFromLabel;
+                              }
+                              const catalog = catalogFields.find(
+                                (field) => field.id === mapping.field_id,
+                              );
+                              return formatFilledFromLabel(catalog ?? null);
+                            })()}
+                          </dd>
+                          <dt>Default if blank</dt>
+                          <dd>
+                            {(() => {
+                              const display =
+                                fieldRow?.effectiveDisplay ?? "None";
+                              return display === "None" ? "" : display;
+                            })()}
+                          </dd>
+                          <dt>Default source</dt>
+                          <dd>
+                            {fieldRow?.effectiveSourceLabel ??
+                              formatDefaultSourceLabel(null)}
+                          </dd>
                         </dl>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -1738,6 +1953,28 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                         >
                           Edit
                         </Button>
+                        {canEditDefault && fieldRow ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openDefaultEditDialog(fieldRow)}
+                          >
+                            Edit default
+                          </Button>
+                        ) : null}
+                        {canClearFormScopedDefault && fieldRow ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={clearDefaultPending}
+                            onClick={() => {
+                              setClearDefaultError(null);
+                              setClearDefaultFieldId(fieldRow.fieldId);
+                            }}
+                          >
+                            Clear personal default
+                          </Button>
+                        ) : null}
                         <Button
                           variant="destructive"
                           size="sm"
@@ -1817,6 +2054,221 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         onCancel={() => setMappingPendingDelete(null)}
         elevated={editingMapping != null}
       />
+
+      <ConfirmDialog
+        open={!!clearDefaultFieldId}
+        title="Clear personal default?"
+        message={
+          clearDefaultFieldId
+            ? `Remove the form-specific Personal default for ${
+                defaultsByFieldId.get(clearDefaultFieldId)?.fieldLabel ??
+                "this field"
+              }? Legacy all-forms defaults are not affected.`
+            : undefined
+        }
+        confirmLabel="Clear default"
+        variant="destructive"
+        isConfirming={clearDefaultPending}
+        onConfirm={() => void handleClearFormScopedDefault()}
+        onCancel={() => {
+          if (clearDefaultPending) {
+            return;
+          }
+          setClearDefaultFieldId(null);
+          setClearDefaultError(null);
+        }}
+      />
+
+      {defaultEditFieldRow && defaultsPage ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="template-default-edit-title"
+            className="w-full max-w-md rounded-lg border bg-card p-4 shadow-lg"
+          >
+            <h2
+              id="template-default-edit-title"
+              className="text-base font-semibold"
+            >
+              Edit default — {defaultEditFieldRow.fieldLabel}
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Preference defaults apply when the automatic source is blank.
+              Saving creates or updates a form-specific default. Legacy
+              all-forms Personal defaults are not modified.
+            </p>
+            {defaultEditCanPersonal && defaultEditCanOrganization ? (
+              <div className="mt-4 space-y-2">
+                <Label htmlFor="template-edit-default-scope">Write target</Label>
+                <select
+                  id="template-edit-default-scope"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={defaultEditScope}
+                  onChange={(event) => {
+                    const next =
+                      event.target.value === "ORGANIZATION"
+                        ? "ORGANIZATION"
+                        : "PRIVATE";
+                    setDefaultEditScope(next);
+                    setDefaultEditDraft(
+                      next === "ORGANIZATION"
+                        ? defaultEditFieldRow.organizationDraft
+                        : defaultEditFieldRow.privateDraft,
+                    );
+                  }}
+                >
+                  <option value="PRIVATE">My default</option>
+                  <option value="ORGANIZATION">
+                    Organization default{defaultEditOrgLabel}
+                  </option>
+                </select>
+                {defaultsPage.canSelectOrganization &&
+                defaultsPage.organizationOptions.length > 0 &&
+                defaultEditScope === "ORGANIZATION" ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="template-edit-default-org">
+                      Organization
+                    </Label>
+                    <select
+                      id="template-edit-default-org"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={defaultsPage.selectedOrganizationId ?? ""}
+                      disabled={defaultEditPending}
+                      onChange={(event) => {
+                        const organizationId = event.target.value;
+                        if (!organizationId) {
+                          return;
+                        }
+                        void (async () => {
+                          setDefaultEditPending(true);
+                          setDefaultEditError(null);
+                          const result = await loadFormDefaultsPage({
+                            formId,
+                            organizationId,
+                          });
+                          setDefaultEditPending(false);
+                          if (!result.ok) {
+                            setDefaultEditError(result.error);
+                            return;
+                          }
+                          applyDefaultsPage(result.data);
+                          const refreshed = result.data.fields.find(
+                            (field) => field.fieldId === defaultEditFieldId,
+                          );
+                          if (refreshed) {
+                            setDefaultEditDraft(refreshed.organizationDraft);
+                          }
+                        })();
+                      }}
+                    >
+                      <option value="" disabled>
+                        Select organization…
+                      </option>
+                      {defaultsPage.organizationOptions.map((org) => (
+                        <option key={org.id} value={org.id}>
+                          {org.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      Organization defaults are written only to the organization
+                      selected above. No organization is assumed silently.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <p className="mt-3 text-xs font-medium text-foreground">
+                Writing:{" "}
+                {defaultEditScope === "ORGANIZATION"
+                  ? `Organization default${defaultEditOrgLabel}`
+                  : "My default (Personal)"}
+              </p>
+            )}
+            {defaultEditFieldRow.editorKind === "checkbox" ? (
+              <div className="mt-4 space-y-2">
+                <Label htmlFor="template-edit-default-checked">
+                  Default if blank
+                </Label>
+                <select
+                  id="template-edit-default-checked"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={
+                    defaultEditDraft.checked === true
+                      ? "checked"
+                      : defaultEditDraft.checked === false
+                        ? "unchecked"
+                        : ""
+                  }
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setDefaultEditDraft({
+                      textValue: "",
+                      checked:
+                        value === "checked"
+                          ? true
+                          : value === "unchecked"
+                            ? false
+                            : null,
+                    });
+                  }}
+                >
+                  <option value="">Choose checked or unchecked…</option>
+                  <option value="checked">Checked</option>
+                  <option value="unchecked">Unchecked</option>
+                </select>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2">
+                <Label htmlFor="template-edit-default-text">
+                  Default if blank
+                </Label>
+                <Input
+                  id="template-edit-default-text"
+                  value={defaultEditDraft.textValue}
+                  onChange={(event) =>
+                    setDefaultEditDraft({
+                      textValue: event.target.value,
+                      checked: null,
+                    })
+                  }
+                  autoComplete="off"
+                />
+              </div>
+            )}
+            {defaultEditError ? (
+              <p className="mt-3 text-sm text-destructive">{defaultEditError}</p>
+            ) : null}
+            {defaultEditMessage ? (
+              <p className="mt-3 text-sm text-muted-foreground">
+                {defaultEditMessage}
+              </p>
+            ) : null}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={defaultEditPending}
+                onClick={closeDefaultEditDialog}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={defaultEditPending}
+                onClick={() => void handleSaveDefaultEdit()}
+              >
+                {defaultEditPending
+                  ? "Saving…"
+                  : defaultEditScope === "ORGANIZATION"
+                    ? "Save Organization default"
+                    : "Save Personal default"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -9,7 +9,13 @@ import {
   packetFieldSidebarLabel,
   type PacketFormFieldView,
 } from "@/lib/types/packet-form-editor";
+import {
+  describePacketValueProvenance,
+  formatFilledFromLabel,
+  refinePacketValueSourceLabel,
+} from "@/lib/types/field-provenance-labels";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 type PacketFormFieldsSidebarProps = {
   fields: PacketFormFieldView[];
@@ -53,6 +59,9 @@ export function PacketFormFieldsSidebar({
     savedValuesByInstanceId,
   );
   const hasUnsavedChanges = dirtyInstanceIds.length > 0;
+  const [expandedWhyInstanceId, setExpandedWhyInstanceId] = useState<
+    string | null
+  >(null);
 
   return (
     <aside className="flex min-h-0 min-w-0 flex-col border-l bg-card">
@@ -111,6 +120,15 @@ export function PacketFormFieldsSidebar({
                 isResettingPlacementId === fieldView.mapping.id;
               const isReverting = isRevertingInstanceId === instanceId;
               const showRevert = isManualFieldValueOverride(fieldView.instance);
+              const valueSource = refinePacketValueSourceLabel({
+                source: fieldView.instance.source,
+                isOverride:
+                  isDirty || isManualFieldValueOverride(fieldView.instance),
+                displayValue: draftValue,
+                fieldSourceType: field?.source_type,
+              });
+              const filledFrom = formatFilledFromLabel(field);
+              const isWhyExpanded = expandedWhyInstanceId === instanceId;
 
               return (
                 <div
@@ -160,10 +178,46 @@ export function PacketFormFieldsSidebar({
                         </span>
                       )}
                     </div>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      {field?.field_key ?? "—"} · Page{" "}
-                      {fieldView.placement.page_number}
+                    <p className="text-xs text-muted-foreground">
+                      Page {fieldView.placement.page_number}
                     </p>
+                    <dl className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                      <div>
+                        <span className="font-medium text-foreground/80">
+                          Current value:{" "}
+                        </span>
+                        {draftValue === "" ? "" : draftValue}
+                      </div>
+                      <div>
+                        <span className="font-medium text-foreground/80">
+                          Value source:{" "}
+                        </span>
+                        {valueSource}
+                      </div>
+                    </dl>
+                    <div className="mt-1">
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-sky-800 underline-offset-2 hover:underline dark:text-sky-300"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setExpandedWhyInstanceId(
+                            isWhyExpanded ? null : instanceId,
+                          );
+                        }}
+                      >
+                        {isWhyExpanded ? "Hide why" : "Why this value?"}
+                      </button>
+                      {isWhyExpanded ? (
+                        <pre className="mt-1 whitespace-pre-wrap rounded-md bg-muted/50 p-2 text-[11px] leading-relaxed text-muted-foreground">
+                          {describePacketValueProvenance({
+                            valueSourceLabel: valueSource,
+                            filledFromLabel: filledFrom,
+                            currentValue: draftValue,
+                          })}
+                        </pre>
+                      ) : null}
+                    </div>
                   </div>
 
                   <div

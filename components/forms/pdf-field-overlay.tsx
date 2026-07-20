@@ -19,6 +19,8 @@ type PdfFieldOverlayProps = {
   metrics: PageMetrics;
   isSelected: boolean;
   isUpdating: boolean;
+  /** When true, selection works but drag/resize are disabled. */
+  readOnly?: boolean;
   onSelect: (field: PlacedPdfField) => void;
   onDragStop: (field: PlacedPdfField, x: number, y: number) => void;
   onResizeStop: (
@@ -47,6 +49,7 @@ export function PdfFieldOverlay({
   metrics,
   isSelected,
   isUpdating,
+  readOnly = false,
   onSelect,
   onDragStop,
   onResizeStop,
@@ -57,7 +60,7 @@ export function PdfFieldOverlay({
   const label = formatMappingOverlayLabel(field);
   const isCheckbox = isCheckboxPdfField(field);
   const isAcroform = isAcroformImportedMapping(field);
-  const placementLocked = isAcroform || isUpdating;
+  const placementLocked = readOnly || isAcroform || isUpdating;
   const overlayResizeEnabled = placementLocked
     ? false
     : isCheckbox

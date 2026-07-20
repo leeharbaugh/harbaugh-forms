@@ -34,6 +34,7 @@ import {
   resolveFormOwnerDisplayName,
   type FormOwnerProfile,
 } from "@/lib/form-owner-display";
+import { canOfferFormDefaultsManagement, mapFieldsEditorPath } from "@/lib/types/field-default-management";
 import {
   buildFormStoragePath,
   buildPendingFormStoragePath,
@@ -78,9 +79,9 @@ const FORM_TABLE_COLUMNS: ResizableDataTableColumn[] = [
   {
     id: "actions",
     label: "Actions",
-    defaultWidth: 360,
-    minWidth: 280,
-    maxWidth: 480,
+    defaultWidth: 420,
+    minWidth: 300,
+    maxWidth: 560,
     isActions: true,
   },
 ];
@@ -765,10 +766,11 @@ export function FormsPage() {
                     </ResizableDataTableCell>
                     <ResizableDataTableActionsCell>
                       <ListRowActions>
-                        {canMapFormFields(actor, template) ? (
+                        {canMapFormFields(actor, template) ||
+                        canOfferFormDefaultsManagement(template) ? (
                           <Button variant="outline" size="sm" asChild>
-                            <Link href={`/forms/${template.id}/editor`}>
-                              Map fields
+                            <Link href={mapFieldsEditorPath(template.id)}>
+                              Map Fields
                             </Link>
                           </Button>
                         ) : null}

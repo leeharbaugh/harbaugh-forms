@@ -102,7 +102,7 @@ export function PdfFieldEditDialog({
       />
       <Card className="relative z-10 max-h-[90vh] w-full max-w-3xl overflow-y-auto shadow-lg">
         <CardHeader>
-          <CardTitle>Edit field mapping</CardTitle>
+          <CardTitle>Edit field</CardTitle>
           <p className="text-sm text-muted-foreground">
             Placement {formatFieldMappingReference(mapping.id)}
             {mapping.field_key ? ` · ${mapping.field_key}` : ""}
@@ -133,12 +133,12 @@ export function PdfFieldEditDialog({
             <section className="space-y-4 border-t pt-6">
               <div>
                 <h3 className="text-sm font-semibold">
-                  Section B: Reusable field source mapping
+                  Section B: Filled from (Global automatic source)
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  These settings update the field definition. Configure source
-                  type, source path, and resolver to control how this field gets
-                  its value.
+                  These settings update the reusable field definition. Configure
+                  where the field should get its value when a form is created.
+                  Technical source paths remain Admin-only here.
                 </p>
               </div>
 
