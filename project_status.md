@@ -10,27 +10,70 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - GitHub
 - Cursor
 
+### Merge status (PR #2)
+
+- PR [#2](https://github.com/leeharbaugh/harbaugh-forms/pull/2) — *Unify form mapping and scoped defaults workflow* — **squash-merged** into `main`.
+- Merge commit: `5e0524b57d83c0f413ec55a7aa37577ff3aafc01`
+- Local and remote `main` were synchronized after merge.
+- Feature branch `defaults-management-ui` was deleted locally and remotely.
+
+### Completed functionality (scoped defaults / Map Fields)
+
+Merged work on `main` includes:
+
+- One unified Forms → Map Fields workspace (PDF left / field cards right)
+- Template terminology: **Filled from**, **Default if blank**, **Default source**
+- Packets → Fill Form terminology: **Current value**, **Value source**, and **Default** for ambiguous legacy fallback/default snapshots
+- Role-aware access for regular users, Organization Admins, and application Admins
+- Personal and Organization scoped defaults in `field_defaults`
+- Safe form-specific Personal default Clear; legacy all-forms Personal defaults protected
+- Packet provenance display without ordinary-open snapshot rewriting
+- Owner isolation (Admin viewing another user’s packet does not apply Admin defaults)
+- No Global preference literals on catalog fields
+
+### Final validation (PR #2)
+
+- `npx tsc --noEmit` — pass
+- `npm run test:field-defaults` — 66 pass
+- `npm run test:field-defaults-management` — 43 pass
+- `npm run test:form-copy-global` — 88 pass
+- `npm run test:field-instance-sync` — 17 pass
+- Focused provenance / Clear / legacy / zero / isolation / auth / precedence / immutability — 33 pass
+- Targeted ESLint on changed source/test files — pass
+- `npm run build` — pass
+
+### Development database state (`harbaugh-forms-dev`)
+
+- Global catalog preference literals: **0**
+- Lee legacy all-forms Private defaults: **56** ACTIVE
+- Reviewed Lee form-specific Private defaults: **19** ACTIVE
+- Organization defaults: **4** ACTIVE
+- No duplicate ACTIVE logical defaults
+- Accidental `buyer_client_name_1` test row remains soft-deleted
+- Disputed Listing mappings (`OTHER_FEES_REIMBURSABLE_EXPENSES`, `KNOWN_DISTRICTS`) received no defaults
+- Packet instances remain unchanged on ordinary Fill Form open
+
+### Environment
+
+- Only `harbaugh-forms-dev` currently exists.
+- There is **no production environment** and **no production deployment pending**.
+- No immediate recreation of the 19 Personal defaults is required.
+- When a production environment is eventually created, those 19 reviewed defaults must be intentionally included in the environment setup plan (approved manual configuration or an explicitly designed seeding process). Git does not transfer these database rows.
+
 ## Git State
 
-- `origin/main` tip:
-  `3c1906204d621c9e5c2571031f4065d81dd15d0a` — includes PR #1 smoke-test docs / Org-Admin authorization coverage
-
-- Active feature branch:
-  `defaults-management-ui` (from `main` @ `3c19062`) — My Defaults / Organization Defaults UI for Global forms; **not merged**
-
-- Previous feature branch (merged; do not re-merge as a feature):
-  `admin-copy-user-form-to-global` @ `01d6780` (merged via `5f23a3e`); local tip may still exist for history
+- `origin/main` tip: `5e0524b57d83c0f413ec55a7aa37577ff3aafc01` — PR #2 squash merge (scoped defaults / unified Map Fields)
+- No active feature branch for this work; `defaults-management-ui` was deleted after merge
+- Prior merged feature branch (do not re-merge as a feature): `admin-copy-user-form-to-global` @ `01d6780` (merged via `5f23a3e`)
 
 - Corrective / related migrations on `harbaugh-forms-dev`:
   - `20260717120000_clear_global_money_zero_defaults.sql` (applied)
   - `20260717180000_clear_all_global_catalog_defaults.sql` (applied)
   - `20260717210000_repair_catalog_clear_overwritten_field_instances.sql` (applied; on `main`)
   - `20260717220000_repair_seller_not_foreign_checkbox.sql` (applied; on `main`)
-  - `20260717230000_packet_form_lifecycle_locking.sql` (applied; on `main` from packet-form lifecycle locking — not a Copy-to-Global residual)
+  - `20260717230000_packet_form_lifecycle_locking.sql` (applied; on `main`)
 
-- Authenticated Copy-to-Global / containment smoke tests on `harbaugh-forms-dev` completed 2026-07-19 (see below). Core feature code is already on `origin/main`.
-
-- Restore branches:
+- Restore branches (history only):
   - `pre-ui-refresh` → `f422fce79227220377729654824930c86082107e`
   - `pre-ui-refresh-multi-user` → `0a86d6d6a801f8b0a83d63346bb4cae40dd5edef`
 
@@ -57,7 +100,7 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - Resizable table-column preferences
 - Global form-copy traceability
 - Scoped Private and Organization field defaults
-- Form-level My Defaults / Organization Defaults UI for Global forms (branch `defaults-management-ui`, not merged)
+- Unified Forms → Map Fields workspace with Personal/Organization defaults, role-aware field keys, packet value provenance, and Admin Clear (PR #2)
 - Completed UI refresh Phases 1–4
 
 ## Current Architecture
@@ -85,23 +128,22 @@ Harbaugh Forms is a Texas real estate forms application built with:
 - Form default values may be `PRIVATE` or `ORGANIZATION`, but never `GLOBAL`.
 - Private defaults override Organization defaults.
 - Organization defaults apply only through an active primary-organization membership.
-- Global catalog fields contain no user-preference defaults. Private and Organization defaults are stored only in scoped `field_defaults`. Global catalog `default_value`, `default_checked`, and `fallback_value` may be retained only when deliberately classified as structural constants.
+- Global catalog fields contain no user-preference defaults. There are currently **no approved Global preference literals**. Private and Organization defaults are stored only in scoped `field_defaults`.
 - Source mappings (`source_type` / `source_path` / resolver keys) are not defaults and remain on Global fields.
 - Copy to Global Library excludes all Private and Organization preference defaults and does not reintroduce catalog preference literals.
 - Default resolution uses the packet owner or intended business user, not the viewing administrator.
-- Final 2026-07-17 classifications:
-  - `CONTRACT_PROPERTY_AS_IS` remains Lee’s PRIVATE default (`default_checked = true`).
-  - All remaining ACTIVE Global catalog `default_value` / `default_checked` / `fallback_value` literals are cleared (no approved structural constants found).
+- Product precedence (after current/manual override and mapped transaction data): mapping-scoped Personal → form-scoped Personal → legacy field-only Personal → mapping-scoped Organization → form-scoped Organization → legacy field-only Organization → blank.
 - Persisted packet field instances are immutable during ordinary view/open. Resolution initializes missing instances only; existing values change only through explicit user-authorized editing or refresh.
 
-### Administrative Roles (audit 2026-07-17)
+### Administrative Roles
 
-- Application role `profiles.app_role`: `USER` | `ADMIN` (Global Admin).
+- Application role `profiles.app_role`: `USER` | `ADMIN` (application Admin / Global Admin).
 - Organization membership role: `MEMBER` | `ORG_ADMIN` (Organization Admin).
 - These axes are distinct; `ORG_ADMIN` is not equivalent to application `ADMIN`.
 - Copy to Global Library and Global form mutation require application `ADMIN`.
 - Organization defaults RLS allows Org Admin (own org) or application Admin.
-- Missing on later branches: defaults UI, Org Admin membership UI, scoped source-mapping overrides, role-label polish.
+- Unified Map Fields enforces structural vs preference permissions in the same workspace (server-side authorization is authoritative).
+- Still deferred elsewhere: Organization Admin membership/settings UI (outside Map Fields), scoped source-mapping overrides without Global PDF edits, role-label polish.
 
 ### Copy Private Form to Global Library
 
@@ -166,30 +208,13 @@ Before applying migrations from a different development machine, compare local a
 - Copying a private form to the Global library creates a separate Global copy and preserves the original.
 - Forms may be Global or Private; collections may be Organization or Private.
 - Default values may be Private or Organization, but never Global.
-- Global catalog fields must not store preference literals unless deliberately classified as structural constants.
+- Global catalog fields must not store preference literals (none approved).
 - Persisted packet field instances are snapshots: ordinary open must not recalculate or overwrite them.
+- Forms → Map Fields is the single workspace for Global structure and scoped defaults; `/forms/[id]/defaults` redirects into that workspace.
 
 ## Current Work
 
-The active feature is:
-
-**My Defaults and Organization Defaults UI for Global forms**
-
-Implemented on branch:
-
-`defaults-management-ui` (not merged)
-
-Current behavior:
-
-- Active Global form rows on `/forms` offer a **Defaults** action.
-- Route `/forms/[id]/defaults` lists mapped fields for that Global form.
-- Users manage their own Private defaults (create / edit / soft-delete clear).
-- Organization members can view applicable Organization defaults; only `ORG_ADMIN` (own org) or application Admin may edit them.
-- Application Admins select the target organization explicitly (no silent use of the Admin’s primary org when administering another).
-- Effective scoped winner shows Private / Organization / None (Private beats Organization).
-- UI explains that transaction data and packet overrides still take precedence; changing a default does not rewrite packet instances.
-- Writes go only to `field_defaults` (form-scoped rows). Catalog `fields.default_value` / `default_checked` / `fallback_value` are never updated.
-- No migration added; existing `20260715180000` schema and RLS are used.
+No active feature branch for scoped defaults / Map Fields. That work is on `main` via PR #2 (`5e0524b`).
 
 ### Prior: Admin Copy to Global Library with scoped field defaults
 
@@ -233,33 +258,34 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 
 ## Known Issues
 
-- Authenticated Copy-to-Global / containment smoke tests completed 2026-07-19 (see above). Org-Admin-without-application-Admin is covered by a focused unit test; a dedicated UI click account is optional and non-blocking.
-- Migration `20260717230000` was traced to `packet-form-lifecycle-locking` (`a38729c`) and is already on `origin/main`; it is not a Copy-to-Global residual and must not be reintroduced as a new change.
+- Authenticated Copy-to-Global / containment smoke tests completed 2026-07-19. Org-Admin-without-application-Admin is covered by a focused unit test; a dedicated UI click account is optional and non-blocking.
 - At-risk text/numeric instances retain historical values under containment; no bulk rewrite planned.
-- Full My Defaults / Organization Defaults management UI is implemented on `defaults-management-ui` and awaiting authenticated smoke testing (not merged).
-- Signature / initials fields are shown but not editable as preference defaults in this phase.
-- System-wide defaults dashboard (cross-form) is deferred; this phase is form-level only.
+- Signature / initials fields are shown but not editable as preference defaults.
+- System-wide defaults dashboard (cross-form) remains optional/deferred.
 - Scoped source-mapping / manual-only overrides for Global forms (without editing Global PDF structure) are not implemented.
 - Organization Admin membership/settings UI is missing (membership admin lives under Global Admin `/admin` only).
 - Multi-organization users require a valid `profiles.primary_organization_id` with ACTIVE membership to inherit Organization defaults.
+- Disputed Listing mappings on TXR-1101 `#7` (`OTHER_FEES_REIMBURSABLE_EXPENSES`, `KNOWN_DISTRICTS`): ACTIVE estimated/paragraph overlays; Lee reports not visibly represented — structural cleanup deferred (no defaults were created).
 - `listing-packet-kind.test.ts` has a pre-existing bare-Node `@/lib` import-resolution problem.
 - A pre-existing Next.js hydration warning has appeared around `AdminSectionNav` and the packet page.
 - Specialized PDF editor dialogs do not yet have the full focus-trap behavior of `ConfirmDialog` and `InfoDialog`.
-- `pdf-placement-form-fields.tsx` may contain line-ending churn that should be minimized before merge.
 - Repo-wide `npm run lint` currently fails because ESLint scans `.next` build artifacts; targeted lint of changed source files is clean.
 
 ## Next Steps
 
-1. Phase 2 visual default editing on `defaults-management-ui` (form-scoped Personal/Org edit, Use organization default, scope selector). Do not merge until Phase 1 review is approved and Phase 2 is complete as needed.
-2. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
-3. Follow-up branches in priority order:
+1. Investigate and clean up disputed Listing mappings: `OTHER_FEES_REIMBURSABLE_EXPENSES`, `KNOWN_DISTRICTS`.
+2. Personal placement overrides (deferred).
+3. Restore Global position (deferred).
+4. Optional improvement for genuinely Unknown legacy provenance wording.
+5. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
+6. Follow-up product work in priority order:
    1. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
    2. Admin ownership demarcation and saved Include user-owned filters.
    3. Refresh Values before/after field-diff preview.
    4. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
    5. Authentisign integration (may set `SIGNED`).
-   6. Optional: cross-form defaults dashboard once form-level UI is proven.
-   7. Phase 3 Personal placement overrides (after Phase 2).
+   6. Optional: cross-form defaults dashboard.
+7. When a production environment is eventually created: include the 19 reviewed Lee Personal form-specific defaults in the environment setup plan (manual configuration or designed seeding). Not an active task today.
 
 ## Development Machine Checklist
 
@@ -267,24 +293,23 @@ Before making changes:
 
 1. Clone or pull the GitHub repository.
 2. Run `git fetch --all --prune`.
-3. Check out `admin-copy-user-form-to-global`.
-4. Confirm the branch includes the scoped-default corrective commit.
-5. Run `git status` and confirm the working tree is clean.
-6. Use the Node.js version declared by the repository, such as `.nvmrc` or `package.json` `engines`.
-7. Use the package manager indicated by the repository lockfile and run its clean-install command.
-8. Restore `.env.local` securely; never commit it.
-9. Confirm the Supabase project points to `harbaugh-forms-dev`.
-10. Confirm Supabase CLI authentication and project linkage.
-11. Run `supabase migration list` and compare local and remote migration history before applying migrations.
-12. Do not run `supabase db reset`, `supabase db push`, or migration-repair commands until the target project and migration state are verified.
-13. Confirm GitHub authentication and push access.
-14. Confirm Vercel project access if deployment inspection is needed.
-15. Run:
+3. Check out `main` and confirm it matches `origin/main`.
+4. Run `git status` and confirm the working tree is clean.
+5. Use the Node.js version declared by the repository, such as `.nvmrc` or `package.json` `engines`.
+6. Use the package manager indicated by the repository lockfile and run its clean-install command.
+7. Restore `.env.local` securely; never commit it.
+8. Confirm the Supabase project points to `harbaugh-forms-dev` (currently the only environment).
+9. Confirm Supabase CLI authentication and project linkage.
+10. Run `supabase migration list` and compare local and remote migration history before applying migrations.
+11. Do not run `supabase db reset`, `supabase db push`, or migration-repair commands until the target project and migration state are verified.
+12. Confirm GitHub authentication and push access.
+13. Confirm Vercel project access if deployment inspection is needed.
+14. Run:
     - `npx tsc --noEmit`
     - relevant automated tests
     - `npm run build`
-16. Do not reset, recreate, or edit already-applied migrations.
-17. Do not run destructive SQL tests against production.
+15. Do not reset, recreate, or edit already-applied migrations.
+16. Do not run destructive SQL against environments that hold real business data.
 
 ## Required Local Environment Variables
 
@@ -302,16 +327,25 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 
 - Forms remain statewide Global or user Private.
 - Collections are Organization or Private, never Global.
-- Field defaults are Private or Organization, never Global.
+- Field defaults are Private or Organization, never Global; no approved Global preference literals.
 - Copy to Global Library excludes all scoped preference defaults.
 - Property uniqueness is enforced per owner using a normalized address.
-- Final classification (2026-07-17): Lee’s `CONTRACT_PROPERTY_AS_IS` stays Private; all Global catalog preference literals cleared unless deliberately classified as structural constants (none retained).
-- Administrative roles: Regular user / Organization Admin (`ORG_ADMIN`) / Global Admin (`profiles.app_role = ADMIN`) are distinct axes.
+- Administrative roles: Regular user / Organization Admin (`ORG_ADMIN`) / application Admin (`profiles.app_role = ADMIN`) are distinct axes.
 - Persisted packet field instances are immutable during ordinary view/open; missing instances may be inserted, but existing snapshots change only via explicit edit/refresh.
-- Visual My setup mode is the primary Global-form defaults entry; legacy `form_id IS NULL` Personal defaults are labeled and protected from form-level Clear.
-- Unified Map Fields workspace uses template language **Filled from** / **Default if blank** / **Default source**; Packets → Fill Form uses **Current value** / **Value source**.
+- Unified Map Fields is the sole Global-form workspace for structure and scoped defaults (no separate Defaults / My setup workflow).
+- Template language: **Filled from** / **Default if blank** / **Default source**; Fill Form: **Current value** / **Value source**; ambiguous legacy snapshots display **Default**.
+- Form-specific Personal Clear does not delete legacy all-forms Personal defaults or Organization defaults.
+- Detailed inventories and transition audit: `DEFAULT_TRANSITION_AUDIT.md` (and recovered classification companions).
 
 ## Session History
+
+### 2026-07-20 (PR #2 merged — documentation sync context)
+
+- Squash-merged PR #2 into `main` as `5e0524b` (“Unify form mapping and scoped defaults workflow”).
+- Feature branch deleted (local + remote). Local `main` synchronized with `origin/main`.
+- Environment: only `harbaugh-forms-dev`; no production environment; no pending production deployment or immediate default recreation.
+- Deferred after merge: disputed Listing mappings; Personal placement overrides; Restore Global position; optional Unknown legacy provenance wording.
+- Earlier session notes below retain historical “branch unmerged” wording from before the merge; current status is above.
 
 ### 2026-07-20 (defaults-management-ui legacy Default label)
 

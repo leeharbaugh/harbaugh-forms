@@ -83,10 +83,10 @@ Texas promulgated forms are shared statewide by agents and brokers, so individua
 
 ## Form Default Scope
 
-**Date:** 2026-07-15
+**Date:** 2026-07-15 (refined 2026-07-20)
 
 **Decision:**
-Form default values may be scoped only as `PRIVATE` or `ORGANIZATION`. Default values must never be `GLOBAL`.
+Form default values may be scoped only as `PRIVATE` or `ORGANIZATION`. Default values must never be `GLOBAL`. Global forms contain structure, not preference literals.
 
 **Reason:**
 Default values represent an individual agent’s preferences or a brokerage’s operating practices. They may contain compensation preferences, protection periods, intermediary selections, preferred addenda, brokerage information, recurring checkbox selections, or office-specific wording. These values should not be published statewide merely because the underlying form is Global.
@@ -98,21 +98,21 @@ Default values represent an individual agent’s preferences or a brokerage’s 
 * A user’s Private default overrides the Organization default for the same field.
 * Organization defaults apply only to users with an active membership in the organization.
 * Default resolution uses the packet owner or intended business user, not whichever administrator is viewing the record.
-* Global forms and fields may retain structural metadata such as:
+* Global forms may contain structural metadata such as:
 
-  * field keys
-  * labels
-  * widget types
-  * source paths
-  * coordinates
-  * AcroForm names
-  * checkbox export values
+  * PDF template
+  * canonical fields
+  * mappings
+  * canonical placement
+  * field keys, labels, widget types
+  * source paths / source types
+  * coordinates, AcroForm names, checkbox export values
   * formatting instructions
-* Global catalog fields contain no user-preference defaults. Private and Organization defaults are stored only in scoped `field_defaults`. Global catalog `default_value`, `default_checked`, and `fallback_value` may be retained only when deliberately classified as structural constants.
-* Personal or brokerage-specific literal values must not be stored on Global forms, fields, or mappings.
+
+* Personal and Organization preference literals belong in `field_defaults`, not Global catalog default columns.
+* There are currently **no approved Global preference literals**. Catalog `default_value`, `default_checked`, and `fallback_value` remain cleared of preference content.
 * Explicit packet values and authoritative transaction data take precedence over defaults.
 * A dedicated `field_defaults` table stores scoped preference values.
-* Full user-facing management of My Defaults and Organization Defaults may be implemented separately.
 
 **Related files or migrations:**
 
@@ -126,41 +126,223 @@ Default values represent an individual agent’s preferences or a brokerage’s 
 
 ---
 
-## Form-Level Defaults Management UI
+## Unified Map Fields Workspace
 
-**Date:** 2026-07-19
+**Date:** 2026-07-20
 
 **Decision:**
-Expose Private and Organization preference defaults through a form-level UI on Global forms (`/forms/[id]/defaults`), not a system-wide dashboard in the first phase. Writes target form-scoped `field_defaults` rows only. RLS remains the authoritative permission boundary; server actions mirror Private owner / ORG_ADMIN / application Admin rules. Clearing soft-deletes (`status = DELETED`). No preference literals are written back to Global catalog fields. Changing a default never refreshes or rewrites packet field instances.
+Forms use one **Map Fields** workspace for Global field placement and automatic source configuration, Personal defaults, and Organization defaults. There is no separate Defaults or My Setup workflow. Structural and preference permissions remain distinct within the same workspace. Legacy `/forms/[id]/defaults` redirects into Map Fields.
 
 **Reason:**
-Resolution, RLS, and storage already exist. Users need a reviewable surface attached to the Global forms they fill. A form-scoped page matches the current Templates list architecture (no separate form-detail tabs) and avoids inventing a cross-form product surface before authenticated use proves the workflow.
+Users need PDF context for both structure and preferences. Separate Defaults / My setup entry points duplicated navigation and hid that preference editing and structural mapping share the same form surface. One workspace keeps terminology and permissions clear while preserving server-side authorization boundaries.
 
 **Consequences:**
 
-* Entry point: **Defaults** on active Global form rows in `/forms`.
-* Private forms do not offer this workflow in this phase.
-* Application Admins must choose an organization explicitly when managing Organization defaults.
-* Signature / initials fields are visible but not editable as preference defaults.
+* Form Templates authorized actions: **Map Fields**, **Edit**, **Delete** (as authorized).
+* Regular users and Org Admins edit preferences in Map Fields without mutating Global structure unless they are also application Admins.
+* Application Admins may edit Global source, placement, and structure in the same workspace.
+* Preference writes target form-scoped `field_defaults` only; catalog preference columns are never updated.
+* Changing a default never refreshes or rewrites packet field instances.
+* Signature / initials fields may be visible but are not editable as preference defaults.
 * Cross-form defaults dashboard remains deferred.
-* Legacy ACTIVE defaults with `form_id IS NULL` remain valid resolution fallbacks (mapping > form-scoped > field-only). The management UI writes form-scoped rows (`form_id` set); displayed “current” values use the same pickBest specificity as the resolver.
+* Legacy ACTIVE defaults with `form_id IS NULL` remain valid resolution fallbacks and are labeled / Clear-protected.
 
 **Related files or migrations:**
 
 * `lib/types/field-default-management.ts`
 * `lib/field-defaults-management.ts`
+* `components/forms/pdf-field-editor.tsx`
+* `components/forms/pdf-my-setup-editor.tsx`
+* `components/forms/forms-page.tsx`
+* `app/forms/[id]/editor/page.tsx`
 * `app/forms/[id]/defaults/page.tsx`
-* `components/forms/form-defaults-manager.tsx`
-* Existing `field_defaults` RLS (no new migration)
+* Existing `field_defaults` RLS (no new migration for this UI)
+
+---
+
+## User-Facing Value Terminology
+
+**Date:** 2026-07-20
+
+**Decision:**
+Use distinct value language for template configuration versus packet instances. Never expose raw resolver source values, raw database provenance enums, or the user-facing phrase **From fallback**.
+
+### Template configuration (Map Fields)
+
+* **Filled from** — automatic business-data source (or Not connected)
+* **Default if blank** — Personal/Organization preference when automatic source is blank
+* **Default source** — Personal / Organization / None (including legacy “applies to all forms”)
+
+Do not show Current value, Value source, Manual override, or packet-instance concepts in template configuration.
+
+### Packets → Fill Form
+
+* **Current value** — stored/displayed packet field value
+* **Value source** — readable provenance
+
+Known sources may remain specific:
+
+* Entered manually
+* From property
+* From client
+* From agent profile
+* From brokerage
+* From packet
+* From your default
+* From organization default
+* Blank
+
+For ambiguous historical packet snapshots whose stored metadata only indicates a generic default/fallback (`field_default`, `field_default_checked`, or `fallback`), display:
+
+* **Default**
+
+Optional disclosure: **Why this value?** explains stored provenance without rewriting instances.
+
+**Related files:**
+
+* `lib/types/field-provenance-labels.ts`
+* `components/forms/pdf-field-editor.tsx`
+* `components/forms/pdf-my-setup-editor.tsx`
+* `components/packets/packet-form-fields-sidebar.tsx`
+
+---
+
+## Form-Specific Personal Default Clear
+
+**Date:** 2026-07-20
+
+**Decision:**
+Clearing a form-specific Personal default soft-deletes only that user’s form-scoped row for the current form. It reveals the next broader applicable default. It must not delete a legacy all-forms Personal default (`form_id IS NULL`), an Organization default, or another user’s default.
+
+**Clear personal default** is distinct from **Remove from this form**, which is a Global structural action (application Admin only).
+
+**Reason:**
+Form-level Clear must undo a form-specific preference without destroying cross-form Personal preferences or brokerage Organization defaults.
+
+**Consequences:**
+
+* Server actions enforce owner + form-scope rules; UI hiding is not sufficient.
+* Legacy all-forms Personal defaults remain labeled and Clear-protected.
+* Soft-delete (`status = DELETED`) is used; rows are not hard-deleted.
+
+**Related files:**
+
+* `lib/field-defaults-management.ts`
+* `components/forms/pdf-field-editor.tsx`
+* `components/forms/pdf-my-setup-editor.tsx`
+
+---
+
+## Map Fields Role Model
+
+**Date:** 2026-07-20
+
+**Decision:**
+Role permissions for Map Fields and scoped defaults are:
+
+### Regular user
+
+May:
+
+* view Global placement and readable automatic source
+* edit Personal defaults
+
+May not:
+
+* view technical field keys
+* edit Organization defaults
+* edit Global source, placement, or structure
+* remove mappings or replace PDFs
+
+### Organization Admin
+
+May:
+
+* edit Personal defaults
+* edit Organization defaults for their own active organization
+
+May not:
+
+* modify Global structure unless also an application Admin
+
+### Application Admin
+
+May:
+
+* edit Global source, placement, and structure
+* edit Personal defaults
+* edit Organization defaults with explicit organization selection
+* remove fields from a form
+
+Server-side authorization is authoritative; RLS and server actions enforce these rules.
+
+**Related files:**
+
+* `lib/field-defaults-management.ts`
+* `components/forms/pdf-field-editor.tsx`
+* `components/forms/pdf-my-setup-editor.tsx`
+* Existing `field_defaults` RLS
+
+---
+
+## Environment and Preference Data Portability
+
+**Date:** 2026-07-20
+
+**Decision:**
+Only `harbaugh-forms-dev` currently exists. There is no production environment yet. Database preferences created in development will not automatically appear in a future environment. Future production setup must explicitly account for reviewed defaults and other required seed/configuration data (approved manual configuration or an explicitly designed seeding process). Git does not transfer `field_defaults` rows.
+
+**Reason:**
+Scoped preference values are database state, not application source. Assuming Git or a deploy would recreate them would silently lose reviewed Personal defaults.
+
+**Consequences:**
+
+* No production deployment or immediate default recreation is pending while only the development environment exists.
+* Environment setup plans for a future production project must include reviewed defaults intentionally.
+
+---
+
+## Historical Global-to-Scoped Default Transition
+
+**Date:** 2026-07-20
+
+**Decision:**
+Future scope migrations that move preference values off Global catalog fields must reconcile every old value into one of:
+
+* Personal
+* Organization
+* authoritative mapped data
+* approved structural behavior
+* intentional blank
+* explicitly unresolved
+
+**Reason:**
+The Global-to-scoped migration initially left some values classified as structural. A later cleanup removed all Global literals. That created a transition omission for values that had not been reassigned. The omission audit restored **19** reviewed Lee Personal form-specific defaults on `harbaugh-forms-dev`. Detailed inventories belong in audit/status documentation, not this decisions file.
+
+**Consequences:**
+
+* Cleanup of Global preference literals must not assume every prior literal was structural.
+* Unresolved items must be documented rather than silently dropped.
+* See `DEFAULT_TRANSITION_AUDIT.md` and `project_status.md` for inventories and counts.
 
 ---
 
 ## Packet Field-Instance Snapshots
 
-**Date:** 2026-07-17
+**Date:** 2026-07-17 (refined 2026-07-20)
 
 **Decision:**
-Persisted packet field instances are immutable during ordinary view/open. Resolution initializes missing instances only; existing values change only through explicit user-authorized editing or refresh.
+Persisted packet field instances are immutable during ordinary Packets → Fill Form open/view. Resolution initializes missing instances only; existing values change only through explicit user-authorized editing or refresh.
+
+Ordinary open must not recalculate or rewrite existing field instances. It must not change:
+
+* `value`
+* `value_json`
+* `source`
+* `is_override`
+* `update_date`
+
+Explicit Refresh remains the only action that may recalculate eligible non-overridden values (while the packet form remains editable / `DRAFT`).
 
 **Reason:**
 Packet forms capture the agreement state that was filled for a specific client matter. Re-resolving stored non-override values on open (for example after Global catalog defaults change) silently rewrites historical packet data and can clear values that already appeared in generated or signed documents.
@@ -169,7 +351,6 @@ Packet forms capture the agreement state that was filled for a specific client m
 
 * Ordinary packet-form open, view, load, and download may insert field instances that are genuinely missing, using the packet owner’s resolution context.
 * Ordinary open must not update, clear, or re-source any existing field instance, including null, blank, false, zero, non-override resolved values, and manual overrides.
-* Existing instance `UPDATE_DATE` must not change during ordinary open.
 * Explicit user actions (manual edits, per-field revert, and the editor “Refresh Values” control) remain the only paths that may rewrite existing non-override snapshots — and only while the packet form `document_state` is `DRAFT`.
 * Coordinate/mapping structural maintenance must not rewrite saved packet values.
 * Data repair for historically overwritten instances is a separate forward-only operation and must not restore preference literals onto Global catalog fields.
@@ -216,36 +397,50 @@ Refresh Values and open-time initialization can rewrite packet snapshots. Agents
 
 ## Default-Value Resolution Precedence
 
-**Date:** 2026-07-15
+**Date:** 2026-07-15 (refined 2026-07-20)
 
 **Decision:**
-Field values should be resolved using a deterministic precedence order that favors explicit transaction data over stored defaults.
+Field values should be resolved using a deterministic precedence order that favors explicit transaction data over stored defaults. Product behavior (after current/manual packet value or explicit override):
+
+1. Mapped transaction or packet-object value
+2. Mapping-scoped Personal (Private) default
+3. Form-scoped Personal default
+4. Legacy field-only Personal default (`form_id IS NULL`)
+5. Mapping-scoped Organization default
+6. Form-scoped Organization default
+7. Legacy field-only Organization default
+8. Blank (or field-established blank/false/`NA` behavior)
+
+The full product order including the current packet value is therefore:
+
+1. Current/manual packet value or explicit override
+2. Mapped transaction or packet-object value
+3. Mapping-scoped Personal default
+4. Form-scoped Personal default
+5. Legacy field-only Personal default
+6. Mapping-scoped Organization default
+7. Form-scoped Organization default
+8. Legacy field-only Organization default
+9. Blank
+
+The resolver may group Personal-before-Organization and mapping/form/field specificity internally; the product order above is authoritative.
 
 **Reason:**
 A stored preference should help prepopulate a form, but it should never override a value that was explicitly entered for the current transaction or resolved from the selected client, property, agent, brokerage, or packet.
 
 **Consequences:**
 
-The preferred resolution order is:
-
-1. Explicit packet-specific override
-2. Mapped transaction or business source data
-3. Private user default
-4. Organization default
-5. Structural fallback or universal mapping constant
-6. Blank, false, or `NA`, according to the field’s established behavior
-
-Additional rules:
-
-* Private defaults override Organization defaults.
+* Private defaults override Organization defaults at each specificity tier.
 * Deleted or inactive defaults are ignored.
 * Organization defaults require an active organization and active membership.
 * The user’s `primary_organization_id` determines which Organization defaults apply.
 * The application must not choose an arbitrary organization when a user belongs to multiple organizations.
 * An administrator viewing another user’s packet must not cause the administrator’s own defaults to be applied.
+* Global catalog preference literals are not part of the preference resolution path (none approved).
 
 **Related files or migrations:**
 
+* `lib/types/field-default.ts` (`pickBestFieldDefault`, `resolveScopedPreferenceDefault`)
 * `lib/field-defaults.ts`
 * Packet field-resolution logic
 * `public.field_defaults`
@@ -491,68 +686,22 @@ RLS remains authoritative for all collection permissions.
 
 ---
 
-## Visual My setup mode for scoped defaults
+## Personal placement overrides (deferred)
 
 **Date:** 2026-07-20
 
 **Decision:**  
-Manage Personal/Organization preference defaults in a visual PDF My setup mode rather than a form-scoped long list. Legacy `form_id IS NULL` Personal defaults display as `Personal — applies to all forms` and are protected from ordinary form-level Clear. Global structural editing remains a separate Admin-only Edit Global Template mode.
+Personal placement overrides and Restore Global position remain deferred. Preference defaults are managed in the unified Map Fields workspace; moving or resizing fields remains a Global structural concern until a Personal placement product is designed.
 
 **Reason:**  
-Form-scoped long lists made intact all-forms defaults look missing when sparse field overlap left most rows blank. Users need PDF context and clear source labels. Form-level Clear must not destroy cross-form Personal preferences.
+Scoped preference editing shipped without Personal coordinate overrides. Mixing unfinished placement-override UX into Map Fields would blur structural vs preference permissions.
 
 **Consequences:**
 
-- `/forms/[id]/defaults` redirects to `/forms/[id]/editor?mode=my-setup`.
-- My setup is available to authenticated users on active Global forms; it cannot mutate Global placements or mappings.
-- Form-level Clear soft-deletes only form-scoped Personal rows.
-- Personal placement overrides and full visual default editing remain Phase 2/3.
+* No Personal placement override UI in the current Map Fields release.
+* Restore Global position remains deferred with Personal placement overrides.
 
 **Related files:**
 
-* `components/forms/pdf-my-setup-editor.tsx`
-* `lib/types/field-default-management.ts`
-* `lib/field-defaults-management.ts`
-* `app/forms/[id]/editor/page.tsx`
-* `app/forms/[id]/defaults/page.tsx`
-
----
-
-## Field source language and unified Map Fields workspace
-
-**Date:** 2026-07-20
-
-**Decision:**  
-Use distinct value language for template configuration versus packet instances, and present both structural mapping and preference defaults in one **Map Fields** workspace.
-
-### Template editor (PDF Field Mapping / Map Fields)
-
-* **Filled from** — automatic business-data source (or Not connected)
-* **Default if blank** — Personal/Organization preference when automatic source is blank
-* **Default source** — Personal / Organization / None (including legacy “applies to all forms”)
-
-Do not show Current value, Value source, Manual override, or packet-instance concepts in template configuration.
-
-### Packets → Fill Form
-
-* **Current value** — stored/displayed packet field value
-* **Value source** — readable provenance (Entered manually, From property, From client, From agent profile, From brokerage, From packet, From your default, From organization default, Blank)
-
-Optional disclosure: **Why this value?** expands Filled from / precedence explanation without rewriting instances.
-
-### Workspace unification
-
-* Form Templates authorized actions: **Map Fields**, **Edit**, **Delete** (no separate Defaults / My setup).
-* Mapping configuration and defaults share one visual workspace; packet provenance appears only in Fill Form.
-* Preference defaults remain in `field_defaults` (never structural mapping columns).
-* `field_instances.source` already distinguishes `private_default` vs `organization_default` for new/synced instances — no migration required for label display.
-
-**Related files:**
-
-* `lib/types/field-provenance-labels.ts`
-* `components/forms/pdf-my-setup-editor.tsx`
 * `components/forms/pdf-field-editor.tsx`
-* `components/packets/packet-form-fields-sidebar.tsx`
-* `components/forms/forms-page.tsx`
-* `app/forms/[id]/editor/page.tsx`
-* `app/forms/[id]/defaults/page.tsx`
+* `components/forms/pdf-my-setup-editor.tsx`
