@@ -705,3 +705,76 @@ Scoped preference editing shipped without Personal coordinate overrides. Mixing 
 
 * `components/forms/pdf-field-editor.tsx`
 * `components/forms/pdf-my-setup-editor.tsx`
+
+---
+
+## PDF Placement Is Independent of Automatic Sourcing
+
+**Date:** 2026-07-21
+
+**Decision:**
+PDF placement and automatic business-data sourcing are independent concerns. A field may be placed on a PDF even when it has no automatic data source, and a null `source_path` is a valid state for manual-only fields.
+
+**Reason:**
+The mapping-integrity and source-object architecture audits showed that treating "no automatic source" as a mapping defect produced false alarms (the disputed TXR-1101 mappings were visually valid; only their data-model sourcing was broken) and that many `source_type` values pointed at tables nothing maintains.
+
+**Consequences:**
+
+* Automatic sources are used only when a distinct upstream object or workflow owns the value independently from Fill Form (property, contact, agent profile, brokerage, organization, or an independently maintained agreement/packet object).
+* Personal and Organization defaults initialize eligible packet field values but are **not** automatic source mappings.
+* Map Fields shows manual-only fields as "Filled from: Not connected" while their placements and scoped defaults continue to work normally.
+
+**Related files or migrations:**
+
+* `MAPPING_INTEGRITY_AUDIT.md`
+* `SOURCE_OBJECT_ARCHITECTURE_AUDIT.md`
+* `lib/field-resolver.ts`
+
+---
+
+## contract_details Is Abandoned Architecture
+
+**Date:** 2026-07-21
+
+**Decision:**
+`contract_details` is abandoned architecture. All 64 catalog fields formerly configured with `source_type = 'contract_details'` are now `manual_only` with null source paths. The table, its resolver code, and the source-type registration remain temporarily for historical compatibility until a separate schema-removal decision is made.
+
+**Reason:**
+The table has zero rows, no application writer, and no user-facing UI, and no packet field instance has ever been sourced from it. Its mapped fields already functioned exclusively through scoped defaults and manual Fill Form values, so the conversion made real behavior explicit without changing it.
+
+**Consequences:**
+
+* TXR-1601 contract fields show "Filled from: Not connected" in Map Fields; PDF placements, Personal/Organization defaults (including `NA` and numeric `0`), and packet snapshots are unchanged.
+* The migration targets explicit field IDs with strict source-type preconditions and is rerun-safe.
+* `listing_agreement_details` was **not** cleaned up by this work; it remains a separate, mixed-architecture review.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260721190000_remove_abandoned_contract_details_sources.sql`
+* `lib/contract-details-source-removal.test.ts`
+* `SOURCE_OBJECT_ARCHITECTURE_AUDIT.md`
+
+---
+
+## Buyer Rep Broker-Signature Checkbox Reactivation
+
+**Date:** 2026-07-21
+
+**Decision:**
+`BUYER_REP_BROKER_SGN_CHECKBOX` (`2a32353f-0923-40ed-98f0-e60815ad4e96`) was reactivated as an ACTIVE, `manual_only`, unchecked-by-default catalog field. Its TXR-1501 page 6 mapping and three historical packet instances were left untouched.
+
+**Reason:**
+The field was the only ACTIVE mapping pointing at an INACTIVE catalog field in the entire database. Investigation proved its inactivation was accidental: the field matches every text criterion of the `20260701200000` AcroForm-pollution sweep heuristic (all-caps key ≥ 18 characters, effectively manual, no source path or resolver key) even though it is a real hand-drawn checkbox, and its ACTIVE mapping and instances were never inactivated with it — the signature of an incomplete cleanup, not a deduplication. No active replacement field exists: nearby candidates (`ASSOCIATE_SIGNATURE_BOX`, `listing_broker_signature_checkbox`, `lease_broker_signature_checkbox`, `BROKER_AGENT_SIGNATURE`) are semantically different controls.
+
+**Consequences:**
+
+* The checkbox remains on the Buyer Rep PDF at its original placement, manual-only, starting unchecked.
+* The key ("SGN") is not Authentisign-excluded, so signing behavior is unchanged.
+* Reactivation cannot create duplicates: no other ACTIVE GLOBAL field shares the key, and the migration guards the `fields_global_field_key_active_uidx` condition explicitly.
+* Caution for future sweeps: heuristic-based catalog deactivations must verify that a field's ACTIVE hand-drawn mappings and instances are handled consistently.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260721190000_remove_abandoned_contract_details_sources.sql`
+* `supabase/migrations/20260701200000_deactivate_acroform_polluted_catalog_fields.sql`
+* `lib/contract-details-source-removal.test.ts`
