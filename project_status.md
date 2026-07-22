@@ -215,9 +215,19 @@ Before applying migrations from a different development machine, compare local a
 
 ## Current Work
 
-Contract Details architecture removal is on branch `remove-contract-details-architecture` (see 2026-07-22 session below). Prior HOA consolidation is on `main` via PR #6.
+Listing legacy workflow removal is on branch `remove-listing-legacy-workflow` (see 2026-07-22 session below). Prior contract_details architecture removal is on `main` via PR #7.
 
-### Contract Details architecture removal (2026-07-22)
+### Listing legacy workflow removal (2026-07-22)
+
+- **Deleted rows:** `listing_agreement_details` id=`1` (hard delete); soft-deleted LISTING `representation_agreements` id=`2` and client links ids=`3`,`4`. Lee confirmed disposable development data — no export/archive.
+- **Dropped:** `public.listing_agreement_details` (policies, triggers, indexes); `'listing_agreement_details'` removed from `fields_source_type_check`.
+- **Catalog:** 8 DELETED fields normalized to `manual_only` / null path (status remains DELETED); 129 previously converted ACTIVE Listing fields unchanged.
+- **App cleanup:** `/listing-agreements` route + components + Listing types/resolver helpers; Listing agreement-linked wizard branch; source registry/resolver dispatch.
+- **Preserved:** collection-based Listing packets; Buyer Rep tables/route/`generatePacketFromAgreement` (Buyer Rep only); packet fingerprints (`527cf0d3…` / 1501 instances; packets `c26604e2…` / 17).
+- **Migration:** `20260722190000_remove_listing_legacy_workflow.sql` (no CASCADE).
+- **Tests:** `npm run test:listing-legacy-removal`.
+
+### Prior: Contract Details architecture removal (2026-07-22)
 
 - **Deleted:** empty `public.contract_details` table (policies, trigger, indexes, FKs/checks with the table); `'contract_details'` removed from `fields_source_type_check`.
 - **Also converted:** 6 ACTIVE custom-resolver fields that only read the empty table (`contract_survey_option_1/2/3`, `contract_effective_day/month/year`) → `manual_only` with null path/resolver_key.
@@ -304,9 +314,12 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 
 ## Next Steps
 
-1. Eventual Listing Agreement table / legacy-route cleanup (historical table + `/listing-agreements` route).
-2. Future multi-HOA Property UI / optional primary-HOA designation (schema already supports multiple ACTIVE rows).
+1. Brokerage-settings legacy default columns cleanup.
+2. Unused source types / custom resolvers not tied to Listing or Contract.
 3. Personal placement overrides (deferred).
+4. Future multi-HOA Property UI / optional primary-HOA designation (schema already supports multiple ACTIVE rows).
+5. Production-environment rollout (include reviewed scoped defaults intentionally).
+6. Possible future dedicated Listing transaction model only if a real business need emerges.
 4. Restore Global position (deferred).
 5. Optional improvement for genuinely Unknown legacy provenance wording.
 6. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
@@ -371,7 +384,7 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - PDF placement and automatic business-data sourcing are independent; a null source path is valid for manual-only fields.
 - Automatic sources only when a distinct upstream object/workflow owns the value independently from Fill Form; scoped defaults initialize values but are not source mappings.
 - `contract_details` was abandoned architecture and has been removed (forward-only migration 2026-07-22); former catalog fields remain `manual_only`.
-- Current collection-based packets do not use `listing_agreement_details` as an automatic source; packet-form fields are `manual_only` + scoped defaults/Fill Form; historical table/row and legacy route retained.
+- Legacy Listing Agreement details workflow and `/listing-agreements` were removed 2026-07-22; current Listing packets are collection-based; Buyer Rep agreement architecture remains.
 
 ## Session History
 

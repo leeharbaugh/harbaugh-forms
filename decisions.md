@@ -761,7 +761,7 @@ The table has zero rows, no application writer, and no user-facing UI, and no pa
 **Date:** 2026-07-22
 
 **Decision:**
-Current collection-based packet forms do not use `listing_agreement_details` as an automatic upstream source. The historical Listing Agreement table and its one row remain for compatibility, but current packet-form fields use scoped defaults and manual Fill Form values. Existing agreement-record data and current packet-field sourcing are separate concerns. The Listing-details cleanup converts packet-form catalog fields to `manual_only` without deleting the historical table or legacy route. TXR-1102 scoped defaults require an explicit review and are not automatically inferred from legacy schema defaults.
+Current collection-based packet forms do not use `listing_agreement_details` as an automatic upstream source. The Listing-details source conversion made that explicit without deleting the historical table or legacy route at the time. **Superseded for schema/route removal:** see “Legacy Listing Agreement Workflow Removed” (2026-07-22).
 
 **Reason:**
 No current listing packet links to a representation agreement / details row. Zero packet field instances (current or historical) were ever sourced from the table. Most TXR-1102 paths were never in the resolver allowlist. Lee approved converting all 129 ACTIVE `listing_agreement_details` catalog fields plus the three Listing compensation custom-resolvers that depended on dormant details columns.
@@ -771,8 +771,8 @@ No current listing packet links to a representation agreement / details row. Zer
 * Migration `20260722010000_remove_obsolete_listing_details_sources.sql` converted **132** fields to `manual_only` (null path; custom resolvers also clear `resolver_key`).
 * Lee Personal form-specific `NA` defaults were created via Map Fields for `KNOWN_DISTRICTS` and `OTHER_FEES_REIMBURSABLE_EXPENSES` on TXR-1101 (form 7).
 * HOA Listing/Lease PDF fields remain `manual_only` for now (no `property_hoas` remapping in this cleanup).
-* The historical details row, legacy `/listing-agreements` UI, and resolver code remain until a later schema/route decision.
-* TXR-1102 preference defaults (IABS, keybox, rent-due-first-day, etc.) are deferred — do not recreate from schema defaults automatically.
+* The historical details row, legacy `/listing-agreements` UI, and resolver code were removed in a later cleanup after Lee confirmed the row was disposable development data.
+* TXR-1102 preference defaults were reviewed separately (see TXR-1102 decision below).
 
 **Related files or migrations:**
 
@@ -780,6 +780,31 @@ No current listing packet links to a representation agreement / details row. Zer
 * `lib/listing-details-source-removal.test.ts`
 * `LISTING_AGREEMENT_DETAILS_REVIEW.md`
 * `SOURCE_OBJECT_ARCHITECTURE_AUDIT.md`
+
+---
+
+## Legacy Listing Agreement Workflow Removed
+
+**Date:** 2026-07-22
+
+**Decision:**
+The legacy Listing Agreement details row and parent agreement were disposable development data and were removed with Lee’s approval. Current Listing packets are collection-based and do not depend on a standalone Listing Agreement details record. The legacy `/listing-agreements` workflow and agreement-linked Listing packet creation were removed before production. Buyer Rep agreement architecture remains intact and was outside the cleanup scope. Historical migrations remain preserved; cleanup used a forward-only migration.
+
+**Reason:**
+Fresh checks confirmed details id=`1` / LISTING agreement id=`2` / client links `3`–`4` had zero packet references and zero instance provenance. ACTIVE catalog sources were already `manual_only`. Lee declined export/archive.
+
+**Consequences:**
+
+* Migration `20260722190000_remove_listing_legacy_workflow.sql` hard-deleted the details row, soft-deleted LISTING agreement `#2` and its seller links, dropped `listing_agreement_details`, normalized eight DELETED fields to `manual_only`, and removed the source type from `fields_source_type_check`.
+* Application route, UI, types, resolver load/dispatch, and Listing legacy wizard branch were removed.
+* `generatePacketFromAgreement` now accepts Buyer Rep agreements only; Listing packets are created only via Collections.
+* Packet and field-instance fingerprints unchanged.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260722190000_remove_listing_legacy_workflow.sql`
+* `lib/listing-legacy-workflow-removal.test.ts`
+* `LISTING_LEGACY_WORKFLOW_CLEANUP_AUDIT.md`
 
 ---
 

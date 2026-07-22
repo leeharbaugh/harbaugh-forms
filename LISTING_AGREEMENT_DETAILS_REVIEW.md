@@ -4,7 +4,7 @@
 **HEAD:** `d3c197a5191f5553936cff270e7eabf5e619a293`
 **Database:** `harbaugh-forms-dev` (project `ewxsxwzezhkeawnjvigx`; no production environment exists)
 **Review date:** 2026-07-21
-**Mode:** Review completed 2026-07-21; selective cleanup implemented 2026-07-22 on branch `remove-listing-details-sources`
+**Mode:** Review completed 2026-07-21; selective cleanup implemented 2026-07-22 on branch `remove-listing-details-sources`; table/route removal completed 2026-07-22 on branch `remove-listing-legacy-workflow` (see `LISTING_LEGACY_WORKFLOW_CLEANUP_AUDIT.md` and `decisions.md`).
 
 ---
 

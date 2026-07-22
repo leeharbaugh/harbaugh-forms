@@ -114,7 +114,6 @@ export function formatFilledFromLabel(field: {
   if (
     sourceType === "packet" ||
     sourceType === "buyer_rep_details" ||
-    sourceType === "listing_agreement_details" ||
     sourceType === "representation_agreement"
   ) {
     return "Packet details";
