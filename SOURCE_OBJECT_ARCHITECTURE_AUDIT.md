@@ -24,7 +24,7 @@ The intended product model (templates → Personal/Organization defaults → pac
 | `listing_agreement_details` | **Removed 2026-07-22** | Disposable development row deleted; table/route/resolver removed. Collection Listing packets remain. See `LISTING_LEGACY_WORKFLOW_CLEANUP_AUDIT.md`. |
 | `contract_details` | **Removed 2026-07-22** | Abandoned empty table dropped after source conversion; see decisions.md. |
 | `property_hoas` | **B1 (resolved 2026-07-22)** | Authoritative HOA store; Property UI writes first ACTIVE row; redundant `properties` HOA columns retired. See `PROPERTY_HOA_CONSOLIDATION.md`. |
-| `packet` / `static_default` source types | **B5** | Registered in code; **0** active catalog fields. |
+| `packet` / `static_default` source types | **Removed 2026-07-22** | Unused selectable types dropped; provenance display for instance `source='packet'` retained. See `SOURCE_REGISTRY_AND_RESOLVER_CLEANUP_AUDIT.md`. |
 | `manual_only` / `packet_instance` / `custom_resolver` | Product-aligned | Prefer these (plus scoped defaults) over expanding details tables. |
 
 **Do not restore or expand broken `listing_agreement_details` source paths as the repair strategy.** That architecture has been removed (2026-07-22). Prefer `manual_only` + scoped `field_defaults` for Listing/Lease preference values.

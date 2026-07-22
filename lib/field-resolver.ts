@@ -54,10 +54,6 @@ import {
 } from "@/lib/types/packet-property-source-paths";
 import type { Property } from "@/lib/types/property";
 import {
-  formatPropertyAddressCity,
-  formatPropertyStreetAddressZip,
-} from "@/lib/types/property";
-import {
   type PropertyHoa,
   isPropertyHoaResolverKey,
   pickPrimaryPropertyHoa,
@@ -75,7 +71,6 @@ import {
   isRepresentationAgreementSourcePath,
   resolveBuyerRepDetailsFieldValue,
   resolveBuyerRepCheckboxMatches,
-  formatJoinedContactMailingAddresses,
   getFirstContactEmail,
   getFirstContactPhone,
 } from "@/lib/types/buyer-rep-field-resolution";
@@ -539,26 +534,6 @@ function resolveBuyerClientFieldKey(
   };
 }
 
-function resolvePropertyAddressCity(
-  context: FieldResolverContext,
-): ResolvedFieldValue | null {
-  const property = context.packet.properties;
-  if (!property) {
-    return null;
-  }
-
-  const value = formatPropertyAddressCity(property);
-  if (!value) {
-    return null;
-  }
-
-  return {
-    value,
-    value_json: null,
-    source: "property",
-  };
-}
-
 function resolvePropertySourcePath(
   sourcePath: string,
   context: FieldResolverContext,
@@ -600,56 +575,6 @@ function resolvePropertySourcePath(
     value,
     value_json: null,
     source: "property",
-  };
-}
-
-function resolvePacketMetadataSourcePath(
-  sourcePath: string,
-  context: FieldResolverContext,
-): ResolvedFieldValue | null {
-  const normalizedPath = sourcePath.trim().toLowerCase();
-  const { packet, representationAgreement } = context;
-
-  let value = "";
-
-  switch (normalizedPath) {
-    case "packet_name":
-      value = packet.label ?? "";
-      break;
-    case "packet_type":
-      value = packet.packet_type ?? "";
-      break;
-    case "created_date":
-      value = packet.create_date
-        ? normalizeDateDisplay(packet.create_date.split("T")[0])
-        : "";
-      break;
-    case "effective_date":
-      value = representationAgreement?.effective_date
-        ? normalizeDateDisplay(
-            representationAgreement.effective_date.split("T")[0],
-          )
-        : "";
-      break;
-    case "expiration_date":
-      value = representationAgreement?.expiration_date
-        ? normalizeDateDisplay(
-            representationAgreement.expiration_date.split("T")[0],
-          )
-        : "";
-      break;
-    default:
-      return null;
-  }
-
-  if (!value) {
-    return null;
-  }
-
-  return {
-    value,
-    value_json: null,
-    source: "packet",
   };
 }
 
@@ -829,20 +754,14 @@ function resolveCustomResolverKey(
     };
   }
 
-  if (
-    normalizedKey === "seller_address" ||
-    normalizedKey === "landlord_address"
-  ) {
-    const contacts =
-      normalizedKey === "seller_address"
-        ? getOrderedSellerContacts(context.packetContacts)
-        : getOrderedContactsForNumberedRolePrefix(
-            context.packetContacts,
-            "landlord",
-            {
-              fallbackSellersAsLandlords: context.fallbackSellersAsLandlords,
-            },
-          );
+  if (normalizedKey === "landlord_address") {
+    const contacts = getOrderedContactsForNumberedRolePrefix(
+      context.packetContacts,
+      "landlord",
+      {
+        fallbackSellersAsLandlords: context.fallbackSellersAsLandlords,
+      },
+    );
     const contact = contacts[0] ?? null;
     if (!contact) {
       return null;
@@ -928,76 +847,9 @@ function resolveCustomResolverKey(
     };
   }
 
-  if (normalizedKey === "property_address_city") {
-    return resolvePropertyAddressCity(context);
-  }
-
-  if (normalizedKey === "property_address_street_zip") {
-    const property = context.packet.properties;
-    if (!property) {
-      return null;
-    }
-
-    const value = formatPropertyStreetAddressZip(property);
-    if (!value) {
-      return null;
-    }
-
-    return {
-      value,
-      value_json: null,
-      source: "property",
-    };
-  }
-
-  if (normalizedKey === "seller_names") {
-    const value = formatJoinedContactNames(
-      getOrderedSellerContacts(context.packetContacts),
-    );
-    if (!value) {
-      return null;
-    }
-
-    return {
-      value,
-      value_json: null,
-      source: "contact_role",
-    };
-  }
-
   if (normalizedKey === "buyer_names") {
     const value = formatJoinedContactNames(
       getOrderedBuyerContacts(context.packetContacts),
-    );
-    if (!value) {
-      return null;
-    }
-
-    return {
-      value,
-      value_json: null,
-      source: "contact_role",
-    };
-  }
-
-  if (normalizedKey === "buyer_notice_address") {
-    const value = formatJoinedContactMailingAddresses(
-      getOrderedBuyerContacts(context.packetContacts),
-    );
-    if (!value) {
-      return null;
-    }
-
-    return {
-      value,
-      value_json: null,
-      source: "contact_role",
-    };
-  }
-
-  if (normalizedKey === "seller_notice_address") {
-    const value = formatJoinedContactMailingAddresses(
-      getOrderedSellerContacts(context.packetContacts),
     );
     if (!value) {
       return null;
@@ -1025,39 +877,9 @@ function resolveCustomResolverKey(
     };
   }
 
-  if (normalizedKey === "seller_notice_phone") {
-    const value = getFirstContactPhone(
-      getOrderedSellerContacts(context.packetContacts),
-    );
-    if (!value) {
-      return null;
-    }
-
-    return {
-      value,
-      value_json: null,
-      source: "contact_role",
-    };
-  }
-
   if (normalizedKey === "buyer_notice_email") {
     const value = getFirstContactEmail(
       getOrderedBuyerContacts(context.packetContacts),
-    );
-    if (!value) {
-      return null;
-    }
-
-    return {
-      value,
-      value_json: null,
-      source: "contact_role",
-    };
-  }
-
-  if (normalizedKey === "seller_notice_email") {
-    const value = getFirstContactEmail(
-      getOrderedSellerContacts(context.packetContacts),
     );
     if (!value) {
       return null;
@@ -1092,90 +914,6 @@ function resolveCustomResolverKey(
     );
   }
 
-  if (normalizedKey === "buyer_rep_retainer_will_apply") {
-    const details = context.buyerRepDetails;
-    if (!details) {
-      return null;
-    }
-
-    return resolveBuyerRepCheckboxValue(
-      resolveBuyerRepCheckboxMatches(details, "retainer_applies_to_fee", true),
-    );
-  }
-
-  if (normalizedKey === "buyer_rep_intermediary_status_yes") {
-    const details = context.buyerRepDetails;
-    if (!details) {
-      return null;
-    }
-
-    return resolveBuyerRepCheckboxValue(
-      resolveBuyerRepCheckboxMatches(details, "intermediary_allowed", true),
-    );
-  }
-
-  if (normalizedKey === "agent_full_name") {
-    if (!context.settings) {
-      return null;
-    }
-
-    const value = agentFullName(context.settings);
-    if (!value) {
-      return null;
-    }
-
-    return {
-      value,
-      value_json: null,
-      source: "settings",
-    };
-  }
-
-  if (normalizedKey === "broker_full_name") {
-    if (!context.settings) {
-      return null;
-    }
-
-    const value = brokerFullName(context.settings);
-    if (!value) {
-      return null;
-    }
-
-    return {
-      value,
-      value_json: null,
-      source: "settings",
-    };
-  }
-
-  return null;
-}
-
-function resolveStaticDefaultSource(field: Field): ResolvedFieldValue | null {
-  const sourcePath = field.source_path?.trim().toLowerCase() ?? "";
-  const fallback = field.fallback_value?.trim() ?? "";
-
-  if (sourcePath === "default_checked") {
-    const checked =
-      fallback === "true" ||
-      fallback === "1" ||
-      field.default_checked === true;
-
-    return {
-      value: checked ? "true" : "false",
-      value_json: { checked },
-      source: fallback ? "fallback" : "field_default_checked",
-    };
-  }
-
-  if (fallback) {
-    return {
-      value: fallback,
-      value_json: null,
-      source: "fallback",
-    };
-  }
-
   return null;
 }
 
@@ -1199,21 +937,12 @@ function resolveFromFieldSourceMapping(
         : null;
     case "packet_property":
       if (
-        field.resolver_key?.trim().toLowerCase() === "property_address_city"
-      ) {
-        return resolvePropertyAddressCity(context);
-      }
-      if (
         field.resolver_key?.trim().toLowerCase() === "property_hoa_name"
       ) {
         return resolvePropertyHoaResolverKey("property_hoa_name", context);
       }
       return field.source_path
         ? resolvePropertySourcePath(field.source_path, context)
-        : null;
-    case "packet":
-      return field.source_path
-        ? resolvePacketMetadataSourcePath(field.source_path, context)
         : null;
     case "buyer_rep_details":
       return field.source_path
@@ -1223,8 +952,6 @@ function resolveFromFieldSourceMapping(
       return field.source_path
         ? resolveRepresentationAgreementSourcePath(field.source_path, context)
         : null;
-    case "static_default":
-      return resolveStaticDefaultSource(field);
     case "custom_resolver":
       return field.resolver_key
         ? resolveCustomResolverKey(field.resolver_key, context)

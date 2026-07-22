@@ -215,9 +215,21 @@ Before applying migrations from a different development machine, compare local a
 
 ## Current Work
 
-Brokerage legacy `default_*` column removal is on branch `remove-brokerage-legacy-default-columns` (see 2026-07-22 session below). Prior Listing legacy workflow removal is on `main` via PR #8.
+Source registry cleanup is on branch `remove-unused-source-registry-code` (see below). Brokerage legacy `default_*` removal is on `main` via PR #9.
 
-### Brokerage legacy default columns removal (2026-07-22)
+### Source registry and resolver cleanup (2026-07-22)
+
+- **Removed selectable source types:** `packet`, `static_default` (0 catalog fields; prefs use scoped `field_defaults`).
+- **Converted:** 53 unreachable Listing/Lease `custom_resolver` fields → `manual_only` (no runtime implementation after listing-details removal).
+- **Repaired:** `PROPERTY_ADDRESS` → `packet_property` + `full_address`.
+- **Trimmed:** unused `CUSTOM_RESOLVER_KEYS` / dead resolver branches; added live `landlord_*` / `seller_city_state_zip` to the selector.
+- **Catalog:** soft-deleted orphan `contract_*` `field_resolvers` rows; cleared FKs.
+- **Preserved:** Buyer Rep / representation sources; live HOA/contact/settings resolvers; instance provenance `source='packet'` display labels; packet fingerprints unchanged (`527cf0d3…` / 1501).
+- **Migration:** `20260722210000_remove_unused_source_registry_metadata.sql` (no CASCADE).
+- **Tests:** `npm run test:source-registry-cleanup`.
+- **Audit:** `SOURCE_REGISTRY_AND_RESOLVER_CLEANUP_AUDIT.md`.
+
+### Prior: Brokerage legacy default columns removal (2026-07-22)
 
 - **Dropped columns:** `default_market_area`, `default_buyer_rep_compensation_percent`, `default_protection_period_days`, `default_county_for_payment`, `default_employer_relocation`, `default_special_provisions`, `default_intermediary_allowed` (+ check `brokerage_settings_protection_period_non_negative`).
 - **Retained:** all genuine brokerage/agent/broker/supervisor profile fields; Settings UI unchanged.
