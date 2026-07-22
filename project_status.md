@@ -284,21 +284,20 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 
 ## Next Steps
 
-1. TXR-1102 scoped-default review (do not infer from legacy schema defaults).
-2. Eventual Listing Agreement table / legacy-route cleanup (jointly with `contract_details` schema removal).
-3. HOA / `property_hoas` authoritative-source decision.
-4. Personal placement overrides (deferred).
-5. Restore Global position (deferred).
-6. Optional improvement for genuinely Unknown legacy provenance wording.
-7. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
-8. Follow-up product work in priority order:
+1. Eventual Listing Agreement table / legacy-route cleanup (jointly with `contract_details` schema removal).
+2. HOA / `property_hoas` authoritative-source decision.
+3. Personal placement overrides (deferred).
+4. Restore Global position (deferred).
+5. Optional improvement for genuinely Unknown legacy provenance wording.
+6. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
+7. Follow-up product work in priority order:
    1. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
    2. Admin ownership demarcation and saved Include user-owned filters.
    3. Refresh Values before/after field-diff preview.
    4. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
    5. Authentisign integration (may set `SIGNED`).
    6. Optional: cross-form defaults dashboard.
-9. When a production environment is eventually created: include reviewed Lee Personal form-specific defaults (including the two 2026-07-22 Listing `NA` defaults) in the environment setup plan.
+8. When a production environment is eventually created: include reviewed Lee Personal form-specific defaults (including the two 2026-07-22 Listing `NA` defaults and the **20** TXR-1102 Personal form-specific defaults) in the environment setup plan.
 
 ## Development Machine Checklist
 
@@ -355,6 +354,15 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Current collection-based packets do not use `listing_agreement_details` as an automatic source; packet-form fields are `manual_only` + scoped defaults/Fill Form; historical table/row and legacy route retained.
 
 ## Session History
+
+### 2026-07-22 (add-txr-1102-scoped-defaults)
+
+- Completed TXR-1102 scoped-default review + N1–N6 text-field context review (`TXR_1102_SCOPED_DEFAULT_REVIEW.md`).
+- Created **20** Lee Personal form-specific ACTIVE defaults on Global TXR-1102 `#15`: 12×`NA`, protection period `30`, payment county `Dallas/Tarrant`, late-charges day `2`, and 5 checked elections (MLS immediately, keybox yes, intermediary yes, IABS, rent due first day).
+- Intentionally left **10** conditional/Other/exclusive-branch text fields blank; `lease_mls_file_listing` unchecked; Organization Broker Bay preserved (no Personal duplicate).
+- Historical TXR-1102 packet instances (300) unchanged after creation; ordinary open remains insert-only.
+- Added `lib/txr-1102-scoped-defaults.test.ts` and npm script `test:txr-1102-scoped-defaults`.
+- Durable blank-vs-NA / contractual-branch rule recorded in `decisions.md`. No migration required.
 
 ### 2026-07-22 (remove-listing-details-sources)
 
