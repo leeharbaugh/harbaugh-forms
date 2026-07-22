@@ -215,9 +215,18 @@ Before applying migrations from a different development machine, compare local a
 
 ## Current Work
 
-Listing legacy workflow removal is on branch `remove-listing-legacy-workflow` (see 2026-07-22 session below). Prior contract_details architecture removal is on `main` via PR #7.
+Brokerage legacy `default_*` column removal is on branch `remove-brokerage-legacy-default-columns` (see 2026-07-22 session below). Prior Listing legacy workflow removal is on `main` via PR #8.
 
-### Listing legacy workflow removal (2026-07-22)
+### Brokerage legacy default columns removal (2026-07-22)
+
+- **Dropped columns:** `default_market_area`, `default_buyer_rep_compensation_percent`, `default_protection_period_days`, `default_county_for_payment`, `default_employer_relocation`, `default_special_provisions`, `default_intermediary_allowed` (+ check `brokerage_settings_protection_period_non_negative`).
+- **Retained:** all genuine brokerage/agent/broker/supervisor profile fields; Settings UI unchanged.
+- **Evidence:** zero TypeScript refs, zero catalog `source_path`s, preferences already in scoped `field_defaults`.
+- **Migration:** `20260722200000_remove_brokerage_legacy_default_columns.sql` (no CASCADE).
+- **Tests:** `npm run test:brokerage-legacy-defaults-removal`.
+- **Audit:** `BROKERAGE_SETTINGS_LEGACY_DEFAULTS_AUDIT.md`.
+
+### Prior: Listing legacy workflow removal (2026-07-22)
 
 - **Deleted rows:** `listing_agreement_details` id=`1` (hard delete); soft-deleted LISTING `representation_agreements` id=`2` and client links ids=`3`,`4`. Lee confirmed disposable development data — no export/archive.
 - **Dropped:** `public.listing_agreement_details` (policies, triggers, indexes); `'listing_agreement_details'` removed from `fields_source_type_check`.
@@ -314,12 +323,11 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 
 ## Next Steps
 
-1. Brokerage-settings legacy default columns cleanup.
-2. Unused source types / custom resolvers not tied to Listing or Contract.
-3. Personal placement overrides (deferred).
-4. Future multi-HOA Property UI / optional primary-HOA designation (schema already supports multiple ACTIVE rows).
-5. Production-environment rollout (include reviewed scoped defaults intentionally).
-6. Possible future dedicated Listing transaction model only if a real business need emerges.
+1. Unused source types / custom resolvers not tied to Listing or Contract.
+2. Personal placement overrides (deferred).
+3. Future multi-HOA Property UI / optional primary-HOA designation (schema already supports multiple ACTIVE rows).
+4. Production-environment rollout (include reviewed scoped defaults intentionally).
+5. Possible future dedicated Listing transaction model only if a real business need emerges.
 4. Restore Global position (deferred).
 5. Optional improvement for genuinely Unknown legacy provenance wording.
 6. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).

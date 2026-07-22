@@ -900,6 +900,30 @@ The Property UI already presented a single HOA form, but persisted those three f
 
 ---
 
+## Brokerage Profile Versus Form Defaults
+
+**Date:** 2026-07-22
+
+**Decision:**
+Brokerage profile data and form defaults are separate concerns. Genuine brokerage identity and contact fields remain in `brokerage_settings`. Form-completion preferences belong in scoped Personal or Organization `field_defaults`, not legacy `brokerage_settings.default_*` columns. Obsolete default columns were removed only after proving no live resolver, field, packet, or UI dependency remained.
+
+**Reason:**
+Seven `default_*` columns from the initial schema predated scoped defaults, were never referenced by TypeScript, and were never exposed in the Settings UI. Preferences such as market area, protection period, intermediary, payment county, and Broker Bay already live in `field_defaults`.
+
+**Consequences:**
+
+* Migration `20260722200000_remove_brokerage_legacy_default_columns.sql` dropped the seven columns and the `brokerage_settings_protection_period_non_negative` check.
+* Profile fields and Settings save behavior are unchanged.
+* No catalog field conversion was required (zero fields used those paths).
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260722200000_remove_brokerage_legacy_default_columns.sql`
+* `lib/brokerage-legacy-defaults-removal.test.ts`
+* `BROKERAGE_SETTINGS_LEGACY_DEFAULTS_AUDIT.md`
+
+---
+
 ## Buyer Rep Broker-Signature Checkbox Reactivation
 
 **Date:** 2026-07-21
