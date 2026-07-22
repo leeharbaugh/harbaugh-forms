@@ -783,6 +783,46 @@ No current listing packet links to a representation agreement / details row. Zer
 
 ---
 
+## TXR-1102 Reviewed Personal Form-Specific Defaults
+
+**Date:** 2026-07-22
+
+**Decision:**
+After the TXR-1102 scoped-default review and N1–N6 text-field context review, Lee approved **20** Personal form-specific defaults on Global TXR-1102 (form **#15**). Conditional, “Other,” and mutually exclusive branch blanks remain without defaults. The existing Organization all-forms **Broker Bay** default on `LEASE_SCHEDULING_COMPANY` is preserved without a Personal duplicate.
+
+**Durable blank-vs-NA rule:**
+A blank field should default to `NA` when it is a standalone narrative provision, exception, or list whose omission would leave the paragraph ambiguous. A blank field should remain blank when it belongs to an unselected checkbox, “Other” election, mutually exclusive alternative, amount, percentage, date, or other transaction-specific factual value. Defaults must not partially complete an unselected contractual branch or make two mutually exclusive alternatives appear completed.
+
+**Approved defaults (Private, Lee, form_id = 15, mapping_id null):**
+
+* **12 × `NA`:** `lease_non_real_estate_items`, `lease_listing_exclusions`, `lease_reimbursable_expenses`, `lease_known_financial_obligations_exception`, `lease_known_liens_exception`, `lease_optional_common_area_fees_exception`, `lease_health_safety_condition_exception`, `lease_special_provisions`, `lease_tenant_utilities_except`, `lease_items_not_repaired`, `lease_requirements_special_provisions`, `lease_requirements_other`
+* **3 × preference text/number:** `lease_protection_period_days` = `30`; `lease_payment_county` = `Dallas/Tarrant`; `lease_late_charges_incurred_day` = `2`
+* **5 × checked:** `lease_mls_file_immediately`, `lease_keybox_authorized_yes`, `lease_intermediary_yes`, `lease_add_iabs`, `lease_rent_due_first_day`
+
+**Intentionally left blank / unchecked:**
+
+* **10 conditional/Other/exclusive text fields:** `lease_broker_fee_other`, `lease_no_coop_other`, `lease_renewal_other`, `lease_sale_comp_other`, `lease_mls_delayed_purpose`, `lease_make_ready_direct_service_fee`, `lease_make_ready_reimbursement_service_fee`, `lease_add_other_document_description`, `lease_rent_due_other`, `lease_animal_restrictions`
+* `lease_mls_file_listing` remains unchecked (no Personal checked default)
+* Rent, deposits, compensation amounts/percentages, listing/lease dates, phones/addresses, and signatures remain without defaults
+
+**Reason:**
+Former `listing_agreement_details` schema defaults were inert surrogates, not approved preferences. Lee reviewed form wording so only true standalone N6/N1 narratives receive `NA`, while N2–N4 election branches stay blank until selected.
+
+**Consequences:**
+
+* New eligible TXR-1102 instances for Lee initialize the 20 approved values; Yahoo and other users do not inherit Lee’s Private rows.
+* Organization `Broker Bay` continues to apply to active Davey Goosmann members.
+* Historical packet field instances are unchanged by default creation and by ordinary Fill Form open (`ensure_missing`).
+* No migration was required; preferences live in `field_defaults` database state (not Git).
+* Only `harbaugh-forms-dev` exists; a future production environment must intentionally include these 20 reviewed defaults.
+
+**Related files or migrations:**
+
+* `TXR_1102_SCOPED_DEFAULT_REVIEW.md`
+* `lib/txr-1102-scoped-defaults.test.ts`
+
+---
+
 ## Buyer Rep Broker-Signature Checkbox Reactivation
 
 **Date:** 2026-07-21
