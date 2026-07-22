@@ -18,6 +18,7 @@
     "test:field-defaults-management": "node --experimental-strip-types --test lib/field-defaults-management.test.ts lib/types/field-provenance-labels.test.ts",
     "test:field-instance-sync": "node --experimental-strip-types --test lib/field-instance-sync.test.ts",
     "test:contract-source-removal": "node --experimental-strip-types --test lib/contract-details-source-removal.test.ts",
+    "test:contract-architecture-removal": "node --experimental-strip-types --test lib/contract-details-architecture-removal.test.ts",
     "test:listing-source-removal": "node --experimental-strip-types --test lib/listing-details-source-removal.test.ts",
     "test:txr-1102-scoped-defaults": "node --experimental-strip-types --test lib/txr-1102-scoped-defaults.test.ts",
     "test:packet-form-lifecycle": "node --experimental-strip-types --test lib/types/packet-form-lifecycle.test.ts",

@@ -97,6 +97,38 @@ export function formatContactCityStateZip(contact: Contact): string {
   return cityState ? `${cityState} ${zip}` : zip;
 }
 
+export function formatJoinedContactMailingAddresses(
+  contacts: Contact[],
+): string {
+  return contacts
+    .map((contact) => formatContactMailingAddress(contact))
+    .filter(Boolean)
+    .join(", ");
+}
+
+export function getFirstContactPhone(contacts: Contact[]): string | null {
+  for (const contact of contacts) {
+    const phone =
+      contact.phone_primary?.trim() || contact.phone_secondary?.trim();
+    if (phone) {
+      return phone;
+    }
+  }
+
+  return null;
+}
+
+export function getFirstContactEmail(contacts: Contact[]): string | null {
+  for (const contact of contacts) {
+    const email = contact.email?.trim() || contact.email_secondary?.trim();
+    if (email) {
+      return email;
+    }
+  }
+
+  return null;
+}
+
 export function formatBrokerageCityStateZip(
   settings: BrokerageSettings,
 ): string {

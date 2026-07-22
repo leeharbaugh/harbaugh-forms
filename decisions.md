@@ -737,7 +737,7 @@ The mapping-integrity and source-object architecture audits showed that treating
 **Date:** 2026-07-21
 
 **Decision:**
-`contract_details` is abandoned architecture. All 64 catalog fields formerly configured with `source_type = 'contract_details'` are now `manual_only` with null source paths. The table, its resolver code, and the source-type registration remain temporarily for historical compatibility until a separate schema-removal decision is made.
+`contract_details` is abandoned architecture. All 64 catalog fields formerly configured with `source_type = 'contract_details'` are now `manual_only` with null source paths. **Superseded for schema/code removal:** see “contract_details Architecture Removed” (2026-07-22) — the empty table and resolver/source registration were deleted via forward-only migration after this conversion.
 
 **Reason:**
 The table has zero rows, no application writer, and no user-facing UI, and no packet field instance has ever been sourced from it. Its mapped fields already functioned exclusively through scoped defaults and manual Fill Form values, so the conversion made real behavior explicit without changing it.
@@ -820,6 +820,31 @@ Former `listing_agreement_details` schema defaults were inert surrogates, not ap
 
 * `TXR_1102_SCOPED_DEFAULT_REVIEW.md`
 * `lib/txr-1102-scoped-defaults.test.ts`
+
+---
+
+## contract_details Architecture Removed
+
+**Date:** 2026-07-22
+
+**Decision:**
+`contract_details` was abandoned architecture with zero rows, no writers, no UI, and no packet provenance. Its former catalog fields were converted to `manual_only` before the table and resolver infrastructure were removed. Contract form values now come from genuine business sources, scoped defaults, packet field instances, and manual Fill Form entry. Historical migrations remain intact; removal was performed through a forward-only migration.
+
+**Reason:**
+After the 2026-07-21 source-conversion phase, the empty table and dead source/resolver code remained only for temporary compatibility. Lee approved completing deletion before any production rollout. Fresh checks confirmed zero rows, zero fields with `source_type = 'contract_details'`, zero packet instances with that provenance, and a select-only application reader.
+
+**Consequences:**
+
+* Migration `20260722180000_remove_contract_details_architecture.sql` drops the table (no CASCADE), removes `'contract_details'` from `fields_source_type_check`, and converts six table-dependent custom-resolver fields (survey option / effective day-month-year) to `manual_only`.
+* Application registries, resolver loading/dispatch, and UI source selectors no longer offer Contract Details.
+* The 64 previously converted Contract fields remain `manual_only` with null paths; mappings, defaults, and packet snapshots are unchanged.
+* `listing_agreement_details` and its legacy route are untouched.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260722180000_remove_contract_details_architecture.sql`
+* `lib/contract-details-architecture-removal.test.ts`
+* `SOURCE_OBJECT_ARCHITECTURE_AUDIT.md`
 
 ---
 
