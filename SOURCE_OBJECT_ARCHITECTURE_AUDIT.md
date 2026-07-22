@@ -18,7 +18,7 @@ The intended product model (templates → Personal/Organization defaults → pac
 |---|---|---|
 | `properties` / `contacts` / `packet_contacts` | **B1 / B2** | Genuine business sources; keep. |
 | `brokerage_settings` (profile fields) | **B1** | Genuine agent/brokerage profile; keep. |
-| `brokerage_settings.default_*` | **B4 / B5** | Orphaned preference columns; unused by TypeScript. |
+| `brokerage_settings.default_*` | **Removed 2026-07-22** | Seven legacy preference columns dropped; profile fields retained. See `BROKERAGE_SETTINGS_LEGACY_DEFAULTS_AUDIT.md`. |
 | `representation_agreements` | **B2** (mixed) | Real agreement lifecycle; little current packet use. |
 | `buyer_rep_details` | **Mixed B2 + B4** | Full edit UI exists; schema defaults are legacy; only legacy agreement-linked packets resolve from it. |
 | `listing_agreement_details` | **Removed 2026-07-22** | Disposable development row deleted; table/route/resolver removed. Collection Listing packets remain. See `LISTING_LEGACY_WORKFLOW_CLEANUP_AUDIT.md`. |
