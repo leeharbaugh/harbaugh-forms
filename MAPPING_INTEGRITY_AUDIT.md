@@ -110,7 +110,7 @@ Notes per form (from full visual inspection of every mapped page):
 ## Recommended Review Order
 
 1. **R7 (1 item):** **resolved 2026-07-21** — the TXR-1501 p6 `BUYER_REP_BROKER_SGN_CHECKBOX` catalog field was reactivated as `manual_only` (migration `20260721190000`); the mapping was valid and unchanged. The original "repoint or deactivate" suggestion was wrong: the field's inactivation, not the mapping, was the defect.
-2. **Null source paths (19 items):** restore `source_path` on the 17 TXR-1101 + 1 TXR-1102 `listing_agreement_details` fields (and decide intent for TXR-1405 `HOA_ASSOCIATION_ADDRESS`); this is the actual root cause behind the disputed-mapping report.
+2. **Null source paths (19 items):** ~~restore `source_path`~~ — **resolved 2026-07-22 for the 18 Listing fields** by migration `20260722010000_remove_obsolete_listing_details_sources.sql` (convert to `manual_only`, not restore paths), plus Lee Personal form-specific `NA` defaults for the disputed TXR-1101 pair. TXR-1405 `HOA_ASSOCIATION_ADDRESS` intent remains a separate open item. The placements themselves remain visually valid as recorded here.
 3. **V2 precision items (75):** optional cosmetic pass — widen/nudge header address boxes and the tight TXR-1601/TXR-2001 money-field rects.
 4. **No-packet-use forms:** no action needed; re-verify organically on first production use.
 5. **V1 (793):** no action.

@@ -746,12 +746,39 @@ The table has zero rows, no application writer, and no user-facing UI, and no pa
 
 * TXR-1601 contract fields show "Filled from: Not connected" in Map Fields; PDF placements, Personal/Organization defaults (including `NA` and numeric `0`), and packet snapshots are unchanged.
 * The migration targets explicit field IDs with strict source-type preconditions and is rerun-safe.
-* `listing_agreement_details` was **not** cleaned up by this work; it remains a separate, mixed-architecture review.
+* `listing_agreement_details` packet-form sources were cleaned up separately on 2026-07-22 (see below).
 
 **Related files or migrations:**
 
 * `supabase/migrations/20260721190000_remove_abandoned_contract_details_sources.sql`
 * `lib/contract-details-source-removal.test.ts`
+* `SOURCE_OBJECT_ARCHITECTURE_AUDIT.md`
+
+---
+
+## Current Packets Do Not Use listing_agreement_details as an Automatic Source
+
+**Date:** 2026-07-22
+
+**Decision:**
+Current collection-based packet forms do not use `listing_agreement_details` as an automatic upstream source. The historical Listing Agreement table and its one row remain for compatibility, but current packet-form fields use scoped defaults and manual Fill Form values. Existing agreement-record data and current packet-field sourcing are separate concerns. The Listing-details cleanup converts packet-form catalog fields to `manual_only` without deleting the historical table or legacy route. TXR-1102 scoped defaults require an explicit review and are not automatically inferred from legacy schema defaults.
+
+**Reason:**
+No current listing packet links to a representation agreement / details row. Zero packet field instances (current or historical) were ever sourced from the table. Most TXR-1102 paths were never in the resolver allowlist. Lee approved converting all 129 ACTIVE `listing_agreement_details` catalog fields plus the three Listing compensation custom-resolvers that depended on dormant details columns.
+
+**Consequences:**
+
+* Migration `20260722010000_remove_obsolete_listing_details_sources.sql` converted **132** fields to `manual_only` (null path; custom resolvers also clear `resolver_key`).
+* Lee Personal form-specific `NA` defaults were created via Map Fields for `KNOWN_DISTRICTS` and `OTHER_FEES_REIMBURSABLE_EXPENSES` on TXR-1101 (form 7).
+* HOA Listing/Lease PDF fields remain `manual_only` for now (no `property_hoas` remapping in this cleanup).
+* The historical details row, legacy `/listing-agreements` UI, and resolver code remain until a later schema/route decision.
+* TXR-1102 preference defaults (IABS, keybox, rent-due-first-day, etc.) are deferred — do not recreate from schema defaults automatically.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260722010000_remove_obsolete_listing_details_sources.sql`
+* `lib/listing-details-source-removal.test.ts`
+* `LISTING_AGREEMENT_DETAILS_REVIEW.md`
 * `SOURCE_OBJECT_ARCHITECTURE_AUDIT.md`
 
 ---
