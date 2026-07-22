@@ -555,6 +555,11 @@ export function PropertyForm({
       </FormSection>
 
       <FormSection title="HOA">
+        {/*
+          Temporary single-HOA UI convention: these inputs read/write the first
+          ACTIVE property_hoas row (create_date, then id). Schema still supports
+          multiple HOAs; no multi-HOA UI yet.
+        */}
         <div className="flex items-center gap-2 sm:col-span-2">
           <AppCheckbox
             id="property_has_hoa"

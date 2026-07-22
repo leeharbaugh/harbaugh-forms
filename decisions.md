@@ -823,6 +823,33 @@ Former `listing_agreement_details` schema defaults were inert surrogates, not ap
 
 ---
 
+## Property HOA Storage Consolidation
+
+**Date:** 2026-07-22
+
+**Decision:**
+`property_hoas` is the authoritative HOA data model. The Property screen intentionally exposes one HOA record (name, phone, management company), while the schema preserves multiple-HOA capability for future use. The first ACTIVE HOA row (`ORDER BY create_date, id`) is the temporary single-record UI convention — not a permanent business rule and not an `is_primary` column. Direct HOA columns on `properties` (`hoa_name`, `hoa_phone`, `hoa_management_company`) were retired as redundant. Existing development values in those columns were approved as disposable test data and were not backfilled. Clearing HOA Name soft-deletes the displayed HOA row (`status = 'DELETED'`); hard deletes are not used. Multi-HOA UI is not implemented.
+
+**Reason:**
+The Property UI already presented a single HOA form, but persisted those three fields onto `properties` while resolvers for TREC 36-10 / related catalogs already read `property_hoas`. Keeping both stores duplicated data and left `property_hoas` without writers.
+
+**Consequences:**
+
+* Property create/edit reads and writes one ACTIVE `property_hoas` row via `lib/property-hoa-storage.ts`.
+* Catalog fields `HOA_ASSOCIATION_NAME` and `txr_2001_hoa_name` redirect to `custom_resolver` / `property_hoa_name`.
+* Retained on `properties`: `has_hoa`, `hoa_contact_name`, `hoa_email`, `hoa_website`, `hoa_dues_*`.
+* Packet instances, mappings, and scoped defaults are unchanged by the migration.
+* Only `harbaugh-forms-dev` exists; no production rollout in this change.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260722120000_consolidate_property_hoa_storage.sql`
+* `lib/property-hoa-storage.ts`
+* `lib/property-hoa-storage.test.ts`
+* `PROPERTY_HOA_CONSOLIDATION.md`
+
+---
+
 ## Buyer Rep Broker-Signature Checkbox Reactivation
 
 **Date:** 2026-07-21

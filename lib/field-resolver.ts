@@ -63,6 +63,7 @@ import {
   pickPrimaryPropertyHoa,
   resolvePropertyHoaFieldValue,
 } from "@/lib/types/property-hoa";
+import { loadActivePropertyHoasForProperty as loadActivePropertyHoasRows } from "@/lib/property-hoa-storage";
 import {
   type BuyerRepDetails,
 } from "@/lib/types/buyer-rep-agreement";
@@ -1989,19 +1990,7 @@ async function loadActivePropertyHoasForProperty(
     return [];
   }
 
-  const { data, error } = await supabase
-    .from("property_hoas")
-    .select("*")
-    .eq("property_id", propertyId)
-    .eq("status", "ACTIVE")
-    .order("create_date", { ascending: true })
-    .order("id", { ascending: true });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return (data as PropertyHoa[]) ?? [];
+  return loadActivePropertyHoasRows(supabase, propertyId);
 }
 
 async function loadActiveContractDetailsForPacket(

@@ -215,9 +215,20 @@ Before applying migrations from a different development machine, compare local a
 
 ## Current Work
 
-Branch `remove-abandoned-contract-details-sources`: contract-source cleanup and Buyer Rep checkbox repair (see 2026-07-21 session below). Scoped defaults / Map Fields work is on `main` via PR #2 (`5e0524b`).
+HOA storage consolidation is on branch `consolidate-property-hoa-storage` (see 2026-07-22 session below). Prior TXR-1102 scoped defaults are on `main` via PR #5.
 
-### Contract-source cleanup + Buyer Rep repair (2026-07-21)
+### Property HOA storage consolidation (2026-07-22)
+
+- **Authoritative store:** `property_hoas` (multi-HOA schema retained). Property screen still shows one simple HOA form; temporary convention = first ACTIVE row by `create_date`, then `id`.
+- **Writers:** Property create/edit/duplicate-update sync name/phone/management company through `lib/property-hoa-storage.ts`. Blank HOA Name soft-deletes the displayed row (`DELETED`); no hard delete; no multi-HOA UI.
+- **Retired columns:** `properties.hoa_name`, `properties.hoa_phone`, `properties.hoa_management_company` (no backfill; Lee approved discarding disposable dev values — counts were 0).
+- **Retained on properties:** `has_hoa`, `hoa_contact_name`, `hoa_email`, `hoa_website`, `hoa_dues_amount`, `hoa_dues_frequency`.
+- **Resolver redirect:** `HOA_ASSOCIATION_NAME` and `txr_2001_hoa_name` → `custom_resolver` / `property_hoa_name`. Existing `property_hoa_name` / `property_hoa_phone` unchanged.
+- **Safety:** field_instances fingerprint unchanged (1501 rows); mappings/defaults untouched; only `harbaugh-forms-dev`.
+- **Migration:** `20260722120000_consolidate_property_hoa_storage.sql`
+- **Tests:** `npm run test:property-hoa`
+
+### Prior: Contract-source cleanup + Buyer Rep repair (2026-07-21)
 
 Follow-up to the two audits (`MAPPING_INTEGRITY_AUDIT.md`, `SOURCE_OBJECT_ARCHITECTURE_AUDIT.md`):
 
@@ -285,7 +296,7 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 ## Next Steps
 
 1. Eventual Listing Agreement table / legacy-route cleanup (jointly with `contract_details` schema removal).
-2. HOA / `property_hoas` authoritative-source decision.
+2. Future multi-HOA Property UI / optional primary-HOA designation (schema already supports multiple ACTIVE rows).
 3. Personal placement overrides (deferred).
 4. Restore Global position (deferred).
 5. Optional improvement for genuinely Unknown legacy provenance wording.

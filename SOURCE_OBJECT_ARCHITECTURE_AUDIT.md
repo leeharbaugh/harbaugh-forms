@@ -23,7 +23,7 @@ The intended product model (templates → Personal/Organization defaults → pac
 | `buyer_rep_details` | **Mixed B2 + B4** | Full edit UI exists; schema defaults are legacy; only legacy agreement-linked packets resolve from it. |
 | `listing_agreement_details` | **Mixed B2 + B4** (mostly B4) | Thin UI (~14 original columns); ~100+ TXR expansion columns have **no UI** and exist mainly as default surrogates. **Zero** active packet instances currently sourced from this table. |
 | `contract_details` | **B5** (+ B4 schema) | Table + source type exist; **0 rows**; **no app writers**; Fill Form is the only contract edit surface. |
-| `property_hoas` | **B5** | Schema + resolver only; **0 rows**; **no UI**; HOA data is edited on `properties` instead. |
+| `property_hoas` | **B1 (resolved 2026-07-22)** | Authoritative HOA store; Property UI writes first ACTIVE row; redundant `properties` HOA columns retired. See `PROPERTY_HOA_CONSOLIDATION.md`. |
 | `packet` / `static_default` source types | **B5** | Registered in code; **0** active catalog fields. |
 | `manual_only` / `packet_instance` / `custom_resolver` | Product-aligned | Prefer these (plus scoped defaults) over expanding details tables. |
 
