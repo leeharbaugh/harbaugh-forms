@@ -16,16 +16,11 @@ import { Select } from "@/components/ui/select";
 import { createClient } from "@/lib/supabase/client";
 import {
   formatAgreementReference,
+  formatAgreementStatus,
   formatDate,
   getOrderedContactNames,
   type BuyerRepAgreementListItem,
 } from "@/lib/types/buyer-rep-agreement";
-import {
-  formatAgreementStatus,
-  getOrderedSellerNames,
-  getPropertyAddressForListItem,
-  type ListingAgreementListItem,
-} from "@/lib/types/listing-agreement";
 import {
   formatPacketWorkflowType,
   getPacketWorkflowDescription,
@@ -54,19 +49,6 @@ const BUYER_REP_AGREEMENT_SELECT = `
   agreement_type,
   effective_date,
   agreement_status,
-  representation_agreement_clients(
-    sort_order,
-    status,
-    contacts(*)
-  )
-`;
-
-const LISTING_AGREEMENT_SELECT = `
-  id,
-  agreement_type,
-  effective_date,
-  agreement_status,
-  properties(*),
   representation_agreement_clients(
     sort_order,
     status,
@@ -106,7 +88,7 @@ export function CreatePacketWizard({
 
   const loadAgreements = useCallback(async (workflow: PacketWorkflowType) => {
     const agreementType = workflowToAgreementType(workflow);
-    if (!agreementType) {
+    if (!agreementType || agreementType !== "BUYER_REP") {
       return;
     }
 
@@ -115,20 +97,12 @@ export function CreatePacketWizard({
 
     const supabase = createClient();
 
-    const { data, error } =
-      agreementType === "LISTING"
-        ? await supabase
-            .from("representation_agreements")
-            .select(LISTING_AGREEMENT_SELECT)
-            .eq("status", "ACTIVE")
-            .eq("agreement_type", agreementType)
-            .order("effective_date", { ascending: false })
-        : await supabase
-            .from("representation_agreements")
-            .select(BUYER_REP_AGREEMENT_SELECT)
-            .eq("status", "ACTIVE")
-            .eq("agreement_type", agreementType)
-            .order("effective_date", { ascending: false });
+    const { data, error } = await supabase
+      .from("representation_agreements")
+      .select(BUYER_REP_AGREEMENT_SELECT)
+      .eq("status", "ACTIVE")
+      .eq("agreement_type", agreementType)
+      .order("effective_date", { ascending: false });
 
     if (error) {
       setLoadError(error.message);
@@ -140,16 +114,6 @@ export function CreatePacketWizard({
 
     const options: AgreementOption[] = ((data ?? []) as unknown[]).map(
       (row) => {
-        if (agreementType === "LISTING") {
-          const item = row as ListingAgreementListItem;
-          return {
-            id: item.id,
-            agreement_status: item.agreement_status,
-            label: getOrderedSellerNames(item),
-            subtitle: `${formatAgreementReference(item.id)} · ${getPropertyAddressForListItem(item)} · Effective ${formatDate(item.effective_date)}`,
-          };
-        }
-
         const item = row as BuyerRepAgreementListItem;
         return {
           id: item.id,
@@ -293,8 +257,7 @@ export function CreatePacketWizard({
                   agreements found.
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Legacy URLs (not in navigation): /representation-agreements
-                  {workflowType === "listing" ? ", /listing-agreements" : ""}
+                  Legacy URL (not in navigation): /representation-agreements
                 </p>
               </CardContent>
             </Card>
@@ -367,7 +330,7 @@ export function CreatePacketWizard({
             <CardTitle className="text-base">Advanced (legacy)</CardTitle>
             <CardDescription>
               Link this packet to an existing representation agreement instead of
-              creating from contacts directly.
+              choosing contacts on the collection path.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -174,11 +174,14 @@ export function workflowToAgreementType(
   }
 }
 
-/** @legacy Optional advanced path that anchors a packet to representation_agreements. */
+/**
+ * @legacy Optional advanced path that anchors a packet to representation_agreements.
+ * Listing agreement-linked creation was removed; only Buyer Rep remains.
+ */
 export function workflowSupportsLegacyAgreement(
   workflow: PacketWorkflowType,
 ): boolean {
-  return workflow === "buyer_rep" || workflow === "listing";
+  return workflow === "buyer_rep";
 }
 
 export function isPacketWorkflowType(

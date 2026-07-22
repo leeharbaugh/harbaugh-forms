@@ -75,17 +75,6 @@ import {
   isRepresentationAgreementSourcePath,
   resolveBuyerRepDetailsFieldValue,
   resolveBuyerRepCheckboxMatches,
-} from "@/lib/types/buyer-rep-field-resolution";
-import {
-  isBooleanListingAgreementDetailsSourcePath,
-  isListingAgreementDetailsSourcePath,
-  resolveListingAgreementDetailsFieldValue,
-  resolveListingBrokerNoCoopOtherSelected,
-  resolveListingBrokerNoCoopPercentOrFlatFeeSelected,
-  resolveSellerIsNotForeignPerson,
-  type ListingAgreementDetailsRow,
-} from "@/lib/types/listing-agreement-field-resolution";
-import {
   formatJoinedContactMailingAddresses,
   getFirstContactEmail,
   getFirstContactPhone,
@@ -156,7 +145,6 @@ export type FieldResolverContext = {
     expiration_date: string | null;
   } | null;
   buyerRepDetails: BuyerRepDetails | null;
-  listingAgreementDetails: ListingAgreementDetailsRow | null;
   propertyHoas: PropertyHoa[];
 };
 
@@ -238,8 +226,7 @@ const PACKET_RESOLVER_SELECT = `
     effective_date,
     expiration_date,
     property_id,
-    buyer_rep_details(*),
-    listing_agreement_details(*)
+    buyer_rep_details(*)
   ),
   packet_contacts(
     id,
@@ -760,49 +747,6 @@ function resolveBuyerRepDetailsSourcePath(
   };
 }
 
-function resolveListingAgreementDetailsSourcePath(
-  sourcePath: string,
-  context: FieldResolverContext,
-): ResolvedFieldValue | null {
-  const details = context.listingAgreementDetails;
-  if (!details) {
-    return null;
-  }
-
-  const normalizedPath = sourcePath.trim().toLowerCase();
-  if (!isListingAgreementDetailsSourcePath(normalizedPath)) {
-    return null;
-  }
-
-  if (isBooleanListingAgreementDetailsSourcePath(normalizedPath)) {
-    const value = resolveListingAgreementDetailsFieldValue(details, normalizedPath);
-    return resolveBuyerRepCheckboxValue(value === "true");
-  }
-
-  const value = resolveListingAgreementDetailsFieldValue(details, normalizedPath);
-  if (!value) {
-    return null;
-  }
-
-  const displayValue =
-    normalizedPath === "listing_begin_date" ||
-    normalizedPath === "listing_end_date" ||
-    normalizedPath === "lease_listing_begin_date" ||
-    normalizedPath === "lease_listing_end_date"
-      ? normalizeDateDisplay(value.split("T")[0])
-      : value;
-
-  if (!displayValue) {
-    return null;
-  }
-
-  return {
-    value: displayValue,
-    value_json: null,
-    source: "packet",
-  };
-}
-
 function resolveRepresentationAgreementSourcePath(
   sourcePath: string,
   context: FieldResolverContext,
@@ -1204,27 +1148,6 @@ function resolveCustomResolverKey(
     };
   }
 
-  const listingDetails = context.listingAgreementDetails;
-  if (listingDetails) {
-    if (normalizedKey === "seller_is_not_foreign_person") {
-      return resolveBuyerRepCheckboxValue(
-        resolveSellerIsNotForeignPerson(listingDetails),
-      );
-    }
-
-    if (normalizedKey === "listing_broker_no_coop_other_selected") {
-      return resolveBuyerRepCheckboxValue(
-        resolveListingBrokerNoCoopOtherSelected(listingDetails),
-      );
-    }
-
-    if (normalizedKey === "listing_broker_no_coop_percent_or_flat_fee_selected") {
-      return resolveBuyerRepCheckboxValue(
-        resolveListingBrokerNoCoopPercentOrFlatFeeSelected(listingDetails),
-      );
-    }
-  }
-
   return null;
 }
 
@@ -1295,10 +1218,6 @@ function resolveFromFieldSourceMapping(
     case "buyer_rep_details":
       return field.source_path
         ? resolveBuyerRepDetailsSourcePath(field.source_path, context)
-        : null;
-    case "listing_agreement_details":
-      return field.source_path
-        ? resolveListingAgreementDetailsSourcePath(field.source_path, context)
         : null;
     case "representation_agreement":
       return field.source_path
@@ -1924,10 +1843,6 @@ export async function loadFieldResolverContext(
             | BuyerRepDetails
             | BuyerRepDetails[]
             | null;
-          listing_agreement_details?:
-            | ListingAgreementDetailsRow
-            | ListingAgreementDetailsRow[]
-            | null;
         }
       | Array<{
           effective_date: string | null;
@@ -1936,10 +1851,6 @@ export async function loadFieldResolverContext(
           buyer_rep_details?:
             | BuyerRepDetails
             | BuyerRepDetails[]
-            | null;
-          listing_agreement_details?:
-            | ListingAgreementDetailsRow
-            | ListingAgreementDetailsRow[]
             | null;
         }>
       | null;
@@ -2036,49 +1947,8 @@ export async function loadFieldResolverContext(
       packetRow.representation_agreements,
     ),
     buyerRepDetails: normalizeBuyerRepDetailsJoin(packetRow.representation_agreements),
-    listingAgreementDetails: normalizeListingAgreementDetailsJoin(
-      packetRow.representation_agreements,
-    ),
     propertyHoas,
   };
-}
-
-function normalizeListingAgreementDetailsJoin(
-  raw:
-    | {
-        listing_agreement_details?:
-          | ListingAgreementDetailsRow
-          | ListingAgreementDetailsRow[]
-          | null;
-      }
-    | Array<{
-        listing_agreement_details?:
-          | ListingAgreementDetailsRow
-          | ListingAgreementDetailsRow[]
-          | null;
-      }>
-    | null
-    | undefined,
-): ListingAgreementDetailsRow | null {
-  if (!raw) {
-    return null;
-  }
-
-  const agreement = Array.isArray(raw) ? (raw[0] ?? null) : raw;
-  if (!agreement) {
-    return null;
-  }
-
-  const details = agreement.listing_agreement_details;
-  if (!details) {
-    return null;
-  }
-
-  if (Array.isArray(details)) {
-    return details[0] ?? null;
-  }
-
-  return details;
 }
 
 function normalizeBuyerRepDetailsJoin(

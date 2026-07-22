@@ -687,6 +687,12 @@ export async function generatePacketFromAgreement(
 
   const agreement = agreementData as BuyerRepAgreementListItem;
 
+  if (agreement.agreement_type !== "BUYER_REP") {
+    throw new Error(
+      "Agreement-linked packet creation is only supported for Buyer Rep agreements. Create Listing packets from a collection.",
+    );
+  }
+
   const { data: collectionData, error: collectionError } = await supabase
     .from("collections")
     .select(COLLECTION_FOR_GENERATION_SELECT)
@@ -725,16 +731,8 @@ export async function generatePacketFromAgreement(
     .insert({
       collection_id: collectionId,
       representation_agreement_id: agreementId,
-      packet_type:
-        agreement.agreement_type === "LISTING"
-          ? "listing"
-          : agreement.agreement_type === "BUYER_REP"
-            ? "buyer_rep"
-            : null,
-      property_id:
-        agreement.agreement_type === "BUYER_REP"
-          ? null
-          : agreement.property_id ?? null,
+      packet_type: "buyer_rep",
+      property_id: null,
       label: packetLabel,
       generated_by_user_id: user?.id ?? null,
       owner_user_id: user?.id ?? null,

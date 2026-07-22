@@ -21,13 +21,13 @@ The intended product model (templates → Personal/Organization defaults → pac
 | `brokerage_settings.default_*` | **B4 / B5** | Orphaned preference columns; unused by TypeScript. |
 | `representation_agreements` | **B2** (mixed) | Real agreement lifecycle; little current packet use. |
 | `buyer_rep_details` | **Mixed B2 + B4** | Full edit UI exists; schema defaults are legacy; only legacy agreement-linked packets resolve from it. |
-| `listing_agreement_details` | **Mixed B2 + B4** (mostly B4) | Thin UI (~14 original columns); ~100+ TXR expansion columns have **no UI** and exist mainly as default surrogates. **Zero** active packet instances currently sourced from this table. |
+| `listing_agreement_details` | **Removed 2026-07-22** | Disposable development row deleted; table/route/resolver removed. Collection Listing packets remain. See `LISTING_LEGACY_WORKFLOW_CLEANUP_AUDIT.md`. |
 | `contract_details` | **Removed 2026-07-22** | Abandoned empty table dropped after source conversion; see decisions.md. |
 | `property_hoas` | **B1 (resolved 2026-07-22)** | Authoritative HOA store; Property UI writes first ACTIVE row; redundant `properties` HOA columns retired. See `PROPERTY_HOA_CONSOLIDATION.md`. |
 | `packet` / `static_default` source types | **B5** | Registered in code; **0** active catalog fields. |
 | `manual_only` / `packet_instance` / `custom_resolver` | Product-aligned | Prefer these (plus scoped defaults) over expanding details tables. |
 
-**Do not restore or expand broken `listing_agreement_details` source paths as the repair strategy.** That would preserve obsolete architecture. Prefer converting expansion-backed fields to `manual_only` + scoped `field_defaults`, after Lee review.
+**Do not restore or expand broken `listing_agreement_details` source paths as the repair strategy.** That architecture has been removed (2026-07-22). Prefer `manual_only` + scoped `field_defaults` for Listing/Lease preference values.
 
 **Critical dual-storage risk:** Present but **not blocking** in the sense of uncontrolled live write-back. Fill Form writes **only** `field_instances`. Details tables are never updated from Fill Form. Divergence exists (193 observed instance/details mismatches on the single historical details rows), largely because ordinary open uses `ensure_missing` (snapshots are sticky) and most packets never link to an agreement. Classification: dual-storage **architecture risk**, not an active corruption loop.
 

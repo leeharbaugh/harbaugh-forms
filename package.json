@@ -20,6 +20,7 @@
     "test:contract-source-removal": "node --experimental-strip-types --test lib/contract-details-source-removal.test.ts",
     "test:contract-architecture-removal": "node --experimental-strip-types --test lib/contract-details-architecture-removal.test.ts",
     "test:listing-source-removal": "node --experimental-strip-types --test lib/listing-details-source-removal.test.ts",
+    "test:listing-legacy-removal": "node --experimental-strip-types --test lib/listing-legacy-workflow-removal.test.ts",
     "test:txr-1102-scoped-defaults": "node --experimental-strip-types --test lib/txr-1102-scoped-defaults.test.ts",
     "test:packet-form-lifecycle": "node --experimental-strip-types --test lib/types/packet-form-lifecycle.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",
