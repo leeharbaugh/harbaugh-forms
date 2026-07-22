@@ -28,6 +28,11 @@ import { RecordStatusBadge } from "@/components/ui/list-badges";
 import { createClient } from "@/lib/supabase/client";
 import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
 import {
+  extractPropertyHoaFormFields,
+  loadPrimaryActivePropertyHoa,
+  syncPrimaryPropertyHoaFromForm,
+} from "@/lib/property-hoa-storage";
+import {
   assertNoLiveAddressConflict,
   isUniqueViolationError,
   PROPERTY_DUPLICATE_ADDRESS_MESSAGE,
@@ -156,6 +161,23 @@ export function PropertiesPage() {
     setEditingPropertyId(property.id);
     setFormValue(propertyToInput(property));
     setFormError(null);
+
+    void (async () => {
+      try {
+        const supabase = createClient();
+        const primaryHoa = await loadPrimaryActivePropertyHoa(
+          supabase,
+          property.id,
+        );
+        setFormValue(propertyToInput(property, primaryHoa));
+      } catch (loadError) {
+        setFormError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Failed to load HOA details.",
+        );
+      }
+    })();
   };
 
   const handleSave = async () => {
@@ -166,6 +188,7 @@ export function PropertiesPage() {
     }
 
     const normalized = normalizePropertyInput(formValue);
+    const hoaFields = extractPropertyHoaFormFields(formValue);
     setIsSubmitting(true);
     setFormError(null);
 
@@ -213,6 +236,12 @@ export function PropertiesPage() {
           setIsSubmitting(false);
           return;
         }
+
+        await syncPrimaryPropertyHoaFromForm(
+          supabase,
+          editingPropertyId,
+          hoaFields,
+        );
       }
     } catch (saveError) {
       setFormError(

@@ -115,10 +115,7 @@ export type Property = {
   water_provider: string | null;
   sewer_provider: string | null;
   has_hoa: boolean;
-  hoa_name: string | null;
-  hoa_management_company: string | null;
   hoa_contact_name: string | null;
-  hoa_phone: string | null;
   hoa_email: string | null;
   hoa_website: string | null;
   hoa_dues_amount: number | null;
@@ -275,7 +272,14 @@ function readPropertyBooleans(
   return values;
 }
 
-export function propertyToInput(property: Property): PropertyInput {
+export function propertyToInput(
+  property: Property,
+  primaryHoa?: {
+    hoa_name?: string | null;
+    hoa_phone?: string | null;
+    management_company_name?: string | null;
+  } | null,
+): PropertyInput {
   return {
     street_address: property.street_address,
     unit: optionalString(property.unit),
@@ -309,10 +313,11 @@ export function propertyToInput(property: Property): PropertyInput {
     gas_provider: optionalString(property.gas_provider),
     water_provider: optionalString(property.water_provider),
     sewer_provider: optionalString(property.sewer_provider),
-    hoa_name: optionalString(property.hoa_name),
-    hoa_management_company: optionalString(property.hoa_management_company),
+    // First ACTIVE property_hoas row (temporary single-HOA UI convention).
+    hoa_name: optionalString(primaryHoa?.hoa_name),
+    hoa_management_company: optionalString(primaryHoa?.management_company_name),
     hoa_contact_name: optionalString(property.hoa_contact_name),
-    hoa_phone: optionalString(property.hoa_phone),
+    hoa_phone: optionalString(primaryHoa?.hoa_phone),
     hoa_email: optionalString(property.hoa_email),
     hoa_website: optionalString(property.hoa_website),
     hoa_dues_amount: optionalNumberString(property.hoa_dues_amount),
@@ -531,10 +536,8 @@ export function normalizePropertyInput(input: PropertyInput) {
     water_provider: trim(input.water_provider) || null,
     sewer_provider: trim(input.sewer_provider) || null,
     has_hoa: input.has_hoa,
-    hoa_name: trim(input.hoa_name) || null,
-    hoa_management_company: trim(input.hoa_management_company) || null,
+    // HOA name/phone/management company persist on property_hoas (see syncPrimaryPropertyHoaFromForm).
     hoa_contact_name: trim(input.hoa_contact_name) || null,
-    hoa_phone: trim(input.hoa_phone) || null,
     hoa_email: trim(input.hoa_email) || null,
     hoa_website: trim(input.hoa_website) || null,
     hoa_dues_amount: parseOptionalNumber(input.hoa_dues_amount),

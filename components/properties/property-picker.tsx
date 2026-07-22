@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
+import { loadPrimaryActivePropertyHoa } from "@/lib/property-hoa-storage";
 import {
   type Property,
   type PropertyInput,
@@ -150,12 +151,32 @@ export function PropertyPicker({
 
   const selectProperty = (nextProperty: Property) => {
     setSaveError(null);
+    setSelectedProperty(nextProperty);
     applySelection({
       property_mode: "existing",
       property_id: nextProperty.id,
       property: propertyToInput(nextProperty),
     });
     setSearchQuery("");
+
+    void (async () => {
+      try {
+        const supabase = createClient();
+        const primaryHoa = await loadPrimaryActivePropertyHoa(
+          supabase,
+          nextProperty.id,
+        );
+        applySelection({
+          property: propertyToInput(nextProperty, primaryHoa),
+        });
+      } catch (loadError) {
+        setSaveError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Failed to load HOA details.",
+        );
+      }
+    })();
   };
 
   const switchToNew = () => {
@@ -218,11 +239,15 @@ export function PropertyPicker({
       }
 
       const savedProperty = data as Property;
+      const primaryHoa = await loadPrimaryActivePropertyHoa(
+        supabase,
+        savedProperty.id,
+      );
       setSelectedProperty(savedProperty);
       applySelection({
         property_mode: "existing",
         property_id: savedProperty.id,
-        property: propertyToInput(savedProperty),
+        property: propertyToInput(savedProperty, primaryHoa),
       });
       setSearchQuery("");
     } catch (error) {

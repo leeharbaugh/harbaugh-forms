@@ -5,6 +5,10 @@ import {
   PROPERTY_DUPLICATE_ADDRESS_MESSAGE,
 } from "@/lib/property-uniqueness";
 import {
+  extractPropertyHoaFormFields,
+  syncPrimaryPropertyHoaFromForm,
+} from "@/lib/property-hoa-storage";
+import {
   formatPropertyAddress,
   normalizePropertyInput,
   type PropertyInput,
@@ -49,6 +53,7 @@ export async function saveNewPropertyWithDuplicateHandling(
   } = await supabase.auth.getUser();
 
   const normalized = normalizePropertyInput(propertyInput);
+  const hoaFields = extractPropertyHoaFormFields(propertyInput);
   const conflict = await findExistingLivePropertyByAddress(
     supabase,
     propertyInput,
@@ -80,6 +85,7 @@ export async function saveNewPropertyWithDuplicateHandling(
       throw new Error(error.message);
     }
 
+    await syncPrimaryPropertyHoaFromForm(supabase, conflict.id, hoaFields);
     return conflict.id;
   }
 
@@ -99,5 +105,16 @@ export async function saveNewPropertyWithDuplicateHandling(
     throw new Error(error?.message ?? "Failed to create property.");
   }
 
-  return data.id as number;
+  const propertyId = data.id as number;
+  try {
+    await syncPrimaryPropertyHoaFromForm(supabase, propertyId, hoaFields);
+  } catch (hoaError) {
+    throw new Error(
+      hoaError instanceof Error
+        ? `Property was created, but HOA details could not be saved: ${hoaError.message}`
+        : "Property was created, but HOA details could not be saved.",
+    );
+  }
+
+  return propertyId;
 }
