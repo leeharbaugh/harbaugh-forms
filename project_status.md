@@ -225,7 +225,7 @@ Follow-up to the two audits (`MAPPING_INTEGRITY_AUDIT.md`, `SOURCE_OBJECT_ARCHIT
 - **Buyer Rep checkbox:** `BUYER_REP_BROKER_SGN_CHECKBOX` reactivated as ACTIVE `manual_only` (accidental inactivation — matched the `20260701200000` AcroForm-pollution text heuristic while its hand-drawn mapping and 3 instances stayed ACTIVE). Mapping, coordinates, and instances untouched; unchecked by default; not Authentisign-excluded.
 - **Verification:** full before/after row diff — 0 mappings, 0 instances, 0 defaults changed; defaults baseline intact (Global literals 0, Lee all-forms 56, Lee form-specific 19, Organization 4, no duplicates). Authenticated UI verification (Lee): Map Fields shows "Filled from: Not connected" with preserved `NA`/`0` Personal defaults on the six representative TXR-1601 fields; Fill Form ordinary open rewrote nothing; TXR-1501 p6 checkbox appears once, active, manual.
 - **Tests:** `lib/contract-details-source-removal.test.ts` (21 tests) covers migration safety (exact ID set, allowed columns only, rerun safety, no Global literals) and defaults/snapshot behavior.
-- **Not touched:** `listing_agreement_details` (separate mixed-architecture review), the 75 V2 placement notes, HOA/property_hoas, brokerage_settings legacy default columns.
+- **Not touched:** eventual `listing_agreement_details` table/route removal, the 75 V2 placement notes, HOA/property_hoas remapping, brokerage_settings legacy default columns, TXR-1102 scoped-default recreation.
 
 ### Prior: Admin Copy to Global Library with scoped field defaults
 
@@ -276,7 +276,7 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 - Scoped source-mapping / manual-only overrides for Global forms (without editing Global PDF structure) are not implemented.
 - Organization Admin membership/settings UI is missing (membership admin lives under Global Admin `/admin` only).
 - Multi-organization users require a valid `profiles.primary_organization_id` with ACTIVE membership to inherit Organization defaults.
-- Disputed Listing mappings on TXR-1101 `#7` (`OTHER_FEES_REIMBURSABLE_EXPENSES`, `KNOWN_DISTRICTS`): the 2026-07-21 mapping-integrity audit confirmed both land on real, visible blanks on the current PDF. The actual defect is data-model side: 19 `listing_agreement_details`-family fields have null `source_path`, silently breaking auto-resolution. Resolution strategy (manual_only + scoped defaults vs. source-path restoration) is part of the deferred `listing_agreement_details` mixed-architecture review — do not blindly restore source paths.
+- Disputed Listing mappings on TXR-1101 `#7` (`OTHER_FEES_REIMBURSABLE_EXPENSES`, `KNOWN_DISTRICTS`): placements remain valid; catalog sources converted to `manual_only` on 2026-07-22 with Lee Personal form-specific `NA` defaults.
 - `listing-packet-kind.test.ts` has a pre-existing bare-Node `@/lib` import-resolution problem.
 - A pre-existing Next.js hydration warning has appeared around `AdminSectionNav` and the packet page.
 - Specialized PDF editor dialogs do not yet have the full focus-trap behavior of `ConfirmDialog` and `InfoDialog`.
@@ -284,19 +284,21 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 
 ## Next Steps
 
-1. Selective `listing_agreement_details` review (mixed architecture): decide manual_only + scoped defaults vs. genuine agreement sourcing per field family; includes the 19 null-source-path fields behind the disputed `OTHER_FEES_REIMBURSABLE_EXPENSES` / `KNOWN_DISTRICTS` report (placements themselves verified valid).
-2. Personal placement overrides (deferred).
-3. Restore Global position (deferred).
-4. Optional improvement for genuinely Unknown legacy provenance wording.
-5. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
-6. Follow-up product work in priority order:
+1. TXR-1102 scoped-default review (do not infer from legacy schema defaults).
+2. Eventual Listing Agreement table / legacy-route cleanup (jointly with `contract_details` schema removal).
+3. HOA / `property_hoas` authoritative-source decision.
+4. Personal placement overrides (deferred).
+5. Restore Global position (deferred).
+6. Optional improvement for genuinely Unknown legacy provenance wording.
+7. Authenticated UI smoke-test Mark Final, Reopen, Refresh confirmation, and Final read-only behavior for packet-form lifecycle locking (already on `main`).
+8. Follow-up product work in priority order:
    1. Global Admin / Organization Admin terminology and Organization Admin management surfaces.
    2. Admin ownership demarcation and saved Include user-owned filters.
    3. Refresh Values before/after field-diff preview.
    4. Evaluate scoped source-mapping / manual-only overrides without duplicating Global PDFs.
    5. Authentisign integration (may set `SIGNED`).
    6. Optional: cross-form defaults dashboard.
-7. When a production environment is eventually created: include the 19 reviewed Lee Personal form-specific defaults in the environment setup plan (manual configuration or designed seeding). Not an active task today.
+9. When a production environment is eventually created: include reviewed Lee Personal form-specific defaults (including the two 2026-07-22 Listing `NA` defaults) in the environment setup plan.
 
 ## Development Machine Checklist
 
@@ -350,8 +352,18 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - PDF placement and automatic business-data sourcing are independent; a null source path is valid for manual-only fields.
 - Automatic sources only when a distinct upstream object/workflow owns the value independently from Fill Form; scoped defaults initialize values but are not source mappings.
 - `contract_details` is abandoned architecture; its former source mappings are manual-only, the table remains temporarily for compatibility.
+- Current collection-based packets do not use `listing_agreement_details` as an automatic source; packet-form fields are `manual_only` + scoped defaults/Fill Form; historical table/row and legacy route retained.
 
 ## Session History
+
+### 2026-07-22 (remove-listing-details-sources)
+
+- Implemented Lee-approved selective `listing_agreement_details` cleanup after `LISTING_AGREEMENT_DETAILS_REVIEW.md`.
+- Created two Lee Personal form-specific `NA` defaults via Map Fields (TXR-1101): `KNOWN_DISTRICTS`, `OTHER_FEES_REIMBURSABLE_EXPENSES`.
+- Applied `20260722010000_remove_obsolete_listing_details_sources.sql` to `harbaugh-forms-dev`: **132** fields → `manual_only` (129 listing-details + 3 compensation custom-resolvers). Verified zero drift in mappings (869), instances (1497), historical details row, Organization defaults (4), and Lee legacy all-forms Private (56); form-specific Private 19→21.
+- Authenticated Map Fields verification: TXR-1101 and TXR-1102 converted fields show "Filled from: Not connected"; disputed pair show Default if blank `NA` / Personal.
+- Added `lib/listing-details-source-removal.test.ts` and npm script `test:listing-source-removal`.
+- Durable decisions recorded in `decisions.md`. Table/legacy route retained; TXR-1102 defaults deferred; HOA remapping deferred.
 
 ### 2026-07-21 (remove-abandoned-contract-details-sources)
 

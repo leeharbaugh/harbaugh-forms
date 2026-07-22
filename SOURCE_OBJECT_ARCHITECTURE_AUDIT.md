@@ -42,7 +42,32 @@ The contract and Buyer Rep findings above were implemented after this audit:
 - Migration `20260721190000_remove_abandoned_contract_details_sources.sql` converted the **64** ACTIVE catalog fields with `source_type = 'contract_details'` (63 mapped on TXR-1601, plus unmapped `contract_effective_date`) to `source_type = 'manual_only'`, `source_path = null`. The migration targets explicit field IDs, requires the expected prior source type, asserts `contract_details` still has 0 rows, and touches no mappings, coordinates, defaults, or packet instances (verified by full before/after row diff — 0 non-field rows changed).
 - The same migration **reactivated** `BUYER_REP_BROKER_SGN_CHECKBOX` (`2a32353f-0923-40ed-98f0-e60815ad4e96`) as ACTIVE `manual_only`, choosing option (b) from the Buyer Rep detail section below after visual/DB confirmation: the TXR-1501 page 6 broker-signature checkbox is a real, distinct PDF control (the adjacent `ASSOCIATE_SIGNATURE_BOX` at y 273 is the associate's separate checkbox, and all `*_broker_signature_checkbox` candidates are Listing/Lease-specific). Its inactivation matched the text heuristic of the `20260701200000` AcroForm-pollution sweep (all-caps key ≥ 18 chars, effectively manual, no path/resolver) while its hand-drawn mapping and 3 packet instances stayed ACTIVE — an accidental, incomplete inactivation, not a dedup with a replacement.
 - `contract_details` (table), its resolver code, and the `contract_details` source-type registration remain in place temporarily for historical compatibility; schema removal is a separate future decision.
-- Listing Agreement, Buyer Rep details, Lease, and HOA source families were **not** modified; those remain open review items.
+- Listing Agreement source family was cleaned up separately on 2026-07-22 (see Implementation Update below). Buyer Rep details, Lease-as-schema, and HOA/`property_hoas` remain open review items.
+
+---
+
+## Refinement Update (2026-07-21, `LISTING_AGREEMENT_DETAILS_REVIEW.md`)
+
+The dedicated column-by-column listing review confirmed this audit's mixed-B2+B4 conclusion and refined several statements:
+
+- **Allowlist gap is far larger than the example given here.** This audit noted the listing resolver allowlist was "incomplete; e.g. missing `lease_scheduling_company`". The full check found **80 of 111** ACTIVE non-null `source_path` values are absent from the allowlist — the entire TXR-1102 lease path family plus `hoa_exists` — so most listing sources have **never** been resolvable at any point in history, independent of packet linkage.
+- **Exact counts.** Columns: **152** (was "~152"). ACTIVE fields: 129 (46 TXR-1101 / 83 TXR-1102 mappings) — confirmed. Null-path ACTIVE fields: **18** — confirmed. DELETED listing-source fields: 8.
+- **Packet-sourced instances: 0, both current and historical** (this audit had verified 0 active; the review also verified 0 non-active instances exist on these fields at all).
+- **Dual-storage divergence, listing-only:** 160 of 222 instance-vs-details comparisons diverge on the single historical row (the 193 figure here combined listing + buyer-rep). Divergence remains an architecture risk only; instances win, no sync exists, and 18 manual overrides are additionally protected.
+- **Column-level classification (147 business columns):** L1 14 (original UI core), L2 0, L3 4 (term dates), L4 111 (expansion surrogates), L5 16 (no field, no UI, no reader), U 2 (the disputed `known_districts` / `other_fees_reimbursable_expenses`).
+- **Active-mapping→inactive-field scan re-run: 0 anomalies** (Buyer Rep checkbox repair holds).
+- **Recommended disposition** (pending Lee at review time): convert **123** of 129 fields to `manual_only` (S2), 6 Lee decisions (S3), **0** unconditional S1 preservals. Table itself: Option A.
+
+---
+
+## Implementation Update (2026-07-22, branch `remove-listing-details-sources`)
+
+Lee approved the selective cleanup. Applied to `harbaugh-forms-dev`:
+
+- Migration `20260722010000_remove_obsolete_listing_details_sources.sql` converted **132** fields to `manual_only` (129 `listing_agreement_details` + 3 Listing compensation custom-resolvers that read dormant details columns). Explicit ID allowlist; strict source-type/resolver preconditions; rerun-safe; updates only `public.fields`.
+- Verified: 0 ACTIVE `listing_agreement_details` sources remain; mappings/coords/instances unchanged (869 / 1497); historical details row untouched; Organization defaults remain 4; Lee legacy all-forms Private remain 56; form-specific Private rose 19→21 for the two approved disputed-field defaults.
+- Lee Personal form-specific `NA` defaults created via Map Fields UI for `KNOWN_DISTRICTS` and `OTHER_FEES_REIMBURSABLE_EXPENSES` (form 7).
+- Table, historical row, legacy `/listing-agreements` route, and resolver code retained for compatibility. TXR-1102 scoped defaults require a separate review (not inferred from schema defaults). HOA fields are `manual_only` for now — no `property_hoas` remapping.
 
 ---
 
