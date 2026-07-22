@@ -215,9 +215,18 @@ Before applying migrations from a different development machine, compare local a
 
 ## Current Work
 
-HOA storage consolidation is on branch `consolidate-property-hoa-storage` (see 2026-07-22 session below). Prior TXR-1102 scoped defaults are on `main` via PR #5.
+Contract Details architecture removal is on branch `remove-contract-details-architecture` (see 2026-07-22 session below). Prior HOA consolidation is on `main` via PR #6.
 
-### Property HOA storage consolidation (2026-07-22)
+### Contract Details architecture removal (2026-07-22)
+
+- **Deleted:** empty `public.contract_details` table (policies, trigger, indexes, FKs/checks with the table); `'contract_details'` removed from `fields_source_type_check`.
+- **Also converted:** 6 ACTIVE custom-resolver fields that only read the empty table (`contract_survey_option_1/2/3`, `contract_effective_day/month/year`) → `manual_only` with null path/resolver_key.
+- **App cleanup:** source registry, resolver load/dispatch, `ContractDetails*` types module (contact helpers moved to buyer-rep helpers), UI source option “Contract details”.
+- **Preserved:** 64 previously converted Contract catalog fields as `manual_only`; mappings/defaults/packet instances unchanged (fingerprint `527cf0d3…`, 1501 rows); `listing_agreement_details` untouched.
+- **Migration:** `20260722180000_remove_contract_details_architecture.sql` (no CASCADE; refuses nonempty table).
+- **Tests:** `npm run test:contract-architecture-removal` (+ prior `test:contract-source-removal`).
+
+### Prior: Property HOA storage consolidation (2026-07-22)
 
 - **Authoritative store:** `property_hoas` (multi-HOA schema retained). Property screen still shows one simple HOA form; temporary convention = first ACTIVE row by `create_date`, then `id`.
 - **Writers:** Property create/edit/duplicate-update sync name/phone/management company through `lib/property-hoa-storage.ts`. Blank HOA Name soft-deletes the displayed row (`DELETED`); no hard delete; no multi-HOA UI.
@@ -232,7 +241,7 @@ HOA storage consolidation is on branch `consolidate-property-hoa-storage` (see 2
 
 Follow-up to the two audits (`MAPPING_INTEGRITY_AUDIT.md`, `SOURCE_OBJECT_ARCHITECTURE_AUDIT.md`):
 
-- **Contract conversion:** all **64** ACTIVE catalog fields with `source_type = 'contract_details'` (63 mapped on TXR-1601, plus unmapped `contract_effective_date`) converted to `manual_only` with null source paths by `20260721190000_remove_abandoned_contract_details_sources.sql`. `contract_details` has 0 rows, no writers, and no UI; the fields already resolved through scoped defaults and Fill Form, so behavior is unchanged and now explicit. The table and resolver code remain temporarily for compatibility.
+- **Contract conversion:** all **64** ACTIVE catalog fields with `source_type = 'contract_details'` (63 mapped on TXR-1601, plus unmapped `contract_effective_date`) converted to `manual_only` with null source paths by `20260721190000_remove_abandoned_contract_details_sources.sql`. Behavior already matched Fill Form / scoped defaults. Table and resolver infrastructure were later removed 2026-07-22 (see architecture removal above).
 - **Buyer Rep checkbox:** `BUYER_REP_BROKER_SGN_CHECKBOX` reactivated as ACTIVE `manual_only` (accidental inactivation — matched the `20260701200000` AcroForm-pollution text heuristic while its hand-drawn mapping and 3 instances stayed ACTIVE). Mapping, coordinates, and instances untouched; unchecked by default; not Authentisign-excluded.
 - **Verification:** full before/after row diff — 0 mappings, 0 instances, 0 defaults changed; defaults baseline intact (Global literals 0, Lee all-forms 56, Lee form-specific 19, Organization 4, no duplicates). Authenticated UI verification (Lee): Map Fields shows "Filled from: Not connected" with preserved `NA`/`0` Personal defaults on the six representative TXR-1601 fields; Fill Form ordinary open rewrote nothing; TXR-1501 p6 checkbox appears once, active, manual.
 - **Tests:** `lib/contract-details-source-removal.test.ts` (21 tests) covers migration safety (exact ID set, allowed columns only, rerun safety, no Global literals) and defaults/snapshot behavior.
@@ -295,7 +304,7 @@ Driven in the Cursor browser against `harbaugh-forms-dev`. Roles exercised: appl
 
 ## Next Steps
 
-1. Eventual Listing Agreement table / legacy-route cleanup (jointly with `contract_details` schema removal).
+1. Eventual Listing Agreement table / legacy-route cleanup (historical table + `/listing-agreements` route).
 2. Future multi-HOA Property UI / optional primary-HOA designation (schema already supports multiple ACTIVE rows).
 3. Personal placement overrides (deferred).
 4. Restore Global position (deferred).
@@ -361,7 +370,7 @@ Confirm any additional Mapbox, application URL, and auth redirect variable names
 - Detailed inventories and transition audit: `DEFAULT_TRANSITION_AUDIT.md` (and recovered classification companions).
 - PDF placement and automatic business-data sourcing are independent; a null source path is valid for manual-only fields.
 - Automatic sources only when a distinct upstream object/workflow owns the value independently from Fill Form; scoped defaults initialize values but are not source mappings.
-- `contract_details` is abandoned architecture; its former source mappings are manual-only, the table remains temporarily for compatibility.
+- `contract_details` was abandoned architecture and has been removed (forward-only migration 2026-07-22); former catalog fields remain `manual_only`.
 - Current collection-based packets do not use `listing_agreement_details` as an automatic source; packet-form fields are `manual_only` + scoped defaults/Fill Form; historical table/row and legacy route retained.
 
 ## Session History

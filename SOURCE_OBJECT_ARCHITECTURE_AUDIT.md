@@ -22,7 +22,7 @@ The intended product model (templates → Personal/Organization defaults → pac
 | `representation_agreements` | **B2** (mixed) | Real agreement lifecycle; little current packet use. |
 | `buyer_rep_details` | **Mixed B2 + B4** | Full edit UI exists; schema defaults are legacy; only legacy agreement-linked packets resolve from it. |
 | `listing_agreement_details` | **Mixed B2 + B4** (mostly B4) | Thin UI (~14 original columns); ~100+ TXR expansion columns have **no UI** and exist mainly as default surrogates. **Zero** active packet instances currently sourced from this table. |
-| `contract_details` | **B5** (+ B4 schema) | Table + source type exist; **0 rows**; **no app writers**; Fill Form is the only contract edit surface. |
+| `contract_details` | **Removed 2026-07-22** | Abandoned empty table dropped after source conversion; see decisions.md. |
 | `property_hoas` | **B1 (resolved 2026-07-22)** | Authoritative HOA store; Property UI writes first ACTIVE row; redundant `properties` HOA columns retired. See `PROPERTY_HOA_CONSOLIDATION.md`. |
 | `packet` / `static_default` source types | **B5** | Registered in code; **0** active catalog fields. |
 | `manual_only` / `packet_instance` / `custom_resolver` | Product-aligned | Prefer these (plus scoped defaults) over expanding details tables. |
@@ -41,8 +41,8 @@ The contract and Buyer Rep findings above were implemented after this audit:
 
 - Migration `20260721190000_remove_abandoned_contract_details_sources.sql` converted the **64** ACTIVE catalog fields with `source_type = 'contract_details'` (63 mapped on TXR-1601, plus unmapped `contract_effective_date`) to `source_type = 'manual_only'`, `source_path = null`. The migration targets explicit field IDs, requires the expected prior source type, asserts `contract_details` still has 0 rows, and touches no mappings, coordinates, defaults, or packet instances (verified by full before/after row diff — 0 non-field rows changed).
 - The same migration **reactivated** `BUYER_REP_BROKER_SGN_CHECKBOX` (`2a32353f-0923-40ed-98f0-e60815ad4e96`) as ACTIVE `manual_only`, choosing option (b) from the Buyer Rep detail section below after visual/DB confirmation: the TXR-1501 page 6 broker-signature checkbox is a real, distinct PDF control (the adjacent `ASSOCIATE_SIGNATURE_BOX` at y 273 is the associate's separate checkbox, and all `*_broker_signature_checkbox` candidates are Listing/Lease-specific). Its inactivation matched the text heuristic of the `20260701200000` AcroForm-pollution sweep (all-caps key ≥ 18 chars, effectively manual, no path/resolver) while its hand-drawn mapping and 3 packet instances stayed ACTIVE — an accidental, incomplete inactivation, not a dedup with a replacement.
-- `contract_details` (table), its resolver code, and the `contract_details` source-type registration remain in place temporarily for historical compatibility; schema removal is a separate future decision.
-- Listing Agreement source family was cleaned up separately on 2026-07-22 (see Implementation Update below). Buyer Rep details, Lease-as-schema, and HOA/`property_hoas` remain open review items.
+- **Schema removal (2026-07-22):** `20260722180000_remove_contract_details_architecture.sql` dropped the empty table (no CASCADE), removed `'contract_details'` from `fields_source_type_check`, and converted six table-only custom-resolver fields to `manual_only`. Application registries/resolver/UI no longer reference Contract Details. Historical migrations that created the table remain intact.
+- Listing Agreement source family was cleaned up separately on 2026-07-22 (see Implementation Update below). Buyer Rep details and Lease-as-schema remain open review items; HOA/`property_hoas` consolidated 2026-07-22.
 
 ---
 
@@ -105,7 +105,7 @@ Counts are ACTIVE fields / ACTIVE mappings on ACTIVE forms / ACTIVE field_instan
 | `packet` | Packet metadata | Yes | `PACKET_SOURCE_PATHS` | `resolvePacketMetadataSourcePath` | `packets` (+ agreement dates) | Packet create/edit | Partial | **0** | 0 | 0 | **B5** |
 | `buyer_rep_details` | Buyer rep details | Yes | `BUYER_REP_DETAILS_SOURCE_PATHS` | `resolveBuyerRepDetailsSourcePath` | `buyer_rep_details` via agreement | `/representation-agreements` | Yes (when agreement linked) | 17 | 17 | 68 | **Mixed B2+B4** |
 | `listing_agreement_details` | Listing agreement details | **No** (`sourceTypeRequiresPath` omits it — bug) | Listing allowlist in `listing-agreement-field-resolution.ts` (incomplete; e.g. missing `lease_scheduling_company`) | `resolveListingAgreementDetailsSourcePath` | `listing_agreement_details` | `/listing-agreements` (partial columns only) | Partial / mostly no for expansion cols | 129 | 129 | 258 | **Mixed B2+B4** (mostly B4) |
-| `contract_details` | Contract details | Yes | `CONTRACT_DETAILS_SOURCE_PATHS` | `resolveContractDetailsSourcePath` | `contract_details` | **None** | No | 64 | 63 | 252 | **B5** |
+| `contract_details` | Contract details | **Removed** | — | — | — | — | — | 0 | 0 | — | **Removed 2026-07-22** |
 | `representation_agreement` | Representation agreement | Yes | `effective_date`, `expiration_date` | `resolveRepresentationAgreementSourcePath` | `representation_agreements` | Listing / Buyer Rep agreement screens | Yes | 2 | 2 | 8 | **B2** |
 | `static_default` | Static default | Yes | `default_checked`, `default_value` | `resolveStaticDefaultSource` | catalog field | Map Fields (catalog) | N/A | **0** | 0 | 0 | **B5** |
 | `custom_resolver` | Custom resolver | Resolver key | `CUSTOM_RESOLVER_KEYS` + HOA keys | `resolveCustomResolverKey` | mixed | N/A (computed) | Depends on inputs | 75 | 71 | 154 | **Mixed** (mostly B1 composites) |

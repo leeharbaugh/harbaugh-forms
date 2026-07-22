@@ -40,5 +40,5 @@ Already authoritative: `property_hoa_name`, `property_hoa_phone`.
 
 - Multi-HOA Property UI
 - Explicit primary-HOA designation (`is_primary`)
-- Remaining legacy architecture cleanup (`contract_details`, listing-agreement table/route)
+- Remaining legacy architecture cleanup (listing-agreement table/route; `contract_details` removed 2026-07-22)
 - Production-environment rollout
