@@ -900,6 +900,30 @@ The Property UI already presented a single HOA form, but persisted those three f
 
 ---
 
+## Source Registries Versus Historical Provenance
+
+**Date:** 2026-07-22
+
+**Decision:**
+Source registries contain only supported current automatic-source mechanisms. Historical packet provenance may retain display-only compatibility even after a source is no longer selectable for new fields. Unused source types and custom resolvers were removed only after proving no field, packet, UI, or active workflow dependency remained.
+
+**Reason:**
+`packet` and `static_default` were selectable but had zero catalog fields. Fifty-three Listing/Lease `custom_resolver` keys had no runtime implementation after `listing_agreement_details` removal, while scoped defaults and Fill Form already supplied values. Buyer Rep and genuine Property/Contact/Settings/HOA sources remain first-class.
+
+**Consequences:**
+
+* Migration `20260722210000_remove_unused_source_registry_metadata.sql` normalized unreachable metadata and shrunk `fields_source_type_check`.
+* Instance `source='packet'` still displays as “From packet”.
+* Packet field instances were not rewritten.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260722210000_remove_unused_source_registry_metadata.sql`
+* `lib/source-registry-cleanup.test.ts`
+* `SOURCE_REGISTRY_AND_RESOLVER_CLEANUP_AUDIT.md`
+
+---
+
 ## Brokerage Profile Versus Form Defaults
 
 **Date:** 2026-07-22

@@ -64,9 +64,7 @@ export function FieldSourceFormFields({
       source_path: "",
       resolver_key: "",
       fallback_value:
-        nextType === "static_default" ||
-        nextType === "manual_only" ||
-        nextType === "packet_instance"
+        nextType === "manual_only" || nextType === "packet_instance"
           ? value.fallback_value
           : "",
     });
@@ -87,7 +85,7 @@ export function FieldSourceFormFields({
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="source_type">Source type</Label>
           <Select
-            id="source_type"
+            id="source_type"
             value={sourceType}
             onChange={(event) =>
               setSourceType(event.target.value as FieldSourceType | "")
@@ -114,7 +112,7 @@ export function FieldSourceFormFields({
               <div className="space-y-2">
                 <Label htmlFor="source_path_preset">Source path preset</Label>
                 <Select
-                  id="source_path_preset"
+                  id="source_path_preset"
                   value={sourcePathPresetValue}
                   onChange={(event) => {
                     const nextPath = event.target.value;
@@ -176,7 +174,7 @@ export function FieldSourceFormFields({
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="resolver_key">Resolver key</Label>
             <Select
-              id="resolver_key"
+              id="resolver_key"
               value={value.resolver_key}
               onChange={(event) =>
                 onChange({ ...value, resolver_key: event.target.value })
@@ -202,10 +200,7 @@ export function FieldSourceFormFields({
 
         {showFallbackValue && (
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="fallback_value">
-              Fallback value
-              {sourceType === "static_default" ? " *" : ""}
-            </Label>
+            <Label htmlFor="fallback_value">Fallback value</Label>
             <Input
               id="fallback_value"
               value={value.fallback_value}
@@ -213,19 +208,8 @@ export function FieldSourceFormFields({
                 onChange({ ...value, fallback_value: event.target.value })
               }
               disabled={readOnly}
-              placeholder={
-                sourceType === "static_default"
-                  ? "e.g. NA or true"
-                  : "Optional default when left blank"
-              }
+              placeholder="Optional default when left blank"
             />
-            {sourceType === "static_default" &&
-              value.source_path === "default_checked" && (
-                <p className="text-xs text-muted-foreground">
-                  Use <code className="text-xs">true</code> or{" "}
-                  <code className="text-xs">false</code> for checkbox defaults.
-                </p>
-              )}
           </div>
         )}
 

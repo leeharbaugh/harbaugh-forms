@@ -44,10 +44,8 @@ export const FIELD_SOURCE_TYPES = [
   "settings_brokerage",
   "packet_contact",
   "packet_property",
-  "packet",
   "buyer_rep_details",
   "representation_agreement",
-  "static_default",
   "custom_resolver",
   "manual_only",
   "packet_instance",
@@ -115,48 +113,30 @@ export const SETTINGS_BROKERAGE_SOURCE_PATHS = [
 
 export { BUYER_CLIENT_CONTACT_SOURCE_PATHS } from "@/lib/types/packet-contact-source-paths";
 
-export const PACKET_SOURCE_PATHS = [
-  "packet_name",
-  "packet_type",
-  "effective_date",
-  "expiration_date",
-  "created_date",
-] as const;
-
 export const CUSTOM_RESOLVER_KEYS = [
-  "agent_full_name",
-  "broker_full_name",
   "property_hoa_name",
   "property_hoa_phone",
-  "property_address_city",
-  "property_address_street_zip",
-  "seller_names",
   "buyer_names",
-  "buyer_notice_address",
   "buyer_notice_phone",
   "buyer_notice_email",
-  "seller_notice_address",
-  "seller_notice_phone",
-  "seller_notice_email",
   "buyer_client_address",
   "buyer_client_city_state_zip",
+  "seller_city_state_zip",
+  "landlord_address",
+  "landlord_city_state_zip",
   "brokerage_city_state_zip",
   "buyer_rep_agreement_between",
   "buyer_rep_retainer_will_not_apply",
   "buyer_rep_intermediary_status_no",
 ] as const;
 
-export const STATIC_DEFAULT_SOURCE_PATHS = ["default_checked", "default_value"] as const;
-
 const SOURCE_TYPE_LABELS: Record<FieldSourceType, string> = {
   settings_agent: "Settings · Agent profile",
   settings_brokerage: "Settings · Brokerage profile",
   packet_contact: "Packet contact",
   packet_property: "Packet property",
-  packet: "Packet metadata",
   buyer_rep_details: "Buyer rep details",
   representation_agreement: "Representation agreement",
-  static_default: "Static default",
   custom_resolver: "Custom resolver",
   manual_only: "Manual entry only",
   packet_instance: "Packet/form instance value",
@@ -258,14 +238,10 @@ export function sourcePathsForType(
       return PACKET_CONTACT_SOURCE_PATHS;
     case "packet_property":
       return PACKET_PROPERTY_SOURCE_PATHS;
-    case "packet":
-      return PACKET_SOURCE_PATHS;
     case "buyer_rep_details":
       return BUYER_REP_DETAILS_SOURCE_PATHS;
     case "representation_agreement":
       return REPRESENTATION_AGREEMENT_SOURCE_PATHS;
-    case "static_default":
-      return STATIC_DEFAULT_SOURCE_PATHS;
     case "custom_resolver":
       return CUSTOM_RESOLVER_KEYS;
     default:
@@ -279,10 +255,8 @@ export function sourceTypeRequiresPath(sourceType: FieldSourceType | ""): boolea
     sourceType === "settings_brokerage" ||
     sourceType === "packet_contact" ||
     sourceType === "packet_property" ||
-    sourceType === "packet" ||
     sourceType === "buyer_rep_details" ||
-    sourceType === "representation_agreement" ||
-    sourceType === "static_default"
+    sourceType === "representation_agreement"
   );
 }
 
@@ -295,11 +269,7 @@ export function sourceTypeRequiresResolverKey(
 export function sourceTypeAllowsFallbackValue(
   sourceType: FieldSourceType | "",
 ): boolean {
-  return (
-    sourceType === "static_default" ||
-    sourceType === "manual_only" ||
-    sourceType === "packet_instance"
-  );
+  return sourceType === "manual_only" || sourceType === "packet_instance";
 }
 
 export type FieldSourceInput = {
@@ -363,12 +333,6 @@ export function validateFieldSourceInput(input: FieldSourceInput): string | null
   if (sourceTypeRequiresResolverKey(input.source_type)) {
     if (!input.resolver_key.trim()) {
       return "Resolver key is required for custom resolver fields.";
-    }
-  }
-
-  if (input.source_type === "static_default" && !input.fallback_value.trim()) {
-    if (input.source_path.trim() !== "default_checked") {
-      return "Fallback value is required for static default fields.";
     }
   }
 
@@ -462,12 +426,6 @@ export function formatFieldSourceMappingCatalog(field: {
   if (sourceType === "custom_resolver") {
     const resolverKey = field.resolver_key?.trim();
     return resolverKey ? `${sourceType} → ${resolverKey}` : sourceType;
-  }
-
-  if (sourceType === "static_default") {
-    const detail =
-      field.fallback_value?.trim() || field.source_path?.trim() || null;
-    return detail ? `${sourceType} → ${detail}` : sourceType;
   }
 
   const sourcePath = field.source_path?.trim();
