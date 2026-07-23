@@ -29,7 +29,7 @@
     "export:approved-production-data": "node --experimental-strip-types --env-file=.env.local --env-file=.env.production.local scripts/export-approved-production-data.ts",
     "import:approved-production-data": "node --experimental-strip-types --env-file=.env.local --env-file=.env.production.local scripts/import-approved-production-data.ts",
     "validate:production-migration": "node --experimental-strip-types --env-file=.env.local --env-file=.env.production.local scripts/validate-production-migration.ts",
-    "copy:approved-storage": "node --experimental-strip-types --env-file=.env.local scripts/copy-approved-storage.ts",
+    "copy:approved-storage": "node --experimental-strip-types --env-file=.env.local --env-file=.env.production.local scripts/copy-approved-storage.ts",
     "test:packet-form-lifecycle": "node --experimental-strip-types --test lib/types/packet-form-lifecycle.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",
     "test:ui-lists": "node --experimental-strip-types --test lib/ui/list-badges.test.ts lib/ui/nav-styles.test.ts lib/types/profile.test.ts lib/ui/dialogs-polish.test.ts",

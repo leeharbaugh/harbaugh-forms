@@ -72,10 +72,14 @@ Import upserts approved rows (forms 1–18, collections 1/2/3/5, contacts 2/3/4/
 
 ## Stage 5 — Storage
 
+Requires `.env.local` (SOURCE_*) and `.env.production.local` (TARGET_*). Checksums are verified against the manifest (MD5 of downloaded bytes when `SOURCE_DB_PASSWORD` is unset).
+
 ```bash
 npm run copy:approved-storage -- --dry-run
-# then --execute
+npm run copy:approved-storage -- --execute
 ```
+
+`--dry-run` verifies all 30 allowlisted source objects (size + checksum), plans uploads vs identical skips, and aborts on source mismatches or target checksum conflicts — no uploads. `--execute` runs the same validations, uploads only needed objects (`upsert: true`), re-verifies target size/checksum, and asserts final counts 18 form-templates + 12 generated-documents = 30.
 
 Copies only allowlisted paths (18 Global PDFs + packet 2/5 generated docs). No bucket-wide copy. No form 21/22/23 PDFs.
 
@@ -85,7 +89,7 @@ Copies only allowlisted paths (18 Global PDFs + packet 2/5 generated docs). No b
 npm run validate:production-migration -- --execute
 ```
 
-Must pass Auth, org/profile, forms 1–18 only, collections exactly 1/2/3/5, contacts 2/3/4/6, packets 2/5 fingerprints, defaults=101, storage objects=0, zero orphan FKs.
+Must pass Auth, org/profile, forms 1–18 only, collections exactly 1/2/3/5, contacts 2/3/4/6, packets 2/5 fingerprints, defaults=101, **storage objects = 30** (allowlist paths + checksums; excluded paths absent), zero orphan FKs.
 
 ## Stage 7 — Vercel / DNS (after data OK)
 

@@ -17,6 +17,7 @@ import {
   APPROVED_PACKET_IDS,
   APPROVED_PROPERTY_IDS,
   DGR_ORGANIZATION_ID,
+  EXCLUDED_FORM_PDF_PATH_MARKERS,
   LEE_AUTH_EMAIL,
   LEE_AUTH_UUID,
   LEE_IDENTITY_ID,
@@ -26,6 +27,7 @@ import {
   PACKET_5_FIELD_INSTANCE_COUNT,
   PACKET_5_OVERRIDE_COUNT,
   PROD_PROJECT_REF,
+  YAHOO_AUTH_UUID,
 } from "../lib/selective-production/constants.ts";
 import { TARGET_AUTH_VERIFY_SQL } from "../lib/selective-production/auth-migrate.ts";
 import { loadManifest } from "../lib/selective-production/manifest.ts";
@@ -36,6 +38,16 @@ import {
   parseArgs,
   SelectiveMigrationSafetyError,
 } from "../lib/selective-production/safety.ts";
+import {
+  assertAllowlistExactShape,
+  buildStorageAllowlist,
+  EXPECTED_FORM_TEMPLATE_COUNT,
+  EXPECTED_GENERATED_DOCUMENT_COUNT,
+  EXPECTED_STORAGE_OBJECT_COUNT,
+  normalizeStorageChecksum,
+  parseStorageSize,
+  type StorageAllowlistEntry,
+} from "../lib/selective-production/storage-copy.ts";
 import { runTargetSqlJson } from "../lib/selective-production/target-db.ts";
 import {
   assertValidationOk,
@@ -114,7 +126,40 @@ select
       and status = 'ACTIVE'
       and is_override = true
   ) as packet5_override_count,
-  (select count(*)::int from storage.objects) as storage_object_count;
+  (
+    select count(*)::int from storage.objects
+  ) as storage_object_count,
+  (
+    select count(*)::int from storage.objects
+    where bucket_id = 'form-templates'
+  ) as form_templates_count,
+  (
+    select count(*)::int from storage.objects
+    where bucket_id = 'generated-documents'
+  ) as generated_documents_count,
+  (
+    select coalesce(
+      json_agg(
+        json_build_object(
+          'bucket', bucket_id,
+          'path', name,
+          'size', metadata->>'size',
+          'etag', metadata->>'eTag'
+        )
+        order by bucket_id, name
+      ),
+      '[]'::json
+    )
+    from storage.objects
+  ) as storage_objects,
+  (
+    select count(*)::int
+    from storage.objects
+    where name like 'global/forms/21/%'
+       or name like 'global/forms/22/%'
+       or name like 'global/forms/23/%'
+       or name like 'users/${YAHOO_AUTH_UUID}/%'
+  ) as excluded_storage_count;
 `.trim();
 
 /** ACTIVE field_defaults and forms.copied_from_form_id lineage. */
@@ -169,9 +214,11 @@ function parseIntField(row: Record<string, unknown>, key: string): number {
   return Number(row[key] ?? 0);
 }
 
-function buildLiveSnapshot(): {
+function buildLiveSnapshot(allowlist: StorageAllowlistEntry[]): {
   snap: ValidationSnapshot;
   storageObjectCount: number;
+  formTemplatesCount: number;
+  generatedDocumentsCount: number;
   extraFailures: string[];
 } {
   const extraFailures: string[] = [];
@@ -237,10 +284,61 @@ function buildLiveSnapshot(): {
   }>(detail.forms_with_copied_from, "forms_with_copied_from");
 
   const storageObjectCount = parseIntField(core, "storage_object_count");
-  if (storageObjectCount !== 0) {
+  const formTemplatesCount = parseIntField(core, "form_templates_count");
+  const generatedDocumentsCount = parseIntField(core, "generated_documents_count");
+  const excludedStorageCount = parseIntField(core, "excluded_storage_count");
+
+  const storageObjects = parseJsonObjectArray<{
+    bucket: string;
+    path: string;
+    size: string | number | null;
+    etag: string | null;
+  }>(core.storage_objects, "storage_objects");
+
+  const expectedCount = allowlist.length;
+  if (storageObjectCount !== expectedCount) {
     extraFailures.push(
-      `Storage object count must be 0 before/without approved storage copy (got ${storageObjectCount}).`,
+      `Storage object count must be ${expectedCount} (got ${storageObjectCount}).`,
     );
+  }
+  if (formTemplatesCount !== EXPECTED_FORM_TEMPLATE_COUNT) {
+    extraFailures.push(
+      `form-templates count must be ${EXPECTED_FORM_TEMPLATE_COUNT} (got ${formTemplatesCount}).`,
+    );
+  }
+  if (generatedDocumentsCount !== EXPECTED_GENERATED_DOCUMENT_COUNT) {
+    extraFailures.push(
+      `generated-documents count must be ${EXPECTED_GENERATED_DOCUMENT_COUNT} (got ${generatedDocumentsCount}).`,
+    );
+  }
+  if (excludedStorageCount !== 0) {
+    extraFailures.push(
+      `Excluded storage paths must be absent (got ${excludedStorageCount} matching forms 21–23 / yahoo user).`,
+    );
+  }
+
+  const byKey = new Map(
+    storageObjects.map((o) => [`${o.bucket}:${o.path}`, o]),
+  );
+  for (const entry of allowlist) {
+    const key = `${entry.bucket}:${entry.path}`;
+    const found = byKey.get(key);
+    if (!found) {
+      extraFailures.push(`Missing allowlisted storage object: ${key}`);
+      continue;
+    }
+    const expectedChecksum = normalizeStorageChecksum(entry.checksum);
+    const actualChecksum = normalizeStorageChecksum(found.etag);
+    if (expectedChecksum && actualChecksum && expectedChecksum !== actualChecksum) {
+      extraFailures.push(`Storage checksum mismatch: ${key}`);
+    }
+    const expectedSize = parseStorageSize(entry.size);
+    const actualSize = parseStorageSize(found.size);
+    if (expectedSize != null && actualSize != null && expectedSize !== actualSize) {
+      extraFailures.push(
+        `Storage size mismatch: ${key} expected ${expectedSize} got ${actualSize}`,
+      );
+    }
   }
 
   // Exact-set extras (also enforced inside validateProductionSnapshot)
@@ -289,11 +387,10 @@ function buildLiveSnapshot(): {
     packet5OverrideCount: p5Override,
     defaultCount: defaultRows.length,
     defaultFormIds,
-    storagePathsPresent: storageObjectCount > 0 ? ["(objects present)"] : [],
+    storagePathsPresent: storageObjects.map((o) => o.path),
     storagePathsAbsent: [
-      "global/forms/21/",
-      "global/forms/22/",
-      "global/forms/23/",
+      ...EXCLUDED_FORM_PDF_PATH_MARKERS,
+      `users/${YAHOO_AUTH_UUID}/`,
     ],
     formsWithCopiedFrom: formsCopied.map((f) => ({
       id: Number(f.id),
@@ -311,10 +408,18 @@ function buildLiveSnapshot(): {
     extraFailures.push(`Auth identity_count must be 1 (got ${auth.identity_count}).`);
   }
 
-  return { snap, storageObjectCount, extraFailures };
+  return {
+    snap,
+    storageObjectCount,
+    formTemplatesCount,
+    generatedDocumentsCount,
+    extraFailures,
+  };
 }
 
-function expectedSnapshotFromManifest(): ValidationSnapshot {
+function expectedSnapshotFromManifest(
+  allowlist: StorageAllowlistEntry[],
+): ValidationSnapshot {
   return {
     authUserIds: [LEE_AUTH_UUID],
     authEmails: [LEE_AUTH_EMAIL],
@@ -336,11 +441,10 @@ function expectedSnapshotFromManifest(): ValidationSnapshot {
     packet5OverrideCount: PACKET_5_OVERRIDE_COUNT,
     defaultCount: APPROVED_DEFAULT_COUNT,
     defaultFormIds: [null, 1, 7, 11, 15, 18],
-    storagePathsPresent: [],
+    storagePathsPresent: allowlist.map((e) => e.path),
     storagePathsAbsent: [
-      "global/forms/21/",
-      "global/forms/22/",
-      "global/forms/23/",
+      ...EXCLUDED_FORM_PDF_PATH_MARKERS,
+      `users/${YAHOO_AUTH_UUID}/`,
     ],
     formsWithCopiedFrom: APPROVED_FORM_IDS.map((id) => ({
       id,
@@ -353,9 +457,11 @@ function expectedSnapshotFromManifest(): ValidationSnapshot {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const manifest = loadManifest(args.manifestPath);
+  const allowlist = buildStorageAllowlist(manifest);
+  assertAllowlistExactShape(allowlist);
 
   if (args.dryRun && !args.execute) {
-    const snap = expectedSnapshotFromManifest();
+    const snap = expectedSnapshotFromManifest(allowlist);
     const result = validateProductionSnapshot(snap, manifest);
     assertValidationOk(result);
     console.log(
@@ -372,11 +478,14 @@ async function main() {
             "packets exactly 2,5",
             "packet forms 25/26 DELETED",
             `defaults=${APPROVED_DEFAULT_COUNT}`,
-            "storage objects = 0",
+            `storage objects = ${EXPECTED_STORAGE_OBJECT_COUNT} (${EXPECTED_FORM_TEMPLATE_COUNT} form-templates + ${EXPECTED_GENERATED_DOCUMENT_COUNT} generated-documents)`,
+            "allowlist paths present with matching checksums",
+            "excluded storage paths absent (forms 21–23, yahoo user)",
             "packet fingerprints counts match",
           ],
           manifestChecksum: manifest.meta.checksum,
           expectedTargetRef: PROD_PROJECT_REF,
+          expectedStorageObjectCount: EXPECTED_STORAGE_OBJECT_COUNT,
         },
         null,
         2,
@@ -412,7 +521,13 @@ async function main() {
   });
   assertProductionTargetRef(refs.targetRef);
 
-  const { snap, storageObjectCount, extraFailures } = buildLiveSnapshot();
+  const {
+    snap,
+    storageObjectCount,
+    formTemplatesCount,
+    generatedDocumentsCount,
+    extraFailures,
+  } = buildLiveSnapshot(allowlist);
   const result = validateProductionSnapshot(snap, manifest);
   const failures = [...result.failures, ...extraFailures];
   const ok = failures.length === 0;
@@ -424,6 +539,9 @@ async function main() {
         ok,
         targetRef: refs.targetRef,
         storageObjectCount,
+        formTemplatesCount,
+        generatedDocumentsCount,
+        expectedStorageObjectCount: EXPECTED_STORAGE_OBJECT_COUNT,
         summary: {
           contacts: snap.contactIds,
           collections: snap.collectionIds,
