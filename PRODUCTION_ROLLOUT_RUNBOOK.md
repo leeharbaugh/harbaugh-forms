@@ -23,9 +23,22 @@ Plan: `SELECTIVE_PRODUCTION_DATA_MIGRATION_AUDIT.md`
 
 ## Stage 2 — Schema
 
-1. Link CLI to production (separate from dev).
+1. Link CLI to production (separate from dev), or use pooler `--db-url` against project ref `eetonalyyyssvkyfdoxh` (direct `db.<ref>.supabase.co` may fail on IPv6-only hosts).
 2. Apply full migration chain (`supabase db push` / ordered apply).
 3. Confirm catalog forms/fields/mappings; expect Global 1–18 from migrations (form 23 must **not** be introduced by data copy).
+
+### Blocking dependency (Phase A)
+
+Migration `20260713200000_phase_a_multi_user_foundation.sql` **aborts** unless Auth user UUID `e26c8f57-c0aa-4474-b43e-6e15f0260e99` already exists. Do **not** alter that historical migration.
+
+**Required order for an empty production project:**
+
+1. Apply migrations through `20260710170000` (safe on empty Auth).
+2. Run Stage 3 Lee-only Auth import (UUID-preserving) **before** continuing.
+3. Resume `supabase db push` for `20260713200000` onward (Phase A then seeds DGR org, Lee profile/membership/agent settings).
+4. Continue Stage 4 public data / Stage 5 storage.
+
+If push stops at Phase A with `initial admin auth user … not found`, that is expected until Auth exists — not a schema-file defect.
 
 ## Stage 3 — Auth (UUID-preserving)
 
