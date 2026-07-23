@@ -25,6 +25,10 @@
 .DS_Store
 *.pem
 
+# selective production export artifacts (may contain business data)
+/exports/
+/_import_tmp/
+
 # debug
 npm-debug.log*
 yarn-debug.log*

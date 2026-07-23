@@ -91,9 +91,10 @@ export function validateProductionSnapshot(
     failures.push("Lee ORG_ADMIN membership missing.");
   }
 
-  // Forms
-  for (const id of APPROVED_FORM_IDS) {
-    if (!snap.formIds.includes(id)) failures.push(`Form ${id} missing.`);
+  // Forms — ACTIVE set must be exactly 1–18
+  const formSorted = snap.formIds.slice().sort((a, b) => a - b).join(",");
+  if (formSorted !== [...APPROVED_FORM_IDS].join(",")) {
+    failures.push("Form set must be exactly 1–18 (ACTIVE).");
   }
   for (const id of EXCLUDED_FORM_IDS) {
     if (snap.formIds.includes(id)) failures.push(`Excluded form ${id} present.`);
@@ -109,9 +110,13 @@ export function validateProductionSnapshot(
     }
   }
 
-  // Collections
-  for (const id of APPROVED_COLLECTION_IDS) {
-    if (!snap.collectionIds.includes(id)) failures.push(`Collection ${id} missing.`);
+  // Collections — ACTIVE set must be exactly 1,2,3,5
+  const collectionSorted = snap.collectionIds
+    .slice()
+    .sort((a, b) => a - b)
+    .join(",");
+  if (collectionSorted !== [...APPROVED_COLLECTION_IDS].join(",")) {
+    failures.push("Collection set must be exactly 1,2,3,5 (ACTIVE).");
   }
   for (const id of EXCLUDED_COLLECTION_IDS) {
     if (snap.collectionIds.includes(id)) {
@@ -120,13 +125,13 @@ export function validateProductionSnapshot(
   }
 
   // Business data
-  if (snap.contactIds.slice().sort().join(",") !== [...APPROVED_CONTACT_IDS].join(",")) {
+  if (snap.contactIds.slice().sort((a, b) => a - b).join(",") !== [...APPROVED_CONTACT_IDS].join(",")) {
     failures.push("Contact set must be exactly 2,3,4,6.");
   }
-  if (snap.propertyIds.slice().sort().join(",") !== [...APPROVED_PROPERTY_IDS].join(",")) {
+  if (snap.propertyIds.slice().sort((a, b) => a - b).join(",") !== [...APPROVED_PROPERTY_IDS].join(",")) {
     failures.push("Property set must be exactly 1,3.");
   }
-  if (snap.packetIds.slice().sort().join(",") !== [...APPROVED_PACKET_IDS].join(",")) {
+  if (snap.packetIds.slice().sort((a, b) => a - b).join(",") !== [...APPROVED_PACKET_IDS].join(",")) {
     failures.push("Packet set must be exactly 2,5.");
   }
   for (const id of PACKET_2_DELETED_FORM_IDS) {

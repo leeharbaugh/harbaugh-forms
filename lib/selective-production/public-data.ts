@@ -4,8 +4,11 @@ import {
   APPROVED_FORM_IDS,
   APPROVED_PACKET_IDS,
   APPROVED_PROPERTY_IDS,
+  DGR_ORGANIZATION_ID,
   EXCLUDED_COLLECTION_IDS,
   EXCLUDED_FORM_IDS,
+  LEE_AUTH_UUID,
+  LEE_ORG_MEMBERSHIP_ID,
   PACKET_2_DELETED_FORM_IDS,
   PACKET_2_PACKET_FORM_IDS,
   PACKET_5_PACKET_FORM_IDS,
@@ -60,9 +63,33 @@ export const SELECTIVE_TABLE_FILTERS: Record<
     idColumn: "id",
     approvedIds: [...PACKET_2_PACKET_FORM_IDS, ...PACKET_5_PACKET_FORM_IDS],
   },
-  field_instances: { allApprovedRows: true }, // filter packet_id in 2,5
+  field_instances: { allApprovedRows: true }, // filter by packet_id and/or packet_form_id
   field_instance_mappings: { allApprovedRows: true },
 };
+
+/** Approved packet_form ids for packets 2 and 5 (ACTIVE + DELETED historical). */
+export const APPROVED_PACKET_FORM_IDS: readonly number[] = [
+  ...PACKET_2_PACKET_FORM_IDS,
+  ...PACKET_5_PACKET_FORM_IDS,
+];
+
+export function isApprovedFieldInstanceRow(row: Record<string, unknown>): boolean {
+  const packetId = row.packet_id == null ? null : Number(row.packet_id);
+  const packetFormId = row.packet_form_id == null ? null : Number(row.packet_form_id);
+  if (
+    packetId != null &&
+    (APPROVED_PACKET_IDS as readonly number[]).includes(packetId)
+  ) {
+    return true;
+  }
+  if (
+    packetFormId != null &&
+    (APPROVED_PACKET_FORM_IDS as readonly number[]).includes(packetFormId)
+  ) {
+    return true;
+  }
+  return false;
+}
 
 export function getInsertionOrder(): readonly string[] {
   return PUBLIC_INSERTION_ORDER;
@@ -136,6 +163,15 @@ export function filterRowsForTable(
   manifest: ProductionSelectionManifest,
 ): Record<string, unknown>[] {
   switch (table) {
+    case "organizations":
+      return rows.filter((r) => String(r.id) === DGR_ORGANIZATION_ID);
+    case "profiles":
+      return rows.filter((r) => String(r.id) === LEE_AUTH_UUID);
+    case "organization_members":
+      return rows.filter((r) => String(r.id) === LEE_ORG_MEMBERSHIP_ID);
+    case "user_agent_settings":
+    case "user_preferences":
+      return rows.filter((r) => String(r.user_id) === LEE_AUTH_UUID);
     case "forms":
       return rows.filter((r) =>
         (APPROVED_FORM_IDS as readonly number[]).includes(Number(r.id)),
@@ -156,24 +192,33 @@ export function filterRowsForTable(
       return rows.filter((r) =>
         (APPROVED_PROPERTY_IDS as readonly number[]).includes(Number(r.id)),
       );
+    case "representation_agreements":
+      return rows.filter((r) => Number(r.id) === 1);
+    case "representation_agreement_clients":
+      return rows.filter(
+        (r) =>
+          Number(r.representation_agreement_id) === 1 &&
+          (APPROVED_CONTACT_IDS as readonly number[]).includes(Number(r.contact_id)),
+      );
+    case "buyer_rep_details":
+      return rows.filter((r) => Number(r.representation_agreement_id) === 1);
     case "packets":
       return rows.filter((r) =>
         (APPROVED_PACKET_IDS as readonly number[]).includes(Number(r.id)),
       );
     case "packet_forms":
       return rows.filter((r) =>
-        ([...PACKET_2_PACKET_FORM_IDS, ...PACKET_5_PACKET_FORM_IDS] as number[]).includes(
-          Number(r.id),
-        ),
+        (APPROVED_PACKET_FORM_IDS as readonly number[]).includes(Number(r.id)),
       );
     case "packet_contacts":
       return rows.filter((r) =>
         (APPROVED_PACKET_IDS as readonly number[]).includes(Number(r.packet_id)),
       );
     case "field_instances":
-      return rows.filter((r) =>
-        (APPROVED_PACKET_IDS as readonly number[]).includes(Number(r.packet_id)),
-      );
+      // Schema has both packet_id and packet_form_id; keep rows for approved packets/forms.
+      return rows.filter(isApprovedFieldInstanceRow);
+    case "field_instance_mappings":
+      return rows.filter(isApprovedFieldInstanceRow);
     case "form_field_mappings":
       return rows.filter((r) =>
         (APPROVED_FORM_IDS as readonly number[]).includes(Number(r.form_id)),

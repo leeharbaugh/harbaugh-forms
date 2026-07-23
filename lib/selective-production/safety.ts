@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import { DEV_PROJECT_REF, DEV_PROJECT_URL } from "./constants.ts";
+import {
+  DEV_PROJECT_REF,
+  DEV_PROJECT_URL,
+  PROD_PROJECT_REF,
+} from "./constants.ts";
 
 export class SelectiveMigrationSafetyError extends Error {
   constructor(message: string) {
@@ -59,6 +63,15 @@ export function assertDistinctProjects(options: {
   }
 
   return { sourceRef, targetRef };
+}
+
+/** Refuse writes unless target is harbaugh-forms-prod. */
+export function assertProductionTargetRef(targetRef: string): void {
+  if (targetRef !== PROD_PROJECT_REF) {
+    throw new SelectiveMigrationSafetyError(
+      `Target ref must be production ${PROD_PROJECT_REF} (got ${targetRef}).`,
+    );
+  }
 }
 
 export function assertRequiredCredentials(options: {

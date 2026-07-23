@@ -6,6 +6,10 @@
 export const DEV_PROJECT_REF = "ewxsxwzezhkeawnjvigx";
 export const DEV_PROJECT_URL = "https://ewxsxwzezhkeawnjvigx.supabase.co";
 
+/** Production Supabase project (harbaugh-forms-prod). */
+export const PROD_PROJECT_REF = "eetonalyyyssvkyfdoxh";
+export const PROD_PROJECT_URL = "https://eetonalyyyssvkyfdoxh.supabase.co";
+
 export const LEE_AUTH_UUID = "e26c8f57-c0aa-4474-b43e-6e15f0260e99";
 export const LEE_AUTH_EMAIL = "lee@leeharbaugh.com";
 export const LEE_IDENTITY_ID = "b1c72b22-2835-44d9-afd4-294fc21d1ca5";

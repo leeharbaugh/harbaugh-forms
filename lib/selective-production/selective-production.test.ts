@@ -12,6 +12,7 @@ import {
   PACKET_2_FIELD_INSTANCE_COUNT,
   PACKET_5_FIELD_INSTANCE_COUNT,
   PACKET_5_OVERRIDE_COUNT,
+  PROD_PROJECT_REF,
 } from "./constants.ts";
 import {
   assertNeverCreatesReplacementUuid,
@@ -29,11 +30,18 @@ import {
 import {
   assertRowAllowed,
   filterRowsForTable,
+  isApprovedFieldInstanceRow,
   planSequenceResets,
   sequenceResetSql,
 } from "./public-data.ts";
 import {
+  planConflictingGlobalFieldSoftDeletes,
+  planReconciliation,
+  summarizeReconciliationPlan,
+} from "./reconcile.ts";
+import {
   assertDistinctProjects,
+  assertProductionTargetRef,
   SelectiveMigrationSafetyError,
 } from "./safety.ts";
 import {
@@ -288,10 +296,177 @@ describe("public-data filters", () => {
     );
   });
 
+  it("filters field_instances by packet_id or approved packet_form_id", () => {
+    assert.equal(isApprovedFieldInstanceRow({ packet_id: 2, packet_form_id: 7 }), true);
+    assert.equal(isApprovedFieldInstanceRow({ packet_id: 5, packet_form_id: 27 }), true);
+    assert.equal(isApprovedFieldInstanceRow({ packet_id: 99, packet_form_id: 25 }), true);
+    assert.equal(isApprovedFieldInstanceRow({ packet_id: 99, packet_form_id: 999 }), false);
+    const filtered = filterRowsForTable(
+      "field_instances",
+      [
+        { id: "a", packet_id: 2, packet_form_id: 7 },
+        { id: "b", packet_id: 9, packet_form_id: 99 },
+        { id: "c", packet_id: 1, packet_form_id: 26 },
+      ],
+      manifest,
+    );
+    assert.deepEqual(
+      filtered.map((r) => r.id),
+      ["a", "c"],
+    );
+  });
+
+  it("filters representation agreement 1 and its clients", () => {
+    const agreements = filterRowsForTable(
+      "representation_agreements",
+      [{ id: 1 }, { id: 2 }],
+      manifest,
+    );
+    assert.deepEqual(
+      agreements.map((r) => r.id),
+      [1],
+    );
+    const clients = filterRowsForTable(
+      "representation_agreement_clients",
+      [
+        { id: 1, representation_agreement_id: 1, contact_id: 2 },
+        { id: 9, representation_agreement_id: 1, contact_id: 1 },
+        { id: 10, representation_agreement_id: 2, contact_id: 2 },
+      ],
+      manifest,
+    );
+    assert.deepEqual(
+      clients.map((r) => r.id),
+      [1],
+    );
+  });
+
   it("plans sequence resets after explicit IDs", () => {
     const resets = planSequenceResets({ packets: 5, contacts: 6, forms: 18 });
     assert.ok(resets.some((r) => r.table === "packets" && r.setTo === 5));
     assert.match(sequenceResetSql(resets[0]), /setval/);
+  });
+});
+
+describe("reconcile planning", () => {
+  const manifest = loadManifest();
+
+  it("plans soft-delete of ACTIVE defaults not in approved manifest set", () => {
+    const approvedId = String(manifest.defaults[0].id);
+    const plan = planReconciliation(
+      {
+        field_defaults: [{ id: approvedId, status: "ACTIVE" }],
+      },
+      {
+        fieldDefaults: [
+          { id: approvedId, status: "ACTIVE" },
+          { id: "scaffold-default-uuid", status: "ACTIVE" },
+          { id: "already-deleted", status: "DELETED" },
+        ],
+        contacts: [],
+        collections: [],
+      },
+      manifest,
+    );
+    assert.ok(
+      plan.removes.some(
+        (r) =>
+          r.table === "field_defaults" &&
+          r.id === "scaffold-default-uuid" &&
+          r.action === "remove",
+      ),
+    );
+    assert.equal(
+      plan.removes.some((r) => r.id === "already-deleted"),
+      false,
+    );
+    assert.ok(
+      plan.updates.some((r) => r.table === "field_defaults" && r.id === approvedId),
+    );
+  });
+
+  it("plans contact 1 scaffold cleanup and retains approved contacts", () => {
+    const plan = planReconciliation(
+      {
+        contacts: [{ id: 2 }, { id: 3 }, { id: 4 }, { id: 6 }],
+      },
+      {
+        fieldDefaults: [],
+        contacts: [{ id: 1 }, { id: 2 }, { id: 3 }],
+        collections: [],
+        representationAgreementClients: [
+          { id: 99, contact_id: 1 },
+          { id: 1, contact_id: 2 },
+        ],
+      },
+      manifest,
+    );
+    assert.ok(
+      plan.removes.some(
+        (r) => r.table === "contacts" && r.id === 1 && /scaffold contact 1/.test(r.reason || ""),
+      ),
+    );
+    assert.ok(
+      plan.removes.some(
+        (r) =>
+          r.table === "representation_agreement_clients" &&
+          r.id === 99 &&
+          r.action === "remove",
+      ),
+    );
+    assert.ok(plan.updates.some((r) => r.table === "contacts" && r.id === 2));
+    assert.ok(plan.inserts.some((r) => r.table === "contacts" && r.id === 4));
+  });
+
+  it("plans collection 4 Test Packet removal and upserts approved collections", () => {
+    const plan = planReconciliation(
+      {
+        collections: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 5 }],
+      },
+      {
+        fieldDefaults: [],
+        contacts: [],
+        collections: [
+          { id: 1, status: "ACTIVE" },
+          { id: 4, status: "ACTIVE" },
+          { id: 7, status: "DELETED" },
+        ],
+      },
+      manifest,
+    );
+    assert.ok(
+      plan.removes.some(
+        (r) =>
+          r.table === "collections" &&
+          r.id === 4 &&
+          /Test Packet/.test(r.reason || ""),
+      ),
+    );
+    assert.ok(plan.removes.some((r) => r.table === "collections" && r.id === 7));
+    assert.ok(plan.updates.some((r) => r.table === "collections" && r.id === 1));
+    assert.ok(plan.inserts.some((r) => r.table === "collections" && r.id === 5));
+    const summary = summarizeReconciliationPlan(plan);
+    assert.ok(summary.removesByTable.collections >= 2);
+  });
+
+  it("plans soft-delete of conflicting ACTIVE GLOBAL field_keys", () => {
+    const items = planConflictingGlobalFieldSoftDeletes(
+      [{ id: "incoming-1", field_key: "buyer_name", scope: "GLOBAL" }],
+      [
+        { id: "incoming-1", field_key: "buyer_name" },
+        { id: "scaffold-other", field_key: "Buyer_Name" },
+        { id: "unrelated", field_key: "other_key" },
+      ],
+    );
+    assert.deepEqual(
+      items.map((i) => i.id),
+      ["scaffold-other"],
+    );
+  });
+
+  it("requires production target ref", () => {
+    assertProductionTargetRef(PROD_PROJECT_REF);
+    assert.throws(() => assertProductionTargetRef("ewxsxwzezhkeawnjvigx"), /production/);
   });
 });
 
