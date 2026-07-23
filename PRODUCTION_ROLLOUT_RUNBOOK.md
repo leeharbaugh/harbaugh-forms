@@ -35,29 +35,28 @@ Migration `20260713200000_phase_a_multi_user_foundation.sql` **aborts** unless A
 
 1. Apply migrations through `20260710170000` (safe on empty Auth).
 2. Run Stage 3 Lee-only Auth import (UUID-preserving) **before** continuing.
-3. Resume `supabase db push` for `20260713200000` onward (Phase A then seeds DGR org, Lee profile/membership/agent settings).
-4. Continue Stage 4 public data / Stage 5 storage.
+3. Before resuming Phase A onward on an empty catalog, ensure Phase A / cleanup migrations can satisfy their data assertions (collections 1–5 with expected names including DELETED Test Packet id 4; 18 forms; approved DGR org UUID `b788f525-…`; field UUID rows referenced by later cleanup migrations). These are migration prerequisites / scaffolds, not the selective business-data import.
+4. Resume `supabase db push` for `20260713200000` onward (Phase A then seeds DGR org, Lee profile/membership/agent settings; remap org/membership to approved UUIDs if Phase A minted random ids).
+5. Continue Stage 4 public data / Stage 5 storage.
 
 If push stops at Phase A with `initial admin auth user … not found`, that is expected until Auth exists — not a schema-file defect.
 
 ## Stage 3 — Auth (UUID-preserving)
 
 ```bash
-SOURCE_SUPABASE_URL=https://ewxsxwzezhkeawnjvigx.supabase.co \
-SOURCE_SUPABASE_SECRET_KEY=… \
-TARGET_SUPABASE_URL=https://<prod-ref>.supabase.co \
-TARGET_SUPABASE_SECRET_KEY=… \
+# CLI must be linked to harbaugh-forms-dev (source). Credentials: .env.local + .env.production.local
 npm run migrate:approved-auth -- --dry-run
+npm run migrate:approved-auth -- --execute
 ```
 
-Then execute the approved Auth import method that preserves:
+Execute path copies Lee from linked source Auth via SQL into production (pooler), preserving:
 
 - user UUID `e26c8f57-c0aa-4474-b43e-6e15f0260e99`
 - identity `b1c72b22-2835-44d9-afd4-294fc21d1ca5`
 - encrypted password hash
 - email confirmed
 
-**Never** create Lee under a new UUID. Target must contain only Lee at this stage.
+**Never** create Lee under a new UUID. Target must contain only Lee at this stage. Password hashes are never logged.
 
 ## Stage 4 — Public data
 

@@ -16,6 +16,8 @@ import {
 import {
   assertNeverCreatesReplacementUuid,
   buildAuthMigrationPlan,
+  buildLeeAuthImportSql,
+  sqlDollarQuote,
   validateAuthExportForMigration,
   validateTargetAuthPopulation,
 } from "./auth-migrate.ts";
@@ -171,6 +173,43 @@ describe("auth migration safeguards", () => {
       emails: ["lee@leeharbaugh.com"],
       identityIds: [LEE_IDENTITY_ID],
     });
+  });
+
+  it("dollar-quotes values and builds Lee Auth import SQL with preserved ids", () => {
+    assert.equal(sqlDollarQuote("abc"), "$v$abc$v$");
+    assert.equal(sqlDollarQuote("has $v$ inside", "v"), "$v0$has $v$ inside$v0$");
+    const sql = buildLeeAuthImportSql({
+      users: [
+        {
+          id: LEE_AUTH_UUID,
+          email: "lee@leeharbaugh.com",
+          email_confirmed_at: "2026-06-08T00:00:00Z",
+          encrypted_password_present: true,
+          encrypted_password: "$2a$10$not_a_real_hash_for_test_only",
+          aud: "authenticated",
+          role: "authenticated",
+          instance_id: "00000000-0000-0000-0000-000000000000",
+        },
+      ],
+      identities: [
+        {
+          id: LEE_IDENTITY_ID,
+          user_id: LEE_AUTH_UUID,
+          provider: "email",
+          provider_id: LEE_AUTH_UUID,
+          identity_data: JSON.stringify({
+            sub: LEE_AUTH_UUID,
+            email: "lee@leeharbaugh.com",
+          }),
+        },
+      ],
+    });
+    assert.match(sql, /do \$authimport\$/i);
+    assert.match(sql, new RegExp(LEE_AUTH_UUID));
+    assert.match(sql, new RegExp(LEE_IDENTITY_ID));
+    assert.match(sql, /insert into auth\.users/i);
+    assert.match(sql, /insert into auth\.identities/i);
+    assert.match(sql, /\$2a\$10\$not_a_real_hash_for_test_only/);
   });
 });
 
