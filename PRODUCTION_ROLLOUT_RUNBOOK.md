@@ -60,13 +60,15 @@ Execute path copies Lee from linked source Auth via SQL into production (pooler)
 
 ## Stage 4 — Public data
 
+Requires `.env.local` (SOURCE_*) and `.env.production.local` (TARGET_*, TARGET_DB_PASSWORD). Export writes to `exports/` (gitignored).
+
 ```bash
-npm run export:approved-production-data -- --execute --out exports/approved-production-data.json
+npm run export:approved-production-data -- --execute
 npm run import:approved-production-data -- --dry-run
-# then --execute with TARGET_* set
+npm run import:approved-production-data -- --execute --in exports/approved-production-data.json
 ```
 
-Import preserves PKs/FKs, includes packet forms 25/26 as DELETED, excludes forms 21–23 and collections 4/7/9/12/14, then resets sequences.
+Import upserts approved rows (forms 1–18, collections 1/2/3/5, contacts 2/3/4/6, packets 2/5, buyer-rep agreement 1, 101 defaults), soft-deletes conflicting ACTIVE GLOBAL field_keys before fields upsert, then cleans scaffolds (contact 1, collection 4, non-approved defaults/forms/packets) and resets sequences via pooler SQL. Does **not** touch Auth.
 
 ## Stage 5 — Storage
 
@@ -83,7 +85,7 @@ Copies only allowlisted paths (18 Global PDFs + packet 2/5 generated docs). No b
 npm run validate:production-migration -- --execute
 ```
 
-Must pass Auth, org/profile, forms, collections, packets 2/5 fingerprints, defaults=101, storage checksums, zero orphan FKs.
+Must pass Auth, org/profile, forms 1–18 only, collections exactly 1/2/3/5, contacts 2/3/4/6, packets 2/5 fingerprints, defaults=101, storage objects=0, zero orphan FKs.
 
 ## Stage 7 — Vercel / DNS (after data OK)
 

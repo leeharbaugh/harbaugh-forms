@@ -2,8 +2,13 @@
  * Export approved production rows from the source project using the manifest.
  *
  * Usage:
- *   node --env-file=.env.local --experimental-strip-types scripts/export-approved-production-data.ts --dry-run
- *   node --env-file=.env.local --experimental-strip-types scripts/export-approved-production-data.ts --execute --out exports/approved.json
+ *   npm run export:approved-production-data -- --dry-run
+ *   npm run export:approved-production-data -- --execute
+ *   npm run export:approved-production-data -- --execute --out exports/approved-production-data.json
+ *
+ * Loads .env.local (+ .env.production.local via package.json). Writes filtered
+ * public tables including representation_agreements / clients / buyer_rep_details
+ * and field_instances for packets 2/5 (packet_id + packet_form_id).
  */
 
 import { writeFileSync, mkdirSync } from "node:fs";
