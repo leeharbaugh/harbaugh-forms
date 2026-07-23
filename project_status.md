@@ -2,6 +2,16 @@
 
 ## Current State
 
+### Selective production migration preparation (2026-07-22)
+
+- Final approved dataset: forms **1–18**; collections **1,2,3,5**; packets **2** and **5** (including DELETED packet forms **25** and **26**); contacts **2,3,4,6**; properties **1,3**; **101** ACTIVE defaults; Lee Auth UUID preserved.
+- Forms **21, 22, 23** excluded — Lee will manually create any desired condo listing form after launch.
+- Soft-deleted collections **4, 9, 12, 14** and test collection **7** excluded.
+- Dev migration history repaired (`20260722190000`–`20260722210000` marked applied; 87 versions match).
+- Tooling: `lib/selective-production/*`, export/import/auth/storage/validate scripts, `npm run test:selective-production`.
+- Artifacts: `PRODUCTION_DATA_SELECTION_MANIFEST.json`, `SELECTIVE_PRODUCTION_DATA_MIGRATION_AUDIT.md`, `PRODUCTION_ROLLOUT_RUNBOOK.md`, updated `PRODUCTION_READINESS_AUDIT.md`.
+- **Next manual step:** create production Supabase project (do not use `harbaugh-forms-dev` as target).
+
 Harbaugh Forms is a Texas real estate forms application built with:
 
 - Next.js

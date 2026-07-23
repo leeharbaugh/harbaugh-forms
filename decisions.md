@@ -12,6 +12,37 @@ Each decision should include:
 
 ---
 
+## Selective production migration (UUID-preserving)
+
+**Date:** 2026-07-22
+
+**Decision:** Migrate production data selectively from `harbaugh-forms-dev` while preserving Lee’s existing Auth UUID `e26c8f57-c0aa-4474-b43e-6e15f0260e99` and identity `b1c72b22-2835-44d9-afd4-294fc21d1ca5`. Adaptive new-UUID bootstrap is rejected.
+
+**Approved scope:**
+
+* Forms **1–18** only. Forms **21, 22, and 23** are excluded from production. Lee will manually create any desired condo listing form after launch.
+* Collections **1, 2, 3, and 5** only. Soft-deleted collections **4, 9, 12, and 14** are excluded, along with test collection **7**.
+* Packets **2** and **5** only. Packet 2 retains DELETED packet forms **25** and **26** and their historical field instances.
+* Contacts 2,3,4,6; properties 1,3; **101** ACTIVE defaults (none scoped to excluded forms).
+* Davey Goosmann Realty org + Lee ORG_ADMIN + brokerage/agent profile; Dee Davey as broker profile data only (not Auth).
+
+**Consequences:**
+
+* Production must not receive Yahoo Auth, condo forms 21–23, or excluded collections.
+* Auth tooling must refuse replacement Lee UUIDs and refuse targeting `harbaugh-forms-dev`.
+* Manifest + runbook govern export/import/storage/validation scripts.
+
+**Related files or migrations:**
+
+* `PRODUCTION_DATA_SELECTION_MANIFEST.json`
+* `SELECTIVE_PRODUCTION_DATA_MIGRATION_AUDIT.md`
+* `PRODUCTION_ROLLOUT_RUNBOOK.md`
+* `lib/selective-production/*`
+* `scripts/migrate-approved-auth.ts`, `export-approved-production-data.ts`, `import-approved-production-data.ts`, `copy-approved-storage.ts`, `validate-production-migration.ts`
+* Dev history repair for `20260722190000`, `20260722200000`, `20260722210000` (no SQL re-run)
+
+---
+
 ## Visual PDF Field Editor
 
 **Date:** 2026-06-10
