@@ -25,7 +25,7 @@
     "test:source-registry-cleanup": "node --experimental-strip-types --test lib/source-registry-cleanup.test.ts",
     "test:selective-production": "node --experimental-strip-types --test lib/selective-production/selective-production.test.ts",
     "test:txr-1102-scoped-defaults": "node --experimental-strip-types --test lib/txr-1102-scoped-defaults.test.ts",
-    "migrate:approved-auth": "node --experimental-strip-types --env-file=.env.local scripts/migrate-approved-auth.ts",
+    "migrate:approved-auth": "node --experimental-strip-types --env-file=.env.local --env-file=.env.production.local scripts/migrate-approved-auth.ts",
     "export:approved-production-data": "node --experimental-strip-types --env-file=.env.local scripts/export-approved-production-data.ts",
     "import:approved-production-data": "node --experimental-strip-types scripts/import-approved-production-data.ts",
     "validate:production-migration": "node --experimental-strip-types scripts/validate-production-migration.ts",
