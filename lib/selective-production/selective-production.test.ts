@@ -45,8 +45,11 @@ import {
   SelectiveMigrationSafetyError,
 } from "./safety.ts";
 import {
+  assertAllowlistExactShape,
   buildStorageAllowlist,
   isExcludedStoragePath,
+  normalizeStorageChecksum,
+  planStorageCopy,
 } from "./storage-copy.ts";
 import { validateProductionSnapshot } from "./validate.ts";
 
@@ -492,6 +495,104 @@ describe("storage allowlist", () => {
     assert.ok(allowlist.some((e) => e.path.includes("/packets/2/")));
     assert.ok(allowlist.some((e) => e.path.includes("/packets/5/")));
     assert.equal(allowlist.some((e) => e.path.includes("global/forms/23/")), false);
+  });
+
+  it("assertAllowlistExactShape requires 30 = 18 + 12", () => {
+    const shape = assertAllowlistExactShape(allowlist);
+    assert.equal(shape.total, 30);
+    assert.equal(shape.formTemplates, 18);
+    assert.equal(shape.generatedDocuments, 12);
+    assert.equal(shape.proofs.noForms21to23, true);
+    assert.equal(shape.proofs.onlyPackets2and5, true);
+    assert.equal(shape.proofs.noDuplicates, true);
+    assert.equal(shape.proofs.forms1to18Only, true);
+    assert.throws(
+      () =>
+        assertAllowlistExactShape([
+          ...allowlist,
+          {
+            bucket: "form-templates",
+            path: "global/forms/1/extra.pdf",
+            inclusionReason: "dup",
+          },
+        ]),
+      /exactly 30/,
+    );
+  });
+
+  it("rejects excluded paths on allowlist shape", () => {
+    const bad = allowlist.map((e, i) =>
+      i === 0
+        ? { ...e, path: "global/forms/23/CondoListingAddendum.pdf" }
+        : e,
+    );
+    assert.throws(() => assertAllowlistExactShape(bad), /excluded path|forms 1/);
+  });
+
+  it("normalizes quoted checksums", () => {
+    assert.equal(
+      normalizeStorageChecksum('"5524a91e07baec4ce16dee0ba38209ba"'),
+      "5524a91e07baec4ce16dee0ba38209ba",
+    );
+    assert.equal(
+      normalizeStorageChecksum('""5524a91e07baec4ce16dee0ba38209ba""'),
+      "5524a91e07baec4ce16dee0ba38209ba",
+    );
+  });
+
+  it("planStorageCopy skips identical and flags checksum conflicts", () => {
+    const entry = allowlist[0];
+    assert.ok(entry);
+    const skipPlan = planStorageCopy({
+      allowlist: [entry],
+      targetObjects: [
+        {
+          bucket: entry.bucket,
+          path: entry.path,
+          size: Number(entry.size),
+          checksum: normalizeStorageChecksum(entry.checksum),
+        },
+      ],
+    });
+    assert.equal(skipPlan.skipIdentical.length, 1);
+    assert.equal(skipPlan.upload.length, 0);
+    assert.equal(skipPlan.conflictDifferentChecksum.length, 0);
+
+    const conflictPlan = planStorageCopy({
+      allowlist: [entry],
+      targetObjects: [
+        {
+          bucket: entry.bucket,
+          path: entry.path,
+          size: Number(entry.size),
+          checksum: "deadbeefdeadbeefdeadbeefdeadbeef",
+        },
+      ],
+    });
+    assert.equal(conflictPlan.conflictDifferentChecksum.length, 1);
+    assert.equal(conflictPlan.upload.length, 0);
+
+    const uploadPlan = planStorageCopy({
+      allowlist: [entry],
+      targetObjects: [],
+      sourceObjects: [
+        {
+          bucket: entry.bucket,
+          path: entry.path,
+          size: Number(entry.size),
+          checksum: normalizeStorageChecksum(entry.checksum),
+        },
+      ],
+    });
+    assert.equal(uploadPlan.upload.length, 1);
+    assert.equal(uploadPlan.missingSourceExpected.length, 0);
+
+    const missingPlan = planStorageCopy({
+      allowlist: [entry],
+      targetObjects: [],
+      sourceObjects: [],
+    });
+    assert.equal(missingPlan.missingSourceExpected.length, 1);
   });
 });
 

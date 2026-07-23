@@ -28,6 +28,53 @@ export function buildTargetPoolerDbUrl(): string {
   return `postgresql://postgres.${ref}:${encoded}@aws-0-us-east-1.pooler.supabase.com:5432/postgres`;
 }
 
+/**
+ * Optional source pooler URL when SOURCE_DB_PASSWORD is set.
+ * Prefer MD5-of-download when password is absent.
+ */
+export function buildSourcePoolerDbUrl(): string {
+  const password = process.env.SOURCE_DB_PASSWORD?.trim();
+  const sourceUrl =
+    process.env.SOURCE_SUPABASE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  if (!password || !sourceUrl) {
+    throw new SelectiveMigrationSafetyError(
+      "SOURCE_DB_PASSWORD and SOURCE_SUPABASE_URL are required for source SQL.",
+    );
+  }
+  const ref = extractProjectRef(sourceUrl);
+  if (!ref) {
+    throw new SelectiveMigrationSafetyError(
+      "SOURCE_SUPABASE_URL must be https://<ref>.supabase.co.",
+    );
+  }
+  const encoded = encodeURIComponent(password);
+  return `postgresql://postgres.${ref}:${encoded}@aws-0-us-east-1.pooler.supabase.com:5432/postgres`;
+}
+
+export function runSourceSqlJson(sql: string): Record<string, unknown>[] {
+  const dbUrl = buildSourcePoolerDbUrl();
+  const dir = mkdtempSync(join(tmpdir(), "hf-source-sql-json-"));
+  try {
+    const sqlPath = join(dir, "query.sql");
+    writeFileSync(sqlPath, sql, "utf8");
+    const out = runCapture("npx", [
+      "supabase",
+      "db",
+      "query",
+      "--db-url",
+      dbUrl,
+      "-o",
+      "json",
+      "-f",
+      sqlPath,
+    ]);
+    return parseSupabaseJsonRows(out);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 function runCapture(command: string, args: string[]): string {
   const result = spawnSync(command, args, {
     encoding: "utf8",
