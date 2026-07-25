@@ -4,6 +4,9 @@ import type { badgeVariants } from "@/components/ui/badge";
 
 type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
 
+const PENDING_PUBLICATION_MESSAGE =
+  "Waiting for this form template to be published.";
+
 export const PACKET_FORM_DOCUMENT_STATES = [
   "DRAFT",
   "FINAL",
@@ -49,32 +52,63 @@ export function packetFormDocumentStateVariant(
   }
 }
 
+function isPendingBlocked(availabilityState?: string | null): boolean {
+  return availabilityState === "PENDING_PUBLICATION";
+}
+
 export function isPacketFormValueEditable(
   documentState: DocumentState | string | null | undefined,
   rowStatus: string | null | undefined = "ACTIVE",
+  availabilityState?: string | null,
 ): boolean {
+  if (isPendingBlocked(availabilityState)) {
+    return false;
+  }
   return rowStatus === "ACTIVE" && documentState === "DRAFT";
 }
 
 export function canRefreshPacketFormValues(
   documentState: DocumentState | string | null | undefined,
   rowStatus: string | null | undefined = "ACTIVE",
+  availabilityState?: string | null,
 ): boolean {
-  return isPacketFormValueEditable(documentState, rowStatus);
+  return isPacketFormValueEditable(
+    documentState,
+    rowStatus,
+    availabilityState,
+  );
 }
 
 export function canMarkPacketFormFinal(
   documentState: DocumentState | string | null | undefined,
   rowStatus: string | null | undefined = "ACTIVE",
+  availabilityState?: string | null,
 ): boolean {
+  if (isPendingBlocked(availabilityState)) {
+    return false;
+  }
   return rowStatus === "ACTIVE" && documentState === "DRAFT";
 }
 
 export function canReopenPacketFormToDraft(
   documentState: DocumentState | string | null | undefined,
   rowStatus: string | null | undefined = "ACTIVE",
+  availabilityState?: string | null,
 ): boolean {
+  if (isPendingBlocked(availabilityState)) {
+    return false;
+  }
   return rowStatus === "ACTIVE" && documentState === "FINAL";
+}
+
+export function canFillPacketForm(
+  rowStatus: string | null | undefined = "ACTIVE",
+  availabilityState?: string | null,
+): boolean {
+  if (isPendingBlocked(availabilityState)) {
+    return false;
+  }
+  return rowStatus === "ACTIVE";
 }
 
 export function isValidPacketFormLifecycleTransition(
@@ -88,7 +122,11 @@ export function isValidPacketFormLifecycleTransition(
 
 export function packetFormLifecycleBlockedMessage(
   documentState: DocumentState | string | null | undefined,
+  availabilityState?: string | null,
 ): string {
+  if (isPendingBlocked(availabilityState)) {
+    return PENDING_PUBLICATION_MESSAGE;
+  }
   switch (documentState) {
     case "FINAL":
       return "This form is Final. Reopen it as a Draft to edit or refresh values.";

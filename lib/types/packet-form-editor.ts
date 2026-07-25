@@ -44,6 +44,7 @@ export type PacketFormEditorData = {
     form_id: number;
     document_name: string;
     document_state: DocumentState;
+    availability_state?: string | null;
     storage_path: string | null;
     status: string;
     forms: {

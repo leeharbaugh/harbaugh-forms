@@ -295,7 +295,7 @@ export function CreatePacketFromCollectionForm({
         return;
       }
 
-      const { packetId } = await createPacketFromCollection(supabase, {
+      const { packetId, warnings } = await createPacketFromCollection(supabase, {
         collectionId: selectedCollectionId as number,
         packetType: workflowType,
         contacts: buildPacketContactAssignments(
@@ -307,6 +307,13 @@ export function CreatePacketFromCollectionForm({
         additionalInternalFormIds,
         externalForms,
       });
+
+      if (warnings.length > 0) {
+        window.sessionStorage.setItem(
+          `packet-create-warnings:${packetId}`,
+          warnings.join("\n"),
+        );
+      }
 
       router.push(`/packets/${packetId}`);
     } catch (createError) {

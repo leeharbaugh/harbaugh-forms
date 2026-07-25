@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
@@ -11,6 +12,7 @@ import {
   formatFormReference,
 } from "@/lib/types/form";
 import type { CollectionFormSelection } from "@/lib/types/collection";
+import { formatCollectionFormAvailabilityBadge } from "@/lib/types/form-lifecycle";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -20,6 +22,19 @@ type FormPickerProps = {
   disabled?: boolean;
   error?: string | null;
 };
+
+function availabilityBadgeVariant(
+  form: Pick<Form, "status" | "publication_state">,
+): "success" | "secondary" | "outline" {
+  const label = formatCollectionFormAvailabilityBadge(form);
+  if (label === "Published") {
+    return "success";
+  }
+  if (label.startsWith("Draft")) {
+    return "secondary";
+  }
+  return "outline";
+}
 
 export function FormPicker({
   selectedForms,
@@ -43,10 +58,10 @@ export function FormPicker({
       setIsLoadingSelected(true);
       const supabase = createClient();
       const formIds = forms.map((form) => form.form_id);
+      // Load by ids without requiring PUBLISHED so Draft/Retired refs remain visible.
       const { data, error: fetchError } = await supabase
         .from("forms")
         .select("*")
-        .eq("status", "ACTIVE")
         .in("id", formIds);
 
       if (fetchError) {
@@ -87,6 +102,7 @@ export function FormPicker({
       .from("forms")
       .select("*")
       .eq("status", "ACTIVE")
+      .eq("publication_state", "PUBLISHED")
       .or(
         [
           `form_name.ilike.${term}`,
@@ -166,7 +182,7 @@ export function FormPicker({
           <Label htmlFor="form_template_search">Search form templates</Label>
           <Input
             id="form_template_search"
-            placeholder="Search by name, code, or category..."
+            placeholder="Search published templates by name, code, or category..."
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             disabled={disabled}
@@ -179,7 +195,7 @@ export function FormPicker({
                 </p>
               ) : searchResults.length === 0 ? (
                 <p className="p-3 text-sm text-muted-foreground">
-                  No matching form templates found.
+                  No matching published form templates found.
                 </p>
               ) : (
                 <div className="divide-y">
@@ -230,6 +246,8 @@ export function FormPicker({
               const selection = selectedForms.find(
                 (form) => form.form_id === template.id,
               );
+              const availabilityLabel =
+                formatCollectionFormAvailabilityBadge(template);
 
               return (
                 <div
@@ -237,9 +255,14 @@ export function FormPicker({
                   className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
-                    <p className="font-medium">
-                      {index + 1}. {template.form_name}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">
+                        {index + 1}. {template.form_name}
+                      </p>
+                      <Badge variant={availabilityBadgeVariant(template)}>
+                        {availabilityLabel}
+                      </Badge>
+                    </div>
                     <p className="text-sm text-muted-foreground">
                       {formatFormReference(template.id)} ·{" "}
                       {template.form_code} ·{" "}

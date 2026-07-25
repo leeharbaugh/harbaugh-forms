@@ -9,6 +9,10 @@ import {
   recordStatusLabel,
   recordStatusVariant,
 } from "@/lib/ui/list-badges";
+import {
+  formPublicationBadgeLabel,
+  formPublicationBadgeVariant,
+} from "@/lib/ui/form-publication-badge";
 import { cn } from "@/lib/utils";
 
 type CompactBadgeProps = {
@@ -111,6 +115,25 @@ export function OnboardingStatusBadge({
       className={cn("shrink-0 font-medium", className)}
     >
       {onboardingStatusLabel(status)}
+    </Badge>
+  );
+}
+
+export function FormPublicationBadge({
+  status,
+  publication_state,
+  className,
+}: CompactBadgeProps & {
+  status: string | null | undefined;
+  publication_state: string | null | undefined;
+}) {
+  const form = { status, publication_state };
+  return (
+    <Badge
+      variant={formPublicationBadgeVariant(form)}
+      className={cn("shrink-0 font-medium", className)}
+    >
+      {formPublicationBadgeLabel(form)}
     </Badge>
   );
 }

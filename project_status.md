@@ -6,6 +6,18 @@
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
+### Form publication lifecycle (development)
+
+Development implements a Draft / Published / Retired workflow for form templates on `harbaugh-forms-dev`:
+
+- **Status:** `ACTIVE` (current), `INACTIVE` (retired), `DELETED` (soft-delete)
+- **Publication:** `DRAFT` / `PUBLISHED` — only `ACTIVE` + `PUBLISHED` forms are selectable for new collection use and immediate packet instantiation
+- **Packet-form availability:** `AVAILABLE` / `PENDING_PUBLICATION` (orthogonal to document `DRAFT`/`FINAL`/`SIGNED`/`VOID`)
+- Explicit actions: Publish, Unpublish, Retire Version, Restore Retired Version (restore is application ADMIN + reason only)
+- New forms start as Draft; Published forms require Unpublish before structural edits; Retired forms are read-only
+- Collections may retain Draft/Retired references; packet creation skips retired versions and creates pending placeholders for Draft collection forms
+- Migration: `20260725120000_form_publication_lifecycle.sql` (dev only until explicitly promoted)
+
 ### Development condo contract catalog (2026-07-24)
 
 Development work on `harbaugh-forms-dev` created ACTIVE Global form **TXR-1605** / TREC 30-18 (development form id **24**, version `TXR-1605-05-04-2026`) with Lee’s supplied `CondoListing.pdf`, **13** new Global condo fields, and **158** ACTIVE mappings. See `CONDO_TXR_1605_FIELD_INVENTORY.md` and `CONDO_TXR_1605_DEVELOPMENT_IMPLEMENTATION.md`.
