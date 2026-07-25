@@ -6,6 +6,10 @@
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
+### Development condo contract catalog (2026-07-24)
+
+Development-only work on `harbaugh-forms-dev` created ACTIVE Global form **TXR-1605** / TREC 30-18 (development form id **24**, version `TXR-1605-05-04-2026`) with Lee’s supplied `CondoListing.pdf`, **13** new Global condo fields, and **158** ACTIVE mappings (approved corrections from the 161-row inventory). See `CONDO_TXR_1605_FIELD_INVENTORY.md` and `CONDO_TXR_1605_DEVELOPMENT_IMPLEMENTATION.md`. **Not synchronized to production.**
+
 ### Production URLs
 
 | Role | URL |
@@ -205,7 +209,8 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Deferred Product Work
 
-- Manually create a desired condo form in production (forms 21–23 were never migrated)
+- Manually finish Map Fields placement + defaults for development TXR-1605 condo contract, then plan selective production form update (stable identity; do not duplicate production form)
+- Listing addendum forms 21–23 remain separate from the condo sales contract path
 - Optional multi-HOA Property UI / primary-HOA designation
 - Optional Listing inverse-checkbox automation
 - Possible future dedicated Listing transaction model (only if a real business need emerges)
