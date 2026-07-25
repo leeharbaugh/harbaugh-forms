@@ -16,9 +16,10 @@ Development implements a Draft / Published / Retired workflow for form templates
 - Explicit actions: Publish, Unpublish, Retire Version, Restore Retired Version (restore is application ADMIN + reason only)
 - New forms start as Draft; Published forms require Unpublish before structural edits (including shared field source/metadata through Map Fields); Retired forms are read-only including form-specific defaults
 - Publish validates the actual stored PDF server-side (Storage download + page count) and rejects out-of-range ACTIVE mappings
+- **Secure publish hardening (dev):** `publish_form_template` EXECUTE is revoked from `anon`/`authenticated`; only the trusted server action (service-role client) may call it after revalidation. Actor ID comes from the server session; structural fingerprint TOCTOU guard rejects mid-flight mapping/PDF-path changes. Migration: `20260725180000_secure_publish_form_template.sql` (dev only until explicitly promoted)
 - Collections may retain Draft/Retired references; packet creation skips retired versions and creates pending placeholders for Draft collection forms
 - Development browser walkthrough covered Publish → pending packet activation, Unpublish (AVAILABLE unchanged), Retire read-only, and invalid mapping-page Publish rejection
-- Migration: `20260725120000_form_publication_lifecycle.sql` (dev only until explicitly promoted)
+- Lifecycle migration: `20260725120000_form_publication_lifecycle.sql` (applied in development; production promotion is a separate explicit step when requested)
 
 ### Development condo contract catalog (2026-07-24)
 
