@@ -12,24 +12,56 @@ Each decision should include:
 
 ---
 
-## Selective production migration (UUID-preserving)
+## Production Environment Separation and Deployment
 
-**Date:** 2026-07-22
+**Date:** 2026-07-24
 
-**Decision:** Migrate production data selectively from `harbaugh-forms-dev` while preserving Lee’s existing Auth UUID `e26c8f57-c0aa-4474-b43e-6e15f0260e99` and identity `b1c72b22-2835-44d9-afd4-294fc21d1ca5`. Adaptive new-UUID bootstrap is rejected.
+**Decision:**
+Harbaugh Forms uses separate Supabase projects for production and development. The Vercel project for this application is `harbaugh-forms` (Lee Harbaugh’s projects). The primary public URL is `https://forms.harbaughrealestate.com`. The Vercel URL `https://harbaugh-forms.vercel.app` remains a supported fallback. Production `NEXT_PUBLIC_SITE_URL` and Supabase Auth Site URL use the custom domain; the Vercel fallback remains on the Auth redirect allowlist. DNS for the custom subdomain is managed at HostPapa; DNS changes must remain limited to intended subdomain records and must not disturb unrelated HostPapa records (for example dashboard or apex records owned by other projects). Development (`harbaugh-forms-dev` / `ewxsxwzezhkeawnjvigx`) remains the source for local development and Vercel Preview. Production (`harbaugh-forms-prod` / `eetonalyyyssvkyfdoxh`) and development credentials must remain isolated. Historical migrations remain immutable; future schema changes use forward-only migrations.
 
-**Approved scope:**
-
-* Forms **1–18** only. Forms **21, 22, and 23** are excluded from production. Lee will manually create any desired condo listing form after launch.
-* Collections **1, 2, 3, and 5** only. Soft-deleted collections **4, 9, 12, and 14** are excluded, along with test collection **7**.
-* Packets **2** and **5** only. Packet 2 retains DELETED packet forms **25** and **26** and their historical field instances.
-* Contacts 2,3,4,6; properties 1,3; **101** ACTIVE defaults (none scoped to excluded forms).
-* Davey Goosmann Realty org + Lee ORG_ADMIN + brokerage/agent profile; Dee Davey as broker profile data only (not Auth).
+**Reason:**
+Isolating credentials and projects prevents Preview/local work from mutating live business data, and keeps a recoverable fallback URL if custom-domain DNS or SSL has issues.
 
 **Consequences:**
 
-* Production must not receive Yahoo Auth, condo forms 21–23, or excluded collections.
-* Auth tooling must refuse replacement Lee UUIDs and refuse targeting `harbaugh-forms-dev`.
+* Do not point Preview or local `.env.local` at production credentials.
+* Do not reuse or modify the separate Vercel project `harbaugh-dfw-market-dashboard` for this app.
+* Invitation-only production access remains Lee-controlled until broader rollout is deliberately approved.
+
+**Related files:**
+
+* `project_status.md`
+* `PRODUCTION_ROLLOUT_RUNBOOK.md`
+* `PRODUCTION_READINESS_AUDIT.md`
+
+---
+
+## Selective production migration (UUID-preserving)
+
+**Date:** 2026-07-22 (clarified 2026-07-24)
+
+**Decision:** Migrate production data selectively from `harbaugh-forms-dev` while preserving Lee’s existing Auth UUID `e26c8f57-c0aa-4474-b43e-6e15f0260e99` and identity `b1c72b22-2835-44d9-afd4-294fc21d1ca5`. Adaptive new-UUID bootstrap is rejected. Migration used an explicit allowlist (manifest), not a full database clone.
+
+**Approved rollout-baseline scope (historical migration evidence):**
+
+At the completion of the July 2026 selective production migration, the validated rollout baseline contained:
+
+* Forms **1–18** only. Forms **21, 22, and 23** were excluded. Lee may manually create any desired condo listing form after launch.
+* Collections **1, 2, 3, and 5** only. Soft-deleted collections **4, 9, 12, and 14** were excluded, along with test collection **7**.
+* Packets **2** and **5** only. Packet 2 retained DELETED packet forms **25** and **26** and their historical field instances.
+* Contacts 2, 3, 4, 6; properties 1, 3.
+* **101** ACTIVE approved defaults and **30** private storage objects (18 Global form PDFs; 12 generated documents for packets 2 and 5).
+* Davey Goosmann Realty org + Lee ORG_ADMIN + brokerage/agent profile; Dee Davey as broker profile data only (not Auth).
+
+**Rollout baseline vs live data:**
+
+* Rollout-baseline counts are historical migration evidence, not continuously maintained production counts.
+* After launch, current production data may evolve through legitimate Lee activity (and later invited users). Documentation must not treat baseline counts as present-day live inventory.
+
+**Consequences:**
+
+* Production must not receive Yahoo Auth, condo forms 21–23, or excluded collections via the selective migration tooling.
+* Auth tooling must refuse replacement Lee UUIDs and refuse targeting `harbaugh-forms-dev` as a migration target.
 * Manifest + runbook govern export/import/storage/validation scripts.
 
 **Related files or migrations:**
@@ -318,18 +350,20 @@ Server-side authorization is authoritative; RLS and server actions enforce these
 
 ## Environment and Preference Data Portability
 
-**Date:** 2026-07-20
+**Date:** 2026-07-20 (superseded for environment existence 2026-07-24)
 
 **Decision:**
-Only `harbaugh-forms-dev` currently exists. There is no production environment yet. Database preferences created in development will not automatically appear in a future environment. Future production setup must explicitly account for reviewed defaults and other required seed/configuration data (approved manual configuration or an explicitly designed seeding process). Git does not transfer `field_defaults` rows.
+Scoped preference values are database state, not application source. Git does not transfer `field_defaults` rows. Production preferences were included intentionally via the selective production migration allowlist (see Selective production migration). Development and production remain separate projects with isolated credentials.
+
+**Supersession note:** As of 2026-07-24, production (`harbaugh-forms-prod`) exists and is live. Earlier wording that “only `harbaugh-forms-dev` exists” is historical. See “Production Environment Separation and Deployment.”
 
 **Reason:**
-Scoped preference values are database state, not application source. Assuming Git or a deploy would recreate them would silently lose reviewed Personal defaults.
+Assuming Git or a deploy would recreate preferences would silently lose reviewed Personal/Organization defaults.
 
 **Consequences:**
 
-* No production deployment or immediate default recreation is pending while only the development environment exists.
-* Environment setup plans for a future production project must include reviewed defaults intentionally.
+* Future environment clones or rebuilds must intentionally import or seed reviewed defaults.
+* Do not assume Preview deployments share production preference rows.
 
 ---
 
@@ -870,7 +904,7 @@ Former `listing_agreement_details` schema defaults were inert surrogates, not ap
 * Organization `Broker Bay` continues to apply to active Davey Goosmann members.
 * Historical packet field instances are unchanged by default creation and by ordinary Fill Form open (`ensure_missing`).
 * No migration was required; preferences live in `field_defaults` database state (not Git).
-* Only `harbaugh-forms-dev` exists; a future production environment must intentionally include these 20 reviewed defaults.
+* These 20 reviewed defaults were part of the approved selective-migration defaults baseline into production. After launch, live production defaults may evolve; do not treat historical inventories as continuously maintained live counts.
 
 **Related files or migrations:**
 
@@ -920,7 +954,7 @@ The Property UI already presented a single HOA form, but persisted those three f
 * Catalog fields `HOA_ASSOCIATION_NAME` and `txr_2001_hoa_name` redirect to `custom_resolver` / `property_hoa_name`.
 * Retained on `properties`: `has_hoa`, `hoa_contact_name`, `hoa_email`, `hoa_website`, `hoa_dues_*`.
 * Packet instances, mappings, and scoped defaults are unchanged by the migration.
-* Only `harbaugh-forms-dev` exists; no production rollout in this change.
+* Multi-HOA UI remains deferred; the single-record UI convention is temporary.
 
 **Related files or migrations:**
 
@@ -931,12 +965,45 @@ The Property UI already presented a single HOA form, but persisted those three f
 
 ---
 
+## TypeScript Custom Resolvers Remain Accepted
+
+**Date:** 2026-07-24
+
+**Decision:**
+TypeScript custom resolvers remain an accepted mechanism for concatenation, formatting, selecting rows from multi-row results, composite business values, and Buyer Rep / related logic. Unifying every resolver into a single catalog representation is optional future maintenance, not a production blocker.
+
+**Reason:**
+Several live business values are not simple single-column source paths. Removing custom resolvers would regress Buyer Rep and composite formatting without a replacement product design.
+
+**Consequences:**
+
+* New resolvers should remain narrowly scoped and tested.
+* Dead or unreachable resolver keys may still be cleaned up when proven unused.
+
+---
+
+## Initial Production Access Is Invitation-Only
+
+**Date:** 2026-07-24
+
+**Decision:**
+Initial production access is invitation-only and Lee-controlled. Public signup is not the production onboarding path. Custom SMTP and invitation workflow should be verified before adding users beyond the launch operator.
+
+**Reason:**
+Controlled Lee-only launch reduces blast radius while real transactions are exercised in production.
+
+**Consequences:**
+
+* Do not broaden production Auth without explicit operational readiness (SMTP, error tracking, backup posture as needed).
+
+---
+
 ## Source Registries Versus Historical Provenance
 
 **Date:** 2026-07-22
 
 **Decision:**
-Source registries contain only supported current automatic-source mechanisms. Historical packet provenance may retain display-only compatibility even after a source is no longer selectable for new fields. Unused source types and custom resolvers were removed only after proving no field, packet, UI, or active workflow dependency remained.
+Source registries contain only supported current automatic-source mechanisms. Historical packet provenance may retain display-only compatibility even after a source is no longer selectable for new fields. Unused source types and custom resolvers were removed only after proving no field, packet, UI, or active workflow dependency remained. Selectable types removed include `packet`, `static_default`, `contract_details`, and `listing_agreement_details`.
 
 **Reason:**
 `packet` and `static_default` were selectable but had zero catalog fields. Fifty-three Listing/Lease `custom_resolver` keys had no runtime implementation after `listing_agreement_details` removal, while scoped defaults and Fill Form already supplied values. Buyer Rep and genuine Property/Contact/Settings/HOA sources remain first-class.
