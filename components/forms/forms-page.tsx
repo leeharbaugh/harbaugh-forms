@@ -113,9 +113,11 @@ const FORM_TABLE_COLUMNS: ResizableDataTableColumn[] = [
   {
     id: "actions",
     label: "Actions",
-    defaultWidth: 520,
-    minWidth: 360,
-    maxWidth: 720,
+    // Sized for Map Fields + Edit + Delete only. Lower maxWidth also clamps
+    // previously saved oversized widths from the older multi-action layout.
+    defaultWidth: 280,
+    minWidth: 250,
+    maxWidth: 340,
     isActions: true,
   },
 ];
