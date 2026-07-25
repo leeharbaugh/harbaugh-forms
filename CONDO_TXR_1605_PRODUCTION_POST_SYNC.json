@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-07-25T02:54:41.277Z",
+  "counts": {
+    "packets": 2,
+    "packet_forms": 12,
+    "field_instances": 172,
+    "forms": 20,
+    "form_field_mappings": 1363,
+    "field_defaults": 165,
+    "fields": 1625,
+    "target_form_mappings_active": 158,
+    "target_form_defaults_active": 4,
+    "mappings_outside_target": 1205,
+    "defaults_outside_target": 161
+  },
+  "fieldInstanceFingerprint": {
+    "count": 172,
+    "sha256": "0bb8736beec0159306ebdfebd60bde97bf6b897fe28e68848566f3ceff4b6ecd"
+  }
+}

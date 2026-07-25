@@ -1,0 +1,21 @@
+{
+  "capturedAt": "2026-07-25T02:47:22.862Z",
+  "note": "Reconstructed from pre-apply discovery snapshot after post-apply dry-run overwrote PRE_SYNC.json",
+  "counts": {
+    "packets": 2,
+    "packet_forms": 12,
+    "field_instances": 172,
+    "forms": 20,
+    "form_field_mappings": 1205,
+    "field_defaults": 161,
+    "fields": 1612,
+    "target_form_mappings_active": 0,
+    "target_form_defaults_active": 0,
+    "mappings_outside_target": 1205,
+    "defaults_outside_target": 161
+  },
+  "fieldInstanceFingerprint": {
+    "count": 172,
+    "sha256": "0bb8736beec0159306ebdfebd60bde97bf6b897fe28e68848566f3ceff4b6ecd"
+  }
+}
