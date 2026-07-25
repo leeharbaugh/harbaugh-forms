@@ -70,28 +70,58 @@ describe("editor scroll wiring", () => {
 });
 
 describe("Form Templates table vs Edit lifecycle relocation", () => {
-  it("table actions keep Map Fields, Edit/View, and Delete; lifecycle gone from table", () => {
-    const page = read(FORMS);
-    const actionsCellStart = page.indexOf("<ResizableDataTableActionsCell>");
-    assert.ok(actionsCellStart > 0);
-    // Use the last (table) actions cell block
+  function tableActionsBlock(page: string) {
     const lastActions = page.lastIndexOf("<ResizableDataTableActionsCell>");
-    const actionsBlock = page.slice(
+    assert.ok(lastActions > 0);
+    return page.slice(
       lastActions,
       page.indexOf("</ResizableDataTableActionsCell>", lastActions),
     );
+  }
+
+  it("table actions show only Map Fields, Edit, and Delete", () => {
+    const page = read(FORMS);
+    const actionsBlock = tableActionsBlock(page);
 
     assert.ok(actionsBlock.includes("Map Fields"));
     assert.ok(actionsBlock.includes("openEditForm"));
+    assert.ok(/\bEdit\b/.test(actionsBlock));
     assert.ok(actionsBlock.includes("Delete"));
 
+    assert.equal(actionsBlock.includes("Copy to Global Library"), false);
+    assert.equal(actionsBlock.includes("openCopyDialog"), false);
     assert.equal(actionsBlock.includes("Publish Form"), false);
     assert.equal(actionsBlock.includes("Unpublish Form"), false);
     assert.equal(actionsBlock.includes("Retire Version"), false);
     assert.equal(actionsBlock.includes("Restore Retired Version"), false);
-    assert.equal(actionsBlock.includes(">History<"), false);
+    assert.equal(actionsBlock.includes("History"), false);
     assert.equal(actionsBlock.includes("openPublishDialog"), false);
     assert.equal(actionsBlock.includes("openHistoryDialog"), false);
+    assert.equal(/\bView\b/.test(actionsBlock), false);
+  });
+
+  it("retired rows still use Edit label opening the read-only editor path", () => {
+    const page = read(FORMS);
+    const actionsBlock = tableActionsBlock(page);
+    assert.ok(/\bEdit\b/.test(actionsBlock));
+    assert.equal(actionsBlock.includes('isFormRetired(template) ? "View"'), false);
+    assert.ok(page.includes('editingIsRetired ? "view"'));
+    assert.ok(page.includes("FORM_RETIRED_READONLY_MESSAGE"));
+    assert.ok(page.includes("Restore Retired Version"));
+    assert.ok(page.includes("View History"));
+  });
+
+  it("Copy to Global Library appears in Edit only when authorized and eligible", () => {
+    const page = read(FORMS);
+    assert.ok(page.includes("showEditorCopy"));
+    assert.ok(page.includes("Library administration"));
+    assert.ok(page.includes("openCopyDialog(editingTemplate)"));
+    assert.ok(page.includes("canOfferCopyToGlobalLibrary({"));
+    assert.ok(
+      page.includes("Create a separate Global Library copy of this private form"),
+    );
+    const actionsBlock = tableActionsBlock(page);
+    assert.equal(actionsBlock.includes("Copy to Global Library"), false);
   });
 
   it("Edit screen shows Form lifecycle controls by state and permission", () => {
@@ -111,14 +141,17 @@ describe("Form Templates table vs Edit lifecycle relocation", () => {
     assert.ok(page.includes("isActiveAdmin"));
   });
 
-  it("restore remains admin + reason gated", () => {
+  it("restore and copy remain permission gated; copy dialog unchanged", () => {
     const page = read(FORMS);
     assert.ok(page.includes("Only application admins can restore retired forms"));
     assert.ok(page.includes("A written reason is required to restore"));
     assert.ok(page.includes("restoreReason"));
-    const historyGate = page.includes(
-      "Only application admins can view lifecycle history",
+    assert.ok(
+      page.includes("Only application admins can view lifecycle history"),
     );
-    assert.ok(historyGate);
+    assert.ok(page.includes('title="Copy to Global Library?"'));
+    assert.ok(page.includes("confirmLabel=\"Copy to Global Library\""));
+    assert.ok(page.includes("copyFormToGlobalLibrary"));
+    assert.ok(page.includes("The original private form owned by"));
   });
 });

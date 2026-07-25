@@ -930,6 +930,16 @@ export function FormsPage() {
     formMode === "edit" &&
     editingTemplate != null &&
     canEditForm(actor, editingTemplate);
+  const showEditorCopy =
+    formMode === "edit" &&
+    editingTemplate != null &&
+    canOfferCopyToGlobalLibrary({
+      isActiveAdmin: Boolean(actor?.isActiveAdmin),
+      scope: editingTemplate.scope,
+      status: editingTemplate.status,
+      ownerUserId: editingTemplate.owner_user_id,
+      sourceStoragePath: editingTemplate.source_storage_path,
+    });
 
   const formDescription =
     formMode === "create"
@@ -1361,6 +1371,29 @@ export function FormsPage() {
                 </div>
               </div>
             ) : null}
+
+            {showEditorCopy && editingTemplate ? (
+              <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+                <h3 className="text-sm font-semibold tracking-tight">
+                  Library administration
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Create a separate Global Library copy of this private form.
+                  The original private form remains unchanged. Preference
+                  defaults are not copied.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openCopyDialog(editingTemplate)}
+                  >
+                    Copy to Global Library
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       )}
@@ -1409,13 +1442,6 @@ export function FormsPage() {
             >
               {templates.map((template) => {
                 const ownership = ownershipFor(template);
-                const showCopy = canOfferCopyToGlobalLibrary({
-                  isActiveAdmin: Boolean(actor?.isActiveAdmin),
-                  scope: template.scope,
-                  status: template.status,
-                  ownerUserId: template.owner_user_id,
-                  sourceStoragePath: template.source_storage_path,
-                });
 
                 return (
                   <ResizableDataTableRow key={template.id}>
@@ -1482,22 +1508,13 @@ export function FormsPage() {
                             </Link>
                           </Button>
                         ) : null}
-                        {showCopy ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openCopyDialog(template)}
-                          >
-                            Copy to Global Library
-                          </Button>
-                        ) : null}
                         {canEditForm(actor, template) ? (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => openEditForm(template)}
                           >
-                            {isFormRetired(template) ? "View" : "Edit"}
+                            Edit
                           </Button>
                         ) : null}
                         {canDeleteForm(actor, template) ? (
