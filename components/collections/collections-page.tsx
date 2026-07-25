@@ -53,7 +53,8 @@ import {
   validateCollectionInput,
 } from "@/lib/types/collection";
 import { useLibraryActor } from "@/lib/use-library-actor";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useScrollEditorIntoView } from "@/lib/ui/use-scroll-editor-into-view";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type FormMode = "hidden" | "create" | "edit" | "view";
 type OrganizationOption = { id: string; name: string };
@@ -144,6 +145,9 @@ export function CollectionsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [packetPendingDelete, setPacketPendingDelete] =
     useState<CollectionListItem | null>(null);
+  const formPanelRef = useRef<HTMLDivElement>(null);
+
+  useScrollEditorIntoView(formPanelRef, formMode, editingPacketId);
 
   const createOrganizationOptions = useMemo(() => {
     if (!actor) {
@@ -636,7 +640,7 @@ export function CollectionsPage() {
       />
 
       {formMode !== "hidden" && (
-        <Card>
+        <Card ref={formPanelRef} className="scroll-mt-6">
           <CardHeader>
             <CardTitle>{formTitle}</CardTitle>
             <CardDescription>{formDescription}</CardDescription>

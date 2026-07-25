@@ -34,6 +34,7 @@ import {
   previewCopyFormToGlobalLibrary,
   type CopyToGlobalPreview,
 } from "@/lib/admin/copy-form-to-global";
+import { useScrollEditorIntoView } from "@/lib/ui/use-scroll-editor-into-view";
 import {
   findPublishedFamilyConflict,
   listFormStateEvents,
@@ -188,26 +189,7 @@ export function FormsPage() {
   );
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
-  useEffect(() => {
-    if (formMode === "hidden") {
-      return;
-    }
-
-    const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    const frame = window.requestAnimationFrame(() => {
-      formPanelRef.current?.scrollIntoView({
-        behavior: prefersReducedMotion ? "auto" : "smooth",
-        block: "start",
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [formMode, editingTemplateId]);
+  useScrollEditorIntoView(formPanelRef, formMode, editingTemplateId);
 
   const loadTemplates = useCallback(async () => {
     const supabase = createClient();
@@ -627,6 +609,28 @@ export function FormsPage() {
         setListMessage(result.message);
       }
 
+      if (editingTemplateId === lifecycleTarget.id) {
+        if (lifecycleAction === "publish") {
+          setEditingLifecycle({
+            status: "ACTIVE",
+            publication_state: "PUBLISHED",
+          });
+        } else if (
+          lifecycleAction === "unpublish" ||
+          lifecycleAction === "restore"
+        ) {
+          setEditingLifecycle({
+            status: "ACTIVE",
+            publication_state: "DRAFT",
+          });
+        } else if (lifecycleAction === "retire") {
+          setEditingLifecycle({
+            status: "INACTIVE",
+            publication_state: "DRAFT",
+          });
+        }
+      }
+
       setIsLifecycleWorking(false);
       closeLifecycleDialog({ force: true });
       await loadTemplates();
@@ -913,11 +917,19 @@ export function FormsPage() {
     editingLifecycle != null && isFormRetired(editingLifecycle);
   const editingIsPublished =
     editingLifecycle != null && isFormPublished(editingLifecycle);
+  const editingTemplate =
+    editingTemplateId == null
+      ? null
+      : (templates.find((row) => row.id === editingTemplateId) ?? null);
   const formLifecycleBanner = editingIsRetired
     ? FORM_RETIRED_READONLY_MESSAGE
     : editingIsPublished
       ? FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE
       : null;
+  const showEditorLifecycle =
+    formMode === "edit" &&
+    editingTemplate != null &&
+    canEditForm(actor, editingTemplate);
 
   const formDescription =
     formMode === "create"
@@ -1254,7 +1266,7 @@ export function FormsPage() {
             <CardTitle>{formTitle}</CardTitle>
             <CardDescription>{formDescription}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
             <FormForm
               value={formValue}
               onChange={setFormValue}
@@ -1276,6 +1288,79 @@ export function FormsPage() {
                 canStructurallyEditForm(editingLifecycle)
               }
             />
+
+            {showEditorLifecycle && editingTemplate ? (
+              <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-semibold tracking-tight">
+                    Form lifecycle
+                  </h3>
+                  <FormPublicationBadge
+                    status={editingLifecycle?.status}
+                    publication_state={editingLifecycle?.publication_state}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {editingIsRetired
+                    ? "Retired versions are read-only. Restore to Draft before making structural edits."
+                    : editingIsPublished
+                      ? "Unpublish to return this form to Draft before structural edits, or retire this version."
+                      : "Publish when mappings are ready, or retire this draft version."}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {canPublishForm(editingTemplate) ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openPublishDialog(editingTemplate)}
+                    >
+                      Publish Form
+                    </Button>
+                  ) : null}
+                  {canUnpublishForm(editingTemplate) ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openUnpublishDialog(editingTemplate)}
+                    >
+                      Unpublish Form
+                    </Button>
+                  ) : null}
+                  {canRetireForm(editingTemplate) ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openRetireDialog(editingTemplate)}
+                    >
+                      Retire Version
+                    </Button>
+                  ) : null}
+                  {actor?.isActiveAdmin && canRestoreForm(editingTemplate) ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openRestoreDialog(editingTemplate)}
+                    >
+                      Restore Retired Version
+                    </Button>
+                  ) : null}
+                  {actor?.isActiveAdmin ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openHistoryDialog(editingTemplate)}
+                    >
+                      View History
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       )}
@@ -1404,55 +1489,6 @@ export function FormsPage() {
                             onClick={() => openCopyDialog(template)}
                           >
                             Copy to Global Library
-                          </Button>
-                        ) : null}
-                        {canEditForm(actor, template) &&
-                        canPublishForm(template) ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openPublishDialog(template)}
-                          >
-                            Publish Form
-                          </Button>
-                        ) : null}
-                        {canEditForm(actor, template) &&
-                        canUnpublishForm(template) ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openUnpublishDialog(template)}
-                          >
-                            Unpublish Form
-                          </Button>
-                        ) : null}
-                        {canEditForm(actor, template) &&
-                        canRetireForm(template) ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openRetireDialog(template)}
-                          >
-                            Retire Version
-                          </Button>
-                        ) : null}
-                        {actor?.isActiveAdmin &&
-                        canRestoreForm(template) ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openRestoreDialog(template)}
-                          >
-                            Restore Retired Version
-                          </Button>
-                        ) : null}
-                        {actor?.isActiveAdmin ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openHistoryDialog(template)}
-                          >
-                            History
                           </Button>
                         ) : null}
                         {canEditForm(actor, template) ? (
