@@ -7,6 +7,8 @@ export type FormCategory =
 
 export type VisibilityScope = "GLOBAL" | "PRIVATE" | "ORGANIZATION";
 
+export type FormPublicationState = "DRAFT" | "PUBLISHED";
+
 export type Form = {
   id: number;
   form_code: string;
@@ -19,6 +21,10 @@ export type Form = {
   create_date: string;
   update_date: string;
   status: string;
+  publication_state: FormPublicationState | string;
+  published_at?: string | null;
+  published_by_user_id?: string | null;
+  form_family_key: string;
   scope: VisibilityScope;
   owner_user_id: string | null;
   organization_id: string | null;
@@ -147,11 +153,12 @@ export function validateFormInput(
 
 export function normalizeFormInput(input: FormInput) {
   const trim = (value: string) => value.trim();
-  const formCode = trim(input.form_code);
+  const formCode = trim(input.form_code) || deriveFormCode(input.form_name);
 
   return {
     form_name: trim(input.form_name),
-    form_code: formCode || deriveFormCode(input.form_name),
+    form_code: formCode,
+    form_family_key: formCode.toUpperCase(),
     form_category: input.form_category,
     state_code: trim(input.state_code) || "TX",
     version_label: trim(input.version_label) || null,

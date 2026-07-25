@@ -484,6 +484,56 @@ Refresh Values and open-time initialization can rewrite packet snapshots. Agents
 
 ---
 
+## Form Publication Lifecycle (Draft / Published / Retired)
+
+**Date:** 2026-07-25
+
+**Decision:**
+Library form templates separate three orthogonal concepts:
+
+1. **Record lifecycle status** (`forms.status`): `ACTIVE` (current version), `INACTIVE` (retired historical version), `DELETED` (soft-deleted). These are not a generic editable dropdown.
+2. **Publication state** (`forms.publication_state`): `DRAFT` or `PUBLISHED`. Combined with status:
+   - `ACTIVE` + `DRAFT` — current version under construction or temporary maintenance
+   - `ACTIVE` + `PUBLISHED` — current version available for new collection additions and new packet instantiation
+   - `INACTIVE` + `DRAFT` — retired historical version (read-only)
+   - `INACTIVE` + `PUBLISHED` — invalid and blocked by constraint/trigger
+3. **Packet-form availability** (`packet_forms.availability_state`): `AVAILABLE` or `PENDING_PUBLICATION`. Independent of packet-form `document_state` (`DRAFT` / `FINAL` / `SIGNED` / `VOID`).
+4. **Form-family versioning** (`forms.form_family_key`): stable family identity (typically `form_code`, e.g. `TXR-1601`). Version-specific metadata (`version_label`, revision date, title) remains on the form row. A new revision is always a new form record; PDFs and mappings of prior versions are never replaced in place.
+
+Explicit actions replace generic status editing: Publish Form, Unpublish Form, Retire Version, Restore Retired Version.
+
+**Reason:**
+Admins previously lacked a safe Draft/Publish model and could misuse `INACTIVE` as a temporary editing switch. Publication must gate new use without rewriting existing packet snapshots, and retirement must be a deliberate, audited, read-only historical state.
+
+**Consequences:**
+
+* New forms default to `ACTIVE` + `DRAFT` and show a Draft badge; they remain available in Form Templates / Map Fields for authorized users but are excluded from ordinary selectors until published.
+* Only `ACTIVE` + `PUBLISHED` forms may be newly added to collections or immediately instantiated as usable packet forms.
+* Published forms are protected from structural editing (PDF replace, mappings, form-field associations, automatic source configuration, shared field structural metadata). Map Fields field-catalog updates initiated on a Published form are rejected server-side until Unpublish. Preference defaults (Personal / Organization) remain editable on Published forms and never rewrite existing packet field instances. Retired (INACTIVE) forms are fully read-only, including form-specific default writes.
+* Publish validates the authoritative stored PDF server-side (download + page count via pdf-lib). Publication is rejected when the PDF is missing, unreadable, or any ACTIVE mapping page is out of range.
+* Unpublish returns `ACTIVE` + `DRAFT` and re-enables structural editing. Existing `AVAILABLE` packet forms stay available.
+* Retire moves any `ACTIVE` form to `INACTIVE` + `DRAFT` (read-only). Restore is application-ADMIN only, requires a written reason, always restores to `ACTIVE` + `DRAFT` (never directly to Published), warns when a newer Published version exists in the same family, and writes an audit event. `ORG_ADMIN` alone cannot restore.
+* Global publish uniqueness: at most one `ACTIVE` + `PUBLISHED` Global form per `form_family_key`. Private forms use owner-scoped uniqueness. Publishing a replacement may atomically retire the previous Published version or cancel.
+* Packet creation from a collection: Published → `AVAILABLE` (normal init); Draft → `PENDING_PUBLICATION` placeholder (no field instances, no PDF, no Fill/Refresh/Final/Generate); Retired/Deleted → skip with warning; other eligible forms still instantiate.
+* Pending activation runs only on Publish: eligible `PENDING_PUBLICATION` packet forms become `AVAILABLE`, initialize only missing instances in the packet owner’s context, leave existing instances unchanged, and are idempotent on repeated Publish.
+* Lifecycle transitions write `form_state_events` (`FORM_CREATED`, `FORM_PUBLISHED`, `FORM_UNPUBLISHED`, `FORM_RETIRED`, `FORM_RESTORED`, `FORM_DELETED`). Admin History UI shows business labels without raw UUIDs.
+* Database triggers/RPCs enforce the state machine so direct table updates cannot bypass it for authenticated sessions.
+* Shared Global field metadata changes in Map Fields warn when the field is used on Published forms and require application-admin confirmation for unsafe shared structural changes.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260725120000_form_publication_lifecycle.sql`
+* `lib/types/form-lifecycle.ts`
+* `lib/forms/form-lifecycle-actions.ts`
+* `lib/forms/publish-validation.ts`
+* `lib/forms/activate-pending-packet-forms.ts`
+* `lib/types/packet-form.ts`
+* `components/forms/forms-page.tsx`
+* `components/forms/pdf-field-editor.tsx`
+* `components/collections/form-picker.tsx`
+
+---
+
 ## Default-Value Resolution Precedence
 
 **Date:** 2026-07-15 (refined 2026-07-20)

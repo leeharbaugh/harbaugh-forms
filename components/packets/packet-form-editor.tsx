@@ -27,6 +27,10 @@ import type { FieldResolutionDiagnostic } from "@/lib/field-resolver";
 import type { DocumentState } from "@/lib/types/packet";
 import type { PacketWorkflowType } from "@/lib/types/packet-workflow";
 import {
+  PENDING_PUBLICATION_MESSAGE,
+  isPacketFormPendingPublication,
+} from "@/lib/types/form-lifecycle";
+import {
   canMarkPacketFormFinal,
   canReopenPacketFormToDraft,
   formatPacketFormDocumentState,
@@ -96,6 +100,9 @@ export function PacketFormEditor({
   const [packetFormRecordId, setPacketFormRecordId] = useState(packetFormId);
   const [documentName, setDocumentName] = useState("");
   const [documentState, setDocumentState] = useState<DocumentState>("DRAFT");
+  const [availabilityState, setAvailabilityState] = useState<string | null>(
+    "AVAILABLE",
+  );
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const [formId, setFormId] = useState<number | null>(null);
   const [formName, setFormName] = useState("");
@@ -301,6 +308,9 @@ export function PacketFormEditor({
 
         setDocumentName(data.packetForm.document_name);
         setDocumentState(data.packetForm.document_state);
+        setAvailabilityState(
+          data.packetForm.availability_state ?? "AVAILABLE",
+        );
         setStoragePath(data.packetForm.storage_path);
         setPacketFormRecordId(data.packetForm.id);
         setFormId(data.packetForm.form_id);
@@ -466,7 +476,7 @@ export function PacketFormEditor({
     ) ?? null;
 
   const handleDraftChange = (instanceId: string, value: string) => {
-    if (!isPacketFormValueEditable(documentState, "ACTIVE")) {
+    if (!isPacketFormValueEditable(documentState, "ACTIVE", availabilityState)) {
       return;
     }
     setDraftValuesByInstanceId((current) => ({
@@ -533,7 +543,7 @@ export function PacketFormEditor({
         setIsSavingInlineValueId(null);
       }
     },
-    [applySavedFieldInstanceValue, savedValuesByInstanceId],
+    [applySavedFieldInstanceValue, handleDraftChange, savedValuesByInstanceId],
   );
 
   const commitInlineEdit = useCallback(
@@ -562,7 +572,7 @@ export function PacketFormEditor({
       setEditingSelectionKey(null);
       setInlineEditValue("");
     },
-    [savedValuesByInstanceId],
+    [handleDraftChange, savedValuesByInstanceId],
   );
 
   const finishInlineEditForSelectionKey = useCallback(
@@ -591,7 +601,7 @@ export function PacketFormEditor({
 
   const handleStartInlineEdit = useCallback(
     (overlayField: PacketFormOverlayField) => {
-      if (!isPacketFormValueEditable(documentState, "ACTIVE")) {
+      if (!isPacketFormValueEditable(documentState, "ACTIVE", availabilityState)) {
         return;
       }
       void finishInlineEditForSelectionKey(overlayField.selectionKey);
@@ -607,7 +617,7 @@ export function PacketFormEditor({
       setEditingSelectionKey(overlayField.selectionKey);
       setInlineEditValue(nextValue);
     },
-    [documentState, draftValuesByInstanceId, finishInlineEditForSelectionKey],
+    [documentState, draftValuesByInstanceId, finishInlineEditForSelectionKey, availabilityState],
   );
 
   const handleInlineEditChange = useCallback(
@@ -615,7 +625,7 @@ export function PacketFormEditor({
       setInlineEditValue(value);
       handleDraftChange(overlayField.field_instance_id, value);
     },
-    [],
+    [handleDraftChange],
   );
 
   const handleInlineEditSave = useCallback(
@@ -642,7 +652,7 @@ export function PacketFormEditor({
 
   const handleCheckboxToggle = useCallback(
     async (overlayField: PacketFormOverlayField) => {
-      if (!isPacketFormValueEditable(documentState, "ACTIVE")) {
+      if (!isPacketFormValueEditable(documentState, "ACTIVE", availabilityState)) {
         return;
       }
       const currentChecked = resolveCheckboxCheckedState(
@@ -654,7 +664,7 @@ export function PacketFormEditor({
 
       await persistInlineFieldValue(overlayField, nextValue);
     },
-    [documentState, draftValuesByInstanceId, persistInlineFieldValue],
+    [availabilityState, documentState, draftValuesByInstanceId, persistInlineFieldValue],
   );
 
   const applyRevertedInstance = (updated: FieldInstanceWithField) => {
@@ -774,8 +784,10 @@ export function PacketFormEditor({
   };
 
   const handleSaveChanges = async () => {
-    if (!isPacketFormValueEditable(documentState, "ACTIVE")) {
-      setSaveError(packetFormLifecycleBlockedMessage(documentState));
+    if (!isPacketFormValueEditable(documentState, "ACTIVE", availabilityState)) {
+      setSaveError(
+        packetFormLifecycleBlockedMessage(documentState, availabilityState),
+      );
       return;
     }
 
@@ -1104,9 +1116,23 @@ export function PacketFormEditor({
   };
 
   const isDevelopment = process.env.NODE_ENV === "development";
-  const valuesEditable = isPacketFormValueEditable(documentState, "ACTIVE");
-  const showMarkFinal = canMarkPacketFormFinal(documentState, "ACTIVE");
-  const showReopen = canReopenPacketFormToDraft(documentState, "ACTIVE");
+  const isPendingPublication =
+    isPacketFormPendingPublication(availabilityState);
+  const valuesEditable = isPacketFormValueEditable(
+    documentState,
+    "ACTIVE",
+    availabilityState,
+  );
+  const showMarkFinal = canMarkPacketFormFinal(
+    documentState,
+    "ACTIVE",
+    availabilityState,
+  );
+  const showReopen = canReopenPacketFormToDraft(
+    documentState,
+    "ACTIVE",
+    availabilityState,
+  );
   const propertyResolutionWarning =
     packetType === "buyer_rep"
       ? null
@@ -1146,12 +1172,20 @@ export function PacketFormEditor({
             <Badge variant={packetFormDocumentStateVariant(documentState)}>
               {formatPacketFormDocumentState(documentState)}
             </Badge>
+            {isPendingPublication ? (
+              <Badge variant="warning">Pending publication</Badge>
+            ) : null}
           </div>
           <p className="truncate text-xs text-muted-foreground">
             {formName}
             {formId != null ? ` (${formatFormReference(formId)})` : ""} · fill
             form · packet only
           </p>
+          {isPendingPublication ? (
+            <p className="mt-1 text-xs text-warning">
+              {PENDING_PUBLICATION_MESSAGE}
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-2">
           {showMarkFinal && (
@@ -1346,17 +1380,24 @@ export function PacketFormEditor({
               </div>
             ) : (
               <p className="max-w-md text-xs text-muted-foreground">
-                {documentState === "FINAL"
-                  ? "Refresh Values is unavailable because this form is Final. Reopen it as a Draft to edit or refresh values."
-                  : documentState === "SIGNED"
-                    ? "Signed forms cannot be refreshed."
-                    : packetFormLifecycleBlockedMessage(documentState)}
+                {isPendingPublication
+                  ? PENDING_PUBLICATION_MESSAGE
+                  : documentState === "FINAL"
+                    ? "Refresh Values is unavailable because this form is Final. Reopen it as a Draft to edit or refresh values."
+                    : documentState === "SIGNED"
+                      ? "Signed forms cannot be refreshed."
+                      : packetFormLifecycleBlockedMessage(
+                          documentState,
+                          availabilityState,
+                        )}
               </p>
             )}
             <p className="hidden text-xs text-muted-foreground lg:block">
               {valuesEditable
                 ? "Edit values in the sidebar. Click overlays to select fields. Drag or resize to override placement for this packet form."
-                : "This form is read-only. Download remains available."}
+                : isPendingPublication
+                  ? PENDING_PUBLICATION_MESSAGE
+                  : "This form is read-only. Download remains available."}
             </p>
           </div>
           {refreshHelpOpen && valuesEditable && (

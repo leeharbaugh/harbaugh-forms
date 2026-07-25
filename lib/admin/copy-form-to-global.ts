@@ -520,12 +520,14 @@ export async function copyFormToGlobalLibrary(
     .insert({
       form_name: identity.form_name,
       form_code: identity.form_code,
+      form_family_key: identity.form_code.trim().toUpperCase() || "FORM",
       form_category: sourceForm.form_category,
       state_code: sourceForm.state_code,
       version_label: identity.version_label,
       description: sourceForm.description,
       source_storage_path: pendingPath,
       status: "INACTIVE",
+      publication_state: "DRAFT",
       scope: "GLOBAL",
       owner_user_id: null,
       organization_id: null,
@@ -635,7 +637,7 @@ export async function copyFormToGlobalLibrary(
 
     const { error: activateError } = await admin
       .from("forms")
-      .update({ status: "ACTIVE" })
+      .update({ status: "ACTIVE", publication_state: "DRAFT" })
       .eq("id", newFormId);
 
     if (activateError) {

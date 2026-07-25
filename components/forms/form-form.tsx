@@ -33,6 +33,10 @@ type FormFormProps = {
   hideFooterActions?: boolean;
   /** When true, Global is offered on create. Server still enforces ADMIN. */
   allowGlobalScope?: boolean;
+  /** Banner above the form (published / retired messaging). */
+  lifecycleBanner?: string | null;
+  /** When false, Replace PDF is hidden/disabled (published or retired). */
+  allowReplacePdf?: boolean;
 };
 
 export function FormForm({
@@ -51,8 +55,11 @@ export function FormForm({
   onReplacePdfChange,
   hideFooterActions = false,
   allowGlobalScope = false,
+  lifecycleBanner = null,
+  allowReplacePdf = true,
 }: FormFormProps) {
   const readOnly = mode === "view";
+  const canReplacePdf = allowReplacePdf && !readOnly;
 
   const setField = <K extends keyof FormInput>(
     key: K,
@@ -88,10 +95,16 @@ export function FormForm({
       });
 
   const showPdfUpload =
-    !readOnly && (mode === "create" || (mode === "edit" && replacePdf));
+    !readOnly &&
+    (mode === "create" || (mode === "edit" && replacePdf && canReplacePdf));
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {lifecycleBanner ? (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          {lifecycleBanner}
+        </p>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
         {templateId != null && (
           <div className="space-y-2">
@@ -225,7 +238,7 @@ export function FormForm({
           </div>
         )}
 
-        {mode === "edit" && !readOnly && existingStoragePath && (
+        {mode === "edit" && !readOnly && existingStoragePath && canReplacePdf && (
           <div className="flex items-center gap-2 sm:col-span-2">
             <AppCheckbox
               id="replace_pdf"

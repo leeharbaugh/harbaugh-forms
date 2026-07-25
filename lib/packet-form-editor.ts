@@ -71,6 +71,7 @@ export async function loadPacketFormEditorData(
       form_id,
       document_name,
       document_state,
+      availability_state,
       storage_path,
       owner_user_id,
       status,
@@ -99,6 +100,8 @@ export async function loadPacketFormEditorData(
     form_id: packetFormData.form_id,
     document_name: packetFormData.document_name,
     document_state: documentState,
+    availability_state:
+      (packetFormData.availability_state as string | null) ?? "AVAILABLE",
     storage_path: packetFormData.storage_path,
     status: packetFormData.status,
     forms: normalizedForms ?? null,
@@ -117,6 +120,7 @@ export async function loadPacketFormEditorData(
   const valuesEditable = isPacketFormValueEditable(
     documentState,
     packetForm.status,
+    packetForm.availability_state,
   );
 
   const [mappings, instances, placementOverrides] = await Promise.all([

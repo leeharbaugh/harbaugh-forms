@@ -54,6 +54,25 @@ describe("packet form lifecycle helpers", () => {
     assert.equal(canReopenPacketFormToDraft("FINAL", "DELETED"), false);
   });
 
+  it("blocks fill/refresh/final when pending publication", () => {
+    assert.equal(
+      isPacketFormValueEditable("DRAFT", "ACTIVE", "PENDING_PUBLICATION"),
+      false,
+    );
+    assert.equal(
+      canRefreshPacketFormValues("DRAFT", "ACTIVE", "PENDING_PUBLICATION"),
+      false,
+    );
+    assert.equal(
+      canMarkPacketFormFinal("DRAFT", "ACTIVE", "PENDING_PUBLICATION"),
+      false,
+    );
+    assert.match(
+      packetFormLifecycleBlockedMessage("DRAFT", "PENDING_PUBLICATION"),
+      /published/i,
+    );
+  });
+
   it("formats document-state badge labels and variants for list UI", () => {
     assert.equal(formatPacketFormDocumentState("DRAFT"), "Draft");
     assert.equal(formatPacketFormDocumentState("FINAL"), "Final");

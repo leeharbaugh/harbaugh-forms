@@ -15,7 +15,6 @@ import { InfoDialog } from "@/components/ui/info-dialog";
 import { DownloadAllFormsProgressDialog } from "@/components/packets/download-all-forms-progress-dialog";
 import {
   downloadAllFilledPacketForms,
-  downloadFilledPacketFormPdf,
 } from "@/lib/packet-form-download";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -38,7 +37,7 @@ import {
 } from "@/lib/types/packet";
 import { getOrderedPacketContactNames } from "@/lib/types/packet-contact";
 import { formatCollectionType } from "@/lib/types/collection";
-import { formatPropertyAddress, type Property } from "@/lib/types/property";
+import { formatPropertyAddress } from "@/lib/types/property";
 import { PacketFormsLiveEditor } from "@/components/packets/packet-forms-live-editor";
 import { sortPacketForms } from "@/lib/types/packet-form";
 import Link from "next/link";
@@ -53,6 +52,7 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [createWarnings, setCreateWarnings] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [downloadWarning, setDownloadWarning] = useState<string | null>(null);
@@ -72,9 +72,7 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
   const overwriteResolverRef = useRef<((overwrite: boolean) => void) | null>(
     null,
   );
-  const [downloadingDocumentId, setDownloadingDocumentId] = useState<
-    number | null
-  >(null);
+  const downloadingDocumentId: number | null = null;
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -108,6 +106,15 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
     void loadPacket();
   }, [loadPacket]);
 
+  useEffect(() => {
+    const key = `packet-create-warnings:${packetId}`;
+    const stored = window.sessionStorage.getItem(key);
+    if (stored) {
+      setCreateWarnings(stored);
+      window.sessionStorage.removeItem(key);
+    }
+  }, [packetId]);
+
   const confirmOverwrite = useCallback(
     (fileName: string, documentName: string): Promise<boolean> => {
       return new Promise((resolve) => {
@@ -122,24 +129,6 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
     overwriteResolverRef.current?.(overwrite);
     overwriteResolverRef.current = null;
     setOverwritePrompt(null);
-  };
-
-  const downloadDocument = async (document: PacketForm) => {
-    setDownloadError(null);
-    setDownloadNotice(null);
-    setDownloadWarning(null);
-    setDownloadingDocumentId(document.id);
-
-    try {
-      const supabase = createClient();
-      await downloadFilledPacketFormPdf(supabase, document);
-    } catch (error) {
-      setDownloadError(
-        error instanceof Error ? error.message : "Failed to download PDF.",
-      );
-    } finally {
-      setDownloadingDocumentId(null);
-    }
   };
 
   const downloadAllDocuments = async (
@@ -452,6 +441,11 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
         </div>
       </div>
 
+      {createWarnings && (
+        <p className="whitespace-pre-line text-sm text-amber-800 dark:text-amber-200">
+          {createWarnings}
+        </p>
+      )}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       {isDeleted && (

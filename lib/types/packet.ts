@@ -57,6 +57,8 @@ export type Packet = {
   status: string;
 };
 
+export type PacketFormAvailabilityState = "AVAILABLE" | "PENDING_PUBLICATION";
+
 export type PacketForm = {
   id: number;
   packet_id: number;
@@ -64,6 +66,7 @@ export type PacketForm = {
   collection_form_id: number | null;
   document_name: string;
   document_state: DocumentState;
+  availability_state?: PacketFormAvailabilityState | string;
   document_type?: string;
   origin?: PacketFormOrigin;
   sort_order?: number;
@@ -381,7 +384,9 @@ const COLLECTION_FOR_GENERATION_SELECT = `
       form_code,
       source_storage_path,
       scope,
-      owner_user_id
+      owner_user_id,
+      status,
+      publication_state
     )
   )
 `;
@@ -411,7 +416,7 @@ export type CreatePacketFromCollectionInput = {
 export async function createPacketFromCollection(
   supabase: SupabaseClient,
   input: CreatePacketFromCollectionInput,
-): Promise<{ packetId: number }> {
+): Promise<{ packetId: number; warnings: string[] }> {
   const validationError = validateCreatePacketFromCollectionInput({
     collectionId: input.collectionId,
     packetType: input.packetType,
@@ -549,7 +554,7 @@ export async function createPacketFromCollection(
     throw new Error(packetContactsError.message);
   }
 
-  await createCollectionPacketForms(
+  const { skippedWarnings } = await createCollectionPacketForms(
     supabase,
     createdPacket.id,
     collectionWithForms.collection_forms ?? [],
@@ -585,7 +590,7 @@ export async function createPacketFromCollection(
     );
   }
 
-  return { packetId: createdPacket.id };
+  return { packetId: createdPacket.id, warnings: skippedWarnings };
 }
 
 export type CreateCustomPacketInput = {
@@ -684,7 +689,7 @@ export async function generatePacketFromAgreement(
   supabase: SupabaseClient,
   agreementId: number,
   collectionId: number,
-): Promise<{ packetId: number }> {
+): Promise<{ packetId: number; warnings: string[] }> {
   const validationError = validateCreatePacketInput(
     collectionId,
     agreementId,
@@ -763,12 +768,12 @@ export async function generatePacketFromAgreement(
     throw new Error(createError?.message ?? "Failed to create packet.");
   }
 
-  await createCollectionPacketForms(
+  const { skippedWarnings } = await createCollectionPacketForms(
     supabase,
     createdPacket.id,
     collectionWithForms.collection_forms ?? [],
     user?.id ?? null,
   );
 
-  return { packetId: createdPacket.id };
+  return { packetId: createdPacket.id, warnings: skippedWarnings };
 }

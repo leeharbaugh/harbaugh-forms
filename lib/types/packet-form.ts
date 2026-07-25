@@ -8,6 +8,7 @@ import { resolveFormStoragePath } from "@/lib/storage-path-resolve";
 import type { CollectionFormLink } from "@/lib/types/collection";
 import type { DocumentState, PacketForm } from "@/lib/types/packet";
 import type { FormLibraryScope } from "@/lib/form-storage";
+import { planPacketFormInstantiation } from "@/lib/types/form-lifecycle";
 
 export type PacketFormOrigin =
   | "collection"
@@ -32,10 +33,11 @@ export type PacketFormRowInput = {
   storagePath: string | null;
   notes?: string | null;
   generatedByUserId?: string | null;
+  availabilityState?: "AVAILABLE" | "PENDING_PUBLICATION";
 };
 
 const FORM_SELECT =
-  "id, form_name, form_code, source_storage_path, scope, owner_user_id, status";
+  "id, form_name, form_code, source_storage_path, scope, owner_user_id, status, publication_state";
 
 export function formatPacketFormOrigin(origin: PacketFormOrigin): string {
   switch (origin) {
@@ -154,6 +156,7 @@ export async function insertPacketFormRow(
       storage_path: input.storagePath,
       notes: input.notes ?? null,
       generated_by_user_id: input.generatedByUserId ?? null,
+      availability_state: input.availabilityState ?? "AVAILABLE",
     })
     .select("id")
     .single();
@@ -260,14 +263,115 @@ export async function createCollectionPacketForms(
   packetId: number,
   collectionFormLinks: CollectionFormLink[],
   generatedByUserId: string | null,
-): Promise<void> {
+): Promise<{ skippedWarnings: string[] }> {
   const activeLinks = getActiveCollectionFormLinks(collectionFormLinks);
   const ownerUserId = await getPacketOwnerUserId(supabase, packetId);
+  const skippedWarnings: string[] = [];
+
+  // Prefer nested form data; fall back to fresh lookup for publication state.
+  const formIdsNeedingLookup = activeLinks
+    .filter((link) => {
+      const form = link.forms as
+        | { publication_state?: string; status?: string }
+        | null
+        | undefined;
+      return form?.publication_state == null || form?.status == null;
+    })
+    .map((link) => link.form_id);
+
+  const formById = new Map<
+    number,
+    {
+      id: number;
+      form_name: string;
+      form_code: string | null;
+      source_storage_path: string | null;
+      scope: string | null;
+      owner_user_id: string | null;
+      status: string;
+      publication_state: string;
+    }
+  >();
+
+  if (formIdsNeedingLookup.length > 0) {
+    const { data, error } = await supabase
+      .from("forms")
+      .select(FORM_SELECT)
+      .in("id", formIdsNeedingLookup);
+    if (error) {
+      throw new Error(error.message);
+    }
+    for (const row of data ?? []) {
+      formById.set(row.id as number, row as {
+        id: number;
+        form_name: string;
+        form_code: string | null;
+        source_storage_path: string | null;
+        scope: string | null;
+        owner_user_id: string | null;
+        status: string;
+        publication_state: string;
+      });
+    }
+  }
 
   for (const link of activeLinks) {
+    const nested = link.forms as
+      | {
+          form_name?: string;
+          form_code?: string | null;
+          source_storage_path?: string | null;
+          scope?: string;
+          owner_user_id?: string;
+          status?: string;
+          publication_state?: string;
+        }
+      | null
+      | undefined;
+
+    const lookedUp = formById.get(link.form_id);
+    const status = nested?.status ?? lookedUp?.status ?? "ACTIVE";
+    const publicationState =
+      nested?.publication_state ?? lookedUp?.publication_state ?? "PUBLISHED";
     const formName =
-      link.forms?.form_name?.trim() || `Form #${link.form_id}`;
-    const sourceStoragePath = link.forms?.source_storage_path?.trim();
+      nested?.form_name?.trim() ||
+      lookedUp?.form_name?.trim() ||
+      `Form #${link.form_id}`;
+
+    const plan = planPacketFormInstantiation({
+      status,
+      publication_state: publicationState,
+    });
+
+    if (plan.kind === "skip") {
+      skippedWarnings.push(
+        plan.reason === "retired"
+          ? `Skipped retired form “${formName}” from the collection.`
+          : `Skipped unavailable form “${formName}” from the collection.`,
+      );
+      continue;
+    }
+
+    if (plan.kind === "pending_publication") {
+      await insertPacketFormRow(supabase, {
+        packetId,
+        formId: link.form_id,
+        collectionFormId: link.id,
+        documentName: formName,
+        origin: "collection",
+        sortOrder: link.sort_order,
+        isRequired: link.is_required,
+        storagePath: null,
+        generatedByUserId,
+        availabilityState: "PENDING_PUBLICATION",
+      });
+      continue;
+    }
+
+    const sourceStoragePath =
+      nested?.source_storage_path?.trim() ||
+      lookedUp?.source_storage_path?.trim() ||
+      "";
 
     if (!sourceStoragePath) {
       throw new Error(`Source PDF is missing for form "${formName}".`);
@@ -283,6 +387,7 @@ export async function createCollectionPacketForms(
       isRequired: link.is_required,
       storagePath: null,
       generatedByUserId,
+      availabilityState: "AVAILABLE",
     });
 
     let storagePath: string | null = null;
@@ -294,11 +399,10 @@ export async function createCollectionPacketForms(
         form: {
           id: link.form_id,
           form_name: formName,
-          form_code: link.forms?.form_code ?? null,
+          form_code: nested?.form_code ?? lookedUp?.form_code ?? null,
           source_storage_path: sourceStoragePath,
-          scope: (link.forms as { scope?: string } | null | undefined)?.scope,
-          owner_user_id: (link.forms as { owner_user_id?: string } | null | undefined)
-            ?.owner_user_id,
+          scope: nested?.scope ?? lookedUp?.scope,
+          owner_user_id: nested?.owner_user_id ?? lookedUp?.owner_user_id,
         },
       });
       await finalizePacketFormStoragePath(supabase, packetFormId, storagePath);
@@ -307,6 +411,8 @@ export async function createCollectionPacketForms(
       throw error;
     }
   }
+
+  return { skippedWarnings };
 }
 
 export async function addInternalFormToPacket(
@@ -336,10 +442,14 @@ export async function addInternalFormToPacket(
     .select(FORM_SELECT)
     .eq("id", formId)
     .eq("status", "ACTIVE")
+    .eq("publication_state", "PUBLISHED")
     .single();
 
   if (formError || !formData) {
-    throw new Error(formError?.message ?? "Form not found.");
+    throw new Error(
+      formError?.message ??
+        "Only published forms can be added to a packet.",
+    );
   }
 
   const form = formData as {
@@ -368,6 +478,7 @@ export async function addInternalFormToPacket(
     isRequired: false,
     storagePath: null,
     generatedByUserId: user?.id ?? null,
+    availabilityState: "AVAILABLE",
   });
 
   let storagePath: string | null = null;

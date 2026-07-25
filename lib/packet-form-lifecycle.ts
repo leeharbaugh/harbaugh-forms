@@ -7,10 +7,19 @@ import {
   isValidPacketFormLifecycleTransition,
   packetFormLifecycleBlockedMessage,
 } from "@/lib/types/packet-form-lifecycle";
+import {
+  isPacketFormPendingPublication,
+  PENDING_PUBLICATION_MESSAGE,
+} from "@/lib/types/form-lifecycle";
 
 export type PacketFormLifecycleRow = Pick<
   PacketForm,
-  "id" | "packet_id" | "document_state" | "status" | "owner_user_id"
+  | "id"
+  | "packet_id"
+  | "document_state"
+  | "status"
+  | "owner_user_id"
+  | "availability_state"
 >;
 
 export class PacketFormLifecycleError extends Error {
@@ -18,6 +27,7 @@ export class PacketFormLifecycleError extends Error {
     | "not_found"
     | "not_active"
     | "not_editable"
+    | "pending_publication"
     | "invalid_transition"
     | "unauthorized"
     | "stale_state";
@@ -38,7 +48,9 @@ export async function loadPacketFormLifecycleRow(
 ): Promise<PacketFormLifecycleRow> {
   const { data, error } = await supabase
     .from("packet_forms")
-    .select("id, packet_id, document_state, status, owner_user_id")
+    .select(
+      "id, packet_id, document_state, status, owner_user_id, availability_state",
+    )
     .eq("id", packetFormId)
     .single();
 
@@ -50,6 +62,15 @@ export async function loadPacketFormLifecycleRow(
   }
 
   return data as PacketFormLifecycleRow;
+}
+
+function assertNotPendingPublication(row: PacketFormLifecycleRow): void {
+  if (isPacketFormPendingPublication(row.availability_state)) {
+    throw new PacketFormLifecycleError(
+      "pending_publication",
+      PENDING_PUBLICATION_MESSAGE,
+    );
+  }
 }
 
 export async function assertPacketFormAllowsValueMutation(
@@ -65,10 +86,21 @@ export async function assertPacketFormAllowsValueMutation(
     );
   }
 
-  if (!isPacketFormValueEditable(row.document_state, row.status)) {
+  assertNotPendingPublication(row);
+
+  if (
+    !isPacketFormValueEditable(
+      row.document_state,
+      row.status,
+      row.availability_state,
+    )
+  ) {
     throw new PacketFormLifecycleError(
       "not_editable",
-      packetFormLifecycleBlockedMessage(row.document_state),
+      packetFormLifecycleBlockedMessage(
+        row.document_state,
+        row.availability_state,
+      ),
     );
   }
 
@@ -113,7 +145,15 @@ export async function markPacketFormFinal(
     );
   }
 
-  if (!canMarkPacketFormFinal(row.document_state, row.status)) {
+  assertNotPendingPublication(row);
+
+  if (
+    !canMarkPacketFormFinal(
+      row.document_state,
+      row.status,
+      row.availability_state,
+    )
+  ) {
     throw new PacketFormLifecycleError(
       "invalid_transition",
       `Only Draft forms can be marked Final (current state: ${row.document_state}).`,
@@ -131,7 +171,9 @@ export async function markPacketFormFinal(
     .eq("id", packetFormId)
     .eq("status", "ACTIVE")
     .eq("document_state", "DRAFT")
-    .select("id, packet_id, document_state, status, owner_user_id")
+    .select(
+      "id, packet_id, document_state, status, owner_user_id, availability_state",
+    )
     .maybeSingle();
 
   if (error) {
@@ -164,7 +206,15 @@ export async function reopenPacketFormToDraft(
     );
   }
 
-  if (!canReopenPacketFormToDraft(row.document_state, row.status)) {
+  assertNotPendingPublication(row);
+
+  if (
+    !canReopenPacketFormToDraft(
+      row.document_state,
+      row.status,
+      row.availability_state,
+    )
+  ) {
     if (row.document_state === "SIGNED") {
       throw new PacketFormLifecycleError(
         "invalid_transition",
@@ -190,7 +240,9 @@ export async function reopenPacketFormToDraft(
     .eq("id", packetFormId)
     .eq("status", "ACTIVE")
     .eq("document_state", "FINAL")
-    .select("id, packet_id, document_state, status, owner_user_id")
+    .select(
+      "id, packet_id, document_state, status, owner_user_id, availability_state",
+    )
     .maybeSingle();
 
   if (error) {

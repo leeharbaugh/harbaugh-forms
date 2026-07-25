@@ -23,7 +23,12 @@ import type { PacketForm } from "@/lib/types/packet";
 import {
   formatPacketFormDocumentState,
   packetFormDocumentStateVariant,
+  canFillPacketForm,
 } from "@/lib/types/packet-form-lifecycle";
+import {
+  PENDING_PUBLICATION_MESSAGE,
+  isPacketFormPendingPublication,
+} from "@/lib/types/form-lifecycle";
 import { formatFormCategory, formatFormReference } from "@/lib/types/form";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
@@ -85,8 +90,9 @@ export function PacketFormsLiveEditor({
 
     const { data, error } = await supabase
       .from("forms")
-      .select("id, form_name, form_code, form_category, status")
+      .select("id, form_name, form_code, form_category, status, publication_state")
       .eq("status", "ACTIVE")
+      .eq("publication_state", "PUBLISHED")
       .or([`form_name.ilike.${term}`, `form_code.ilike.${term}`].join(","))
       .order("form_name", { ascending: true })
       .limit(10);
@@ -413,116 +419,137 @@ export function PacketFormsLiveEditor({
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
       ) : (
         <div className="divide-y rounded-md border">
-          {activeForms.map((document, index) => (
-            <div
-              key={document.id}
-              className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"
-            >
-              <div className="space-y-1 text-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium">
-                    {index + 1}. {document.document_name}
-                  </p>
-                  <Badge
-                    variant={packetFormDocumentStateVariant(
-                      document.document_state,
-                    )}
-                  >
-                    {formatPacketFormDocumentState(document.document_state)}
-                  </Badge>
-                  <Badge variant="secondary">
-                    {formatPacketFormOrigin(
-                      document.origin ?? "collection",
-                    )}
-                  </Badge>
-                  {document.is_required && (
-                    <Badge variant="outline">Required</Badge>
-                  )}
-                </div>
-                {document.forms ? (
-                  <p className="text-muted-foreground">
-                    {document.forms.form_name} ·{" "}
-                    {formatFormReference(document.forms.id)} ·{" "}
-                    {document.forms.form_code} ·{" "}
-                    {formatFormCategory(document.forms.form_category)}
-                  </p>
-                ) : document.origin === "external_upload" ? (
-                  <p className="text-muted-foreground">
-                    External PDF
-                    {document.notes ? ` · ${document.notes}` : ""}
-                  </p>
-                ) : null}
-              </div>
+          {activeForms.map((document, index) => {
+            const isPending = isPacketFormPendingPublication(
+              document.availability_state,
+            );
+            const canFill = canFillPacketForm(
+              document.status,
+              document.availability_state,
+            );
 
-              <div className="flex flex-wrap gap-2">
-                {!disabled && (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => void handleReorder(document.id, -1)}
-                      disabled={isSubmitting || index === 0}
-                      aria-label="Move up"
+            return (
+              <div
+                key={document.id}
+                className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"
+              >
+                <div className="space-y-1 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">
+                      {index + 1}. {document.document_name}
+                    </p>
+                    <Badge
+                      variant={packetFormDocumentStateVariant(
+                        document.document_state,
+                      )}
                     >
-                      <ChevronUp className="h-4 w-4" />
+                      {formatPacketFormDocumentState(document.document_state)}
+                    </Badge>
+                    {isPending ? (
+                      <Badge variant="warning">Pending publication</Badge>
+                    ) : null}
+                    <Badge variant="secondary">
+                      {formatPacketFormOrigin(
+                        document.origin ?? "collection",
+                      )}
+                    </Badge>
+                    {document.is_required && (
+                      <Badge variant="outline">Required</Badge>
+                    )}
+                  </div>
+                  {isPending ? (
+                    <p className="text-warning">{PENDING_PUBLICATION_MESSAGE}</p>
+                  ) : null}
+                  {document.forms ? (
+                    <p className="text-muted-foreground">
+                      {document.forms.form_name} ·{" "}
+                      {formatFormReference(document.forms.id)} ·{" "}
+                      {document.forms.form_code} ·{" "}
+                      {formatFormCategory(document.forms.form_category)}
+                    </p>
+                  ) : document.origin === "external_upload" ? (
+                    <p className="text-muted-foreground">
+                      External PDF
+                      {document.notes ? ` · ${document.notes}` : ""}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {!disabled && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => void handleReorder(document.id, -1)}
+                        disabled={isSubmitting || index === 0}
+                        aria-label="Move up"
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => void handleReorder(document.id, 1)}
+                        disabled={
+                          isSubmitting || index === activeForms.length - 1
+                        }
+                        aria-label="Move down"
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openRemoveDialog(document)}
+                        disabled={
+                          isSubmitting ||
+                          ((document.origin ?? "collection") === "collection" &&
+                            document.is_required)
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </>
+                  )}
+                  {document.form_id != null && canFill ? (
+                    <Button variant="outline" size="sm" asChild>
+                      <Link
+                        href={`/packets/${packetId}/forms/${document.id}`}
+                      >
+                        Fill form
+                      </Link>
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => void handleReorder(document.id, 1)}
-                      disabled={
-                        isSubmitting || index === activeForms.length - 1
-                      }
-                      aria-label="Move down"
-                    >
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openRemoveDialog(document)}
-                      disabled={
-                        isSubmitting ||
-                        ((document.origin ?? "collection") === "collection" &&
-                          document.is_required)
-                      }
-                    >
-                      Remove
-                    </Button>
-                  </>
-                )}
-                {document.form_id != null && (
-                  <Button variant="outline" size="sm" asChild>
-                    <Link
-                      href={`/packets/${packetId}/forms/${document.id}`}
-                    >
+                  ) : document.form_id != null && isPending ? (
+                    <Button variant="outline" size="sm" disabled>
                       Fill form
-                    </Link>
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void downloadDocument(document)}
+                    disabled={
+                      !document.storage_path ||
+                      downloadingFormId === document.id ||
+                      isSubmitting ||
+                      isPending
+                    }
+                  >
+                    {downloadingFormId === document.id
+                      ? "Downloading..."
+                      : "Download"}
                   </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void downloadDocument(document)}
-                  disabled={
-                    !document.storage_path ||
-                    downloadingFormId === document.id ||
-                    isSubmitting
-                  }
-                >
-                  {downloadingFormId === document.id
-                    ? "Downloading..."
-                    : "Download"}
-                </Button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

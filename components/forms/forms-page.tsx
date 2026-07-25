@@ -12,7 +12,11 @@ import {
   type ResizableDataTableColumn,
 } from "@/components/resizable-data-table";
 import { Button } from "@/components/ui/button";
-import { LibraryScopeBadge } from "@/components/ui/list-badges";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
+import {
+  FormPublicationBadge,
+  LibraryScopeBadge,
+} from "@/components/ui/list-badges";
 import {
   Card,
   CardContent,
@@ -22,12 +26,24 @@ import {
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   copyFormToGlobalLibrary,
   previewCopyFormToGlobalLibrary,
   type CopyToGlobalPreview,
 } from "@/lib/admin/copy-form-to-global";
+import {
+  findPublishedFamilyConflict,
+  listFormStateEvents,
+  previewPublishForm,
+  publishFormTemplate,
+  restoreFormTemplate,
+  retireFormTemplate,
+  unpublishFormTemplate,
+  type FormStateEventListItem,
+} from "@/lib/forms/form-lifecycle-actions";
 import {
   canOfferCopyToGlobalLibrary,
   presentFormOwnership,
@@ -59,6 +75,21 @@ import {
   normalizeFormInput,
   validateFormInput,
 } from "@/lib/types/form";
+import {
+  FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+  FORM_RETIRED_READONLY_MESSAGE,
+  canPublishForm,
+  canRestoreForm,
+  canRetireForm,
+  canStructurallyEditForm,
+  canUnpublishForm,
+  formatFormStateEventType,
+  formatLifecycleTransitionLabel,
+  isFormPublished,
+  isFormRetired,
+  structuralEditBlockedMessage,
+  type PublishConflict,
+} from "@/lib/types/form-lifecycle";
 import { useLibraryActor } from "@/lib/use-library-actor";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -76,16 +107,24 @@ const FORM_TABLE_COLUMNS: ResizableDataTableColumn[] = [
   { id: "form_code", label: "Template code", defaultWidth: 140 },
   { id: "category", label: "Category", defaultWidth: 120 },
   { id: "version", label: "Version", defaultWidth: 100, minWidth: 72 },
-  { id: "storage_path", label: "Storage path", defaultWidth: 200 },
+  { id: "publication", label: "Publication", defaultWidth: 110, minWidth: 90 },
+  { id: "storage_path", label: "Storage path", defaultWidth: 180 },
   {
     id: "actions",
     label: "Actions",
-    defaultWidth: 420,
-    minWidth: 300,
-    maxWidth: 560,
+    defaultWidth: 520,
+    minWidth: 360,
+    maxWidth: 720,
     isActions: true,
   },
 ];
+
+type PublishPreviewState = {
+  mappingCount: number;
+  requiresEmptyMappingsConfirmation: boolean;
+  conflict: PublishConflict | null;
+  issues: Array<{ code: string; message: string; blocking: boolean }>;
+};
 
 export function FormsPage() {
   const { actor } = useLibraryActor();
@@ -104,6 +143,10 @@ export function FormsPage() {
   const [editingOwnerLabel, setEditingOwnerLabel] = useState<string | null>(
     null,
   );
+  const [editingLifecycle, setEditingLifecycle] = useState<{
+    status: string;
+    publication_state: string;
+  } | null>(null);
   const [formValue, setFormValue] = useState(emptyFormInput());
   const [existingStoragePath, setExistingStoragePath] = useState<string | null>(
     null,
@@ -122,6 +165,28 @@ export function FormsPage() {
   const copyPreviewFormIdRef = useRef<number | null>(null);
   const formPanelRef = useRef<HTMLDivElement>(null);
   const allowGlobalScope = Boolean(actor?.isActiveAdmin);
+
+  const [lifecycleTarget, setLifecycleTarget] = useState<FormListItem | null>(
+    null,
+  );
+  const [lifecycleAction, setLifecycleAction] = useState<
+    "publish" | "unpublish" | "retire" | "restore" | "history" | null
+  >(null);
+  const [isLifecycleWorking, setIsLifecycleWorking] = useState(false);
+  const [publishPreview, setPublishPreview] =
+    useState<PublishPreviewState | null>(null);
+  const [isPublishPreviewLoading, setIsPublishPreviewLoading] = useState(false);
+  const [allowEmptyMappings, setAllowEmptyMappings] = useState(false);
+  const [retirePreviousConfirmed, setRetirePreviousConfirmed] = useState(false);
+  const [restoreReason, setRestoreReason] = useState("");
+  const [restoreConflict, setRestoreConflict] = useState<PublishConflict | null>(
+    null,
+  );
+  const [confirmNewerPublished, setConfirmNewerPublished] = useState(false);
+  const [historyEvents, setHistoryEvents] = useState<FormStateEventListItem[]>(
+    [],
+  );
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
   useEffect(() => {
     if (formMode === "hidden") {
@@ -152,7 +217,7 @@ export function FormsPage() {
     let query = supabase
       .from("forms")
       .select("*")
-      .eq("status", "ACTIVE")
+      .in("status", ["ACTIVE", "INACTIVE"])
       .order("form_name", { ascending: true });
 
     const trimmedSearch = searchQuery.trim();
@@ -237,6 +302,7 @@ export function FormsPage() {
     setReplacePdf(false);
     setFormError(null);
     setEditingOwnerLabel(null);
+    setEditingLifecycle(null);
   };
 
   const closeForm = () => {
@@ -258,6 +324,10 @@ export function FormsPage() {
     }
     setFormMode("edit");
     setEditingTemplateId(template.id);
+    setEditingLifecycle({
+      status: template.status,
+      publication_state: template.publication_state,
+    });
     setFormValue(formToInput(template));
     setExistingStoragePath(template.source_storage_path);
     setPdfFile(null);
@@ -355,6 +425,219 @@ export function FormsPage() {
     router.push(`/forms/${result.newFormId}/editor`);
   };
 
+  const closeLifecycleDialog = (options?: { force?: boolean }) => {
+    if (isLifecycleWorking && !options?.force) {
+      return;
+    }
+    setLifecycleTarget(null);
+    setLifecycleAction(null);
+    setPublishPreview(null);
+    setIsPublishPreviewLoading(false);
+    setAllowEmptyMappings(false);
+    setRetirePreviousConfirmed(false);
+    setRestoreReason("");
+    setRestoreConflict(null);
+    setConfirmNewerPublished(false);
+    setHistoryEvents([]);
+    setIsHistoryLoading(false);
+    setIsLifecycleWorking(false);
+  };
+
+  const openPublishDialog = (template: FormListItem) => {
+    if (!canEditForm(actor, template) || !canPublishForm(template)) {
+      setListError(LIBRARY_PERMISSION_DENIED);
+      return;
+    }
+    setLifecycleTarget(template);
+    setLifecycleAction("publish");
+    setPublishPreview(null);
+    setAllowEmptyMappings(false);
+    setRetirePreviousConfirmed(false);
+    setIsPublishPreviewLoading(true);
+    setListError(null);
+    setListMessage(null);
+
+    void previewPublishForm(template.id).then((result) => {
+      setIsPublishPreviewLoading(false);
+      if (!result.ok) {
+        setListError(result.error);
+        setLifecycleTarget(null);
+        setLifecycleAction(null);
+        return;
+      }
+      setPublishPreview({
+        mappingCount: result.mappingCount,
+        requiresEmptyMappingsConfirmation:
+          result.requiresEmptyMappingsConfirmation,
+        conflict: result.conflict,
+        issues: result.issues,
+      });
+    });
+  };
+
+  const openUnpublishDialog = (template: FormListItem) => {
+    if (!canEditForm(actor, template) || !canUnpublishForm(template)) {
+      setListError(LIBRARY_PERMISSION_DENIED);
+      return;
+    }
+    setLifecycleTarget(template);
+    setLifecycleAction("unpublish");
+    setListError(null);
+  };
+
+  const openRetireDialog = (template: FormListItem) => {
+    if (!canEditForm(actor, template) || !canRetireForm(template)) {
+      setListError(LIBRARY_PERMISSION_DENIED);
+      return;
+    }
+    setLifecycleTarget(template);
+    setLifecycleAction("retire");
+    setListError(null);
+  };
+
+  const openRestoreDialog = (template: FormListItem) => {
+    if (!actor?.isActiveAdmin || !canRestoreForm(template)) {
+      setListError("Only application admins can restore retired forms.");
+      return;
+    }
+    setLifecycleTarget(template);
+    setLifecycleAction("restore");
+    setRestoreReason("");
+    setRestoreConflict(null);
+    setConfirmNewerPublished(false);
+    setListError(null);
+
+    void findPublishedFamilyConflict(template.id).then((result) => {
+      if (result.ok && result.conflict) {
+        setRestoreConflict(result.conflict);
+      }
+    });
+  };
+
+  const openHistoryDialog = (template: FormListItem) => {
+    if (!actor?.isActiveAdmin) {
+      setListError("Only application admins can view lifecycle history.");
+      return;
+    }
+    setLifecycleTarget(template);
+    setLifecycleAction("history");
+    setHistoryEvents([]);
+    setIsHistoryLoading(true);
+    setListError(null);
+
+    void listFormStateEvents(template.id).then((result) => {
+      setIsHistoryLoading(false);
+      if (!result.ok) {
+        setListError(result.error);
+        setLifecycleTarget(null);
+        setLifecycleAction(null);
+        return;
+      }
+      setHistoryEvents(result.events);
+    });
+  };
+
+  const handleConfirmLifecycle = async () => {
+    if (!lifecycleTarget || !lifecycleAction || lifecycleAction === "history") {
+      return;
+    }
+
+    setIsLifecycleWorking(true);
+    setListError(null);
+    setListMessage(null);
+
+    try {
+      if (lifecycleAction === "publish") {
+        if (
+          publishPreview?.requiresEmptyMappingsConfirmation &&
+          !allowEmptyMappings
+        ) {
+          throw new Error(
+            "Confirm that you want to publish with no field mappings.",
+          );
+        }
+        if (publishPreview?.conflict && !retirePreviousConfirmed) {
+          throw new Error(
+            "Choose Publish and retire previous, or cancel.",
+          );
+        }
+        const blocking = (publishPreview?.issues ?? []).filter(
+          (issue) => issue.blocking,
+        );
+        if (blocking.length > 0 && !allowEmptyMappings) {
+          // Blocking issues other than empty mappings still block.
+          const nonEmpty = blocking.filter(
+            (issue) => issue.code !== "EMPTY_MAPPINGS",
+          );
+          if (nonEmpty.length > 0) {
+            throw new Error(nonEmpty[0]!.message);
+          }
+        }
+
+        const result = await publishFormTemplate({
+          formId: lifecycleTarget.id,
+          retirePreviousFormId: publishPreview?.conflict
+            ? publishPreview.conflict.publishedFormId
+            : null,
+          allowEmptyMappings,
+        });
+        if (!result.ok) {
+          throw new Error(result.error);
+        }
+        setListMessage(result.message);
+      }
+
+      if (lifecycleAction === "unpublish") {
+        const result = await unpublishFormTemplate({
+          formId: lifecycleTarget.id,
+        });
+        if (!result.ok) {
+          throw new Error(result.error);
+        }
+        setListMessage(result.message);
+      }
+
+      if (lifecycleAction === "retire") {
+        const result = await retireFormTemplate({
+          formId: lifecycleTarget.id,
+        });
+        if (!result.ok) {
+          throw new Error(result.error);
+        }
+        setListMessage(result.message);
+      }
+
+      if (lifecycleAction === "restore") {
+        if (!restoreReason.trim()) {
+          throw new Error("A written reason is required to restore.");
+        }
+        if (restoreConflict && !confirmNewerPublished) {
+          throw new Error(
+            "Confirm that you want to restore despite a newer published version.",
+          );
+        }
+        const result = await restoreFormTemplate({
+          formId: lifecycleTarget.id,
+          reason: restoreReason,
+          confirmNewerPublished,
+        });
+        if (!result.ok) {
+          throw new Error(result.error);
+        }
+        setListMessage(result.message);
+      }
+
+      setIsLifecycleWorking(false);
+      closeLifecycleDialog({ force: true });
+      await loadTemplates();
+    } catch (error) {
+      setIsLifecycleWorking(false);
+      setListError(
+        error instanceof Error ? error.message : "Lifecycle action failed.",
+      );
+    }
+  };
+
   const handleSave = async () => {
     const validationError = validateFormInput(formValue, {
       mode: formMode === "create" ? "create" : "edit",
@@ -405,6 +688,7 @@ export function FormsPage() {
           .from("forms")
           .insert({
             ...normalized,
+            publication_state: "DRAFT",
             source_storage_path: pendingPath,
             scope: requestedScope,
             owner_user_id: requestedScope === "GLOBAL" ? null : user.id,
@@ -474,9 +758,11 @@ export function FormsPage() {
       if (formMode === "edit" && editingTemplateId !== null) {
         const { data: existingForm, error: existingError } = await supabase
           .from("forms")
-          .select("id, scope, owner_user_id, status")
+          .select(
+            "id, scope, owner_user_id, status, publication_state",
+          )
           .eq("id", editingTemplateId)
-          .eq("status", "ACTIVE")
+          .in("status", ["ACTIVE", "INACTIVE"])
           .single();
 
         if (existingError || !existingForm) {
@@ -485,9 +771,19 @@ export function FormsPage() {
 
         assertCanEditForm(actor, existingForm);
 
+        if (isFormRetired(existingForm)) {
+          throw new Error(FORM_RETIRED_READONLY_MESSAGE);
+        }
+
         let sourceStoragePath = existingStoragePath?.trim() || "";
 
         if (replacePdf) {
+          if (!canStructurallyEditForm(existingForm)) {
+            throw new Error(
+              structuralEditBlockedMessage(existingForm) ??
+                FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+            );
+          }
           if (!pdfFile) {
             throw new Error("Select a PDF file to replace the current template.");
           }
@@ -575,11 +871,12 @@ export function FormsPage() {
 
     try {
       assertCanEditForm(actor, templatePendingDelete);
+      const deletableStatuses = ["ACTIVE", "INACTIVE"] as const;
       const { data: deletedRows, error } = await supabase
         .from("forms")
         .update({ status: "DELETED" })
         .eq("id", templatePendingDelete.id)
-        .eq("status", "ACTIVE")
+        .in("status", [...deletableStatuses])
         .select("id");
 
       if (error) {
@@ -612,12 +909,24 @@ export function FormsPage() {
   const formTitle =
     formMode === "create" ? "Add form template" : "Edit form template";
 
+  const editingIsRetired =
+    editingLifecycle != null && isFormRetired(editingLifecycle);
+  const editingIsPublished =
+    editingLifecycle != null && isFormPublished(editingLifecycle);
+  const formLifecycleBanner = editingIsRetired
+    ? FORM_RETIRED_READONLY_MESSAGE
+    : editingIsPublished
+      ? FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE
+      : null;
+
   const formDescription =
     formMode === "create"
       ? "Upload a blank PDF and register it as a reusable form template."
-      : editingOwnerLabel
-        ? editingOwnerLabel
-        : "Update template details or replace the stored PDF.";
+      : editingIsRetired
+        ? FORM_RETIRED_READONLY_MESSAGE
+        : editingOwnerLabel
+          ? editingOwnerLabel
+          : "Update template details or replace the stored PDF.";
 
   const copyOwnerName =
     copyTarget?.ownerDisplayName?.trim() || "this user";
@@ -639,6 +948,18 @@ export function FormsPage() {
     }
     return ` ${parts.join("; ")}.`;
   })();
+
+  const publishBlockingIssues =
+    publishPreview?.issues.filter((issue) => issue.blocking) ?? [];
+  const publishConfirmDisabled =
+    isPublishPreviewLoading ||
+    publishPreview == null ||
+    (publishPreview.requiresEmptyMappingsConfirmation && !allowEmptyMappings) ||
+    (publishPreview.conflict != null && !retirePreviousConfirmed) ||
+    publishBlockingIssues.some(
+      (issue) =>
+        issue.code !== "EMPTY_MAPPINGS" || !allowEmptyMappings,
+    );
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
@@ -677,6 +998,246 @@ export function FormsPage() {
         variant="default"
         initialFocus="confirm"
       />
+
+      <ConfirmDialog
+        open={lifecycleAction === "publish" && lifecycleTarget != null}
+        title="Publish form?"
+        confirmLabel={
+          publishPreview?.conflict
+            ? "Publish and retire previous"
+            : "Publish Form"
+        }
+        cancelLabel="Cancel"
+        isConfirming={isLifecycleWorking}
+        confirmingLabel="Publishing…"
+        confirmDisabled={publishConfirmDisabled}
+        onConfirm={() => void handleConfirmLifecycle()}
+        onCancel={() => closeLifecycleDialog()}
+        className="max-h-[90vh] max-w-lg overflow-y-auto"
+      >
+        <div className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            Publish “{lifecycleTarget?.form_name}” so it can be used in
+            collections and new packets.
+          </p>
+          {isPublishPreviewLoading ? (
+            <p className="text-muted-foreground">Checking publish readiness…</p>
+          ) : publishPreview ? (
+            <>
+              <p className="text-muted-foreground">
+                {publishPreview.mappingCount} active field mapping
+                {publishPreview.mappingCount === 1 ? "" : "s"}.
+              </p>
+              {publishPreview.issues.length > 0 ? (
+                <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+                  {publishPreview.issues.map((issue) => (
+                    <li
+                      key={`${issue.code}-${issue.message}`}
+                      className={
+                        issue.blocking ? "text-destructive" : undefined
+                      }
+                    >
+                      {issue.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-muted-foreground">No publish issues found.</p>
+              )}
+              {publishPreview.requiresEmptyMappingsConfirmation ? (
+                <div className="flex items-start gap-2">
+                  <AppCheckbox
+                    id="allow_empty_mappings"
+                    checked={allowEmptyMappings}
+                    onCheckedChange={(checked) =>
+                      setAllowEmptyMappings(checked === true)
+                    }
+                  />
+                  <Label
+                    htmlFor="allow_empty_mappings"
+                    className="font-normal leading-snug"
+                  >
+                    Publish anyway with no field mappings
+                  </Label>
+                </div>
+              ) : null}
+              {publishPreview.conflict ? (
+                <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
+                  <p className="font-medium text-warning">
+                    A published version already exists
+                  </p>
+                  <p className="text-muted-foreground">
+                    Currently published: {publishPreview.conflict.formName}
+                    {publishPreview.conflict.versionLabel
+                      ? ` (${publishPreview.conflict.versionLabel})`
+                      : ""}
+                  </p>
+                  <div className="flex items-start gap-2">
+                    <AppCheckbox
+                      id="retire_previous_published"
+                      checked={retirePreviousConfirmed}
+                      onCheckedChange={(checked) =>
+                        setRetirePreviousConfirmed(checked === true)
+                      }
+                    />
+                    <Label
+                      htmlFor="retire_previous_published"
+                      className="font-normal leading-snug"
+                    >
+                      Publish and retire the previous published version
+                    </Label>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={lifecycleAction === "unpublish" && lifecycleTarget != null}
+        title="Unpublish form?"
+        message={
+          lifecycleTarget
+            ? `Unpublish “${lifecycleTarget.form_name}”? It will return to Draft. Existing packet forms remain available.`
+            : undefined
+        }
+        confirmLabel="Unpublish Form"
+        cancelLabel="Cancel"
+        isConfirming={isLifecycleWorking}
+        confirmingLabel="Unpublishing…"
+        onConfirm={() => void handleConfirmLifecycle()}
+        onCancel={() => closeLifecycleDialog()}
+      />
+
+      <ConfirmDialog
+        open={lifecycleAction === "retire" && lifecycleTarget != null}
+        title="Retire form version?"
+        message={
+          lifecycleTarget
+            ? `Retire “${lifecycleTarget.form_name}”? Retired versions are read-only.`
+            : undefined
+        }
+        confirmLabel="Retire Version"
+        cancelLabel="Cancel"
+        variant="destructive"
+        isConfirming={isLifecycleWorking}
+        confirmingLabel="Retiring…"
+        onConfirm={() => void handleConfirmLifecycle()}
+        onCancel={() => closeLifecycleDialog()}
+      />
+
+      <ConfirmDialog
+        open={lifecycleAction === "restore" && lifecycleTarget != null}
+        title="Restore retired version?"
+        confirmLabel="Restore Retired Version"
+        cancelLabel="Cancel"
+        isConfirming={isLifecycleWorking}
+        confirmingLabel="Restoring…"
+        confirmDisabled={
+          !restoreReason.trim() ||
+          (restoreConflict != null && !confirmNewerPublished)
+        }
+        onConfirm={() => void handleConfirmLifecycle()}
+        onCancel={() => closeLifecycleDialog()}
+        className="max-h-[90vh] max-w-lg overflow-y-auto"
+      >
+        <div className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            Restore “{lifecycleTarget?.form_name}” as an ACTIVE Draft. It will
+            not be published.
+          </p>
+          <div className="space-y-2">
+            <Label htmlFor="restore_reason">Reason *</Label>
+            <Textarea
+              id="restore_reason"
+              rows={3}
+              value={restoreReason}
+              onChange={(event) => setRestoreReason(event.target.value)}
+              placeholder="Why is this version being restored?"
+            />
+          </div>
+          {restoreConflict ? (
+            <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
+              <p className="font-medium text-warning">
+                A newer published version exists
+              </p>
+              <p className="text-muted-foreground">
+                {restoreConflict.formName}
+                {restoreConflict.versionLabel
+                  ? ` (${restoreConflict.versionLabel})`
+                  : ""}{" "}
+                is currently published in this family.
+              </p>
+              <div className="flex items-start gap-2">
+                <AppCheckbox
+                  id="confirm_newer_published"
+                  checked={confirmNewerPublished}
+                  onCheckedChange={(checked) =>
+                    setConfirmNewerPublished(checked === true)
+                  }
+                />
+                <Label
+                  htmlFor="confirm_newer_published"
+                  className="font-normal leading-snug"
+                >
+                  Restore this version as Draft anyway
+                </Label>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={lifecycleAction === "history" && lifecycleTarget != null}
+        title="Lifecycle history"
+        confirmLabel="Close"
+        cancelLabel="Cancel"
+        onConfirm={() => closeLifecycleDialog()}
+        onCancel={() => closeLifecycleDialog()}
+        className="max-h-[90vh] max-w-lg overflow-y-auto"
+      >
+        <div className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            {lifecycleTarget?.form_name}
+          </p>
+          {isHistoryLoading ? (
+            <p className="text-muted-foreground">Loading history…</p>
+          ) : historyEvents.length === 0 ? (
+            <p className="text-muted-foreground">No lifecycle events yet.</p>
+          ) : (
+            <div className="divide-y rounded-md border">
+              {historyEvents.map((event) => (
+                <div key={event.id} className="space-y-1 p-3">
+                  <p className="font-medium">
+                    {formatFormStateEventType(event.event_type)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(event.create_date).toLocaleString()}
+                    {event.actor_display_name
+                      ? ` · ${event.actor_display_name}`
+                      : ""}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatLifecycleTransitionLabel(
+                      event.from_status,
+                      event.from_publication_state,
+                      event.to_status,
+                      event.to_publication_state,
+                    )}
+                  </p>
+                  {event.reason ? (
+                    <p className="text-xs text-muted-foreground">
+                      Reason: {event.reason}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </ConfirmDialog>
       <ListPageHeader
         title="Form Templates"
         description="Manage blank PDF form templates for future document packets."
@@ -701,7 +1262,7 @@ export function FormsPage() {
               onCancel={closeForm}
               isSubmitting={isSubmitting}
               error={formError}
-              mode={formMode}
+              mode={editingIsRetired ? "view" : formMode === "create" ? "create" : "edit"}
               templateId={editingTemplateId}
               existingStoragePath={existingStoragePath}
               pdfFile={pdfFile}
@@ -709,6 +1270,11 @@ export function FormsPage() {
               replacePdf={replacePdf}
               onReplacePdfChange={setReplacePdf}
               allowGlobalScope={allowGlobalScope}
+              lifecycleBanner={formLifecycleBanner}
+              allowReplacePdf={
+                editingLifecycle == null ||
+                canStructurallyEditForm(editingLifecycle)
+              }
             />
           </CardContent>
         </Card>
@@ -716,9 +1282,10 @@ export function FormsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Active form templates</CardTitle>
+          <CardTitle>Form templates</CardTitle>
           <CardDescription>
-            Search by template name, code, category, or version label.
+            Search by template name, code, category, or version label. Includes
+            draft, published, and retired versions.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -807,6 +1374,12 @@ export function FormsPage() {
                       {template.version_label ?? "—"}
                     </ResizableDataTableCell>
                     <ResizableDataTableCell>
+                      <FormPublicationBadge
+                        status={template.status}
+                        publication_state={template.publication_state}
+                      />
+                    </ResizableDataTableCell>
+                    <ResizableDataTableCell>
                       <span
                         className="line-clamp-2 break-all font-mono text-xs leading-snug text-muted-foreground"
                         title={template.source_storage_path}
@@ -833,13 +1406,62 @@ export function FormsPage() {
                             Copy to Global Library
                           </Button>
                         ) : null}
+                        {canEditForm(actor, template) &&
+                        canPublishForm(template) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openPublishDialog(template)}
+                          >
+                            Publish Form
+                          </Button>
+                        ) : null}
+                        {canEditForm(actor, template) &&
+                        canUnpublishForm(template) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openUnpublishDialog(template)}
+                          >
+                            Unpublish Form
+                          </Button>
+                        ) : null}
+                        {canEditForm(actor, template) &&
+                        canRetireForm(template) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openRetireDialog(template)}
+                          >
+                            Retire Version
+                          </Button>
+                        ) : null}
+                        {actor?.isActiveAdmin &&
+                        canRestoreForm(template) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openRestoreDialog(template)}
+                          >
+                            Restore Retired Version
+                          </Button>
+                        ) : null}
+                        {actor?.isActiveAdmin ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openHistoryDialog(template)}
+                          >
+                            History
+                          </Button>
+                        ) : null}
                         {canEditForm(actor, template) ? (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => openEditForm(template)}
                           >
-                            Edit
+                            {isFormRetired(template) ? "View" : "Edit"}
                           </Button>
                         ) : null}
                         {canDeleteForm(actor, template) ? (

@@ -22,6 +22,7 @@ import {
   type FormDefaultsFieldRow,
   type FormDefaultsPageData,
 } from "@/lib/field-defaults-management";
+import { updateFieldThroughFormEditor } from "@/lib/forms/map-fields-mutations";
 import { formatFilledFromLabel } from "@/lib/types/field-provenance-labels";
 import {
   formatDefaultSourceLabel,
@@ -41,6 +42,15 @@ import {
 } from "@/lib/pdf-field-sort";
 import { createClient } from "@/lib/supabase/client";
 import { type Form, formatFormReference } from "@/lib/types/form";
+import {
+  FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+  FORM_RETIRED_READONLY_MESSAGE,
+  canStructurallyEditForm,
+  isFormPublished,
+  isFormRetired,
+  structuralEditBlockedMessage,
+} from "@/lib/types/form-lifecycle";
+import { useLibraryActor } from "@/lib/use-library-actor";
 import {
   FORM_FIELD_MAPPING_SELECT,
   type FormFieldMapping,
@@ -176,6 +186,7 @@ async function resolveFieldId(
 }
 
 export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
+  const { actor } = useLibraryActor();
   const [template, setTemplate] = useState<Form | null>(null);
   const [catalogFields, setCatalogFields] = useState<Field[]>([]);
   const [mappings, setMappings] = useState<PlacedPdfField[]>([]);
@@ -201,6 +212,13 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   const [defaultEditMessage, setDefaultEditMessage] = useState<string | null>(
     null,
   );
+  const [publishedFieldConfirm, setPublishedFieldConfirm] = useState<{
+    fieldId: string;
+    formNames: string[];
+  } | null>(null);
+  const [pendingFieldSaveContinue, setPendingFieldSaveContinue] = useState<
+    (() => Promise<void>) | null
+  >(null);
   const [clearDefaultFieldId, setClearDefaultFieldId] = useState<string | null>(
     null,
   );
@@ -403,7 +421,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           .from("forms")
           .select("*")
           .eq("id", formId)
-          .eq("status", "ACTIVE")
+          .in("status", ["ACTIVE", "INACTIVE"])
           .single(),
         supabase
           .from("form_field_mappings")
@@ -488,7 +506,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
       if (
         nextTemplate.scope === "GLOBAL" &&
-        (nextTemplate.status == null || nextTemplate.status === "ACTIVE")
+        (nextTemplate.status == null ||
+          nextTemplate.status === "ACTIVE" ||
+          nextTemplate.status === "INACTIVE")
       ) {
         const defaultsResult = await loadFormDefaultsPage({ formId });
         if (request.isCurrent() && defaultsResult.ok) {
@@ -614,6 +634,14 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   }, [loadData]);
 
   const handleExtractInventory = useCallback(async (): Promise<PdfFieldInventoryResult | null> => {
+    if (template && !canStructurallyEditForm(template)) {
+      setInventoryError(
+        structuralEditBlockedMessage(template) ??
+          FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+      );
+      return null;
+    }
+
     if (!pdfUrl) {
       return null;
     }
@@ -637,10 +665,18 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     } finally {
       setIsExtractingInventory(false);
     }
-  }, [pdfUrl]);
+  }, [pdfUrl, template]);
 
   const handleImportAcroformFields = useCallback(async () => {
     if (!template || !inventory || inventory.items.length === 0) {
+      return;
+    }
+
+    if (!canStructurallyEditForm(template)) {
+      setInventoryError(
+        structuralEditBlockedMessage(template) ??
+          FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+      );
       return;
     }
 
@@ -687,7 +723,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       !pdfUrl ||
       !isPdfRenderReady ||
       acroformAutoDetectRef.current ||
-      acroformPromptDismissed
+      acroformPromptDismissed ||
+      (template != null && !canStructurallyEditForm(template))
     ) {
       return;
     }
@@ -700,7 +737,13 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         setAcroformPromptOpen(true);
       }
     })();
-  }, [pdfUrl, isPdfRenderReady, acroformPromptDismissed, handleExtractInventory]);
+  }, [
+    pdfUrl,
+    isPdfRenderReady,
+    acroformPromptDismissed,
+    handleExtractInventory,
+    template,
+  ]);
 
   const mappingsByPage = useMemo(() => {
     const grouped: Record<number, PlacedPdfField[]> = {};
@@ -771,6 +814,14 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     clickX: number,
     clickY: number,
   ) => {
+    if (template && !canStructurallyEditForm(template)) {
+      setSaveError(
+        structuralEditBlockedMessage(template) ??
+          FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+      );
+      return;
+    }
+
     const metrics = pageMetrics[pageNumber];
     if (
       !metrics?.renderedWidth ||
@@ -801,6 +852,14 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
   const handleSavePlacement = async () => {
     if (!pendingPlacement) return;
+
+    if (template && !canStructurallyEditForm(template)) {
+      setSaveError(
+        structuralEditBlockedMessage(template) ??
+          FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+      );
+      return;
+    }
 
     const validationError = validatePdfMappingEditorInput(placementValue);
     if (validationError) {
@@ -877,10 +936,25 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   };
 
   const handleDeleteMapping = (mapping: PlacedPdfField) => {
+    if (template && !canStructurallyEditForm(template)) {
+      setDeleteError(
+        structuralEditBlockedMessage(template) ??
+          FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+      );
+      return;
+    }
     setMappingPendingDelete(mapping);
   };
 
   const executeDeleteMapping = async (mapping: PlacedPdfField) => {
+    if (template && !canStructurallyEditForm(template)) {
+      setDeleteError(
+        structuralEditBlockedMessage(template) ??
+          FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+      );
+      return false;
+    }
+
     const scrollSnapshot = captureWorkspaceScroll();
     setDeleteError(null);
     setIsDeletingId(mapping.id);
@@ -1015,7 +1089,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   };
 
   const openDefaultEditDialog = (fieldRow: FormDefaultsFieldRow) => {
-    if (!defaultsPage) {
+    if (!defaultsPage || (template != null && isFormRetired(template))) {
       return;
     }
     const canEditPersonal =
@@ -1051,6 +1125,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   };
 
   const handleSaveDefaultEdit = async () => {
+    if (template != null && isFormRetired(template)) {
+      setDefaultEditError(FORM_RETIRED_READONLY_MESSAGE);
+      return;
+    }
     if (!defaultEditFieldId || !defaultsPage) {
       return;
     }
@@ -1141,12 +1219,32 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     setEditFieldValue(emptyFieldInput());
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = async (options?: { adminConfirmedPublishedField?: boolean }) => {
     if (!editingMapping) return;
 
+    if (template && isFormRetired(template)) {
+      setEditError(FORM_RETIRED_READONLY_MESSAGE);
+      return;
+    }
+
+    const allowStructural = !template || canStructurallyEditForm(template);
     const isAcroform = isAcroformImportedMapping(editingMapping);
-    const placementValidationError = validatePdfPlacementInput(editValue);
-    const fieldValidationError = validateFieldInput(editFieldValue);
+
+    // Published forms: block catalog/source mutation through this workflow.
+    if (!allowStructural && editingMapping.field_id) {
+      setEditError(
+        structuralEditBlockedMessage(template!) ??
+          FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+      );
+      return;
+    }
+
+    const placementValidationError = allowStructural
+      ? validatePdfPlacementInput(editValue)
+      : null;
+    const fieldValidationError = allowStructural
+      ? validateFieldInput(editFieldValue)
+      : null;
     const validationError = placementValidationError ?? fieldValidationError;
     if (validationError) {
       setEditError(validationError);
@@ -1157,88 +1255,162 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     const normalizedField = normalizeFieldInput(editFieldValue);
     const scrollSnapshot = captureWorkspaceScroll();
     const preservedMappingId = editingMapping.id;
+    const linkedFieldId = editingMapping.field_id;
     setIsEditing(true);
     setEditError(null);
 
     const supabase = createClient();
 
-    try {
-      const mappingUpdates = isAcroform
-        ? {
-            mapping_name: normalizedPlacement.mapping.mapping_name,
-            default_value_override:
-              normalizedPlacement.mapping.default_value_override,
-            required: normalizedPlacement.mapping.required,
-            notes: normalizedPlacement.mapping.notes,
+    const continueSave = async () => {
+      try {
+        if (allowStructural) {
+          const mappingUpdates = isAcroform
+            ? {
+                mapping_name: normalizedPlacement.mapping.mapping_name,
+                default_value_override:
+                  normalizedPlacement.mapping.default_value_override,
+                required: normalizedPlacement.mapping.required,
+                notes: normalizedPlacement.mapping.notes,
+              }
+            : normalizedPlacement.mapping;
+
+          const { data: mappingData, error: mappingError } = await supabase
+            .from("form_field_mappings")
+            .update(mappingUpdates)
+            .eq("id", editingMapping.id)
+            .eq("status", "ACTIVE")
+            .select(FORM_FIELD_MAPPING_SELECT)
+            .single();
+
+          if (mappingError) {
+            setIsEditing(false);
+            setEditError(mappingError.message);
+            return;
           }
-        : normalizedPlacement.mapping;
 
-      const { data: mappingData, error: mappingError } = await supabase
-        .from("form_field_mappings")
-        .update(mappingUpdates)
-        .eq("id", editingMapping.id)
-        .eq("status", "ACTIVE")
-        .select(FORM_FIELD_MAPPING_SELECT)
-        .single();
-
-      if (mappingError) {
-        setIsEditing(false);
-        setEditError(mappingError.message);
-        return;
-      }
-
-      const linkedFieldId = editingMapping.field_id;
-
-      if (linkedFieldId) {
-        const { error: fieldError } = await supabase
-          .from("fields")
-          .update(normalizedField)
-          .eq("id", linkedFieldId)
-          .eq("status", "ACTIVE");
-
-        if (fieldError) {
-          setIsEditing(false);
-          setEditError(formatFieldSourceSaveError(fieldError.message));
-          return;
-        }
-      }
-
-      setIsEditing(false);
-
-      const updatedMapping = formFieldMappingToPlacedPdfField(
-        mappingData as FormFieldMapping,
-      );
-      setMappings((current) =>
-        sortPlacedPdfFields(
-          current.map((item) =>
-            item.id === updatedMapping.id ? updatedMapping : item,
-          ),
-        ),
-      );
-
-      if (linkedFieldId) {
-        const { data: fieldData, error: fieldFetchError } = await supabase
-          .from("fields")
-          .select("*")
-          .eq("id", linkedFieldId)
-          .single();
-
-        if (!fieldFetchError && fieldData) {
-          setCatalogFields((current) =>
-            current.map((field) =>
-              field.id === fieldData.id ? (fieldData as Field) : field,
+          const updatedMapping = formFieldMappingToPlacedPdfField(
+            mappingData as FormFieldMapping,
+          );
+          setMappings((current) =>
+            sortPlacedPdfFields(
+              current.map((item) =>
+                item.id === updatedMapping.id ? updatedMapping : item,
+              ),
             ),
           );
         }
+
+        if (linkedFieldId && allowStructural) {
+          const fieldResult = await updateFieldThroughFormEditor({
+            formId,
+            fieldId: linkedFieldId,
+            patch: normalizedField,
+          });
+
+          if (!fieldResult.ok) {
+            setIsEditing(false);
+            setEditError(formatFieldSourceSaveError(fieldResult.error));
+            return;
+          }
+
+          const { data: fieldData, error: fieldFetchError } = await supabase
+            .from("fields")
+            .select("*")
+            .eq("id", linkedFieldId)
+            .single();
+
+          if (!fieldFetchError && fieldData) {
+            setCatalogFields((current) =>
+              current.map((field) =>
+                field.id === fieldData.id ? (fieldData as Field) : field,
+              ),
+            );
+          }
+        }
+
+        setIsEditing(false);
+        setSelectedMappingId(preservedMappingId);
+        closeEditDialog();
+        restoreWorkspaceScroll({
+          ...scrollSnapshot,
+          pageNumber: editingMapping.page_number,
+          mappingId: preservedMappingId,
+        });
+      } catch (editSaveError) {
+        setIsEditing(false);
+        setEditError(
+          editSaveError instanceof Error
+            ? editSaveError.message
+            : "Failed to update template placement.",
+        );
+      }
+    };
+
+    try {
+      if (linkedFieldId && !options?.adminConfirmedPublishedField) {
+        const linkedField = catalogFields.find(
+          (field) => field.id === linkedFieldId,
+        );
+        if (linkedField?.scope === "GLOBAL") {
+          const { data: mappingRows, error: mappingLookupError } = await supabase
+            .from("form_field_mappings")
+            .select("form_id")
+            .eq("field_id", linkedFieldId)
+            .eq("status", "ACTIVE")
+            .neq("form_id", formId);
+
+          if (mappingLookupError) {
+            setIsEditing(false);
+            setEditError(mappingLookupError.message);
+            return;
+          }
+
+          const otherFormIds = [
+            ...new Set(
+              ((mappingRows ?? []) as { form_id: number }[])
+                .map((row) => row.form_id)
+                .filter((id) => Number.isFinite(id)),
+            ),
+          ];
+
+          if (otherFormIds.length > 0) {
+            const { data: publishedForms, error: publishedError } = await supabase
+              .from("forms")
+              .select("id, form_name")
+              .in("id", otherFormIds)
+              .eq("status", "ACTIVE")
+              .eq("publication_state", "PUBLISHED");
+
+            if (publishedError) {
+              setIsEditing(false);
+              setEditError(publishedError.message);
+              return;
+            }
+
+            if ((publishedForms ?? []).length > 0) {
+              if (!actor?.isActiveAdmin) {
+                setIsEditing(false);
+                setEditError(
+                  "This Global field is used on published forms. Only an application admin can change its metadata.",
+                );
+                return;
+              }
+
+              setIsEditing(false);
+              setPublishedFieldConfirm({
+                fieldId: linkedFieldId,
+                formNames: (publishedForms ?? []).map(
+                  (row) => (row.form_name as string) || "Published form",
+                ),
+              });
+              setPendingFieldSaveContinue(() => continueSave);
+              return;
+            }
+          }
+        }
       }
 
-      setSelectedMappingId(preservedMappingId);
-      closeEditDialog();
-      restoreWorkspaceScroll({
-        ...scrollSnapshot,
-        pageNumber: updatedMapping.page_number,
-        mappingId: preservedMappingId,
-      });
+      await continueSave();
     } catch (editSaveError) {
       setIsEditing(false);
       setEditError(
@@ -1276,6 +1448,14 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       page_height: number;
     },
   ) => {
+    if (template && !canStructurallyEditForm(template)) {
+      setUpdateLayoutError(
+        structuralEditBlockedMessage(template) ??
+          FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+      );
+      return;
+    }
+
     if (isAcroformImportedMapping(mapping)) {
       return;
     }
@@ -1366,6 +1546,14 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
   const moveMappingToPage = useCallback(
     async (mapping: PlacedPdfField, newPageNumber: number) => {
+      if (template && !canStructurallyEditForm(template)) {
+        setUpdateLayoutError(
+          structuralEditBlockedMessage(template) ??
+            FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+        );
+        return;
+      }
+
       if (isAcroformImportedMapping(mapping)) {
         return;
       }
@@ -1466,6 +1654,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
       refreshEditorData,
       captureWorkspaceScroll,
       restoreWorkspaceScroll,
+      template,
     ],
   );
 
@@ -1492,15 +1681,27 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     ? pageMetrics[pendingPlacement.pageNumber]
     : null;
 
+  const structuralEditsAllowed =
+    template != null && canStructurallyEditForm(template);
+  const formRetired = template != null && isFormRetired(template);
+  const formPublished = template != null && isFormPublished(template);
+  const structuralBanner = formRetired
+    ? FORM_RETIRED_READONLY_MESSAGE
+    : formPublished
+      ? FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE
+      : null;
+
   const defaultEditFieldRow = defaultEditFieldId
     ? (defaultsByFieldId.get(defaultEditFieldId) ?? null)
     : null;
   const defaultEditCanPersonal =
+    !formRetired &&
     !!defaultsPage &&
     !!defaultEditFieldRow &&
     defaultsPage.canEditPrivate &&
     defaultEditFieldRow.editorKind !== "unsupported";
   const defaultEditCanOrganization =
+    !formRetired &&
     !!defaultsPage &&
     !!defaultEditFieldRow &&
     defaultsPage.canEditOrganization &&
@@ -1521,6 +1722,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
             {template.form_name} ({formatFormReference(template.id)}) · Global
             template structure and defaults
           </p>
+          {structuralBanner ? (
+            <p className="mt-1 text-xs text-warning">{structuralBanner}</p>
+          ) : null}
           <p className="mt-1 text-xs text-muted-foreground">
             {FIELD_VALUE_MAPPING_GUIDANCE}
           </p>
@@ -1578,8 +1782,9 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
               Fit Page
             </Button>
             <p className="hidden text-xs text-muted-foreground lg:block">
-              Click the PDF to place fields. Click overlays or list rows to
-              select.
+              {structuralEditsAllowed
+                ? "Click the PDF to place fields. Click overlays or list rows to select."
+                : structuralBanner}
             </p>
           </div>
 
@@ -1673,9 +1878,13 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                               >
                                 <button
                                   type="button"
-                                  className="absolute inset-0 z-[1] cursor-crosshair bg-transparent"
+                                  className="absolute inset-0 z-[1] cursor-crosshair bg-transparent disabled:cursor-default"
                                   aria-label={`Place field on page ${pageNumber}`}
+                                  disabled={!structuralEditsAllowed}
                                   onClick={(event) => {
+                                    if (!structuralEditsAllowed) {
+                                      return;
+                                    }
                                     const rect =
                                       event.currentTarget.getBoundingClientRect();
                                     openPlacementDialog(
@@ -1695,6 +1904,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                                     isUpdating={
                                       updatingMappingId === mapping.id
                                     }
+                                    readOnly={!structuralEditsAllowed}
                                     onSelect={selectMappingFromOverlay}
                                     onDragStop={(overlayMapping, x, y) =>
                                       handleOverlayDragStop(
@@ -1740,18 +1950,20 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           maxWidth={sidebarMaxWidth}
           onWidthChange={setSidebarWidth}
         >
-          <PdfFieldInventoryPanel
-            inventory={inventory}
-            applyResult={inventoryApplyResult}
-            importReportDismissed={importReportDismissed}
-            importReportKey={importReportKey}
-            isExtracting={isExtractingInventory}
-            isImporting={isImportingAcroform}
-            error={inventoryError}
-            onExtract={() => void handleExtractInventory()}
-            onImport={() => void handleImportAcroformFields()}
-            onDismissImportReport={() => setImportReportDismissed(true)}
-          />
+          {structuralEditsAllowed ? (
+            <PdfFieldInventoryPanel
+              inventory={inventory}
+              applyResult={inventoryApplyResult}
+              importReportDismissed={importReportDismissed}
+              importReportKey={importReportKey}
+              isExtracting={isExtractingInventory}
+              isImporting={isImportingAcroform}
+              error={inventoryError}
+              onExtract={() => void handleExtractInventory()}
+              onImport={() => void handleImportAcroformFields()}
+              onDismissImportReport={() => setImportReportDismissed(true)}
+            />
+          ) : null}
           <div className="shrink-0 border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Template placements</h2>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -1783,12 +1995,14 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                     ? defaultsByFieldId.get(mapping.field_id)
                     : undefined;
                   const canEditDefault =
+                    !formRetired &&
                     !!fieldRow &&
                     !!defaultsPage &&
                     (defaultsPage.canEditPrivate ||
                       defaultsPage.canEditOrganization) &&
                     fieldRow.editorKind !== "unsupported";
                   const canClearFormScopedDefault =
+                    !formRetired &&
                     !!fieldRow &&
                     !!defaultsPage &&
                     defaultsPage.canEditPrivate &&
@@ -1845,7 +2059,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                                     disabled={
                                       updatingMappingId === mapping.id ||
                                       mapping.page_number <= 1 ||
-                                      numPages < 1
+                                      numPages < 1 ||
+                                      !structuralEditsAllowed
                                     }
                                     aria-label="Move to previous page"
                                     onClick={() =>
@@ -1865,7 +2080,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                                     defaultValue={mapping.page_number}
                                     disabled={
                                       updatingMappingId === mapping.id ||
-                                      numPages < 1
+                                      numPages < 1 ||
+                                      !structuralEditsAllowed
                                     }
                                     className="h-8 w-16 px-2 text-center tabular-nums"
                                     aria-label="Page number"
@@ -1894,7 +2110,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                                     disabled={
                                       updatingMappingId === mapping.id ||
                                       mapping.page_number >= numPages ||
-                                      numPages < 1
+                                      numPages < 1 ||
+                                      !structuralEditsAllowed
                                     }
                                     aria-label="Move to next page"
                                     onClick={() =>
@@ -1978,7 +2195,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                         <Button
                           variant="destructive"
                           size="sm"
-                          disabled={isDeletingId === mapping.id}
+                          disabled={
+                            isDeletingId === mapping.id ||
+                            !structuralEditsAllowed
+                          }
                           onClick={() => void handleDeleteMapping(mapping)}
                         >
                           {isDeletingId === mapping.id
@@ -2078,6 +2298,46 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           setClearDefaultError(null);
         }}
       />
+
+      <ConfirmDialog
+        open={publishedFieldConfirm != null}
+        title="Update Global field used on published forms?"
+        confirmLabel="Update field (admin)"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          const continueSave = pendingFieldSaveContinue;
+          setPublishedFieldConfirm(null);
+          setPendingFieldSaveContinue(null);
+          if (continueSave) {
+            setIsEditing(true);
+            void continueSave();
+          }
+        }}
+        onCancel={() => {
+          setPublishedFieldConfirm(null);
+          setPendingFieldSaveContinue(null);
+        }}
+        className="max-w-lg"
+      >
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            This Global field is used on other ACTIVE published form templates.
+            Changing its metadata or source config affects those forms.
+          </p>
+          {publishedFieldConfirm ? (
+            <ul className="list-disc space-y-1 pl-4">
+              {publishedFieldConfirm.formNames.slice(0, 8).map((name) => (
+                <li key={name}>{name}</li>
+              ))}
+              {publishedFieldConfirm.formNames.length > 8 ? (
+                <li>
+                  …and {publishedFieldConfirm.formNames.length - 8} more
+                </li>
+              ) : null}
+            </ul>
+          ) : null}
+        </div>
+      </ConfirmDialog>
 
       {defaultEditFieldRow && defaultsPage ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
