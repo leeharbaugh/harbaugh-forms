@@ -106,6 +106,7 @@ export function getDefaultPacketRole(
       }
       return "CO_CLIENT";
     case "contract_offer":
+    case "custom":
       return index === 0 ? "PRIMARY" : "CO_CLIENT";
   }
 }

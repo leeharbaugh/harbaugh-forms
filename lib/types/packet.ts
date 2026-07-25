@@ -16,7 +16,6 @@ import {
   getOrderedContactNames,
 } from "@/lib/types/buyer-rep-agreement";
 import type { Form } from "@/lib/types/form";
-import type { ListingOwnerKind } from "@/lib/types/listing-packet-kind";
 import type {
   Collection,
   CollectionFormLink,
@@ -26,31 +25,27 @@ import type {
   PacketContactAssignment,
 } from "@/lib/types/packet-contact";
 import type { Property } from "@/lib/types/property";
+import type { PacketWorkflowType } from "@/lib/types/packet-workflow";
 import {
-  getPacketContactRequiredMessage,
-  getPropertyRequiredMessage,
-  type PacketWorkflowType,
-  workflowRequiresProperty,
+  resolvePacketPropertyIdForSave,
+  validateCreateCustomPacketInput,
+  validateCreatePacketFromCollectionInput,
+  validateUpdatePacketInput,
 } from "@/lib/types/packet-workflow";
 
-/** Buyer rep packets never persist a subject property. */
-export function resolvePacketPropertyIdForSave(
-  packetType: PacketWorkflowType | null,
-  propertyId: number | null,
-): number | null {
-  if (packetType === "buyer_rep") {
-    return null;
-  }
-
-  return propertyId;
-}
+export {
+  resolvePacketPropertyIdForSave,
+  validateCreateCustomPacketInput,
+  validateCreatePacketFromCollectionInput,
+  validateUpdatePacketInput,
+};
 
 export type DocumentState = "DRAFT" | "FINAL" | "SIGNED" | "VOID";
 
 export type Packet = {
   owner_user_id: string | null;
   id: number;
-  collection_id: number;
+  collection_id: number | null;
   representation_agreement_id: number | null;
   packet_type: PacketWorkflowType | null;
   property_id: number | null;
@@ -279,78 +274,14 @@ export function formatRelatedAgreementLabel(
   return `${contactNames} (${formatAgreementReference(agreement.id)})`;
 }
 
-export function validateCreatePacketFromCollectionInput(input: {
-  collectionId: number | null;
-  packetType: PacketWorkflowType;
-  contactIds: number[];
-  propertyId: number | null;
-  listingOwnerKind?: ListingOwnerKind;
-}): string | null {
-  if (input.collectionId == null) {
-    return "Choose a collection before continuing.";
-  }
-
-  if (input.contactIds.length === 0) {
-    return getPacketContactRequiredMessage(
-      input.packetType,
-      input.listingOwnerKind ?? "seller",
-    );
-  }
-
-  const propertyId = resolvePacketPropertyIdForSave(
-    input.packetType,
-    input.propertyId,
-  );
-
-  if (
-    workflowRequiresProperty(input.packetType) &&
-    propertyId == null
-  ) {
-    return getPropertyRequiredMessage(input.packetType);
-  }
-
-  return null;
-}
-
 export type UpdatePacketInput = {
   label: string;
   packetType: PacketWorkflowType | null;
-  collectionId: number;
+  collectionId: number | null;
   propertyId: number | null;
   notes: string | null;
   status: string;
 };
-
-export function validateUpdatePacketInput(input: {
-  label: string;
-  packetType: PacketWorkflowType | null;
-  collectionId: number | null;
-  propertyId: number | null;
-  hasLegacyAgreement: boolean;
-}): string | null {
-  if (!input.label.trim()) {
-    return "Packet label is required.";
-  }
-
-  if (input.collectionId == null) {
-    return "A collection is required.";
-  }
-
-  const propertyId = resolvePacketPropertyIdForSave(
-    input.packetType,
-    input.propertyId,
-  );
-
-  if (
-    input.packetType &&
-    workflowRequiresProperty(input.packetType) &&
-    propertyId == null
-  ) {
-    return getPropertyRequiredMessage(input.packetType);
-  }
-
-  return null;
-}
 
 export async function updatePacket(
   supabase: SupabaseClient,
@@ -655,6 +586,94 @@ export async function createPacketFromCollection(
   }
 
   return { packetId: createdPacket.id };
+}
+
+export type CreateCustomPacketInput = {
+  label: string;
+  contacts?: PacketContactAssignment[];
+  propertyId?: number | null;
+};
+
+/**
+ * Creates an empty custom packet with no collection and zero packet_forms.
+ * Users attach documents afterward via existing external upload on the packet.
+ */
+export async function createCustomPacket(
+  supabase: SupabaseClient,
+  input: CreateCustomPacketInput,
+): Promise<{ packetId: number }> {
+  const validationError = validateCreateCustomPacketInput({
+    label: input.label,
+  });
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const contacts = input.contacts ?? [];
+  if (contacts.length > 0) {
+    const contactIds = contacts.map((contact) => contact.contactId);
+    const { data: contactsData, error: contactsError } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("status", "ACTIVE")
+      .in("id", contactIds);
+
+    if (contactsError) {
+      throw new Error(contactsError.message);
+    }
+
+    const found = new Set((contactsData ?? []).map((row) => row.id as number));
+    for (const assignment of contacts) {
+      if (!found.has(assignment.contactId)) {
+        throw new Error(`Contact #${assignment.contactId} not found.`);
+      }
+    }
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user?.id) {
+    throw new Error("You must be signed in to create a packet.");
+  }
+
+  const { data: createdPacket, error: createError } = await supabase
+    .from("packets")
+    .insert({
+      collection_id: null,
+      representation_agreement_id: null,
+      packet_type: "custom",
+      property_id: input.propertyId ?? null,
+      label: input.label.trim(),
+      generated_by_user_id: user.id,
+      owner_user_id: user.id,
+    })
+    .select("id")
+    .single();
+
+  if (createError || !createdPacket) {
+    throw new Error(createError?.message ?? "Failed to create packet.");
+  }
+
+  if (contacts.length > 0) {
+    const packetContactRows = contacts.map((assignment) => ({
+      packet_id: createdPacket.id,
+      contact_id: assignment.contactId,
+      packet_role: assignment.packetRole,
+      sort_order: assignment.sortOrder,
+    }));
+
+    const { error: packetContactsError } = await supabase
+      .from("packet_contacts")
+      .insert(packetContactRows);
+
+    if (packetContactsError) {
+      throw new Error(packetContactsError.message);
+    }
+  }
+
+  return { packetId: createdPacket.id as number };
 }
 
 /**

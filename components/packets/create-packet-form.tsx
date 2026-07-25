@@ -36,7 +36,7 @@ type CollectionOption = {
 };
 
 type CreatePacketFromAgreementFormProps = {
-  workflowType: PacketWorkflowType;
+  workflowType: Exclude<PacketWorkflowType, "custom">;
   agreementId: number;
   onCancel: () => void;
 };
@@ -228,7 +228,8 @@ export function CreatePacketFromAgreementForm({
           </p>
         ) : (
           <Select
-            id="collection_id"
+            id="collection_id"
+
             value={selectedTemplateId ?? ""}
             onChange={(event) =>
               setSelectedTemplateId(

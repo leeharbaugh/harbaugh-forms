@@ -4,7 +4,7 @@ import Link from "next/link";
 import { navLinkClass } from "@/lib/ui/nav-styles";
 
 type FormsNavProps = {
-  active: "templates" | "fields";
+  active: "templates";
 };
 
 export function FormsNav({ active }: FormsNavProps) {
@@ -19,13 +19,6 @@ export function FormsNav({ active }: FormsNavProps) {
         aria-current={active === "templates" ? "page" : undefined}
       >
         Templates
-      </Link>
-      <Link
-        href="/forms/fields"
-        className={navLinkClass(active === "fields")}
-        aria-current={active === "fields" ? "page" : undefined}
-      >
-        Fields
       </Link>
     </nav>
   );

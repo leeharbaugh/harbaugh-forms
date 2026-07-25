@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  formatPacketWorkflowType,
   getPacketCreateFlowCopy,
+  isCollectionPacketWorkflow,
+  isPacketWorkflowType,
   workflowRequiresProperty,
   workflowSupportsPropertySelection,
 } from "./packet-workflow.ts";
@@ -11,17 +14,28 @@ describe("workflowSupportsPropertySelection", () => {
     assert.equal(workflowSupportsPropertySelection("buyer_rep"), false);
   });
 
-  it("includes property-based packet workflows", () => {
+  it("includes property-based packet workflows including custom", () => {
     assert.equal(workflowSupportsPropertySelection("listing"), true);
     assert.equal(workflowSupportsPropertySelection("contract_offer"), true);
+    assert.equal(workflowSupportsPropertySelection("custom"), true);
   });
 });
 
 describe("workflowRequiresProperty", () => {
   it("requires property only for listing and contract offer packets", () => {
     assert.equal(workflowRequiresProperty("buyer_rep"), false);
+    assert.equal(workflowRequiresProperty("custom"), false);
     assert.equal(workflowRequiresProperty("listing"), true);
     assert.equal(workflowRequiresProperty("contract_offer"), true);
+  });
+});
+
+describe("custom packet workflow", () => {
+  it("recognizes custom as a workflow without collections", () => {
+    assert.equal(isPacketWorkflowType("custom"), true);
+    assert.equal(isCollectionPacketWorkflow("custom"), false);
+    assert.equal(formatPacketWorkflowType("custom"), "Custom Packet");
+    assert.equal(getPacketCreateFlowCopy("custom").collectionLabel, "");
   });
 });
 

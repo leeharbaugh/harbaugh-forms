@@ -2,18 +2,30 @@ import type { CollectionType } from "@/lib/types/collection";
 import type { ListingOwnerKind } from "@/lib/types/listing-packet-kind";
 
 /** UI workflow types for creating packets from the Packets page. */
-export type PacketWorkflowType = "buyer_rep" | "listing" | "contract_offer";
+export type PacketWorkflowType =
+  | "buyer_rep"
+  | "listing"
+  | "contract_offer"
+  | "custom";
 
 export const PACKET_WORKFLOW_TYPES: PacketWorkflowType[] = [
   "buyer_rep",
   "listing",
   "contract_offer",
+  "custom",
 ];
+
+/** Collection-backed workflows only (excludes Custom Packet). */
+export const COLLECTION_PACKET_WORKFLOW_TYPES: Exclude<
+  PacketWorkflowType,
+  "custom"
+>[] = ["buyer_rep", "listing", "contract_offer"];
 
 const WORKFLOW_LABELS: Record<PacketWorkflowType, string> = {
   buyer_rep: "Buyer Rep",
   listing: "Listing",
   contract_offer: "Contract Offer",
+  custom: "Custom Packet",
 };
 
 const WORKFLOW_DESCRIPTIONS: Record<PacketWorkflowType, string> = {
@@ -23,12 +35,15 @@ const WORKFLOW_DESCRIPTIONS: Record<PacketWorkflowType, string> = {
     "Create a listing packet from a collection, sellers, and a property.",
   contract_offer:
     "Create a contract offer packet from a collection, contacts, and a property.",
+  custom:
+    "Create an empty packet with no forms or collection. Upload your own documents.",
 };
 
 const WORKFLOW_CREATE_TITLES: Record<PacketWorkflowType, string> = {
   buyer_rep: "Create Buyer Rep Packet",
   listing: "Create Listing Packet",
   contract_offer: "Create Contract Offer Packet",
+  custom: "Create Custom Packet",
 };
 
 export type PacketCreateFlowCopy = {
@@ -91,6 +106,21 @@ const CREATE_FLOW_COPY: Record<PacketWorkflowType, PacketCreateFlowCopy> = {
       required: "Add at least one contact before continuing.",
     },
   },
+  custom: {
+    steps: [
+      "Name the packet.",
+      "Optionally add contacts and a property.",
+      "Create the empty packet, then upload your documents.",
+    ],
+    collectionLabel: "",
+    propertyLabel: "Property (optional)",
+    contacts: {
+      search: "Search and add contacts (optional)",
+      selected: "Contacts assigned to this packet",
+      empty: "No contacts added yet. Search above to add contacts.",
+      required: "",
+    },
+  },
 };
 
 const LEASE_LISTING_CREATE_FLOW_COPY: PacketCreateFlowCopy = {
@@ -148,7 +178,7 @@ export function getPacketContactRequiredMessage(
 
 /** Maps a UI workflow to the legacy collection_type filter. */
 export function workflowToCollectionType(
-  workflow: PacketWorkflowType,
+  workflow: Exclude<PacketWorkflowType, "custom">,
 ): CollectionType {
   switch (workflow) {
     case "buyer_rep":
@@ -158,6 +188,12 @@ export function workflowToCollectionType(
     case "contract_offer":
       return "OFFER_PACKET";
   }
+}
+
+export function isCollectionPacketWorkflow(
+  workflow: PacketWorkflowType,
+): workflow is Exclude<PacketWorkflowType, "custom"> {
+  return workflow !== "custom";
 }
 
 /** Maps a UI workflow to representation_agreements.agreement_type, if any. */
@@ -170,6 +206,7 @@ export function workflowToAgreementType(
     case "listing":
       return "LISTING";
     case "contract_offer":
+    case "custom":
       return null;
   }
 }
@@ -180,7 +217,7 @@ export function workflowToAgreementType(
  */
 export function workflowSupportsLegacyAgreement(
   workflow: PacketWorkflowType,
-): boolean {
+): workflow is "buyer_rep" {
   return workflow === "buyer_rep";
 }
 
@@ -190,13 +227,15 @@ export function isPacketWorkflowType(
   return (
     value === "buyer_rep" ||
     value === "listing" ||
-    value === "contract_offer"
+    value === "contract_offer" ||
+    value === "custom"
   );
 }
 
 export function workflowRequiresProperty(workflow: PacketWorkflowType): boolean {
   switch (workflow) {
     case "buyer_rep":
+    case "custom":
       return false;
     case "listing":
     case "contract_offer":
@@ -226,3 +265,93 @@ export function getPropertyRequiredMessage(
 
 export const NO_COLLECTIONS_MESSAGE =
   "Create a collection under Forms → Collections first.";
+
+/** Buyer rep packets never persist a subject property. */
+export function resolvePacketPropertyIdForSave(
+  packetType: PacketWorkflowType | null,
+  propertyId: number | null,
+): number | null {
+  if (packetType === "buyer_rep") {
+    return null;
+  }
+
+  return propertyId;
+}
+
+export function validateCreatePacketFromCollectionInput(input: {
+  collectionId: number | null;
+  packetType: PacketWorkflowType;
+  contactIds: number[];
+  propertyId: number | null;
+  listingOwnerKind?: ListingOwnerKind;
+}): string | null {
+  if (input.packetType === "custom") {
+    return "Custom packets cannot be created from a collection.";
+  }
+
+  if (input.collectionId == null) {
+    return "Choose a collection before continuing.";
+  }
+
+  if (input.contactIds.length === 0) {
+    return getPacketContactRequiredMessage(
+      input.packetType,
+      input.listingOwnerKind ?? "seller",
+    );
+  }
+
+  const propertyId = resolvePacketPropertyIdForSave(
+    input.packetType,
+    input.propertyId,
+  );
+
+  if (workflowRequiresProperty(input.packetType) && propertyId == null) {
+    return getPropertyRequiredMessage(input.packetType);
+  }
+
+  return null;
+}
+
+export function validateCreateCustomPacketInput(input: {
+  label: string;
+}): string | null {
+  if (!input.label.trim()) {
+    return "Packet name is required.";
+  }
+  return null;
+}
+
+export function validateUpdatePacketInput(input: {
+  label: string;
+  packetType: PacketWorkflowType | null;
+  collectionId: number | null;
+  propertyId: number | null;
+  hasLegacyAgreement: boolean;
+}): string | null {
+  if (!input.label.trim()) {
+    return "Packet label is required.";
+  }
+
+  if (input.packetType === "custom") {
+    if (input.collectionId != null) {
+      return "Custom packets cannot have a collection.";
+    }
+  } else if (input.collectionId == null) {
+    return "A collection is required.";
+  }
+
+  const propertyId = resolvePacketPropertyIdForSave(
+    input.packetType,
+    input.propertyId,
+  );
+
+  if (
+    input.packetType &&
+    workflowRequiresProperty(input.packetType) &&
+    propertyId == null
+  ) {
+    return getPropertyRequiredMessage(input.packetType);
+  }
+
+  return null;
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { CreatePacketFromAgreementForm } from "@/components/packets/create-packet-form";
+import { CreateCustomPacketForm } from "@/components/packets/create-custom-packet-form";
 import { CreatePacketFromCollectionForm } from "@/components/packets/create-packet-from-collection-form";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ import {
 import {
   formatPacketWorkflowType,
   getPacketWorkflowDescription,
+  isCollectionPacketWorkflow,
   PACKET_WORKFLOW_TYPES,
   type PacketWorkflowType,
   workflowSupportsLegacyAgreement,
@@ -319,32 +321,38 @@ export function CreatePacketWizard({
         </Button>
       </div>
 
-      <CreatePacketFromCollectionForm
-        workflowType={workflowType}
-        onCancel={onCancel}
-      />
+      {workflowType === "custom" ? (
+        <CreateCustomPacketForm onCancel={onCancel} />
+      ) : isCollectionPacketWorkflow(workflowType) ? (
+        <>
+          <CreatePacketFromCollectionForm
+            workflowType={workflowType}
+            onCancel={onCancel}
+          />
 
-      {workflowSupportsLegacyAgreement(workflowType) && (
-        <Card className="border-dashed">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Advanced (legacy)</CardTitle>
-            <CardDescription>
-              Link this packet to an existing representation agreement instead of
-              choosing contacts on the collection path.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setShowLegacyAgreementPath(true)}
-            >
-              Use legacy agreement anchor
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+          {workflowSupportsLegacyAgreement(workflowType) && (
+            <Card className="border-dashed">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Advanced (legacy)</CardTitle>
+                <CardDescription>
+                  Link this packet to an existing representation agreement instead of
+                  choosing contacts on the collection path.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowLegacyAgreementPath(true)}
+                >
+                  Use legacy agreement anchor
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      ) : null}
     </div>
   );
 }

@@ -35,6 +35,7 @@ type PacketFormsLiveEditorProps = {
   collectionFormIds: number[];
   disabled?: boolean;
   onFormsChange: () => void;
+  emptyMessage?: string;
 };
 
 export function PacketFormsLiveEditor({
@@ -43,6 +44,7 @@ export function PacketFormsLiveEditor({
   collectionFormIds,
   disabled = false,
   onFormsChange,
+  emptyMessage = "No active forms in this packet.",
 }: PacketFormsLiveEditorProps) {
   const activeForms = sortPacketForms(
     forms.filter((form) => form.status === "ACTIVE"),
@@ -408,9 +410,7 @@ export function PacketFormsLiveEditor({
       )}
 
       {activeForms.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No active forms in this packet.
-        </p>
+        <p className="text-sm text-muted-foreground">{emptyMessage}</p>
       ) : (
         <div className="divide-y rounded-md border">
           {activeForms.map((document, index) => (

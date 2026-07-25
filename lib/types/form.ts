@@ -35,6 +35,8 @@ export type FormInput = {
   state_code: string;
   version_label: string;
   description: string;
+  /** Create-only; edit keeps existing form scope. */
+  scope: "PRIVATE" | "GLOBAL";
 };
 
 export const FORM_CATEGORIES: FormCategory[] = [
@@ -52,6 +54,7 @@ export const emptyFormInput = (): FormInput => ({
   state_code: "TX",
   version_label: "",
   description: "",
+  scope: "PRIVATE",
 });
 
 export function formToInput(form: Form): FormInput {
@@ -62,6 +65,7 @@ export function formToInput(form: Form): FormInput {
     state_code: form.state_code ?? "TX",
     version_label: form.version_label ?? "",
     description: form.description ?? "",
+    scope: form.scope === "GLOBAL" ? "GLOBAL" : "PRIVATE",
   };
 }
 
@@ -95,6 +99,7 @@ export function validateFormInput(
     pdfFile: File | null;
     replacePdf: boolean;
     existingStoragePath: string | null;
+    allowGlobalScope?: boolean;
   },
 ): string | null {
   if (!input.form_name.trim()) {
@@ -110,6 +115,12 @@ export function validateFormInput(
   }
 
   if (options.mode === "create") {
+    if (input.scope !== "PRIVATE" && input.scope !== "GLOBAL") {
+      return "Choose Private or Global scope.";
+    }
+    if (input.scope === "GLOBAL" && !options.allowGlobalScope) {
+      return "Only application admins can create Global forms.";
+    }
     if (!options.pdfFile) {
       return "A PDF file is required when creating a form.";
     }

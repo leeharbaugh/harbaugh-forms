@@ -123,10 +123,12 @@ TypeScript custom resolvers remain accepted for concatenation, formatting, selec
 
 ### Form and collection scope
 
-- Forms: `GLOBAL` or `PRIVATE`
+- Forms: `GLOBAL` or `PRIVATE` (create UI offers Private for all users; Global only for application `ADMIN`, with server-side enforcement)
 - Collections: `ORGANIZATION` or `PRIVATE` (never `GLOBAL`)
 - Organization members may view, use, and privately copy organization collections
 - `ORG_ADMIN` manages collections for their own organization; application admins may manage across organizations
+- Packets may be collection-backed or **Custom** (`packet_type = custom`, no collection, zero initial forms; documents via existing external upload on `packet_forms`)
+- The global Fields catalog page is removed from product navigation; field work stays on Map Fields / form templates (`/forms/fields` redirects to Templates)
 
 ### Form defaults
 
@@ -175,7 +177,7 @@ Do not re-run production validation against live data for documentation updates 
 
 - Multi-user auth and ownership; clients/contacts; properties; Buyer Representation Agreements
 - Form templates; Global/private libraries; visual PDF field editor; field mappings
-- Packet templates and generated packets; organization/membership administration
+- Packet templates and generated packets; empty Custom Packet creation; organization/membership administration
 - Organization-scoped collections and private collection copying
 - Soft-delete patterns; database-backed user preferences; resizable column preferences
 - Scoped Private/Organization field defaults; unified Map Fields (PR #2)

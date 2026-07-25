@@ -112,7 +112,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
   }, [packetId]);
 
   const loadCollections = useCallback(async (type: PacketWorkflowType | "") => {
-    if (!type) {
+    if (!type || type === "custom") {
       setCollections([]);
       return;
     }
@@ -165,7 +165,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
   });
 
   const handleSave = async () => {
-    if (!packet || collectionId == null) {
+    if (!packet) {
       return;
     }
 
@@ -181,7 +181,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
         {
           label,
           packetType: packetType || null,
-          collectionId,
+          collectionId: packetType === "custom" ? null : collectionId,
           propertyId: showPropertySelection ? propertyId : null,
           notes,
           status,
@@ -270,12 +270,12 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
           <div className="space-y-2">
             <Label htmlFor="packet_type">Packet type</Label>
             <Select
-              id="packet_type"
+              id="packet_type"
               value={packetType}
               onChange={(event) => {
                 const nextType = event.target.value as PacketWorkflowType | "";
                 setPacketType(nextType);
-                if (nextType) {
+                if (nextType === "custom" || nextType) {
                   setCollectionId(null);
                 }
               }}
@@ -290,10 +290,11 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
             </Select>
           </div>
 
+          {packetType !== "custom" && (
           <div className="space-y-2">
             <Label htmlFor="collection_id">Collection *</Label>
             <Select
-              id="collection_id"
+              id="collection_id"
               value={collectionId ?? ""}
               onChange={(event) =>
                 setCollectionId(
@@ -320,6 +321,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
               </p>
             )}
           </div>
+          )}
 
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="packet_notes">Notes</Label>
@@ -334,7 +336,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
           <div className="space-y-2">
             <Label htmlFor="packet_status">Status</Label>
             <Select
-              id="packet_status"
+              id="packet_status"
               value={status}
               onChange={(event) => setStatus(event.target.value)}
               disabled={isSaving}
@@ -410,6 +412,11 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
             collectionFormIds={collectionFormIds}
             disabled={isSaving}
             onFormsChange={() => void loadPacket()}
+            emptyMessage={
+              packet.packet_type === "custom"
+                ? "This custom packet does not contain any forms yet. Upload documents to build the packet."
+                : "No active forms in this packet."
+            }
           />
         </CardContent>
       </Card>

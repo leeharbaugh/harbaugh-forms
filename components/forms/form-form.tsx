@@ -31,6 +31,8 @@ type FormFormProps = {
   replacePdf: boolean;
   onReplacePdfChange: (replacePdf: boolean) => void;
   hideFooterActions?: boolean;
+  /** When true, Global is offered on create. Server still enforces ADMIN. */
+  allowGlobalScope?: boolean;
 };
 
 export function FormForm({
@@ -48,6 +50,7 @@ export function FormForm({
   replacePdf,
   onReplacePdfChange,
   hideFooterActions = false,
+  allowGlobalScope = false,
 }: FormFormProps) {
   const readOnly = mode === "view";
 
@@ -67,6 +70,7 @@ export function FormForm({
       pdfFile,
       replacePdf,
       existingStoragePath,
+      allowGlobalScope,
     });
 
     if (validationError) return;
@@ -80,6 +84,7 @@ export function FormForm({
         pdfFile,
         replacePdf,
         existingStoragePath,
+        allowGlobalScope,
       });
 
   const showPdfUpload =
@@ -162,6 +167,40 @@ export function FormForm({
             disabled={readOnly}
           />
         </div>
+
+        {mode === "create" && (
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="form_scope">Scope *</Label>
+            <Select
+              id="form_scope"
+              value={value.scope}
+              onChange={(event) =>
+                setField(
+                  "scope",
+                  event.target.value === "GLOBAL" ? "GLOBAL" : "PRIVATE",
+                )
+              }
+              disabled={readOnly}
+              required
+            >
+              <option value="PRIVATE">
+                Private — available only to the owner
+              </option>
+              {allowGlobalScope && (
+                <option value="GLOBAL">
+                  Global — available to authorized users throughout the
+                  application
+                </option>
+              )}
+            </Select>
+            {!allowGlobalScope && (
+              <p className="text-xs text-muted-foreground">
+                New templates are Private. Application admins can create Global
+                forms or copy a Private form to Global later.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="description">Description</Label>

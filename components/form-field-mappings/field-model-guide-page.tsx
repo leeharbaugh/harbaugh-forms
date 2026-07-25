@@ -31,12 +31,14 @@ export function FieldModelGuidePage() {
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
           <div className="rounded-md border p-4">
-            <p className="font-medium">Fields</p>
+            <p className="font-medium">Form templates &amp; Map Fields</p>
             <p className="mt-1 text-muted-foreground">
-              Reusable business field definitions (key, label, type, defaults).
+              Reusable field definitions are managed while mapping fields onto a
+              form template PDF (Map Fields). Catalog browsing is no longer a
+              separate product screen.
             </p>
             <Button variant="outline" size="sm" className="mt-3" asChild>
-              <Link href="/forms/fields">Open Fields</Link>
+              <Link href="/forms">Open form templates</Link>
             </Button>
           </div>
 

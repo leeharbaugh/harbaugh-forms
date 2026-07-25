@@ -12,6 +12,30 @@ Each decision should include:
 
 ---
 
+## Custom packets without a collection
+
+**Date:** 2026-07-25
+
+**Decision:**
+Packets may use `packet_type = 'custom'` with `collection_id` null. Custom packets start with zero `packet_forms`. User documents continue to attach through existing `packet_forms` rows with `origin = external_upload` (and the existing `generated-documents` storage layout). No parallel packet-file storage was introduced. Forms remain `GLOBAL` or `PRIVATE` only; creating Global forms requires application `ADMIN` (not `ORG_ADMIN` alone).
+
+**Reason:**
+Production feedback needed empty upload-only packets and explicit Private/Global form creation without inventing new storage or Organization-scoped forms.
+
+**Consequences:**
+
+* Forward-only migration `20260725040000_packets_custom_nullable_collection.sql` (applied on development; apply to production only with deliberate rollout).
+* Collection-backed packet creation is unchanged.
+* The global Fields catalog remains an internal detail; product navigation uses Form Templates / Map Fields.
+
+**Related files:**
+
+* `supabase/migrations/20260725040000_packets_custom_nullable_collection.sql`
+* `lib/types/packet.ts` (`createCustomPacket`)
+* `lib/library-permissions.ts` (`canCreateFormScope`)
+
+---
+
 ## Production Environment Separation and Deployment
 
 **Date:** 2026-07-24
