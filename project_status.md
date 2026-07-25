@@ -6,9 +6,9 @@
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
-### Form publication lifecycle (development)
+### Form publication lifecycle
 
-Development implements a Draft / Published / Retired workflow for form templates on `harbaugh-forms-dev`:
+Draft / Published / Retired form templates are live in development and production:
 
 - **Status:** `ACTIVE` (current), `INACTIVE` (retired), `DELETED` (soft-delete)
 - **Publication:** `DRAFT` / `PUBLISHED` — only `ACTIVE` + `PUBLISHED` forms are selectable for new collection use and immediate packet instantiation
@@ -16,10 +16,9 @@ Development implements a Draft / Published / Retired workflow for form templates
 - Explicit actions: Publish, Unpublish, Retire Version, Restore Retired Version (restore is application ADMIN + reason only)
 - New forms start as Draft; Published forms require Unpublish before structural edits (including shared field source/metadata through Map Fields); Retired forms are read-only including form-specific defaults
 - Publish validates the actual stored PDF server-side (Storage download + page count) and rejects out-of-range ACTIVE mappings
-- **Secure publish hardening (dev):** `publish_form_template` EXECUTE is revoked from `anon`/`authenticated`; only the trusted server action (service-role client) may call it after revalidation. Actor ID comes from the server session; structural fingerprint TOCTOU guard rejects mid-flight mapping/PDF-path changes. Migration: `20260725180000_secure_publish_form_template.sql` (dev only until explicitly promoted)
+- **Secure publish (production):** PR **#20** merged at `ef37b34099f5a295c0e77276ec6c3a39305c3ef8`. Migration `20260725180000_secure_publish_form_template.sql` is applied in production. Production Publish uses the restricted trusted-server pathway: `anon` and `authenticated` cannot execute `publish_form_template`; only `service_role` has EXECUTE. Actor verification and structural fingerprint checks are live. Production rollout and smoke validation completed successfully.
 - Collections may retain Draft/Retired references; packet creation skips retired versions and creates pending placeholders for Draft collection forms
-- Development browser walkthrough covered Publish → pending packet activation, Unpublish (AVAILABLE unchanged), Retire read-only, and invalid mapping-page Publish rejection
-- Lifecycle migration: `20260725120000_form_publication_lifecycle.sql` (applied in development; production promotion is a separate explicit step when requested)
+- Lifecycle migration: `20260725120000_form_publication_lifecycle.sql` (applied in development and production)
 
 ### Development condo contract catalog (2026-07-24)
 
