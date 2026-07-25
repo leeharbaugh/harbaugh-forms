@@ -1068,3 +1068,30 @@ The field was the only ACTIVE mapping pointing at an INACTIVE catalog field in t
 * `supabase/migrations/20260721190000_remove_abandoned_contract_details_sources.sql`
 * `supabase/migrations/20260701200000_deactivate_acroform_polluted_catalog_fields.sql`
 * `lib/contract-details-source-removal.test.ts`
+
+
+---
+
+## Selective TXR-1605 Production Form Sync
+
+**Date:** 2026-07-25
+
+**Decision:**
+After Lee finalized TXR-1605 (TREC 30-18 Residential Condominium Contract Resale) in development, including Map Fields placement and form-scoped Organization defaults, the completed catalog configuration was selectively synchronized onto the **existing** production Global form resolved by stable identity (`form_code=TXR-1605`, `version_label=TXR-1605-05-04-2026`), not by numeric form ID. Development form id 24 and production form id 20 remain distinct. Packet field instances were never rewritten. Shared Global fields were reused without metadata changes when already compatible. New `contract_condo_*` Global fields missing in production were inserted with new production UUIDs.
+
+**Reason:**
+Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) with the identical approved PDF. Creating a second production Condo form would duplicate stable identity. Broad database clone or unrestricted storage copy would violate environment isolation and packet-snapshot safety.
+
+**Consequences:**
+
+* Future form promotions must resolve production targets by stable identity and refuse form creation when an ACTIVE match exists.
+* Guarded tooling (`scripts/sync-condo-txr-1605-to-production.ts`) defaults to dry-run and requires `--confirm EXISTING_PROD_TXR_1605` for apply.
+* Rollback is soft-delete oriented and must not touch `field_instances`.
+
+**Related files:**
+
+* `CONDO_TXR_1605_PRODUCTION_SYNC_AUDIT.md`
+* `CONDO_TXR_1605_PRODUCTION_SYNC_MANIFEST.json`
+* `scripts/sync-condo-txr-1605-to-production.ts`
+* `scripts/rollback-condo-txr-1605-production.ts`
+* `lib/condo-txr-1605-production-sync.ts`

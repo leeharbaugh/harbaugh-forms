@@ -28,6 +28,7 @@
 # selective production export artifacts (may contain business data)
 /exports/
 /_import_tmp/
+/_audit_tmp/
 
 # debug
 npm-debug.log*

@@ -1,0 +1,28 @@
+{
+  "note": "Operation counts from successful apply (2026-07-25). Current CONDO_TXR_1605_PRODUCTION_SYNC_MANIFEST.json reflects post-apply idle/idempotent state.",
+  "source": {
+    "formId": 24,
+    "ref": "ewxsxwzezhkeawnjvigx"
+  },
+  "target": {
+    "formId": 20,
+    "ref": "eetonalyyyssvkyfdoxh"
+  },
+  "expectedCounts": {
+    "fields_reused": 137,
+    "fields_inserted": 13,
+    "fields_updated": 0,
+    "mappings_inserted": 158,
+    "mappings_updated": 0,
+    "mappings_unchanged": 0,
+    "organization_defaults_inserted": 4,
+    "personal_defaults_inserted": 0,
+    "storage_operation": "REUSE",
+    "packet_instance_changes": 0,
+    "final_mapping_count": 158,
+    "form_name_update": {
+      "from": "Condo Resale Contract",
+      "to": "Residential Condominium Contract (Resale)"
+    }
+  }
+}
