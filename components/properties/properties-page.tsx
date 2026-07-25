@@ -47,7 +47,8 @@ import {
   propertyToInput,
   validatePropertyInput,
 } from "@/lib/types/property";
-import { useCallback, useEffect, useState } from "react";
+import { useScrollEditorIntoView } from "@/lib/ui/use-scroll-editor-into-view";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type FormMode = "hidden" | "create" | "edit" | "view";
 
@@ -88,6 +89,9 @@ export function PropertiesPage() {
     useState<Property | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRestoringId, setIsRestoringId] = useState<number | null>(null);
+  const formPanelRef = useRef<HTMLDivElement>(null);
+
+  useScrollEditorIntoView(formPanelRef, formMode, editingPropertyId);
 
   const loadProperties = useCallback(async () => {
     const supabase = createClient();
@@ -359,7 +363,7 @@ export function PropertiesPage() {
       />
 
       {formMode !== "hidden" && (
-        <Card>
+        <Card ref={formPanelRef} className="scroll-mt-6">
           <CardHeader>
             <CardTitle>{formTitle}</CardTitle>
             <CardDescription>{formDescription}</CardDescription>

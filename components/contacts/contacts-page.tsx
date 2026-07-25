@@ -32,6 +32,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { CONTACTS_LIST_RESET_EVENT } from "@/lib/contacts-list-reset";
+import { useScrollEditorIntoView } from "@/lib/ui/use-scroll-editor-into-view";
 
 type FormMode = "hidden" | "create" | "edit";
 
@@ -130,22 +131,7 @@ export function ContactsPage() {
     };
   }, [closeForm]);
 
-  useEffect(() => {
-    if (formMode === "hidden") {
-      return;
-    }
-
-    const frame = window.requestAnimationFrame(() => {
-      formPanelRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [formMode, editingContactId]);
+  useScrollEditorIntoView(formPanelRef, formMode, editingContactId);
 
   const openCreateForm = () => {
     setFormMode("create");

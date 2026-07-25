@@ -25,8 +25,7 @@ describe("Forms edit scroll trigger", () => {
   it("scrolls the editor panel when formMode or editingTemplateId changes", () => {
     const page = fs.readFileSync("components/forms/forms-page.tsx", "utf8");
     assert.ok(page.includes("formPanelRef"));
-    assert.ok(page.includes("scrollIntoView"));
+    assert.ok(page.includes("useScrollEditorIntoView"));
     assert.ok(page.includes("editingTemplateId"));
-    assert.ok(page.includes("prefers-reduced-motion"));
   });
 });
