@@ -266,6 +266,34 @@ export function getPropertyRequiredMessage(
 export const NO_COLLECTIONS_MESSAGE =
   "Create a collection under Forms → Collections first.";
 
+/** Values allowed by packets_packet_type_check (plus SQL NULL). */
+export function isAllowedPacketTypeValue(
+  packetType: string | null,
+): boolean {
+  return (
+    packetType === null ||
+    packetType === "buyer_rep" ||
+    packetType === "listing" ||
+    packetType === "contract_offer" ||
+    packetType === "custom"
+  );
+}
+
+/**
+ * Mirrors packets_custom_collection_null_check:
+ * custom ⇒ collection_id IS NULL;
+ * otherwise (including packet_type NULL) ⇒ collection_id IS NOT NULL.
+ */
+export function satisfiesPacketCollectionInvariant(
+  packetType: string | null,
+  collectionId: number | null,
+): boolean {
+  if (packetType === "custom") {
+    return collectionId === null;
+  }
+  return collectionId !== null;
+}
+
 /** Buyer rep packets never persist a subject property. */
 export function resolvePacketPropertyIdForSave(
   packetType: PacketWorkflowType | null,
@@ -332,11 +360,10 @@ export function validateUpdatePacketInput(input: {
     return "Packet label is required.";
   }
 
-  if (input.packetType === "custom") {
-    if (input.collectionId != null) {
+  if (!satisfiesPacketCollectionInvariant(input.packetType, input.collectionId)) {
+    if (input.packetType === "custom") {
       return "Custom packets cannot have a collection.";
     }
-  } else if (input.collectionId == null) {
     return "A collection is required.";
   }
 
