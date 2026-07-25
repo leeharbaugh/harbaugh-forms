@@ -43,6 +43,7 @@ import {
 } from "@/lib/form-storage";
 import {
   assertCanEditForm,
+  canCreateFormScope,
   canDeleteForm,
   canEditForm,
   canMapFormFields,
@@ -119,6 +120,29 @@ export function FormsPage() {
   const [isCopyPreviewLoading, setIsCopyPreviewLoading] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
   const copyPreviewFormIdRef = useRef<number | null>(null);
+  const formPanelRef = useRef<HTMLDivElement>(null);
+  const allowGlobalScope = Boolean(actor?.isActiveAdmin);
+
+  useEffect(() => {
+    if (formMode === "hidden") {
+      return;
+    }
+
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const frame = window.requestAnimationFrame(() => {
+      formPanelRef.current?.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [formMode, editingTemplateId]);
 
   const loadTemplates = useCallback(async () => {
     const supabase = createClient();
@@ -337,6 +361,7 @@ export function FormsPage() {
       pdfFile,
       replacePdf,
       existingStoragePath,
+      allowGlobalScope,
     });
 
     if (validationError) {
@@ -364,6 +389,14 @@ export function FormsPage() {
           throw new Error("You must be signed in to create a form.");
         }
 
+        const requestedScope =
+          formValue.scope === "GLOBAL" ? "GLOBAL" : "PRIVATE";
+        if (!canCreateFormScope(actor, requestedScope)) {
+          throw new Error(
+            "Only application admins can create Global forms.",
+          );
+        }
+
         const pendingPath = buildPendingFormStoragePath(
           globalThis.crypto?.randomUUID?.() ?? `${Date.now()}`,
         );
@@ -373,10 +406,11 @@ export function FormsPage() {
           .insert({
             ...normalized,
             source_storage_path: pendingPath,
-            scope: "PRIVATE",
-            owner_user_id: user.id,
+            scope: requestedScope,
+            owner_user_id: requestedScope === "GLOBAL" ? null : user.id,
+            organization_id: null,
           })
-          .select("id")
+          .select("id, scope")
           .single();
 
         if (insertError || !created?.id) {
@@ -385,14 +419,29 @@ export function FormsPage() {
           return;
         }
 
+        // Defense in depth: DB trigger demotes non-admin GLOBAL attempts.
+        if (
+          requestedScope === "GLOBAL" &&
+          String(created.scope) !== "GLOBAL"
+        ) {
+          await supabase
+            .from("forms")
+            .update({ status: "DELETED" })
+            .eq("id", created.id);
+          throw new Error(
+            "Only application admins can create Global forms.",
+          );
+        }
+
         const formId = created.id as number;
         let uploadedPath: string | null = null;
         try {
           const storagePath = buildFormStoragePath({
-            scope: "PRIVATE",
+            scope: requestedScope,
             formId,
             fileName: pdfFile.name,
-            ownerUserId: user.id,
+            ownerUserId:
+              requestedScope === "PRIVATE" ? user.id : undefined,
           });
           uploadedPath = await uploadFormPdfToPath(supabase, pdfFile, storagePath);
           const { error: updateError } = await supabase
@@ -639,7 +688,7 @@ export function FormsPage() {
       />
 
       {formMode !== "hidden" && (
-        <Card>
+        <Card ref={formPanelRef} className="scroll-mt-6">
           <CardHeader>
             <CardTitle>{formTitle}</CardTitle>
             <CardDescription>{formDescription}</CardDescription>
@@ -659,6 +708,7 @@ export function FormsPage() {
               onPdfFileChange={setPdfFile}
               replacePdf={replacePdf}
               onReplacePdfChange={setReplacePdf}
+              allowGlobalScope={allowGlobalScope}
             />
           </CardContent>
         </Card>

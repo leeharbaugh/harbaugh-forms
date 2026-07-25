@@ -71,6 +71,22 @@ export function canViewForm(
   return form.scope === "PRIVATE" && form.owner_user_id === actor.userId;
 }
 
+export function canCreateFormScope(
+  actor: LibraryActor | null | undefined,
+  scope: VisibilityScope | string | null | undefined,
+): boolean {
+  if (!actor) {
+    return false;
+  }
+  if (scope === "PRIVATE") {
+    return true;
+  }
+  if (scope === "GLOBAL") {
+    return actor.isActiveAdmin;
+  }
+  return false;
+}
+
 export function canEditForm(
   actor: LibraryActor | null | undefined,
   form: LibraryEntityRef | null | undefined,

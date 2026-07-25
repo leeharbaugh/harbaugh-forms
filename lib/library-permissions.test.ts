@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   canCloneCollection,
+  canCreateFormScope,
   canCreateOrganizationCollection,
   canDeleteCollection,
   canDeleteForm,
@@ -163,5 +164,25 @@ describe("nextPrivateCloneCollectionName", () => {
       ]),
       "Buyer Rep Packet - Copy 3",
     );
+  });
+});
+
+describe("canCreateFormScope", () => {
+  it("allows any signed-in actor to create Private forms", () => {
+    assert.equal(canCreateFormScope(userA, "PRIVATE"), true);
+    assert.equal(canCreateFormScope(orgAdminA, "PRIVATE"), true);
+    assert.equal(canCreateFormScope(admin, "PRIVATE"), true);
+  });
+
+  it("allows only application ADMIN to create Global forms", () => {
+    assert.equal(canCreateFormScope(admin, "GLOBAL"), true);
+    assert.equal(canCreateFormScope(userA, "GLOBAL"), false);
+    assert.equal(canCreateFormScope(orgAdminA, "GLOBAL"), false);
+    assert.equal(canCreateFormScope(null, "GLOBAL"), false);
+  });
+
+  it("rejects Organization form scope", () => {
+    assert.equal(canCreateFormScope(admin, "ORGANIZATION"), false);
+    assert.equal(canCreateFormScope(orgAdminA, "ORGANIZATION"), false);
   });
 });

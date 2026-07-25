@@ -9,7 +9,6 @@ export function FormsSectionLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const active = pathname.startsWith("/forms/fields") ? "fields" : "templates";
   const isPdfEditor = /\/forms\/\d+\/editor\/?$/.test(pathname);
 
   if (isPdfEditor) {
@@ -22,7 +21,7 @@ export function FormsSectionLayout({
 
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-6 px-5 py-8">
-      <FormsNav active={active} />
+      <FormsNav active="templates" />
       {children}
     </div>
   );

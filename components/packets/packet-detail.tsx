@@ -588,6 +588,11 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
             collectionFormIds={collectionFormIds}
             disabled={isDeleted}
             onFormsChange={() => void loadPacket()}
+            emptyMessage={
+              packet.packet_type === "custom"
+                ? "This custom packet does not contain any forms yet. Upload documents to build the packet."
+                : "No active forms in this packet."
+            }
           />
         </CardContent>
       </Card>

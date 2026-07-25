@@ -47,7 +47,7 @@ type CollectionOption = {
 };
 
 type CreatePacketFromCollectionFormProps = {
-  workflowType: PacketWorkflowType;
+  workflowType: Exclude<PacketWorkflowType, "custom">;
   onCancel: () => void;
 };
 
