@@ -22,6 +22,7 @@ import {
   type FormDefaultsFieldRow,
   type FormDefaultsPageData,
 } from "@/lib/field-defaults-management";
+import { updateFieldThroughFormEditor } from "@/lib/forms/map-fields-mutations";
 import { formatFilledFromLabel } from "@/lib/types/field-provenance-labels";
 import {
   formatDefaultSourceLabel,
@@ -1088,7 +1089,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   };
 
   const openDefaultEditDialog = (fieldRow: FormDefaultsFieldRow) => {
-    if (!defaultsPage) {
+    if (!defaultsPage || (template != null && isFormRetired(template))) {
       return;
     }
     const canEditPersonal =
@@ -1124,6 +1125,10 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
   };
 
   const handleSaveDefaultEdit = async () => {
+    if (template != null && isFormRetired(template)) {
+      setDefaultEditError(FORM_RETIRED_READONLY_MESSAGE);
+      return;
+    }
     if (!defaultEditFieldId || !defaultsPage) {
       return;
     }
@@ -1224,10 +1229,22 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
 
     const allowStructural = !template || canStructurallyEditForm(template);
     const isAcroform = isAcroformImportedMapping(editingMapping);
+
+    // Published forms: block catalog/source mutation through this workflow.
+    if (!allowStructural && editingMapping.field_id) {
+      setEditError(
+        structuralEditBlockedMessage(template!) ??
+          FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE,
+      );
+      return;
+    }
+
     const placementValidationError = allowStructural
       ? validatePdfPlacementInput(editValue)
       : null;
-    const fieldValidationError = validateFieldInput(editFieldValue);
+    const fieldValidationError = allowStructural
+      ? validateFieldInput(editFieldValue)
+      : null;
     const validationError = placementValidationError ?? fieldValidationError;
     if (validationError) {
       setEditError(validationError);
@@ -1283,16 +1300,16 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
           );
         }
 
-        if (linkedFieldId) {
-          const { error: fieldError } = await supabase
-            .from("fields")
-            .update(normalizedField)
-            .eq("id", linkedFieldId)
-            .eq("status", "ACTIVE");
+        if (linkedFieldId && allowStructural) {
+          const fieldResult = await updateFieldThroughFormEditor({
+            formId,
+            fieldId: linkedFieldId,
+            patch: normalizedField,
+          });
 
-          if (fieldError) {
+          if (!fieldResult.ok) {
             setIsEditing(false);
-            setEditError(formatFieldSourceSaveError(fieldError.message));
+            setEditError(formatFieldSourceSaveError(fieldResult.error));
             return;
           }
 
@@ -1678,11 +1695,13 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     ? (defaultsByFieldId.get(defaultEditFieldId) ?? null)
     : null;
   const defaultEditCanPersonal =
+    !formRetired &&
     !!defaultsPage &&
     !!defaultEditFieldRow &&
     defaultsPage.canEditPrivate &&
     defaultEditFieldRow.editorKind !== "unsupported";
   const defaultEditCanOrganization =
+    !formRetired &&
     !!defaultsPage &&
     !!defaultEditFieldRow &&
     defaultsPage.canEditOrganization &&
@@ -1976,12 +1995,14 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                     ? defaultsByFieldId.get(mapping.field_id)
                     : undefined;
                   const canEditDefault =
+                    !formRetired &&
                     !!fieldRow &&
                     !!defaultsPage &&
                     (defaultsPage.canEditPrivate ||
                       defaultsPage.canEditOrganization) &&
                     fieldRow.editorKind !== "unsupported";
                   const canClearFormScopedDefault =
+                    !formRetired &&
                     !!fieldRow &&
                     !!defaultsPage &&
                     defaultsPage.canEditPrivate &&

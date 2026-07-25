@@ -311,3 +311,48 @@ export function backfillPublicationState(status: string): FormPublicationState {
 export function backfillPacketAvailabilityState(): PacketFormAvailabilityState {
   return "AVAILABLE";
 }
+
+export function assertFormAllowsStructuralEdit(
+  form: FormLifecycleSnapshot,
+): { ok: true } | { ok: false; error: string } {
+  if (canStructurallyEditForm(form)) {
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    error:
+      structuralEditBlockedMessage(form) ??
+      (isFormRetired(form)
+        ? FORM_RETIRED_READONLY_MESSAGE
+        : FORM_PUBLISHED_STRUCTURAL_EDIT_MESSAGE),
+  };
+}
+
+/** Structural catalog columns that must not change through a Published form workflow. */
+export const STRUCTURAL_FIELD_COLUMNS = [
+  "field_key",
+  "field_name",
+  "field_label",
+  "field_data_type",
+  "field_widget_type",
+  "source_type",
+  "source_path",
+  "resolver_key",
+  "fallback_value",
+  "field_resolver_id",
+  "required",
+  "notes",
+] as const;
+
+export type StructuralFieldPatch = Partial<
+  Record<(typeof STRUCTURAL_FIELD_COLUMNS)[number], unknown>
+>;
+
+export function structuralFieldPatchHasChanges(
+  patch: StructuralFieldPatch,
+): boolean {
+  return STRUCTURAL_FIELD_COLUMNS.some((key) =>
+    Object.prototype.hasOwnProperty.call(patch, key),
+  );
+}
+

@@ -35,7 +35,7 @@
     "rollback:condo-txr-1605-prod": "node --experimental-strip-types --env-file=.env.local --env-file=.env.production.local scripts/rollback-condo-txr-1605-production.ts",
     "test:condo-txr-1605-manifest": "node --experimental-strip-types --test lib/condo-txr-1605-manifest.test.ts",
     "test:condo-txr-1605-prod-sync": "node --experimental-strip-types --test lib/condo-txr-1605-production-sync.test.ts",
-    "test:form-lifecycle": "node --experimental-strip-types --test lib/types/form-lifecycle.test.ts lib/types/packet-form-lifecycle.test.ts",
+    "test:form-lifecycle": "node --experimental-strip-types --test lib/types/form-lifecycle.test.ts lib/types/packet-form-lifecycle.test.ts lib/types/form-publish-readiness.test.ts",
     "test:packet-form-lifecycle": "node --experimental-strip-types --test lib/types/packet-form-lifecycle.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",
     "test:ui-lists": "node --experimental-strip-types --test lib/ui/list-badges.test.ts lib/ui/nav-styles.test.ts lib/types/profile.test.ts lib/ui/dialogs-polish.test.ts",

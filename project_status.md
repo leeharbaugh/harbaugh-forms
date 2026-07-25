@@ -14,8 +14,10 @@ Development implements a Draft / Published / Retired workflow for form templates
 - **Publication:** `DRAFT` / `PUBLISHED` — only `ACTIVE` + `PUBLISHED` forms are selectable for new collection use and immediate packet instantiation
 - **Packet-form availability:** `AVAILABLE` / `PENDING_PUBLICATION` (orthogonal to document `DRAFT`/`FINAL`/`SIGNED`/`VOID`)
 - Explicit actions: Publish, Unpublish, Retire Version, Restore Retired Version (restore is application ADMIN + reason only)
-- New forms start as Draft; Published forms require Unpublish before structural edits; Retired forms are read-only
+- New forms start as Draft; Published forms require Unpublish before structural edits (including shared field source/metadata through Map Fields); Retired forms are read-only including form-specific defaults
+- Publish validates the actual stored PDF server-side (Storage download + page count) and rejects out-of-range ACTIVE mappings
 - Collections may retain Draft/Retired references; packet creation skips retired versions and creates pending placeholders for Draft collection forms
+- Development browser walkthrough covered Publish → pending packet activation, Unpublish (AVAILABLE unchanged), Retire read-only, and invalid mapping-page Publish rejection
 - Migration: `20260725120000_form_publication_lifecycle.sql` (dev only until explicitly promoted)
 
 ### Development condo contract catalog (2026-07-24)

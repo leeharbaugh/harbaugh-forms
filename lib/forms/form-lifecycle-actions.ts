@@ -4,6 +4,7 @@ import "server-only";
 
 import { requireAppAdmin } from "@/lib/admin/require-app-admin";
 import { activatePendingPacketFormsForPublishedForm } from "@/lib/forms/activate-pending-packet-forms";
+import { loadFormPdfPageCount } from "@/lib/forms/form-pdf-page-count";
 import { validateFormForPublish } from "@/lib/forms/publish-validation";
 import {
   canPublishForm,
@@ -19,6 +20,7 @@ import {
   type LibraryActor,
 } from "@/lib/library-permissions";
 import { createClient } from "@/lib/supabase/server";
+import type { FormLibraryScope } from "@/lib/form-storage";
 
 export type FormLifecycleActionResult =
   | {
@@ -155,6 +157,7 @@ export async function previewPublishForm(
       requiresEmptyMappingsConfirmation: boolean;
       conflict: PublishConflict | null;
       issues: Array<{ code: string; message: string; blocking: boolean }>;
+      pdfPageCount: number | null;
     }
   | { ok: false; error: string }
 > {
@@ -164,7 +167,7 @@ export async function previewPublishForm(
     const { data: mappings, error: mappingError } = await supabase
       .from("form_field_mappings")
       .select(
-        "id, field_id, page_number, status, pdf_field_name, occurrence_index",
+        "id, field_id, page_number, status, pdf_field_name, occurrence_index, mapping_name",
       )
       .eq("form_id", formId)
       .eq("status", "ACTIVE");
@@ -183,13 +186,23 @@ export async function previewPublishForm(
 
     const fieldsById = new Map<
       string,
-      { id: string; status: string; source_type: string | null; resolver_key: string | null }
+      {
+        id: string;
+        status: string;
+        source_type: string | null;
+        resolver_key: string | null;
+        field_key: string | null;
+        field_label: string | null;
+        field_name: string | null;
+      }
     >();
 
     if (fieldIds.length > 0) {
       const { data: fields, error: fieldError } = await supabase
         .from("fields")
-        .select("id, status, source_type, resolver_key")
+        .select(
+          "id, status, source_type, resolver_key, field_key, field_label, field_name",
+        )
         .in("id", fieldIds);
       if (fieldError) {
         return { ok: false, error: fieldError.message };
@@ -200,9 +213,20 @@ export async function previewPublishForm(
           status: string;
           source_type: string | null;
           resolver_key: string | null;
+          field_key: string | null;
+          field_label: string | null;
+          field_name: string | null;
         });
       }
     }
+
+    const pdfResult = await loadFormPdfPageCount(supabase, {
+      id: form.id,
+      form_code: form.form_code,
+      source_storage_path: form.source_storage_path,
+      scope: form.scope as FormLibraryScope,
+      owner_user_id: form.owner_user_id,
+    });
 
     const validation = validateFormForPublish({
       form,
@@ -210,7 +234,8 @@ export async function previewPublishForm(
         typeof validateFormForPublish
       >[0]["mappings"],
       fieldsById,
-      pdfPageCount: null,
+      pdfPageCount: pdfResult.ok ? pdfResult.pageCount : null,
+      pdfLoadError: pdfResult.ok ? null : pdfResult.message,
       allowEmptyMappings: Boolean(options?.allowEmptyMappings),
     });
 
@@ -225,6 +250,7 @@ export async function previewPublishForm(
         validation.requiresEmptyMappingsConfirmation,
       conflict,
       issues: validation.issues,
+      pdfPageCount: validation.pdfPageCount,
     };
   } catch (error) {
     return {

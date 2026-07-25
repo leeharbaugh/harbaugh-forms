@@ -297,7 +297,7 @@ export async function loadFormDefaultsPage(options: {
 
     const { data: form, error: formError } = await supabase
       .from("forms")
-      .select("id, form_name, form_code, scope, status")
+      .select("id, form_name, form_code, scope, status, publication_state")
       .eq("id", options.formId)
       .maybeSingle();
 
@@ -307,7 +307,17 @@ export async function loadFormDefaultsPage(options: {
     if (!form) {
       return { ok: false, error: "Form not found." };
     }
-    if (!canOfferFormDefaultsManagement(form)) {
+    const formRetired = form.status === "INACTIVE";
+    // Retired Global forms may load defaults for read-only display; writes
+    // remain blocked in assertGlobalForm / UI gates.
+    if (formRetired) {
+      if (form.scope !== "GLOBAL") {
+        return {
+          ok: false,
+          error: "Defaults management is available only for Global forms.",
+        };
+      }
+    } else if (!canOfferFormDefaultsManagement(form)) {
       return {
         ok: false,
         error: "Defaults management is available only for active Global forms.",
@@ -390,11 +400,11 @@ export async function loadFormDefaultsPage(options: {
       },
     );
 
-    const canEditPrivate = canManagePrivateDefault(actor, userId);
-    const canEditOrganization = canManageOrganizationDefault(
-      actor,
-      selectedOrganizationId,
-    );
+    const canEditPrivate =
+      !formRetired && canManagePrivateDefault(actor, userId);
+    const canEditOrganization =
+      !formRetired &&
+      canManageOrganizationDefault(actor, selectedOrganizationId);
 
     const pageFields: FormDefaultsFieldRow[] = fields.map((field) => {
       const editorKind = defaultsEditorKindForField(field);
@@ -473,23 +483,35 @@ export async function loadFormDefaultsPage(options: {
 async function assertGlobalForm(
   supabase: Awaited<ReturnType<typeof createClient>>,
   formId: number,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; form: { id: number; status: string; publication_state: string | null } } | { ok: false; error: string }> {
   const { data: form, error } = await supabase
     .from("forms")
-    .select("id, scope, status")
+    .select("id, scope, status, publication_state")
     .eq("id", formId)
     .maybeSingle();
 
   if (error) {
     return { ok: false, error: error.message };
   }
-  if (!form || !canOfferFormDefaultsManagement(form)) {
+  if (!form) {
+    return { ok: false, error: "Form not found." };
+  }
+  if (form.status === "INACTIVE") {
+    return {
+      ok: false,
+      error: "Retired form versions are read-only.",
+    };
+  }
+  if (!canOfferFormDefaultsManagement(form)) {
     return {
       ok: false,
       error: "Defaults management is available only for active Global forms.",
     };
   }
-  return { ok: true };
+  return {
+    ok: true,
+    form: form as { id: number; status: string; publication_state: string | null },
+  };
 }
 
 async function assertFieldOnForm(
