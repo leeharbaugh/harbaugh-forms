@@ -511,6 +511,7 @@ Admins previously lacked a safe Draft/Publish model and could misuse `INACTIVE` 
 * Only `ACTIVE` + `PUBLISHED` forms may be newly added to collections or immediately instantiated as usable packet forms.
 * Published forms are protected from structural editing (PDF replace, mappings, form-field associations, automatic source configuration, shared field structural metadata). Map Fields field-catalog updates initiated on a Published form are rejected server-side until Unpublish. Preference defaults (Personal / Organization) remain editable on Published forms and never rewrite existing packet field instances. Retired (INACTIVE) forms are fully read-only, including form-specific default writes.
 * Publish validates the authoritative stored PDF server-side (download + page count via pdf-lib). Publication is rejected when the PDF is missing, unreadable, or any ACTIVE mapping page is out of range.
+* **Trusted publish pathway:** PDF validation runs only in the trusted application server. The `publish_form_template` RPC is not directly executable by `anon`, `authenticated`, or ordinary browser/admin Supabase clients. Final Publish always revalidates server-side (preview never authorizes a later publish). Actor identity is derived from the authenticated server session and passed as a verified actor ID; the RPC re-checks that the actor is an active application ADMIN or authorized Private-form owner and writes `published_by_user_id` / audit events from that ID (service-role calls do not trust `auth.uid()`). Database publication remains atomic. A structural fingerprint (form path + `update_date` + ACTIVE mapping inventory + mapped field source metadata) is captured at validation and rechecked inside the RPC under row locks; structural changes between validation and publication abort the publish.
 * Unpublish returns `ACTIVE` + `DRAFT` and re-enables structural editing. Existing `AVAILABLE` packet forms stay available.
 * Retire moves any `ACTIVE` form to `INACTIVE` + `DRAFT` (read-only). Restore is application-ADMIN only, requires a written reason, always restores to `ACTIVE` + `DRAFT` (never directly to Published), warns when a newer Published version exists in the same family, and writes an audit event. `ORG_ADMIN` alone cannot restore.
 * Global publish uniqueness: at most one `ACTIVE` + `PUBLISHED` Global form per `form_family_key`. Private forms use owner-scoped uniqueness. Publishing a replacement may atomically retire the previous Published version or cancel.
@@ -523,9 +524,11 @@ Admins previously lacked a safe Draft/Publish model and could misuse `INACTIVE` 
 **Related files or migrations:**
 
 * `supabase/migrations/20260725120000_form_publication_lifecycle.sql`
+* `supabase/migrations/20260725180000_secure_publish_form_template.sql`
 * `lib/types/form-lifecycle.ts`
 * `lib/forms/form-lifecycle-actions.ts`
 * `lib/forms/publish-validation.ts`
+* `lib/forms/publish-structure-fingerprint.ts`
 * `lib/forms/activate-pending-packet-forms.ts`
 * `lib/types/packet-form.ts`
 * `components/forms/forms-page.tsx`

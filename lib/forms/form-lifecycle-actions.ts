@@ -19,6 +19,7 @@ import {
   LIBRARY_PERMISSION_DENIED,
   type LibraryActor,
 } from "@/lib/library-permissions";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { FormLibraryScope } from "@/lib/form-storage";
 
@@ -38,12 +39,25 @@ type FormLifecycleRow = {
   version_label: string | null;
   form_family_key: string;
   source_storage_path: string;
+  update_date: string | null;
   status: string;
   publication_state: string;
   scope: string;
   owner_user_id: string | null;
   organization_id: string | null;
 };
+
+type PublishReadinessOk = {
+  ok: true;
+  mappingCount: number;
+  requiresEmptyMappingsConfirmation: boolean;
+  conflict: PublishConflict | null;
+  issues: Array<{ code: string; message: string; blocking: boolean }>;
+  pdfPageCount: number | null;
+  structureFingerprint: string;
+};
+
+type PublishReadinessErr = { ok: false; error: string };
 
 async function loadActor(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -79,7 +93,7 @@ async function requireMutator(formId: number): Promise<{
   const { data, error } = await supabase
     .from("forms")
     .select(
-      "id, form_name, form_code, version_label, form_family_key, source_storage_path, status, publication_state, scope, owner_user_id, organization_id",
+      "id, form_name, form_code, version_label, form_family_key, source_storage_path, update_date, status, publication_state, scope, owner_user_id, organization_id",
     )
     .eq("id", formId)
     .single();
@@ -147,6 +161,122 @@ export async function findPublishedFamilyConflict(
   }
 }
 
+/**
+ * Authoritative Publish readiness: Storage PDF + ACTIVE mappings + conflict.
+ * Preview and final Publish both use this path; preview never authorizes later publish.
+ */
+async function evaluatePublishReadiness(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  form: FormLifecycleRow,
+  options?: { allowEmptyMappings?: boolean },
+): Promise<PublishReadinessOk | PublishReadinessErr> {
+  const { data: mappings, error: mappingError } = await supabase
+    .from("form_field_mappings")
+    .select(
+      "id, field_id, page_number, status, pdf_field_name, occurrence_index, mapping_name",
+    )
+    .eq("form_id", form.id)
+    .eq("status", "ACTIVE");
+
+  if (mappingError) {
+    return { ok: false, error: mappingError.message };
+  }
+
+  const fieldIds = [
+    ...new Set(
+      ((mappings ?? []) as { field_id: string | null }[])
+        .map((row) => row.field_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+
+  const fieldsById = new Map<
+    string,
+    {
+      id: string;
+      status: string;
+      source_type: string | null;
+      resolver_key: string | null;
+      field_key: string | null;
+      field_label: string | null;
+      field_name: string | null;
+    }
+  >();
+
+  if (fieldIds.length > 0) {
+    const { data: fields, error: fieldError } = await supabase
+      .from("fields")
+      .select(
+        "id, status, source_type, resolver_key, field_key, field_label, field_name",
+      )
+      .in("id", fieldIds);
+    if (fieldError) {
+      return { ok: false, error: fieldError.message };
+    }
+    for (const field of fields ?? []) {
+      fieldsById.set(field.id as string, field as {
+        id: string;
+        status: string;
+        source_type: string | null;
+        resolver_key: string | null;
+        field_key: string | null;
+        field_label: string | null;
+        field_name: string | null;
+      });
+    }
+  }
+
+  const pdfResult = await loadFormPdfPageCount(supabase, {
+    id: form.id,
+    form_code: form.form_code,
+    source_storage_path: form.source_storage_path,
+    scope: form.scope as FormLibraryScope,
+    owner_user_id: form.owner_user_id,
+  });
+
+  const validation = validateFormForPublish({
+    form,
+    mappings: (mappings ?? []) as Parameters<
+      typeof validateFormForPublish
+    >[0]["mappings"],
+    fieldsById,
+    pdfPageCount: pdfResult.ok ? pdfResult.pageCount : null,
+    pdfLoadError: pdfResult.ok ? null : pdfResult.message,
+    allowEmptyMappings: Boolean(options?.allowEmptyMappings),
+  });
+
+  const conflictResult = await findPublishedFamilyConflict(form.id);
+  const conflict =
+    conflictResult.ok ? (conflictResult.conflict ?? null) : null;
+
+  // Authoritative fingerprint from DB (service role) — compared again inside RPC.
+  const admin = createAdminClient();
+  const { data: fingerprint, error: fingerprintError } = await admin.rpc(
+    "form_publish_structure_fingerprint",
+    { p_form_id: form.id },
+  );
+
+  if (fingerprintError || typeof fingerprint !== "string" || !fingerprint) {
+    return {
+      ok: false,
+      error:
+        fingerprintError?.message ??
+        "Could not compute publish structure fingerprint.",
+    };
+  }
+
+  return {
+    ok: true,
+    mappingCount: validation.mappingCount,
+    requiresEmptyMappingsConfirmation:
+      validation.requiresEmptyMappingsConfirmation,
+    conflict,
+    issues: validation.issues,
+    pdfPageCount: validation.pdfPageCount,
+    structureFingerprint: fingerprint,
+  };
+}
+
 export async function previewPublishForm(
   formId: number,
   options?: { allowEmptyMappings?: boolean },
@@ -163,94 +293,19 @@ export async function previewPublishForm(
 > {
   try {
     const { supabase, form } = await requireMutator(formId);
-
-    const { data: mappings, error: mappingError } = await supabase
-      .from("form_field_mappings")
-      .select(
-        "id, field_id, page_number, status, pdf_field_name, occurrence_index, mapping_name",
-      )
-      .eq("form_id", formId)
-      .eq("status", "ACTIVE");
-
-    if (mappingError) {
-      return { ok: false, error: mappingError.message };
+    const readiness = await evaluatePublishReadiness(supabase, form, options);
+    if (!readiness.ok) {
+      return readiness;
     }
-
-    const fieldIds = [
-      ...new Set(
-        ((mappings ?? []) as { field_id: string | null }[])
-          .map((row) => row.field_id)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    ];
-
-    const fieldsById = new Map<
-      string,
-      {
-        id: string;
-        status: string;
-        source_type: string | null;
-        resolver_key: string | null;
-        field_key: string | null;
-        field_label: string | null;
-        field_name: string | null;
-      }
-    >();
-
-    if (fieldIds.length > 0) {
-      const { data: fields, error: fieldError } = await supabase
-        .from("fields")
-        .select(
-          "id, status, source_type, resolver_key, field_key, field_label, field_name",
-        )
-        .in("id", fieldIds);
-      if (fieldError) {
-        return { ok: false, error: fieldError.message };
-      }
-      for (const field of fields ?? []) {
-        fieldsById.set(field.id as string, field as {
-          id: string;
-          status: string;
-          source_type: string | null;
-          resolver_key: string | null;
-          field_key: string | null;
-          field_label: string | null;
-          field_name: string | null;
-        });
-      }
-    }
-
-    const pdfResult = await loadFormPdfPageCount(supabase, {
-      id: form.id,
-      form_code: form.form_code,
-      source_storage_path: form.source_storage_path,
-      scope: form.scope as FormLibraryScope,
-      owner_user_id: form.owner_user_id,
-    });
-
-    const validation = validateFormForPublish({
-      form,
-      mappings: (mappings ?? []) as Parameters<
-        typeof validateFormForPublish
-      >[0]["mappings"],
-      fieldsById,
-      pdfPageCount: pdfResult.ok ? pdfResult.pageCount : null,
-      pdfLoadError: pdfResult.ok ? null : pdfResult.message,
-      allowEmptyMappings: Boolean(options?.allowEmptyMappings),
-    });
-
-    const conflictResult = await findPublishedFamilyConflict(formId);
-    const conflict =
-      conflictResult.ok ? (conflictResult.conflict ?? null) : null;
 
     return {
       ok: true,
-      mappingCount: validation.mappingCount,
+      mappingCount: readiness.mappingCount,
       requiresEmptyMappingsConfirmation:
-        validation.requiresEmptyMappingsConfirmation,
-      conflict,
-      issues: validation.issues,
-      pdfPageCount: validation.pdfPageCount,
+        readiness.requiresEmptyMappingsConfirmation,
+      conflict: readiness.conflict,
+      issues: readiness.issues,
+      pdfPageCount: readiness.pdfPageCount,
     };
   } catch (error) {
     return {
@@ -260,6 +315,11 @@ export async function previewPublishForm(
   }
 }
 
+/**
+ * Single trusted Publish mutation entry point.
+ * Always revalidates PDF + mappings server-side; never trusts a prior preview.
+ * Actor identity comes only from the authenticated server session.
+ */
 export async function publishFormTemplate(input: {
   formId: number;
   retirePreviousFormId?: number | null;
@@ -267,49 +327,54 @@ export async function publishFormTemplate(input: {
   reason?: string | null;
 }): Promise<FormLifecycleActionResult> {
   try {
-    const { supabase, form } = await requireMutator(input.formId);
+    const { supabase, userId, form } = await requireMutator(input.formId);
 
     if (!canPublishForm(form)) {
       return { ok: false, error: "Only ACTIVE Draft forms can be published." };
     }
 
-    const preview = await previewPublishForm(input.formId, {
+    // Final Publish always repeats authoritative validation (ignore any UI preview).
+    const readiness = await evaluatePublishReadiness(supabase, form, {
       allowEmptyMappings: input.allowEmptyMappings,
     });
-    if (!preview.ok) {
-      return preview;
+    if (!readiness.ok) {
+      return readiness;
     }
 
-    const blocking = preview.issues.filter((issue) => issue.blocking);
+    const blocking = readiness.issues.filter((issue) => issue.blocking);
     if (blocking.length > 0) {
       return { ok: false, error: blocking[0]!.message };
     }
 
-    if (preview.conflict && !input.retirePreviousFormId) {
+    if (readiness.conflict && !input.retirePreviousFormId) {
       return {
         ok: false,
         error:
           "A published version already exists in this form family. Choose to publish and retire the previous version, or cancel.",
-        conflict: preview.conflict,
+        conflict: readiness.conflict,
       };
     }
 
     if (
-      preview.conflict &&
+      readiness.conflict &&
       input.retirePreviousFormId &&
-      input.retirePreviousFormId !== preview.conflict.publishedFormId
+      input.retirePreviousFormId !== readiness.conflict.publishedFormId
     ) {
       return {
         ok: false,
         error: "The selected previous version does not match the current published form.",
-        conflict: preview.conflict,
+        conflict: readiness.conflict,
       };
     }
 
-    const { error } = await supabase.rpc("publish_form_template", {
+    const admin = createAdminClient();
+    const { error } = await admin.rpc("publish_form_template", {
       p_form_id: input.formId,
       p_retire_form_id: input.retirePreviousFormId ?? null,
       p_reason: input.reason ?? null,
+      // Actor must originate from the trusted server session — never from the browser.
+      p_actor_user_id: userId,
+      p_expected_structure_fingerprint: readiness.structureFingerprint,
     });
 
     if (error) {
@@ -333,7 +398,7 @@ export async function publishFormTemplate(input: {
       ok: true,
       message: `Published “${form.form_name}”.${retiredNote}${activatedNote}`,
       activatedPendingCount: activation.activatedCount,
-      conflict: preview.conflict,
+      conflict: readiness.conflict,
     };
   } catch (error) {
     return {
