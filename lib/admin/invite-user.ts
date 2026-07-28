@@ -6,6 +6,7 @@ import {
   normalizeEmail,
   validateInviteUserInput,
 } from "@/lib/admin/invite-validation";
+import { invitationRedirectTo } from "@/lib/auth/email-otp";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type ProvisionResult =
@@ -25,10 +26,7 @@ export type ProvisionResult =
       needsProvisioning?: boolean;
     };
 
-function invitationRedirectTo(origin: string): string {
-  const base = origin.replace(/\/$/, "");
-  return `${base}/auth/confirm?next=${encodeURIComponent("/auth/update-password")}`;
-}
+export { invitationRedirectTo };
 
 async function assertOrganizationsActive(
   admin: ReturnType<typeof createAdminClient>,

@@ -12,6 +12,45 @@ Each decision should include:
 
 ---
 
+## Invitation confirmation uses token-hash verifyOtp
+
+**Date:** 2026-07-28
+
+**Decision:**
+Harbaugh Forms invitation emails must link directly to the application confirmation route with Supabase’s email OTP token hash:
+
+```html
+{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite&next=/auth/update-password
+```
+
+Production Auth Site URL is `https://forms.harbaughrealestate.com`. `/auth/confirm` validates supported OTP types and calls `supabase.auth.verifyOtp({ token_hash, type })`, persisting the session through the existing Supabase SSR cookie clients. When only a PKCE `code` is present (no `token_hash`), the same route calls `exchangeCodeForSession` — these flows are not mixed. After invite verification, users set a password on the existing `/auth/update-password` page via `supabase.auth.updateUser`; the invited Auth UUID and admin-provisioned profile / organization membership rows are preserved (no second user, no admin recreate during accept).
+
+**Reason:**
+Invitees previously landed on `/auth/confirm?next=/auth/update-password` after Supabase’s ConfirmationURL verify step, so the app saw neither `token_hash` nor `type` and displayed `No token hash or type`. Token-hash verification matches the customized Resend invite template and keeps invitation acceptance under application control.
+
+**Consequences:**
+
+* Lee must keep the invite (and preferably recovery) email templates on the TokenHash form above; ConfirmationURL alone is insufficient for this architecture.
+* Redirect allowlist must include the production domain (and Vercel fallback / localhost as needed).
+* `inviteUserByEmail` `redirectTo` remains `/auth/confirm?next=/auth/update-password` for ConfirmationURL/PKCE compatibility, but the authoritative invite link is the TokenHash template.
+* Previously failed invitees should receive Resend invitation or password recovery; do not create duplicate Auth users.
+* Password recovery `redirectTo` also goes through `/auth/confirm` so PKCE codes are exchanged before update-password.
+
+**Related files:**
+
+* `app/auth/confirm/route.ts`
+* `lib/auth/email-otp.ts`
+* `lib/auth/password-policy.ts`
+* `lib/auth/auth-confirm.test.ts`
+* `app/auth/actions.ts`
+* `app/auth/update-password/page.tsx`
+* `components/update-password-form.tsx`
+* `components/forgot-password-form.tsx`
+* `lib/admin/invite-user.ts`
+* `app/auth/error/page.tsx`
+
+---
+
 ## Custom packets without a collection
 
 **Date:** 2026-07-25
@@ -1061,17 +1100,17 @@ Several live business values are not simple single-column source paths. Removing
 
 ## Initial Production Access Is Invitation-Only
 
-**Date:** 2026-07-24
+**Date:** 2026-07-24 (confirmation architecture clarified 2026-07-28)
 
 **Decision:**
-Initial production access is invitation-only and Lee-controlled. Public signup is not the production onboarding path. Custom SMTP and invitation workflow should be verified before adding users beyond the launch operator.
+Initial production access is invitation-only and Lee-controlled. Public signup is not the production onboarding path. Custom SMTP and the token-hash invitation confirmation workflow should be verified with a fresh invitation smoke test before adding users beyond the launch operator. See “Invitation confirmation uses token-hash verifyOtp.”
 
 **Reason:**
 Controlled Lee-only launch reduces blast radius while real transactions are exercised in production.
 
 **Consequences:**
 
-* Do not broaden production Auth without explicit operational readiness (SMTP, error tracking, backup posture as needed).
+* Do not broaden production Auth without explicit operational readiness (SMTP, invite template, error tracking, backup posture as needed).
 
 ---
 

@@ -1,10 +1,38 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-07-25
+**As of:** 2026-07-28
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
+
+### Invitation confirmation repair (2026-07-28)
+
+Production invitees who clicked **Accept Invitation** previously saw `Error: No token hash or type` because invite emails used Supabase’s `ConfirmationURL` / `redirectTo` path into `/auth/confirm` **without** `token_hash` and `type`, while the app only called `verifyOtp`.
+
+**Fix (application):**
+
+- `/auth/confirm` now validates supported email OTP types, calls `verifyOtp({ token_hash, type })` for token-hash links, and separately supports PKCE via `exchangeCodeForSession` when only `code` is present
+- Invite verification defaults to `/auth/update-password`; recovery uses the same password page
+- Existing `/auth/update-password` flow was hardened (session required, confirm password, server-side policy, `updateUser`, activate invited profile)
+- User-facing auth errors no longer expose raw “No token hash or type” text
+
+**Required Supabase Dashboard settings (Lee must verify manually):**
+
+| Setting | Value |
+|---------|--------|
+| Site URL | `https://forms.harbaughrealestate.com` |
+| Invite user email link | `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite&next=/auth/update-password` |
+| Recommended recovery email link | `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/auth/update-password` |
+| Redirect allowlist | `https://forms.harbaughrealestate.com/**`, `https://harbaugh-forms.vercel.app/**`, and local `http://localhost:3000/**` as needed |
+
+Custom SMTP via Resend is already configured. The invite template must use **TokenHash** (not ConfirmationURL alone).
+
+**Failed prior invitations:** Do not recreate Auth users. Prefer **Resend invitation** if `email_confirmed_at` is still null; if already confirmed without a usable password, send **Forgot password** / recovery instead. Then have the user open the new email link and set a password.
+
+**Changed files:** `app/auth/confirm/route.ts`, `lib/auth/email-otp.ts`, `lib/auth/password-policy.ts`, `lib/auth/auth-confirm.test.ts`, `app/auth/actions.ts`, `app/auth/update-password/page.tsx`, `app/auth/error/page.tsx`, `components/update-password-form.tsx`, `components/forgot-password-form.tsx`, `lib/admin/invite-user.ts`, `package.json`, `project_status.md`, `decisions.md`.
+
+**Validation:** `npx tsc --noEmit`; `npm run test:auth-confirm` (27); `npm run test:admin-invite` (14); `npm run test:form-controls`; `npm run test:ui-lists`; `npm run test:library-permissions`; ESLint on changed auth sources; `npm run build` — all passed.
 
 ### Form publication lifecycle
 
@@ -220,8 +248,8 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 ## Next Steps (operations)
 
 1. Monitor real-world Lee-only production use; review runtime logs periodically
-2. Test the invitation workflow before adding another user
-3. Configure custom SMTP before inviting additional users
+2. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
+3. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
 4. Add error tracking before broader multi-user exposure
 5. Establish production backup/restore procedures
 6. Consider paid tiers only when recovery, usage, or SLA requirements justify them
@@ -294,7 +322,7 @@ See `decisions.md` for architectural decisions. Highlights:
 - Packet snapshots immutable on ordinary open; scoped defaults own preferences
 - Listing packets are collection-based; Buyer Rep remains; `property_hoas` authoritative
 - TypeScript custom resolvers remain accepted
-- Invitation-only access; HostPapa DNS changes limited to intended subdomain records
+- Invitation-only access; invite confirmation uses token-hash `verifyOtp` (PKCE preserved separately); HostPapa DNS changes limited to intended subdomain records
 
 ---
 
