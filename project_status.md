@@ -6,6 +6,59 @@
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
+### Form #1 Buyer Rep placement corruption — investigated and repaired (2026-07-28)
+
+**Symptom:** Production Form #1 (Buyer Representation Agreement) appeared to have mangled/scattered field placements. Spot checks of other forms looked normal.
+
+**Form identity (unchanged):**
+
+| Attribute | Value |
+|-----------|--------|
+| Form id | `1` |
+| Code / version | `TXR-1501` / `TXR-1501-01-05-26` |
+| Name | Buyer Rep Agreement |
+| Scope | `GLOBAL` (no owner) |
+| Status / publication | `ACTIVE` + `PUBLISHED` |
+| PDF path | `global/forms/1/BuyerRepAgreement_202601.pdf` |
+| PDF | 6 pages, 612×792, MD5 `5524a91e07baec4ce16dee0ba38209ba` (identical in development and production) |
+
+**Root cause (database, not PDF/UI scaling):** On **2026-07-23T16:30:45Z**, production received **142 orphan ACTIVE `form_field_mappings`** for Residential Lease catalog keys (`txr_2001_*`) incorrectly attached to **form_id = 1**. Those mappings pointed at **duplicate catalog fields** that are now `DELETED`. Genuine TXR-1501 placements (55) remained intact and matched development / `MAPPING_INTEGRITY_AUDIT.md`. Form **18** (TXR-2001 Residential Lease) still held its correct **140** ACTIVE mappings. The Map Fields UI loads all ACTIVE mappings, so the lease overlays (including pages 7–16 on a 6-page PDF) made Form #1 look corrupted.
+
+**Ruled out:** PDF replacement; coordinate corruption of the 55 Buyer Rep rows; Personal placement overrides (deferred; none on Form #1 packets in production); invitation-auth repair (2026-07-28); batch draft-template import (forms 28–50 only); TXR-1605 sync; Git migrations after launch that retarget Form #1.
+
+**Recovery source:** Soft-delete the 142 orphan mapping IDs on form_id=1 only. Do not rewrite the 55 genuine placements (already known-good). Development Form #1 fingerprint was the proof target.
+
+**Repair:** Audited script `scripts/repair-form1-txr2001-orphans.ts` with `--confirm SOFT_DELETE_FORM1_TXR2001_ORPHANS` (service-role soft-delete; no CASCADE; no other forms).
+
+**Backup / evidence (gitignored `_audit_tmp/`):**
+
+- `form1-placement-backup-2026-07-28T21-54-39-138Z.json`
+- `form1-repair-result-2026-07-28T21-54-39-138Z.json`
+- Forensic dumps: `form1-placement-forensic-*.json`, `form1-placement-analysis.json`, `form1-txr2001-ownership.json`
+
+**Validation after repair:**
+
+| Check | Result |
+|-------|--------|
+| Production Form #1 ACTIVE mappings | **55** (was 197) |
+| Dev ↔ prod Form #1 mapping fingerprint | **match** `e1531fae…533421` |
+| PDF checksum | unchanged / identical |
+| Non–Form-#1 ACTIVE mapping fingerprint | unchanged `ffc7925473a4596b79ca019efb8cfed2c25b98df7ae0db5f00b319ca551e6aa0` (1956 rows) |
+| Packet `field_instances` count probe | unchanged **173** |
+| Orphan `txr_2001_*` ACTIVE on Form #1 | **0** |
+| Form 18 TXR-2001 ACTIVE mappings | untouched **140** |
+| Production visual inspection (Lee, 2026-07-28) | **Passed** — Form #1 placements render correctly after orphan soft-delete |
+
+**Local forensic artifacts (gitignored `_audit_tmp/`; not committed — contain full row-level production mapping UUIDs):**
+
+| File | SHA-256 |
+|------|---------|
+| `form1-placement-backup-2026-07-28T21-54-39-138Z.json` | `a3e3f16b3a2454e8def54df05509d39df79f64a2565928df83d7e7ae81e6af16` |
+| `form1-repair-result-2026-07-28T21-54-39-138Z.json` | `64fae4a284233d0d4a6d9faeef14be09dc8f10336e507252532608f9ad2f67f8` |
+| `form1-placement-forensic-2026-07-28T21-55-03-102Z.json` (post-repair) | `cef1342887586640cb9392e3f7c2807d1baba4ec250680b58240a86733d5304d` |
+
+**Deferred prevention:** Add a guard that rejects mapping inserts when `page_number` exceeds the form PDF page count, and/or when `field_key` family does not match the form’s `form_code` family. Exact 2026-07-23 interactive writer was not found in Git history (live DB write).
+
 ### Invitation confirmation repair (2026-07-28)
 
 Production invitees who clicked **Accept Invitation** previously saw `Error: No token hash or type` because invite emails used Supabase’s `ConfirmationURL` / `redirectTo` path into `/auth/confirm` **without** `token_hash` and `type`, while the app only called `verifyOtp`.

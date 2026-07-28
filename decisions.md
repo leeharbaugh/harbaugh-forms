@@ -12,6 +12,35 @@ Each decision should include:
 
 ---
 
+## Form #1 Buyer Rep orphan TXR-2001 mappings soft-deleted
+
+**Date:** 2026-07-28
+
+**Decision:**
+When production Form #1 (TXR-1501 Buyer Rep Agreement) was found visually corrupted, forensic comparison proved the PDF and the 55 genuine Buyer Rep placements were intact. The defect was **142 orphan ACTIVE `form_field_mappings`** for `txr_2001_*` (Residential Lease) keys wrongly attached to `form_id = 1` on 2026-07-23, while Form **18** retained the correct lease mappings. Repair was a narrowly scoped **soft-delete** (`status = 'DELETED'`) of those 142 mapping IDs only, via audited script `scripts/repair-form1-txr2001-orphans.ts`, after writing a full Form #1 mapping backup under `_audit_tmp/`. Genuine Buyer Rep coordinates were not rewritten. Packet instances and all non–Form-#1 ACTIVE mapping fingerprints were required to remain unchanged.
+
+**Reason:**
+Restoring from development was unnecessary for coordinates (already matching). Removing the orphan overlays restores Map Fields / Fill Form rendering without risking Form 18, packet snapshots, or other templates.
+
+**Consequences:**
+
+* Production Form #1 ACTIVE mapping count returns to 55 and matches the development fingerprint.
+* Orphan DELETED duplicate `txr_2001_*` catalog fields may remain; they are not hard-deleted.
+* Future bulk mapping imports must not attach foreign form-family keys to an unrelated `form_id`.
+* Prevention (page-count / form-family guards) remains deferred product work.
+* Lee completed production visual confirmation on 2026-07-28 after the soft-delete.
+* Full row-level backup/result JSON remains local under gitignored `_audit_tmp/` (SHA-256 recorded in `project_status.md`); not committed.
+
+**Related files:**
+
+* `scripts/forensic-form-1-placements.ts`
+* `scripts/repair-form1-txr2001-orphans.ts`
+* `_audit_tmp/form1-placement-backup-2026-07-28T21-54-39-138Z.json`
+* `_audit_tmp/form1-repair-result-2026-07-28T21-54-39-138Z.json`
+* `MAPPING_INTEGRITY_AUDIT.md` (historical known-good Form #1 inventory)
+
+---
+
 ## Invitation confirmation uses token-hash verifyOtp
 
 **Date:** 2026-07-28
