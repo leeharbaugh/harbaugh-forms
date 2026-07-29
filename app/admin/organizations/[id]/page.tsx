@@ -1,4 +1,5 @@
 import { AdminOrganizationDetailPage } from "@/components/admin/admin-organization-detail-page";
+import { listBrokerageOffices } from "@/lib/admin/manage-brokerage-offices";
 import { listOrganizationMemberships } from "@/lib/admin/manage-memberships";
 import { getAdminOrganization } from "@/lib/admin/manage-organizations";
 import { listDirectoryUsersForMembershipPicker } from "@/lib/admin/manage-user-detail";
@@ -18,9 +19,10 @@ async function OrganizationDetailContent({
   if (!organization) {
     notFound();
   }
-  const [memberships, userOptions] = await Promise.all([
+  const [memberships, userOptions, offices] = await Promise.all([
     listOrganizationMemberships(organizationId),
     listDirectoryUsersForMembershipPicker(),
+    listBrokerageOffices({ organizationId, includeInactive: true }),
   ]);
 
   return (
@@ -28,6 +30,7 @@ async function OrganizationDetailContent({
       organization={organization}
       memberships={memberships}
       userOptions={userOptions}
+      offices={offices}
       initialEdit={edit}
     />
   );

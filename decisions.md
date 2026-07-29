@@ -12,6 +12,81 @@ Each decision should include:
 
 ---
 
+## Organization, brokerage, and office are distinct concepts
+
+**Date:** 2026-07-29
+
+**Decision:**
+Application organization/tenant (`organizations`), licensed brokerage entity (typically `organizations` with `organization_type = 'BROKERAGE'`), brokerage office/branch (`brokerage_offices`), licensed individual broker (broker fields on the organization plus optional TREC verification metadata), licensed sales agent (`user_agent_settings` + membership), user membership (`organization_members`), and application role (`profiles.app_role`) remain distinct. A brokerage may contain multiple offices. Individual broker licenses (`BRK` / `SALE`) must not be confused with business-entity or branch licenses. Legacy `brokerage_settings` remains the form-resolution singleton for compatibility and is not collapsed into organizations.
+
+**Reason:**
+Global Admins need to administer agents across brokerages and offices without losing historical packet/form behavior that still reads `brokerage_settings`.
+
+**Consequences:**
+
+* Offices are normalized in `brokerage_offices`; memberships may reference `brokerage_office_id`.
+* Davey Goosmann Realty was not duplicated; a Main Office was seeded from existing org address data.
+* Future form-resolver migration to org/office context is deliberate and separate.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260729210000_brokerage_offices_trec_audit.sql`
+* `lib/admin/manage-brokerage-offices.ts`
+* `lib/types/brokerage-settings.ts`
+
+---
+
+## TREC license lookup via official Open Data (server-side)
+
+**Date:** 2026-07-29
+
+**Decision:**
+TREC Broker/Sales Agent data comes from the official Texas Open Data dataset `s7ft-44qi` (Socrata), not HTML scraping. Lookup runs only on authenticated Global Admin server routes/actions. Administrators must explicitly select a candidate; name-only search never auto-selects. Manual entry/override remains available with a recorded reason. Sponsorship/related-broker information produces warnings and never silently reassigns brokerage membership. License numbers are stored as text; formatting/hyphens are preserved.
+
+**Reason:**
+Official daily Open Data is the supported API surface; silent name matching and HTML scraping are unsafe for license identity.
+
+**Consequences:**
+
+* Optional `TREC_SODA_APP_TOKEN` / `TEXAS_OPEN_DATA_APP_TOKEN` improve rate limits but are not required for local development.
+* Automated tests mock Open Data responses.
+* Authoritative form license values remain the profile/`brokerage_settings` fields expected by existing resolvers; verification metadata is additive.
+
+**Related files:**
+
+* `lib/trec/normalize.ts`
+* `lib/trec/lookup.ts`
+* `app/api/admin/trec-lookup/route.ts`
+* `components/admin/trec-license-lookup.tsx`
+
+---
+
+## Configurable ordinary audit logging with mandatory security events
+
+**Date:** 2026-07-29
+
+**Decision:**
+Ordinary business audit logging is globally configurable by Global Admins (`audit_settings.ordinary_logging_enabled`). Audit-configuration changes, Global Admin role grants/removals, unauthorized audit-setting attempts (when practical), and future impersonation start/end are always recorded even when ordinary logging is disabled. Audit events are append-only. Metadata is minimized through an allowlist/sanitizer (no passwords, tokens, secrets, full rows, or full request bodies). Browser clients cannot insert arbitrary audit rows; trusted server/service-role writers are required.
+
+**Reason:**
+Operators need on/off control for volume without losing the ability to prove that logging was disabled or that admin privileges changed.
+
+**Consequences:**
+
+* Disabling logging cannot suppress the disable event itself; prior events remain readable.
+* Cross-organization audit visibility is Global Admin only.
+* Feature development and schema validation occur on `harbaugh-forms-dev` before any production rollout; production migrations remain deliberate and separate from feature coding.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260729210000_brokerage_offices_trec_audit.sql`
+* `lib/audit/sanitize.ts`
+* `lib/audit/record.ts`
+* `lib/audit/constants.ts`
+* `app/admin/audit/page.tsx`
+
+---
+
 ## Form #1 Buyer Rep orphan TXR-2001 mappings soft-deleted
 
 **Date:** 2026-07-28

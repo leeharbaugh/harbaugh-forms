@@ -2,6 +2,9 @@
 
 import {
   addOrganizationMembershipAction,
+  createBrokerageOfficeAction,
+  setBrokerageOfficeStatusAction,
+  updateBrokerageOfficeAction,
   updateOrganizationAction,
   updateOrganizationMembershipAction,
   setOrganizationStatusAction,
@@ -21,6 +24,10 @@ import { FormActions } from "@/components/ui/form-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import type {
+  BrokerageOffice,
+  OfficeDeactivationBlocker,
+} from "@/lib/admin/manage-brokerage-offices";
 import type { AdminMembershipListItem } from "@/lib/admin/manage-memberships";
 import type { OrganizationInput } from "@/lib/admin/manage-organizations";
 import { formatPhoneInput } from "@/lib/phone-format";
@@ -31,10 +38,35 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 
 type UserOption = { id: string; label: string; email: string | null };
 
+type OfficeFormState = {
+  officeName: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  zip: string;
+  officePhone: string;
+  branchLicenseNumber: string;
+  isMainOffice: boolean;
+};
+
+const emptyOfficeForm = (): OfficeFormState => ({
+  officeName: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  state: "TX",
+  zip: "",
+  officePhone: "",
+  branchLicenseNumber: "",
+  isMainOffice: false,
+});
+
 type AdminOrganizationDetailPageProps = {
   organization: Organization;
   memberships: AdminMembershipListItem[];
   userOptions: UserOption[];
+  offices: BrokerageOffice[];
   initialEdit?: boolean;
 };
 
@@ -42,6 +74,7 @@ export function AdminOrganizationDetailPage({
   organization,
   memberships,
   userOptions,
+  offices,
   initialEdit = false,
 }: AdminOrganizationDetailPageProps) {
   const router = useRouter();
@@ -54,6 +87,16 @@ export function AdminOrganizationDetailPage({
   const [pendingOrgDeactivate, setPendingOrgDeactivate] = useState(false);
   const [pendingMembershipDeactivate, setPendingMembershipDeactivate] =
     useState<AdminMembershipListItem | null>(null);
+  const [showCreateOffice, setShowCreateOffice] = useState(false);
+  const [createOfficeForm, setCreateOfficeForm] =
+    useState<OfficeFormState>(emptyOfficeForm);
+  const [editingOfficeId, setEditingOfficeId] = useState<string | null>(null);
+  const [editOfficeForm, setEditOfficeForm] =
+    useState<OfficeFormState>(emptyOfficeForm);
+  const [pendingOfficeDeactivate, setPendingOfficeDeactivate] =
+    useState<BrokerageOffice | null>(null);
+  const [officeDeactivateBlockers, setOfficeDeactivateBlockers] =
+    useState<OfficeDeactivationBlocker | null>(null);
 
   const [form, setForm] = useState<OrganizationInput>(() => ({
     name: organization.name,
@@ -112,6 +155,21 @@ export function AdminOrganizationDetailPage({
     return userOptions.filter((user) => !activeIds.has(user.id));
   }, [userOptions, activeMemberships]);
 
+  const officeNameById = useMemo(() => {
+    return new Map(offices.map((office) => [office.id, office.office_name]));
+  }, [offices]);
+
+  const brokerDisplayName = useMemo(() => {
+    const parts = [
+      organization.broker_first_name,
+      organization.broker_middle_name,
+      organization.broker_last_name,
+    ]
+      .map((part) => part?.trim())
+      .filter(Boolean);
+    return parts.length > 0 ? parts.join(" ") : null;
+  }, [organization]);
+
   const onSave = () => {
     setMessage(null);
     setError(null);
@@ -150,6 +208,118 @@ export function AdminOrganizationDetailPage({
       setMessage("Membership added.");
       setAddUserId("");
       setAddRole("MEMBER");
+      router.refresh();
+    });
+  };
+
+  const onCreateOffice = () => {
+    setMessage(null);
+    setError(null);
+    startTransition(async () => {
+      const result = await createBrokerageOfficeAction({
+        organizationId: organization.id,
+        officeName: createOfficeForm.officeName,
+        addressLine1: createOfficeForm.addressLine1 || null,
+        addressLine2: createOfficeForm.addressLine2 || null,
+        city: createOfficeForm.city || null,
+        state: createOfficeForm.state || null,
+        zip: createOfficeForm.zip || null,
+        officePhone: createOfficeForm.officePhone || null,
+        branchLicenseNumber: createOfficeForm.branchLicenseNumber || null,
+        isMainOffice: createOfficeForm.isMainOffice,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setMessage(`Created office ${result.office.office_name}.`);
+      setShowCreateOffice(false);
+      setCreateOfficeForm(emptyOfficeForm());
+      router.refresh();
+    });
+  };
+
+  const startEditOffice = (office: BrokerageOffice) => {
+    setEditingOfficeId(office.id);
+    setEditOfficeForm({
+      officeName: office.office_name,
+      addressLine1: office.address_line_1 ?? "",
+      addressLine2: office.address_line_2 ?? "",
+      city: office.city ?? "",
+      state: office.state ?? "TX",
+      zip: office.zip ?? "",
+      officePhone: office.office_phone ?? "",
+      branchLicenseNumber: office.branch_license_number ?? "",
+      isMainOffice: office.is_main_office,
+    });
+  };
+
+  const onSaveOffice = () => {
+    if (!editingOfficeId) {
+      return;
+    }
+    setMessage(null);
+    setError(null);
+    startTransition(async () => {
+      const result = await updateBrokerageOfficeAction({
+        officeId: editingOfficeId,
+        organizationId: organization.id,
+        input: {
+          officeName: editOfficeForm.officeName,
+          addressLine1: editOfficeForm.addressLine1 || null,
+          addressLine2: editOfficeForm.addressLine2 || null,
+          city: editOfficeForm.city || null,
+          state: editOfficeForm.state || null,
+          zip: editOfficeForm.zip || null,
+          officePhone: editOfficeForm.officePhone || null,
+          branchLicenseNumber: editOfficeForm.branchLicenseNumber || null,
+          isMainOffice: editOfficeForm.isMainOffice,
+        },
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setMessage(`Updated office ${result.office.office_name}.`);
+      setEditingOfficeId(null);
+      router.refresh();
+    });
+  };
+
+  const requestOfficeDeactivate = (office: BrokerageOffice) => {
+    setOfficeDeactivateBlockers(null);
+    setPendingOfficeDeactivate(office);
+  };
+
+  const onToggleOfficeStatus = (forceClear = false) => {
+    if (!pendingOfficeDeactivate) {
+      return;
+    }
+    const office = pendingOfficeDeactivate;
+    const nextStatus = office.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+    setMessage(null);
+    setError(null);
+    startTransition(async () => {
+      const result = await setBrokerageOfficeStatusAction({
+        officeId: office.id,
+        organizationId: organization.id,
+        status: nextStatus,
+        forceClearAssignments: forceClear,
+      });
+      if (!result.ok) {
+        if ("blockers" in result && result.blockers) {
+          setOfficeDeactivateBlockers(result.blockers);
+        }
+        setError(result.error);
+        return;
+      }
+      setPendingOfficeDeactivate(null);
+      setOfficeDeactivateBlockers(null);
+      setMessage(
+        nextStatus === "ACTIVE"
+          ? `Reactivated office ${office.office_name}.`
+          : `Deactivated office ${office.office_name}.`,
+      );
       router.refresh();
     });
   };
@@ -257,6 +427,51 @@ export function AdminOrganizationDetailPage({
             setMessage("Membership deactivated.");
             router.refresh();
           });
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingOfficeDeactivate != null}
+        title={
+          pendingOfficeDeactivate?.status === "ACTIVE"
+            ? "Deactivate office?"
+            : "Reactivate office?"
+        }
+        message={
+          pendingOfficeDeactivate?.status === "ACTIVE"
+            ? officeDeactivateBlockers &&
+              officeDeactivateBlockers.activeMembershipCount > 0
+              ? `This office has ${officeDeactivateBlockers.activeMembershipCount} active member assignment(s). Confirming will clear those office assignments and deactivate "${pendingOfficeDeactivate.office_name}".`
+              : `This will deactivate "${pendingOfficeDeactivate?.office_name}".`
+            : `Reactivate "${pendingOfficeDeactivate?.office_name}"?`
+        }
+        confirmLabel={
+          pendingOfficeDeactivate?.status === "ACTIVE"
+            ? officeDeactivateBlockers &&
+              officeDeactivateBlockers.activeMembershipCount > 0
+              ? "Clear assignments & deactivate"
+              : "Deactivate"
+            : "Reactivate"
+        }
+        confirmingLabel="Working…"
+        variant={
+          pendingOfficeDeactivate?.status === "ACTIVE" ? "destructive" : "default"
+        }
+        isConfirming={isPending}
+        onCancel={() => {
+          setPendingOfficeDeactivate(null);
+          setOfficeDeactivateBlockers(null);
+        }}
+        onConfirm={() => {
+          if (!pendingOfficeDeactivate) {
+            return;
+          }
+          onToggleOfficeStatus(
+            Boolean(
+              officeDeactivateBlockers &&
+                officeDeactivateBlockers.activeMembershipCount > 0,
+            ),
+          );
         }}
       />
 
@@ -389,6 +604,178 @@ export function AdminOrganizationDetailPage({
 
       <Card>
         <CardHeader>
+          <CardTitle>Designated broker</CardTitle>
+          <CardDescription>
+            Licensed broker of record for this brokerage organization.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <div>
+            <Label>Broker name</Label>
+            <p className="text-sm">{brokerDisplayName ?? "—"}</p>
+          </div>
+          <div>
+            <Label>Broker license</Label>
+            <p className="text-sm">
+              {organization.broker_license_number?.trim() || "—"}
+            </p>
+          </div>
+          <div>
+            <Label>Brokerage license</Label>
+            <p className="text-sm">
+              {organization.brokerage_license_number?.trim() || "—"}
+            </p>
+          </div>
+          <div>
+            <Label>Broker contact</Label>
+            <p className="text-sm">
+              {[organization.broker_phone, organization.broker_email]
+                .filter(Boolean)
+                .join(" · ") || "—"}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Offices</CardTitle>
+            <CardDescription>
+              Branch offices under this brokerage organization.
+            </CardDescription>
+          </div>
+          <Button type="button" onClick={() => setShowCreateOffice((v) => !v)}>
+            {showCreateOffice ? "Cancel" : "Add office"}
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {showCreateOffice ? (
+            <OfficeFormFields
+              form={createOfficeForm}
+              onChange={setCreateOfficeForm}
+              onSubmit={onCreateOffice}
+              submitLabel={isPending ? "Creating…" : "Create office"}
+              disabled={isPending}
+            />
+          ) : null}
+
+          {offices.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No offices yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-md border">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3">Office</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Location</th>
+                    <th className="px-4 py-3">Branch license</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {offices.map((office) => (
+                    <tr key={office.id}>
+                      <td className="px-4 py-3">
+                        {editingOfficeId === office.id ? (
+                          <OfficeFormFields
+                            compact
+                            form={editOfficeForm}
+                            onChange={setEditOfficeForm}
+                            onSubmit={onSaveOffice}
+                            submitLabel={isPending ? "Saving…" : "Save office"}
+                            disabled={isPending}
+                          />
+                        ) : (
+                          <>
+                            <div className="font-medium">{office.office_name}</div>
+                            {office.is_main_office ? (
+                              <div className="text-xs text-muted-foreground">
+                                Main office
+                              </div>
+                            ) : null}
+                            {office.office_phone ? (
+                              <div className="text-xs text-muted-foreground">
+                                {office.office_phone}
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <RecordStatusBadge status={office.status} />
+                      </td>
+                      <td className="px-4 py-3 align-top text-muted-foreground">
+                        {[
+                          office.address_line_1,
+                          office.city,
+                          office.state,
+                          office.zip,
+                        ]
+                          .filter(Boolean)
+                          .join(", ") || "—"}
+                      </td>
+                      <td className="px-4 py-3 align-top text-muted-foreground">
+                        {office.branch_license_number ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        {editingOfficeId === office.id ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingOfficeId(null)}
+                          >
+                            Cancel
+                          </Button>
+                        ) : (
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={isPending}
+                              onClick={() => startEditOffice(office)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={
+                                office.status === "ACTIVE"
+                                  ? "destructive"
+                                  : "outline"
+                              }
+                              disabled={isPending}
+                              onClick={() => {
+                                if (office.status === "ACTIVE") {
+                                  requestOfficeDeactivate(office);
+                                  return;
+                                }
+                                setOfficeDeactivateBlockers(null);
+                                setPendingOfficeDeactivate(office);
+                              }}
+                            >
+                              {office.status === "ACTIVE"
+                                ? "Deactivate"
+                                : "Reactivate"}
+                            </Button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Add membership</CardTitle>
           <CardDescription>
             Add an existing user. Duplicate active memberships are blocked.
@@ -432,6 +819,7 @@ export function AdminOrganizationDetailPage({
       <MembershipTable
         title="Active memberships"
         rows={activeMemberships}
+        officeNameById={officeNameById}
         isPending={isPending}
         onChangeRole={(membership, role) => {
           setMessage(null);
@@ -482,6 +870,7 @@ export function AdminOrganizationDetailPage({
       <MembershipTable
         title="Inactive memberships"
         rows={inactiveMemberships}
+        officeNameById={officeNameById}
         isPending={isPending}
         onChangeRole={(membership, role) => {
           setMessage(null);
@@ -528,15 +917,138 @@ export function AdminOrganizationDetailPage({
   );
 }
 
+function OfficeFormFields({
+  form,
+  onChange,
+  onSubmit,
+  submitLabel,
+  disabled,
+  compact = false,
+}: {
+  form: OfficeFormState;
+  onChange: (value: OfficeFormState) => void;
+  onSubmit: () => void;
+  submitLabel: string;
+  disabled: boolean;
+  compact?: boolean;
+}) {
+  const fields = (
+    <>
+      <div className="grid gap-2">
+        <Label htmlFor={compact ? "edit-office-name" : "create-office-name"}>
+          Office name *
+        </Label>
+        <Input
+          id={compact ? "edit-office-name" : "create-office-name"}
+          value={form.officeName}
+          onChange={(e) => onChange({ ...form, officeName: e.target.value })}
+        />
+      </div>
+      <div className="grid gap-2 md:col-span-2">
+        <Label>Address line 1</Label>
+        <Input
+          value={form.addressLine1}
+          onChange={(e) => onChange({ ...form, addressLine1: e.target.value })}
+        />
+      </div>
+      <div className="grid gap-2 md:col-span-2">
+        <Label>Address line 2</Label>
+        <Input
+          value={form.addressLine2}
+          onChange={(e) => onChange({ ...form, addressLine2: e.target.value })}
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label>City</Label>
+        <Input
+          value={form.city}
+          onChange={(e) => onChange({ ...form, city: e.target.value })}
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label>State</Label>
+        <Input
+          value={form.state}
+          maxLength={2}
+          onChange={(e) =>
+            onChange({ ...form, state: e.target.value.toUpperCase() })
+          }
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label>ZIP</Label>
+        <Input
+          value={form.zip}
+          onChange={(e) => onChange({ ...form, zip: e.target.value })}
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label>Office phone</Label>
+        <Input
+          value={form.officePhone}
+          onChange={(e) =>
+            onChange({ ...form, officePhone: formatPhoneInput(e.target.value) })
+          }
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label>Branch license number</Label>
+        <Input
+          value={form.branchLicenseNumber}
+          onChange={(e) =>
+            onChange({ ...form, branchLicenseNumber: e.target.value })
+          }
+        />
+      </div>
+      <label className="flex items-center gap-2 text-sm md:col-span-2">
+        <input
+          type="checkbox"
+          checked={form.isMainOffice}
+          onChange={(e) =>
+            onChange({ ...form, isMainOffice: e.target.checked })
+          }
+        />
+        Main office
+      </label>
+    </>
+  );
+
+  if (compact) {
+    return (
+      <div className="grid gap-3 md:grid-cols-2">
+        {fields}
+        <div className="md:col-span-2">
+          <Button type="button" size="sm" disabled={disabled} onClick={onSubmit}>
+            {submitLabel}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 rounded-md border border-dashed border-border p-4 md:grid-cols-2">
+      {fields}
+      <div className="md:col-span-2">
+        <Button type="button" disabled={disabled} onClick={onSubmit}>
+          {submitLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function MembershipTable({
   title,
   rows,
+  officeNameById,
   isPending,
   onChangeRole,
   onSetStatus,
 }: {
   title: string;
   rows: AdminMembershipListItem[];
+  officeNameById: Map<string, string>;
   isPending: boolean;
   onChangeRole: (
     membership: AdminMembershipListItem,
@@ -562,6 +1074,7 @@ function MembershipTable({
                 <tr>
                   <th className="px-4 py-3">User</th>
                   <th className="px-4 py-3">Role</th>
+                  <th className="px-4 py-3">Office</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Agent</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -590,6 +1103,12 @@ function MembershipTable({
                         <option value="MEMBER">MEMBER</option>
                         <option value="ORG_ADMIN">ORG_ADMIN</option>
                       </Select>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {row.brokerage_office_id
+                        ? officeNameById.get(row.brokerage_office_id) ??
+                          row.brokerage_office_id
+                        : "—"}
                     </td>
                     <td className="px-4 py-3">
                       <RecordStatusBadge status={row.status} />

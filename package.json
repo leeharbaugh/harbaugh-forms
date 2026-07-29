@@ -11,6 +11,7 @@
     "test:admin-invite": "node --experimental-strip-types --test lib/admin/invite-validation.test.ts lib/admin/signup-disabled.test.ts",
     "test:auth-confirm": "node --experimental-strip-types --test lib/auth/auth-confirm.test.ts",
     "test:admin-orgs": "node --experimental-strip-types --test lib/admin/manage-organizations.test.ts",
+    "test:brokerage-trec-audit": "node --experimental-strip-types --test lib/admin/brokerage-trec-audit.test.ts",
     "test:library-permissions": "node --experimental-strip-types --test lib/library-permissions.test.ts",
     "test:property-address": "node --experimental-strip-types --test lib/property-address-normalize.test.ts",
     "test:property-hoa": "node --experimental-strip-types --test lib/property-hoa-storage.test.ts",

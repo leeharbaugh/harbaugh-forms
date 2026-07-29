@@ -185,6 +185,12 @@ export async function setUserAppRoleAction(options: {
     }
 
     const admin = createAdminClient();
+    const { data: before } = await admin
+      .from("profiles")
+      .select("app_role")
+      .eq("id", options.userId)
+      .maybeSingle();
+
     const { error: updateError } = await admin
       .from("profiles")
       .update({ app_role: options.appRole })
@@ -192,6 +198,27 @@ export async function setUserAppRoleAction(options: {
 
     if (updateError) {
       return { ok: false as const, error: updateError.message };
+    }
+
+    if (before?.app_role !== options.appRole) {
+      const { recordAuditEvent } = await import("@/lib/audit/record");
+      await recordAuditEvent({
+        actorUserId: actor.userId,
+        actorDisplayName: actor.profile.display_name,
+        actorRoleSnapshot: "ADMIN",
+        eventCategory: "security",
+        action:
+          options.appRole === "ADMIN"
+            ? "global_admin_access_granted"
+            : "global_admin_access_removed",
+        targetEntityType: "profile",
+        targetEntityId: options.userId,
+        summary:
+          options.appRole === "ADMIN"
+            ? "Global Admin access granted."
+            : "Global Admin access removed.",
+        mandatory: true,
+      });
     }
 
     revalidateAdminPaths([`/admin/users/${options.userId}`]);
@@ -203,8 +230,11 @@ export async function setUserAppRoleAction(options: {
 
 export async function createOrganizationAction(input: OrganizationInput) {
   try {
-    await requireAppAdmin();
-    const result = await createOrganization(input);
+    const actor = await requireAppAdmin();
+    const result = await createOrganization(input, {
+      userId: actor.userId,
+      displayName: actor.profile.display_name,
+    });
     if (result.ok) {
       revalidateAdminPaths([`/admin/organizations/${result.organization.id}`]);
     }
@@ -219,10 +249,14 @@ export async function updateOrganizationAction(options: {
   input: OrganizationInput;
 }) {
   try {
-    await requireAppAdmin();
+    const actor = await requireAppAdmin();
     const result = await updateOrganization(
       options.organizationId,
       options.input,
+      {
+        userId: actor.userId,
+        displayName: actor.profile.display_name,
+      },
     );
     if (result.ok) {
       revalidateAdminPaths([`/admin/organizations/${options.organizationId}`]);
@@ -236,12 +270,18 @@ export async function updateOrganizationAction(options: {
 export async function setOrganizationStatusAction(options: {
   organizationId: string;
   status: "ACTIVE" | "INACTIVE";
+  acknowledgeActiveAssignments?: boolean;
 }) {
   try {
-    await requireAppAdmin();
+    const actor = await requireAppAdmin();
     const result = await setOrganizationStatus(
       options.organizationId,
       options.status,
+      {
+        userId: actor.userId,
+        displayName: actor.profile.display_name,
+        acknowledgeActiveAssignments: options.acknowledgeActiveAssignments,
+      },
     );
     if (result.ok) {
       revalidateAdminPaths([`/admin/organizations/${options.organizationId}`]);
@@ -328,5 +368,207 @@ export async function upsertAdminAgentSettingsAction(options: {
     return result;
   } catch (error) {
     return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function createBrokerageOfficeAction(input: {
+  organizationId: string;
+  officeName: string;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  officePhone?: string | null;
+  branchLicenseNumber?: string | null;
+  isMainOffice?: boolean;
+}) {
+  try {
+    const actor = await requireAppAdmin();
+    const { createBrokerageOffice } = await import(
+      "@/lib/admin/manage-brokerage-offices"
+    );
+    const result = await createBrokerageOffice({
+      input,
+      actorUserId: actor.userId,
+      actorDisplayName: actor.profile.display_name,
+    });
+    if (result.ok) {
+      revalidateAdminPaths([
+        `/admin/organizations/${input.organizationId}`,
+        "/admin/brokerages",
+      ]);
+    }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function updateBrokerageOfficeAction(options: {
+  officeId: string;
+  organizationId: string;
+  input: {
+    officeName: string;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip?: string | null;
+    officePhone?: string | null;
+    branchLicenseNumber?: string | null;
+    isMainOffice?: boolean;
+  };
+}) {
+  try {
+    const actor = await requireAppAdmin();
+    const { updateBrokerageOffice } = await import(
+      "@/lib/admin/manage-brokerage-offices"
+    );
+    const result = await updateBrokerageOffice({
+      officeId: options.officeId,
+      input: options.input,
+      actorUserId: actor.userId,
+      actorDisplayName: actor.profile.display_name,
+    });
+    if (result.ok) {
+      revalidateAdminPaths([
+        `/admin/organizations/${options.organizationId}`,
+        "/admin/brokerages",
+      ]);
+    }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function setBrokerageOfficeStatusAction(options: {
+  officeId: string;
+  organizationId: string;
+  status: "ACTIVE" | "INACTIVE";
+  forceClearAssignments?: boolean;
+}) {
+  try {
+    const actor = await requireAppAdmin();
+    const { setBrokerageOfficeStatus } = await import(
+      "@/lib/admin/manage-brokerage-offices"
+    );
+    const result = await setBrokerageOfficeStatus({
+      officeId: options.officeId,
+      status: options.status,
+      actorUserId: actor.userId,
+      actorDisplayName: actor.profile.display_name,
+      forceClearAssignments: options.forceClearAssignments,
+    });
+    if (result.ok) {
+      revalidateAdminPaths([
+        `/admin/organizations/${options.organizationId}`,
+        "/admin/brokerages",
+      ]);
+    }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function setAuditLoggingEnabledAction(options: {
+  enabled: boolean;
+}) {
+  try {
+    const actor = await requireAppAdmin();
+    const { setOrdinaryAuditLoggingEnabled } = await import(
+      "@/lib/audit/record"
+    );
+    const result = await setOrdinaryAuditLoggingEnabled({
+      enabled: options.enabled,
+      actorUserId: actor.userId,
+      actorDisplayName: actor.profile.display_name,
+      actorRoleSnapshot: "ADMIN",
+    });
+    if (result.ok) {
+      revalidateAdminPaths(["/admin/audit"]);
+    }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function lookupTrecLicensesAction(input: {
+  licenseNumber?: string | null;
+  fullName?: string | null;
+  licenseTypes?: Array<"SALE" | "BRK">;
+  limit?: number;
+}) {
+  try {
+    const actor = await requireAppAdmin();
+    const { lookupTrecLicenses } = await import("@/lib/trec/lookup");
+    const { recordAuditEvent } = await import("@/lib/audit/record");
+
+    await recordAuditEvent({
+      actorUserId: actor.userId,
+      actorDisplayName: actor.profile.display_name,
+      actorRoleSnapshot: "ADMIN",
+      eventCategory: "trec",
+      action: "trec_lookup_submitted",
+      summary: "TREC license lookup submitted.",
+      metadata: {
+        hasLicenseNumber: Boolean(input.licenseNumber?.trim()),
+        hasName: Boolean(input.fullName?.trim()),
+        licenseTypes: input.licenseTypes ?? ["SALE", "BRK"],
+      },
+    });
+
+    const result = await lookupTrecLicenses({
+      licenseNumber: input.licenseNumber,
+      fullName: input.fullName,
+      licenseTypes: input.licenseTypes,
+      limit: input.limit,
+    });
+
+    if (!result.ok) {
+      await recordAuditEvent({
+        actorUserId: actor.userId,
+        actorDisplayName: actor.profile.display_name,
+        actorRoleSnapshot: "ADMIN",
+        eventCategory: "trec",
+        action: "trec_lookup_failed",
+        summary: result.error,
+        success: false,
+        failureClassification: result.code,
+      });
+      return result;
+    }
+
+    await recordAuditEvent({
+      actorUserId: actor.userId,
+      actorDisplayName: actor.profile.display_name,
+      actorRoleSnapshot: "ADMIN",
+      eventCategory: "trec",
+      action:
+        result.candidates.length === 0
+          ? "no_trec_match_found"
+          : "trec_lookup_succeeded",
+      summary:
+        result.candidates.length === 0
+          ? "No TREC matches found."
+          : `TREC lookup returned ${result.candidates.length} candidate(s).`,
+      metadata: {
+        candidateCount: result.candidates.length,
+        fromCache: result.fromCache,
+      },
+    });
+
+    return result;
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: toErrorMessage(error),
+      code: "UPSTREAM" as const,
+      lookedUpAt: new Date().toISOString(),
+      allowManualEntry: true as const,
+    };
   }
 }

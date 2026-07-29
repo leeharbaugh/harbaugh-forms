@@ -5,6 +5,11 @@ import {
   validateOrganizationInput,
   type OrganizationInput,
 } from "@/lib/admin/organization-validation";
+import {
+  getOrganizationDeactivationBlockers,
+} from "@/lib/admin/manage-brokerage-offices";
+import { recordAuditEvent } from "@/lib/audit/record";
+import { buildAuditUpdateDiff } from "@/lib/audit/sanitize";
 import type {
   Organization,
   OrganizationStatus,
@@ -17,6 +22,7 @@ export type AdminOrganizationListItem = Organization & {
   memberCount: number;
   activeMemberCount: number;
   activeAgentCount: number;
+  activeOfficeCount: number;
 };
 
 export async function listAdminOrganizations(): Promise<
@@ -74,7 +80,12 @@ export async function listAdminOrganizations(): Promise<
 
   const countsByOrg = new Map<
     string,
-    { memberCount: number; activeMemberCount: number; activeAgentCount: number }
+    {
+      memberCount: number;
+      activeMemberCount: number;
+      activeAgentCount: number;
+      activeOfficeCount: number;
+    }
   >();
 
   for (const orgId of orgIds) {
@@ -82,6 +93,7 @@ export async function listAdminOrganizations(): Promise<
       memberCount: 0,
       activeMemberCount: 0,
       activeAgentCount: 0,
+      activeOfficeCount: 0,
     });
   }
 
@@ -100,11 +112,27 @@ export async function listAdminOrganizations(): Promise<
     }
   }
 
+  const { data: offices, error: officesError } = await admin
+    .from("brokerage_offices")
+    .select("organization_id")
+    .in("organization_id", orgIds)
+    .eq("status", "ACTIVE");
+  if (officesError) {
+    throw new Error(officesError.message);
+  }
+  for (const row of offices ?? []) {
+    const current = countsByOrg.get(row.organization_id as string);
+    if (current) {
+      current.activeOfficeCount += 1;
+    }
+  }
+
   return (organizations ?? []).map((org) => {
     const counts = countsByOrg.get(org.id as string) ?? {
       memberCount: 0,
       activeMemberCount: 0,
       activeAgentCount: 0,
+      activeOfficeCount: 0,
     };
     return {
       ...(org as Organization),
@@ -133,6 +161,7 @@ export async function getAdminOrganization(
 
 export async function createOrganization(
   input: OrganizationInput,
+  actor?: { userId: string; displayName?: string | null },
 ): Promise<{ ok: true; organization: Organization } | { ok: false; error: string }> {
   const validated = validateOrganizationInput(input);
   if (!validated.ok) {
@@ -153,12 +182,31 @@ export async function createOrganization(
     return { ok: false, error: error.message };
   }
 
-  return { ok: true, organization: data as Organization };
+  const organization = data as Organization;
+  if (actor) {
+    await recordAuditEvent({
+      actorUserId: actor.userId,
+      actorDisplayName: actor.displayName,
+      actorRoleSnapshot: "ADMIN",
+      organizationId: organization.id,
+      eventCategory: "brokerage",
+      action: "brokerage_created",
+      targetEntityType: "organization",
+      targetEntityId: organization.id,
+      summary: `Created brokerage "${organization.name}".`,
+      metadata: {
+        brokerageLicenseNumber: organization.brokerage_license_number,
+      },
+    });
+  }
+
+  return { ok: true, organization };
 }
 
 export async function updateOrganization(
   organizationId: string,
   input: OrganizationInput,
+  actor?: { userId: string; displayName?: string | null },
 ): Promise<{ ok: true; organization: Organization } | { ok: false; error: string }> {
   const validated = validateOrganizationInput(input);
   if (!validated.ok) {
@@ -166,6 +214,15 @@ export async function updateOrganization(
   }
 
   const admin = createAdminClient();
+  const { data: before } = await admin
+    .from("organizations")
+    .select("*")
+    .eq("id", organizationId)
+    .neq("status", "DELETED")
+    .maybeSingle();
+
+  const previousBrokerLicense = before?.broker_license_number ?? null;
+
   const { data, error } = await admin
     .from("organizations")
     .update(validated.value)
@@ -181,20 +238,97 @@ export async function updateOrganization(
     return { ok: false, error: "Organization not found." };
   }
 
-  return { ok: true, organization: data as Organization };
+  const organization = data as Organization;
+  if (actor) {
+    const diff = buildAuditUpdateDiff(
+      (before ?? {}) as Record<string, unknown>,
+      organization as unknown as Record<string, unknown>,
+    );
+    await recordAuditEvent({
+      actorUserId: actor.userId,
+      actorDisplayName: actor.displayName,
+      actorRoleSnapshot: "ADMIN",
+      organizationId: organization.id,
+      eventCategory: "brokerage",
+      action: "brokerage_updated",
+      targetEntityType: "organization",
+      targetEntityId: organization.id,
+      summary: `Updated brokerage "${organization.name}".`,
+      metadata: diff,
+    });
+
+    if (
+      previousBrokerLicense !== organization.broker_license_number ||
+      before?.broker_first_name !== organization.broker_first_name ||
+      before?.broker_last_name !== organization.broker_last_name
+    ) {
+      await recordAuditEvent({
+        actorUserId: actor.userId,
+        actorDisplayName: actor.displayName,
+        actorRoleSnapshot: "ADMIN",
+        organizationId: organization.id,
+        eventCategory: "brokerage",
+        action: previousBrokerLicense
+          ? "designated_broker_changed"
+          : "designated_broker_assigned",
+        targetEntityType: "organization",
+        targetEntityId: organization.id,
+        summary: previousBrokerLicense
+          ? `Changed designated broker for "${organization.name}".`
+          : `Assigned designated broker for "${organization.name}".`,
+        metadata: {
+          changedFields: ["broker_license_number", "broker_first_name", "broker_last_name"],
+          safeOldValues: {
+            broker_license_number: previousBrokerLicense,
+          },
+          safeNewValues: {
+            broker_license_number: organization.broker_license_number,
+          },
+        },
+      });
+    }
+  }
+
+  return { ok: true, organization };
 }
 
 export async function setOrganizationStatus(
   organizationId: string,
   status: Extract<OrganizationStatus, "ACTIVE" | "INACTIVE">,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  actor?: {
+    userId: string;
+    displayName?: string | null;
+    acknowledgeActiveAssignments?: boolean;
+  },
+): Promise<
+  | { ok: true }
+  | {
+      ok: false;
+      error: string;
+      blockers?: Awaited<ReturnType<typeof getOrganizationDeactivationBlockers>>;
+    }
+> {
+  if (status === "INACTIVE") {
+    const blockers = await getOrganizationDeactivationBlockers(organizationId);
+    if (
+      (blockers.activeMembershipCount > 0 || blockers.invitedProfileCount > 0) &&
+      !actor?.acknowledgeActiveAssignments
+    ) {
+      return {
+        ok: false,
+        error: `Cannot deactivate brokerage while ${blockers.activeMembershipCount} active member(s) and ${blockers.invitedProfileCount} invited profile(s) remain. Review affected records and confirm acknowledgement.`,
+        blockers,
+      };
+    }
+  }
+
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("organizations")
     .update({ status })
     .eq("id", organizationId)
     .neq("status", "DELETED")
-    .select("id")
+    .select("id, name")
     .maybeSingle();
 
   if (error) {
@@ -202,6 +336,24 @@ export async function setOrganizationStatus(
   }
   if (!data) {
     return { ok: false, error: "Organization not found." };
+  }
+
+  if (actor) {
+    await recordAuditEvent({
+      actorUserId: actor.userId,
+      actorDisplayName: actor.displayName,
+      actorRoleSnapshot: "ADMIN",
+      organizationId,
+      eventCategory: "brokerage",
+      action:
+        status === "ACTIVE" ? "brokerage_reactivated" : "brokerage_deactivated",
+      targetEntityType: "organization",
+      targetEntityId: organizationId,
+      summary:
+        status === "ACTIVE"
+          ? `Reactivated brokerage "${data.name}".`
+          : `Deactivated brokerage "${data.name}".`,
+    });
   }
 
   return { ok: true };
