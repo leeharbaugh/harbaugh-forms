@@ -127,9 +127,9 @@ Migration: `20260729210000_brokerage_offices_trec_audit.sql`
 
 | Item | Status |
 |------|--------|
-| Feature commit | `7cbb964bec3d2ac09599a1e52d6af1185232a232` |
-| Remote branch | `origin/feature/admin-brokerage-trec-audit` (after push) |
-| Preview Deployment | created by Vercel on feature-branch push — URL recorded after deploy settles |
+| Feature commit | `7cbb964bec3d2ac09599a1e52d6af1185232a232` (tip includes docs: `7ea2f6935804627125054f04bf7649f34f4e3246`) |
+| Remote branch | `origin/feature/admin-brokerage-trec-audit` |
+| Preview Deployment | **success** — https://harbaugh-forms-fop0vhivf-lee-harbaugh-s-projects.vercel.app (Vercel dashboard: https://vercel.com/lee-harbaugh-s-projects/harbaugh-forms/FxJz8Q5fZeDRNYsu3qPYZdUWrAxL) |
 | Production rollout | **still pending / not authorized** |
 
 #### Remaining Preview smoke tests
