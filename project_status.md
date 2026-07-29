@@ -127,7 +127,7 @@ Migration: `20260729210000_brokerage_offices_trec_audit.sql`
 
 | Item | Status |
 |------|--------|
-| Feature commit | `ad9b939cb888e1ac4b5659864ff9b9bdb16324b5` |
+| Feature commit | `7cbb964bec3d2ac09599a1e52d6af1185232a232` |
 | Remote branch | `origin/feature/admin-brokerage-trec-audit` (after push) |
 | Preview Deployment | created by Vercel on feature-branch push — URL recorded after deploy settles |
 | Production rollout | **still pending / not authorized** |
