@@ -992,7 +992,7 @@ async function applyManifest(
 
 async function main() {
   loadEnvFile(".env.local");
-  loadEnvFile(".env.production.local", {
+  loadEnvFile(".env.ops.production", {
     overrideMatching: /^(TARGET_|SOURCE_)/,
   });
   const args = parseSyncArgs(process.argv.slice(2));

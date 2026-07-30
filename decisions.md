@@ -12,6 +12,34 @@ Each decision should include:
 
 ---
 
+## Production ops credentials stay outside Next.js auto-load
+
+**Date:** 2026-07-29
+
+**Decision:**
+Production operational credentials live in gitignored `.env.ops.production` and are loaded only by explicitly named production-ops npm scripts (`--env-file=.env.ops.production`). They must not use `.env.production.local`, because Next.js automatically loads that filename during `next build` / production-mode local runs. Application clients (`NEXT_PUBLIC_SUPABASE_*`, `SUPABASE_SECRET_KEY`) continue to come from `.env.local` (development) or Vercel environment scopes. A runtime/build guard rejects using production project `eetonalyyyssvkyfdoxh` for the application outside real Vercel Production (unless `HARBAUGH_ALLOW_PRODUCTION_APP=1`). Feature-branch validation uses `npm run build:validate`, which refuses a present `.env.production.local` and requires the development project ref.
+
+**Reason:**
+A prior feature validation `npm run build` reported Next loading `.env.production.local`. Even when current ops variables were TARGET_*/SOURCE_* (not app keys), auto-loading production ops files during ordinary builds is an unacceptable silent-mix risk.
+
+**Consequences:**
+
+* Local `npm run dev` and `npm run build:validate` use development only.
+* Vercel Preview keeps Preview-scoped vars (development Supabase); Vercel Production keeps Production-scoped vars.
+* Production migrations/import/export/sync scripts remain opt-in and require `.env.ops.production`.
+* Recreating `.env.production.local` fails `build:validate` until removed/renamed.
+
+**Related files:**
+
+* `.gitignore` (`.env.ops.production`)
+* `scripts/assert-safe-local-build-env.ts`
+* `lib/supabase/project-guard.ts`
+* `lib/supabase/env.ts`
+* `lib/supabase/admin.ts`
+* `package.json` (`build:validate`, production-ops scripts)
+
+---
+
 ## Organizations remain the brokerage administration workflow
 
 **Date:** 2026-07-29

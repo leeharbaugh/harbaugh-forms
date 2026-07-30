@@ -121,8 +121,9 @@ Cleanup migration (forward-only; applied to development only): `20260730010000_r
 | Item | Status |
 |------|--------|
 | Cleanup commit | `862f3b480f0f3cbf1bf0051a730805ff92757e95` |
+| Env-safety commit | pending |
 | Remote branch | `origin/feature/admin-brokerage-trec-audit` |
-| Preview Deployment | **success** — https://harbaugh-forms-i5pcnkson-lee-harbaugh-s-projects.vercel.app (dashboard: https://vercel.com/lee-harbaugh-s-projects/harbaugh-forms/BMHLbk9MG5S7t2YB6p8CcZNUNRtQ) |
+| Prior Preview | https://harbaugh-forms-i5pcnkson-lee-harbaugh-s-projects.vercel.app (safe: Preview → development Supabase) |
 | Production rollout | **still pending / not authorized** |
 
 #### Remaining Preview smoke tests
@@ -134,6 +135,35 @@ Lee should confirm Organizations admin, invite with manual license, Audit Log to
 - Form resolvers still use legacy `brokerage_settings` singleton
 - Broader audit event coverage intentionally deferred
 - No production rollout yet
+
+#### Environment-loading safeguard (2026-07-29)
+
+**Risk assessed:** `npm run build` previously printed `Environments: .env.production.local, .env.local` because Next.js auto-loads `.env.production.local` whenever `NODE_ENV=production`.
+
+**Assessment findings (names/refs only; no secret values):**
+
+| Question | Finding |
+|----------|---------|
+| Why loaded | Next.js production build env precedence includes `.env.production.local` |
+| Vars in that file | `TARGET_SUPABASE_URL`, `TARGET_SUPABASE_SECRET_KEY`, `TARGET_SUPABASE_PUBLISHABLE_KEY`, `TARGET_DB_PASSWORD`, `SOURCE_SUPABASE_URL`, `SOURCE_SUPABASE_SECRET_KEY` |
+| Point at production? | TARGET_* → `eetonalyyyssvkyfdoxh`; SOURCE_* → `ewxsxwzezhkeawnjvigx` |
+| App keys overlapped? | **No** — app uses `NEXT_PUBLIC_SUPABASE_*` / `SUPABASE_SECRET_KEY` from `.env.local` (dev) |
+| Build-time DB init | Clients create on call; admin pages can run during static generation/PPR using app env |
+| Build mutates DB? | No intentional mutations in build; risk was silent credential mix |
+| Prior build prod network? | No evidence of production app-client use (app URL remained development) |
+| Vercel Preview | Separate Preview-scoped vars → **development** `ewxsxwzezhkeawnjvigx` (verified via `vercel env pull`) |
+| Vercel Production | Production-scoped vars → `eetonalyyyssvkyfdoxh` |
+| `.env.production.local` tracked? | No (`.env*.local` gitignored) |
+| Scripts needing prod creds | Explicit ops scripts only (`migrate:approved-auth`, export/import/validate/copy approved production data, condo TXR-1605 prod sync/rollback, forensic/repair helpers) |
+
+**Fix applied (Option A + Option C):**
+
+* Renamed local ops file to gitignored `.env.ops.production` (Next does **not** auto-load it)
+* Production-ops npm scripts and runbook now load `.env.ops.production` explicitly
+* `npm run build:validate` refuses a present `.env.production.local` and requires development app URL
+* `assertAppSupabaseTargetAllowed` blocks production app URL outside Vercel Production
+
+**Documented validation command:** `npm run build:validate` (not bare `npm run build` when validating features locally).
 
 #### Production rollout steps (**not performed / not authorized**)
 
@@ -481,12 +511,12 @@ Before making changes:
 1. Clone or pull the GitHub repository; `git fetch --all --prune`
 2. Check out `main` and confirm it matches `origin/main`; clean working tree
 3. Use the Node version and package manager declared by the repo; clean install
-4. Restore `.env.local` securely (never commit). For production ops tooling only, use gitignored `.env.production.local`
+4. Restore `.env.local` securely (never commit). For production ops tooling only, use gitignored `.env.ops.production` (never `.env.production.local` — Next.js auto-loads that name during `next build`)
 5. Confirm local Supabase targets **`harbaugh-forms-dev`** (`ewxsxwzezhkeawnjvigx`) unless an explicit production-ops task says otherwise
 6. Confirm Supabase CLI auth/link; compare migration history before applying migrations
 7. Do not run `supabase db reset`, reckless `db push`, or migration-repair until target and history are verified
 8. Confirm GitHub and Vercel access when needed (`harbaugh-forms` project only for this app)
-9. Run `npx tsc --noEmit`, relevant tests, and `npm run build` as appropriate
+9. Run `npx tsc --noEmit`, relevant tests, and `npm run build:validate` for feature-branch validation
 10. Do not reset or edit already-applied migrations; do not run destructive SQL against environments with real business data
 
 ## Required Local Environment Variables

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
+import { assertAppSupabaseTargetAllowed } from "@/lib/supabase/project-guard";
 
 /**
  * Server-only Supabase client with elevated privileges.
@@ -17,6 +18,8 @@ export function createAdminClient() {
       "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY) environment variables",
     );
   }
+
+  assertAppSupabaseTargetAllowed(supabaseUrl);
 
   return createClient(supabaseUrl, secretKey, {
     auth: {
