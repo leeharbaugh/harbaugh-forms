@@ -6,7 +6,7 @@
  *   npm run export:approved-production-data -- --execute
  *   npm run export:approved-production-data -- --execute --out exports/approved-production-data.json
  *
- * Loads .env.local (+ .env.production.local via package.json). Writes filtered
+ * Loads .env.local (+ .env.ops.production via package.json). Writes filtered
  * public tables including representation_agreements / clients / buyer_rep_details
  * and field_instances for packets 2/5 (packet_id + packet_form_id).
  */

@@ -12,6 +12,111 @@ Each decision should include:
 
 ---
 
+## Production ops credentials stay outside Next.js auto-load
+
+**Date:** 2026-07-29
+
+**Decision:**
+Production operational credentials live in gitignored `.env.ops.production` and are loaded only by explicitly named production-ops npm scripts (`--env-file=.env.ops.production`). They must not use `.env.production.local`, because Next.js automatically loads that filename during `next build` / production-mode local runs. Application clients (`NEXT_PUBLIC_SUPABASE_*`, `SUPABASE_SECRET_KEY`) continue to come from `.env.local` (development) or Vercel environment scopes. A runtime/build guard rejects using production project `eetonalyyyssvkyfdoxh` for the application outside real Vercel Production (unless `HARBAUGH_ALLOW_PRODUCTION_APP=1`). Feature-branch validation uses `npm run build:validate`, which refuses a present `.env.production.local` and requires the development project ref.
+
+**Reason:**
+A prior feature validation `npm run build` reported Next loading `.env.production.local`. Even when current ops variables were TARGET_*/SOURCE_* (not app keys), auto-loading production ops files during ordinary builds is an unacceptable silent-mix risk.
+
+**Consequences:**
+
+* Local `npm run dev` and `npm run build:validate` use development only.
+* Vercel Preview keeps Preview-scoped vars (development Supabase); Vercel Production keeps Production-scoped vars.
+* Production migrations/import/export/sync scripts remain opt-in and require `.env.ops.production`.
+* Recreating `.env.production.local` fails `build:validate` until removed/renamed.
+
+**Related files:**
+
+* `.gitignore` (`.env.ops.production`)
+* `scripts/assert-safe-local-build-env.ts`
+* `lib/supabase/project-guard.ts`
+* `lib/supabase/env.ts`
+* `lib/supabase/admin.ts`
+* `package.json` (`build:validate`, production-ops scripts)
+
+---
+
+## Organizations remain the brokerage administration workflow
+
+**Date:** 2026-07-29
+
+**Decision:**
+Existing `Admin → Organizations` remains the authoritative workflow for creating and maintaining multiple brokerages. A separate Brokerage/Offices administration feature was reviewed in Preview and intentionally abandoned. Brokerage offices are not modeled at this time. `organizations` continues to represent brokerage tenants (`organization_type = 'BROKERAGE'` when applicable). Legacy `brokerage_settings` remains the form-resolution singleton for compatibility and is not collapsed into organizations.
+
+**Reason:**
+Lee determined Organizations is sufficient for multi-brokerage administration. Office branching added complexity without enough product value for the initial release.
+
+**Consequences:**
+
+* `/admin/brokerages`, office CRUD, membership office assignment, and office-specific invite selectors were removed.
+* Cleanup migration `20260730010000_remove_brokerage_offices_and_trec.sql` drops development-only office schema while retaining audit tables.
+* Original combined migration `20260729210000_brokerage_offices_trec_audit.sql` remains immutable in history; both migrations together yield the audit-only final schema if ever applied elsewhere.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260729210000_brokerage_offices_trec_audit.sql`
+* `supabase/migrations/20260730010000_remove_brokerage_offices_and_trec.sql`
+* `lib/admin/manage-organizations.ts`
+* `lib/types/brokerage-settings.ts`
+
+---
+
+## Manual license numbers; TREC automatic lookup abandoned
+
+**Date:** 2026-07-29
+
+**Decision:**
+TREC automatic license lookup and autofill were reviewed in Preview and intentionally abandoned. Agent and broker license numbers continue to be entered manually through existing profile/invite/organization fields (`trec_license_number`, `broker_license_number`, etc.). No TREC Open Data integration, candidate UI, verification metadata columns, or TREC environment variables are part of the application.
+
+**Reason:**
+Automatic lookup is not necessary for the initial product and did not provide enough reliability or simplicity.
+
+**Consequences:**
+
+* `lib/trec/*`, `POST /api/admin/trec-lookup`, TREC invite UI, and TREC verification columns are removed.
+* `TREC_SODA_APP_TOKEN` / `TEXAS_OPEN_DATA_APP_TOKEN` are not required and should not be documented as active configuration.
+* Invitation returns to the prior simple manual license-number workflow (plus retained audit events).
+
+**Related files:**
+
+* `lib/admin/invite-validation.ts`
+* `components/admin/admin-users-page.tsx`
+* `supabase/migrations/20260730010000_remove_brokerage_offices_and_trec.sql`
+
+---
+
+## Configurable ordinary audit logging with mandatory security events
+
+**Date:** 2026-07-29
+
+**Decision:**
+Basic audit logging is retained. Ordinary business audit logging is globally configurable by Global Admins (`audit_settings.ordinary_logging_enabled`). Audit-configuration enable/disable events are always recorded even when ordinary logging is disabled. Global Admin role grants/removals and related mandatory security actions remain recorded. Audit events are append-only. Metadata is minimized through a sanitizer (no passwords, tokens, secrets, full rows, or full request bodies). Browser clients cannot insert arbitrary audit rows; trusted server/service-role writers are required. The initial event set is intentionally modest and will expand later based on actual needs. Audit enable/disable remains Global Admin-only.
+
+**Reason:**
+Operators need on/off control for volume without losing the ability to prove that logging was disabled or that admin privileges changed. Lee retained audit after abandoning brokerage-office and TREC features.
+
+**Consequences:**
+
+* Disabling logging cannot suppress the disable event itself; prior events remain readable.
+* Cross-organization audit visibility is Global Admin only.
+* Office- and TREC-specific audit event types were removed with those features.
+* Feature development and schema validation occur on `harbaugh-forms-dev` before any production rollout; production migrations remain deliberate and separate from feature coding.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260729210000_brokerage_offices_trec_audit.sql`
+* `supabase/migrations/20260730010000_remove_brokerage_offices_and_trec.sql`
+* `lib/audit/sanitize.ts`
+* `lib/audit/record.ts`
+* `lib/audit/constants.ts`
+* `app/admin/audit/page.tsx`
+
+---
+
 ## Form #1 Buyer Rep orphan TXR-2001 mappings soft-deleted
 
 **Date:** 2026-07-28

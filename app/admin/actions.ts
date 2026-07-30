@@ -105,9 +105,13 @@ export async function retryProvisionUserAction(options: {
 
 export async function resendInvitationAction(userId: string) {
   try {
-    await requireAppAdmin();
+    const actor = await requireAppAdmin();
     const origin = await resolveOrigin();
-    return await resendUserInvitation({ userId, origin });
+    return await resendUserInvitation({
+      userId,
+      origin,
+      actorUserId: actor.userId,
+    });
   } catch (error) {
     return { ok: false as const, error: toErrorMessage(error) };
   }
@@ -185,6 +189,12 @@ export async function setUserAppRoleAction(options: {
     }
 
     const admin = createAdminClient();
+    const { data: before } = await admin
+      .from("profiles")
+      .select("app_role")
+      .eq("id", options.userId)
+      .maybeSingle();
+
     const { error: updateError } = await admin
       .from("profiles")
       .update({ app_role: options.appRole })
@@ -192,6 +202,27 @@ export async function setUserAppRoleAction(options: {
 
     if (updateError) {
       return { ok: false as const, error: updateError.message };
+    }
+
+    if (before?.app_role !== options.appRole) {
+      const { recordAuditEvent } = await import("@/lib/audit/record");
+      await recordAuditEvent({
+        actorUserId: actor.userId,
+        actorDisplayName: actor.profile.display_name,
+        actorRoleSnapshot: "ADMIN",
+        eventCategory: "security",
+        action:
+          options.appRole === "ADMIN"
+            ? "global_admin_access_granted"
+            : "global_admin_access_removed",
+        targetEntityType: "profile",
+        targetEntityId: options.userId,
+        summary:
+          options.appRole === "ADMIN"
+            ? "Global Admin access granted."
+            : "Global Admin access removed.",
+        mandatory: true,
+      });
     }
 
     revalidateAdminPaths([`/admin/users/${options.userId}`]);
@@ -203,8 +234,11 @@ export async function setUserAppRoleAction(options: {
 
 export async function createOrganizationAction(input: OrganizationInput) {
   try {
-    await requireAppAdmin();
-    const result = await createOrganization(input);
+    const actor = await requireAppAdmin();
+    const result = await createOrganization(input, {
+      userId: actor.userId,
+      displayName: actor.profile.display_name,
+    });
     if (result.ok) {
       revalidateAdminPaths([`/admin/organizations/${result.organization.id}`]);
     }
@@ -219,10 +253,14 @@ export async function updateOrganizationAction(options: {
   input: OrganizationInput;
 }) {
   try {
-    await requireAppAdmin();
+    const actor = await requireAppAdmin();
     const result = await updateOrganization(
       options.organizationId,
       options.input,
+      {
+        userId: actor.userId,
+        displayName: actor.profile.display_name,
+      },
     );
     if (result.ok) {
       revalidateAdminPaths([`/admin/organizations/${options.organizationId}`]);
@@ -238,10 +276,14 @@ export async function setOrganizationStatusAction(options: {
   status: "ACTIVE" | "INACTIVE";
 }) {
   try {
-    await requireAppAdmin();
+    const actor = await requireAppAdmin();
     const result = await setOrganizationStatus(
       options.organizationId,
       options.status,
+      {
+        userId: actor.userId,
+        displayName: actor.profile.display_name,
+      },
     );
     if (result.ok) {
       revalidateAdminPaths([`/admin/organizations/${options.organizationId}`]);
@@ -324,6 +366,29 @@ export async function upsertAdminAgentSettingsAction(options: {
     const result = await upsertAdminAgentSettings(options.userId, options.input);
     if (result.ok) {
       revalidateAdminPaths([`/admin/users/${options.userId}`]);
+    }
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function setAuditLoggingEnabledAction(options: {
+  enabled: boolean;
+}) {
+  try {
+    const actor = await requireAppAdmin();
+    const { setOrdinaryAuditLoggingEnabled } = await import(
+      "@/lib/audit/record"
+    );
+    const result = await setOrdinaryAuditLoggingEnabled({
+      enabled: options.enabled,
+      actorUserId: actor.userId,
+      actorDisplayName: actor.profile.display_name,
+      actorRoleSnapshot: "ADMIN",
+    });
+    if (result.ok) {
+      revalidateAdminPaths(["/admin/audit"]);
     }
     return result;
   } catch (error) {

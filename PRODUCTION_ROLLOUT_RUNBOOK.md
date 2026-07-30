@@ -44,7 +44,7 @@ If push stops at Phase A with `initial admin auth user … not found`, that is e
 ## Stage 3 — Auth (UUID-preserving)
 
 ```bash
-# CLI must be linked to harbaugh-forms-dev (source). Credentials: .env.local + .env.production.local
+# CLI must be linked to harbaugh-forms-dev (source). Credentials: .env.local + .env.ops.production
 npm run migrate:approved-auth -- --dry-run
 npm run migrate:approved-auth -- --execute
 ```
@@ -60,7 +60,7 @@ Execute path copies Lee from linked source Auth via SQL into production (pooler)
 
 ## Stage 4 — Public data
 
-Requires `.env.local` (SOURCE_*) and `.env.production.local` (TARGET_*, TARGET_DB_PASSWORD). Export writes to `exports/` (gitignored).
+Requires `.env.local` (SOURCE_*) and `.env.ops.production` (TARGET_*, TARGET_DB_PASSWORD). Export writes to `exports/` (gitignored).
 
 ```bash
 npm run export:approved-production-data -- --execute
@@ -72,7 +72,7 @@ Import upserts approved rows (forms 1–18, collections 1/2/3/5, contacts 2/3/4/
 
 ## Stage 5 — Storage
 
-Requires `.env.local` (SOURCE_*) and `.env.production.local` (TARGET_*). Checksums are verified against the manifest (MD5 of downloaded bytes when `SOURCE_DB_PASSWORD` is unset).
+Requires `.env.local` (SOURCE_*) and `.env.ops.production` (TARGET_*). Checksums are verified against the manifest (MD5 of downloaded bytes when `SOURCE_DB_PASSWORD` is unset).
 
 ```bash
 npm run copy:approved-storage -- --dry-run

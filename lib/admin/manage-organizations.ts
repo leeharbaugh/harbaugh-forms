@@ -5,6 +5,8 @@ import {
   validateOrganizationInput,
   type OrganizationInput,
 } from "@/lib/admin/organization-validation";
+import { recordAuditEvent } from "@/lib/audit/record";
+import { buildAuditUpdateDiff } from "@/lib/audit/sanitize";
 import type {
   Organization,
   OrganizationStatus,
@@ -133,6 +135,7 @@ export async function getAdminOrganization(
 
 export async function createOrganization(
   input: OrganizationInput,
+  actor?: { userId: string; displayName?: string | null },
 ): Promise<{ ok: true; organization: Organization } | { ok: false; error: string }> {
   const validated = validateOrganizationInput(input);
   if (!validated.ok) {
@@ -153,12 +156,31 @@ export async function createOrganization(
     return { ok: false, error: error.message };
   }
 
-  return { ok: true, organization: data as Organization };
+  const organization = data as Organization;
+  if (actor) {
+    await recordAuditEvent({
+      actorUserId: actor.userId,
+      actorDisplayName: actor.displayName,
+      actorRoleSnapshot: "ADMIN",
+      organizationId: organization.id,
+      eventCategory: "organization",
+      action: "organization_created",
+      targetEntityType: "organization",
+      targetEntityId: organization.id,
+      summary: `Created organization "${organization.name}".`,
+      metadata: {
+        organizationType: organization.organization_type,
+      },
+    });
+  }
+
+  return { ok: true, organization };
 }
 
 export async function updateOrganization(
   organizationId: string,
   input: OrganizationInput,
+  actor?: { userId: string; displayName?: string | null },
 ): Promise<{ ok: true; organization: Organization } | { ok: false; error: string }> {
   const validated = validateOrganizationInput(input);
   if (!validated.ok) {
@@ -166,6 +188,13 @@ export async function updateOrganization(
   }
 
   const admin = createAdminClient();
+  const { data: before } = await admin
+    .from("organizations")
+    .select("*")
+    .eq("id", organizationId)
+    .neq("status", "DELETED")
+    .maybeSingle();
+
   const { data, error } = await admin
     .from("organizations")
     .update(validated.value)
@@ -181,12 +210,36 @@ export async function updateOrganization(
     return { ok: false, error: "Organization not found." };
   }
 
-  return { ok: true, organization: data as Organization };
+  const organization = data as Organization;
+  if (actor) {
+    const diff = buildAuditUpdateDiff(
+      (before ?? {}) as Record<string, unknown>,
+      organization as unknown as Record<string, unknown>,
+    );
+    await recordAuditEvent({
+      actorUserId: actor.userId,
+      actorDisplayName: actor.displayName,
+      actorRoleSnapshot: "ADMIN",
+      organizationId: organization.id,
+      eventCategory: "organization",
+      action: "organization_updated",
+      targetEntityType: "organization",
+      targetEntityId: organization.id,
+      summary: `Updated organization "${organization.name}".`,
+      metadata: diff,
+    });
+  }
+
+  return { ok: true, organization };
 }
 
 export async function setOrganizationStatus(
   organizationId: string,
   status: Extract<OrganizationStatus, "ACTIVE" | "INACTIVE">,
+  actor?: {
+    userId: string;
+    displayName?: string | null;
+  },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const admin = createAdminClient();
   const { data, error } = await admin
@@ -194,7 +247,7 @@ export async function setOrganizationStatus(
     .update({ status })
     .eq("id", organizationId)
     .neq("status", "DELETED")
-    .select("id")
+    .select("id, name")
     .maybeSingle();
 
   if (error) {
@@ -202,6 +255,26 @@ export async function setOrganizationStatus(
   }
   if (!data) {
     return { ok: false, error: "Organization not found." };
+  }
+
+  if (actor) {
+    await recordAuditEvent({
+      actorUserId: actor.userId,
+      actorDisplayName: actor.displayName,
+      actorRoleSnapshot: "ADMIN",
+      organizationId,
+      eventCategory: "organization",
+      action:
+        status === "ACTIVE"
+          ? "organization_reactivated"
+          : "organization_deactivated",
+      targetEntityType: "organization",
+      targetEntityId: organizationId,
+      summary:
+        status === "ACTIVE"
+          ? `Reactivated organization "${data.name}".`
+          : `Deactivated organization "${data.name}".`,
+    });
   }
 
   return { ok: true };

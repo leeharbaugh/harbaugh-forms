@@ -47,7 +47,7 @@ function loadEnvFile(filePath: string) {
 
 async function main() {
   loadEnvFile(".env.local");
-  loadEnvFile(".env.production.local");
+  loadEnvFile(".env.ops.production");
   const argv = process.argv.slice(2);
   const apply = argv.includes("--apply");
   const dryRun = !apply || argv.includes("--dry-run");

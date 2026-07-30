@@ -1,10 +1,178 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-07-28
+**As of:** 2026-07-29
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
+
+### Admin audit logging phase (development only — revised 2026-07-29)
+
+**Feature branch:** `feature/admin-brokerage-trec-audit`  
+**Starting commit:** `7a7baced48d2631167fdb6d82c29479a41912e07` (main tip at branch create)  
+**Branch status:** revised after Lee Preview review to **audit-only**; brokerage-office administration and TREC lookup removed; **not merged**; **not deployed to production**; **no production migration applied**.
+
+#### Lee Preview review (2026-07-29)
+
+Lee decided:
+
+1. Existing `Admin → Organizations` is sufficient for creating/maintaining multiple brokerages.
+2. The new Brokerage/Offices administration feature is unnecessary and removed.
+3. TREC license lookup/autofill is unnecessary and removed.
+4. Basic audit logging is retained (modest scope; expand later).
+
+#### Environment verification
+
+| Check | Result |
+|-------|--------|
+| Git branch | `feature/admin-brokerage-trec-audit` (not `main`) |
+| Supabase CLI linked project | `ewxsxwzezhkeawnjvigx` (`harbaugh-forms-dev`) |
+| Local `.env.local` URL host | `ewxsxwzezhkeawnjvigx.supabase.co` |
+| Production project `eetonalyyyssvkyfdoxh` | **not** queried; **not** modified; CLI `linked: false` |
+| Production scripts (`migrate:approved-auth`, `import:approved-production-data`, `sync:condo-txr-1605-prod`, etc.) | **not** run |
+
+#### Vercel / CI-CD behavior (repository inspection)
+
+| Question | Finding |
+|----------|---------|
+| Vercel production branch | `main` (documented; no `vercel.json` in repo) |
+| `.github/workflows/` | **Absent** — no GitHub Actions workflows in this repo |
+| Feature-branch push | Creates a **Vercel Preview** only; Preview is configured to use **development** Supabase (`harbaugh-forms-dev`) |
+| PR open/update | No repo-local automation applies production migrations |
+| Merge/push to `main` | Triggers Vercel **Production** deploy of application code; does **not** auto-apply Supabase migrations |
+| Supabase production migrations | **Manual / deliberate only**. Never automatic on git push |
+| Env distinction | Preview/local → `harbaugh-forms-dev` / `ewxsxwzezhkeawnjvigx`; Production → `harbaugh-forms-prod` / `eetonalyyyssvkyfdoxh` |
+
+**Safeguard used:** verified CLI link + `.env.local` host before development `db push`; refused any production target; no merge to `main`.
+
+#### Schema (development)
+
+Original migration (immutable; already applied to development): `20260729210000_brokerage_offices_trec_audit.sql`
+
+Cleanup migration (forward-only; applied to development only): `20260730010000_remove_brokerage_offices_and_trec.sql`
+
+| Final object | Status |
+|--------------|--------|
+| `audit_settings` | **Retained** |
+| `audit_events` | **Retained** (without `brokerage_office_id`) |
+| `brokerage_offices` | **Removed** |
+| `organization_members.brokerage_office_id` | **Removed** |
+| TREC verification columns on `user_agent_settings` / `organizations` | **Removed** |
+| Preexisting manual license fields (`trec_license_number`, `broker_license_number`, etc.) | **Preserved** |
+| `organizations` / memberships / invitations / packets | **Preserved** |
+
+**Migration strategy:** Do not edit the already-applied combined migration. Cleanup is a new forward-only migration without `CASCADE`. If this branch is later merged, both migrations run together and yield the audit-only schema.
+
+#### Routes / UI
+
+| Item | Status |
+|------|--------|
+| `/admin/audit` | **Retained** (Global Admin) |
+| `/admin/organizations` (+ detail) | **Preserved** (authoritative multi-brokerage admin) |
+| `/admin/users` invite | Restored to manual license entry; no office / no TREC lookup |
+| `/admin/brokerages` | **Removed** (stale URL → normal not-found) |
+| Brokerages nav item | **Removed** |
+| `POST /api/admin/trec-lookup` | **Removed** |
+
+#### Authorization / RLS (retained audit)
+
+- Audit settings / cross-org audit events: app admin only
+- Audit event insert via authenticated role: **denied** (trusted service-role writes only)
+- Audit append-only trigger blocks UPDATE/DELETE
+- All `/admin/*` routes gated by `requireAppAdminPage()` in admin layout
+
+#### Env vars
+
+| Variable | Status |
+|----------|--------|
+| `TREC_SODA_APP_TOKEN` / `TEXAS_OPEN_DATA_APP_TOKEN` | **Abandoned** — not part of the application |
+| Existing Supabase + site URL vars | unchanged |
+
+#### Tests / build (cleanup validation)
+
+| Suite | Result |
+|-------|--------|
+| `npm run test:admin-audit` | **11 pass** |
+| `npm run test:admin-invite` | **14 pass** |
+| `npm run test:admin-orgs` | **4 pass** |
+| `npm run test:field-defaults` | **77 pass** |
+| `npm run test:field-defaults-management` | **43 pass** |
+| `npm run test:form-copy-global` | **89 pass** |
+| `npm run test:field-instance-sync` | **17 pass** |
+| `npm run test:library-permissions` | **13 pass** |
+| `npx tsc --noEmit` | **pass** (after clearing stale `.next/types`) |
+| ESLint on changed sources | **pass** |
+| `npm run build` | **pass** — routes include `/admin/audit`; no `/admin/brokerages` or `/api/admin/trec-lookup` |
+
+#### Development data checks
+
+| Check | Result |
+|-------|--------|
+| DGR org (license 9006865) | **1** remains |
+| Dee broker on org | remains (`0283607`) |
+| Lee agent | remains (`0712335`) |
+| `brokerage_offices` table | gone (PostgREST PGRST205) |
+| Office / TREC verification columns | gone |
+| `audit_settings` / `audit_events` | present (8 events retained) |
+| Dev packets / packet_forms / field_instances | **21 / 68 / 1502** (field_instances unchanged from prior recorded 1502; packet counts grew independently of this cleanup) |
+
+#### Commit / push / Preview
+
+| Item | Status |
+|------|--------|
+| Cleanup commit | `862f3b480f0f3cbf1bf0051a730805ff92757e95` |
+| Env-safety commit | `6ebeb1351fa3ebac0639e6c9987034193d16c3d5` |
+| Remote branch | `origin/feature/admin-brokerage-trec-audit` |
+| Preview Deployment | **success / safe for manual testing** — https://harbaugh-forms-r82v16w95-lee-harbaugh-s-projects.vercel.app (dashboard: https://vercel.com/lee-harbaugh-s-projects/harbaugh-forms/BNUFPH1ApWFMvCVkW61KdjFurdxf); Preview env → development Supabase `ewxsxwzezhkeawnjvigx` |
+| Production rollout | **still pending / not authorized** |
+
+#### Remaining Preview smoke tests
+
+Lee should confirm Organizations admin, invite with manual license, Audit Log toggle, non-admin denial, and existing packets on the new Preview.
+
+#### Unresolved risks / deferred
+
+- Form resolvers still use legacy `brokerage_settings` singleton
+- Broader audit event coverage intentionally deferred
+- No production rollout yet
+
+#### Environment-loading safeguard (2026-07-29)
+
+**Risk assessed:** `npm run build` previously printed `Environments: .env.production.local, .env.local` because Next.js auto-loads `.env.production.local` whenever `NODE_ENV=production`.
+
+**Assessment findings (names/refs only; no secret values):**
+
+| Question | Finding |
+|----------|---------|
+| Why loaded | Next.js production build env precedence includes `.env.production.local` |
+| Vars in that file | `TARGET_SUPABASE_URL`, `TARGET_SUPABASE_SECRET_KEY`, `TARGET_SUPABASE_PUBLISHABLE_KEY`, `TARGET_DB_PASSWORD`, `SOURCE_SUPABASE_URL`, `SOURCE_SUPABASE_SECRET_KEY` |
+| Point at production? | TARGET_* → `eetonalyyyssvkyfdoxh`; SOURCE_* → `ewxsxwzezhkeawnjvigx` |
+| App keys overlapped? | **No** — app uses `NEXT_PUBLIC_SUPABASE_*` / `SUPABASE_SECRET_KEY` from `.env.local` (dev) |
+| Build-time DB init | Clients create on call; admin pages can run during static generation/PPR using app env |
+| Build mutates DB? | No intentional mutations in build; risk was silent credential mix |
+| Prior build prod network? | No evidence of production app-client use (app URL remained development) |
+| Vercel Preview | Separate Preview-scoped vars → **development** `ewxsxwzezhkeawnjvigx` (verified via `vercel env pull`) |
+| Vercel Production | Production-scoped vars → `eetonalyyyssvkyfdoxh` |
+| `.env.production.local` tracked? | No (`.env*.local` gitignored) |
+| Scripts needing prod creds | Explicit ops scripts only (`migrate:approved-auth`, export/import/validate/copy approved production data, condo TXR-1605 prod sync/rollback, forensic/repair helpers) |
+
+**Fix applied (Option A + Option C):**
+
+* Renamed local ops file to gitignored `.env.ops.production` (Next does **not** auto-load it)
+* Production-ops npm scripts and runbook now load `.env.ops.production` explicitly
+* `npm run build:validate` refuses a present `.env.production.local` and requires development app URL
+* `assertAppSupabaseTargetAllowed` blocks production app URL outside Vercel Production
+
+**Documented validation command:** `npm run build:validate` (not bare `npm run build` when validating features locally).
+
+#### Production rollout steps (**not performed / not authorized**)
+
+1. Lee review of revised branch + Preview smoke tests
+2. Merge to `main` only after approval (deploys app code; still does not migrate DB)
+3. Link CLI to `harbaugh-forms-prod` deliberately; verify ref `eetonalyyyssvkyfdoxh`
+4. Apply **both** `20260729210000_brokerage_offices_trec_audit.sql` and `20260730010000_remove_brokerage_offices_and_trec.sql` to production only (net: audit-only schema)
+5. Smoke-test Organizations, invite (manual license), audit toggle on production
+6. Confirm DGR / Lee / Dee unchanged; packet fingerprints unchanged
 
 ### Form #1 Buyer Rep placement corruption — investigated and repaired (2026-07-28)
 
@@ -343,12 +511,12 @@ Before making changes:
 1. Clone or pull the GitHub repository; `git fetch --all --prune`
 2. Check out `main` and confirm it matches `origin/main`; clean working tree
 3. Use the Node version and package manager declared by the repo; clean install
-4. Restore `.env.local` securely (never commit). For production ops tooling only, use gitignored `.env.production.local`
+4. Restore `.env.local` securely (never commit). For production ops tooling only, use gitignored `.env.ops.production` (never `.env.production.local` — Next.js auto-loads that name during `next build`)
 5. Confirm local Supabase targets **`harbaugh-forms-dev`** (`ewxsxwzezhkeawnjvigx`) unless an explicit production-ops task says otherwise
 6. Confirm Supabase CLI auth/link; compare migration history before applying migrations
 7. Do not run `supabase db reset`, reckless `db push`, or migration-repair until target and history are verified
 8. Confirm GitHub and Vercel access when needed (`harbaugh-forms` project only for this app)
-9. Run `npx tsc --noEmit`, relevant tests, and `npm run build` as appropriate
+9. Run `npx tsc --noEmit`, relevant tests, and `npm run build:validate` for feature-branch validation
 10. Do not reset or edit already-applied migrations; do not run destructive SQL against environments with real business data
 
 ## Required Local Environment Variables
@@ -360,6 +528,7 @@ Document names only; never store values in Git.
 - `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SECRET_KEY`
 - `NEXT_PUBLIC_SITE_URL`
 - `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN`
+- Existing Supabase + site URL vars (see environment files; not committed)
 
 Confirm additional names from `.env.example` and code before work on a new machine.
 

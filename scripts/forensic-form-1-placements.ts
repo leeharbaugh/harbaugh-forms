@@ -3,7 +3,7 @@
  * Does not mutate any rows, storage objects, or packets.
  *
  * Run:
- *   npx --yes node --experimental-strip-types --env-file=.env.local --env-file=.env.production.local scripts/forensic-form-1-placements.ts
+ *   npx --yes node --experimental-strip-types --env-file=.env.local --env-file=.env.ops.production scripts/forensic-form-1-placements.ts
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";

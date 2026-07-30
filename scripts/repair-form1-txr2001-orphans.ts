@@ -12,8 +12,8 @@
  * Does NOT touch form 18, genuine TXR-1501 mappings, packets, or other forms.
  *
  * Run:
- *   npx --yes node --experimental-strip-types --env-file=.env.local --env-file=.env.production.local scripts/repair-form1-txr2001-orphans.ts
- *   npx --yes node --experimental-strip-types --env-file=.env.local --env-file=.env.production.local scripts/repair-form1-txr2001-orphans.ts --confirm SOFT_DELETE_FORM1_TXR2001_ORPHANS
+ *   npx --yes node --experimental-strip-types --env-file=.env.local --env-file=.env.ops.production scripts/repair-form1-txr2001-orphans.ts
+ *   npx --yes node --experimental-strip-types --env-file=.env.local --env-file=.env.ops.production scripts/repair-form1-txr2001-orphans.ts --confirm SOFT_DELETE_FORM1_TXR2001_ORPHANS
  */
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";

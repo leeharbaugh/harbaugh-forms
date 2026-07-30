@@ -43,6 +43,9 @@ yarn-error.log*
 .env*.local
 .env
 .env.local
+# Production operational credentials (explicit opt-in scripts only; never auto-loaded by Next.js)
+.env.ops.production
+.env.ops.*
 
 # vercel
 .vercel

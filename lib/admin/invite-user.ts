@@ -6,6 +6,7 @@ import {
   normalizeEmail,
   validateInviteUserInput,
 } from "@/lib/admin/invite-validation";
+import { recordAuditEvent } from "@/lib/audit/record";
 import { invitationRedirectTo } from "@/lib/auth/email-otp";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -298,6 +299,21 @@ export async function inviteAndProvisionUser(options: {
     };
   }
 
+  await recordAuditEvent({
+    actorUserId: options.invitedByUserId,
+    actorRoleSnapshot: "ADMIN",
+    organizationId: invite.primaryOrganizationId,
+    eventCategory: "invitation",
+    action: "invitation_created",
+    targetEntityType: "profile",
+    targetEntityId: userId,
+    summary: `Invited user ${invite.displayName} (${invite.loginEmail}).`,
+    metadata: {
+      hasLicenseNumber: Boolean(invite.trecLicenseNumber),
+      membershipCount: invite.memberships.length,
+    },
+  });
+
   return {
     ok: true,
     userId,
@@ -367,6 +383,7 @@ export async function retryProvisionInvitedUser(options: {
 export async function resendUserInvitation(options: {
   userId: string;
   origin: string;
+  actorUserId?: string | null;
 }): Promise<{ ok: true; alreadyConfirmed: boolean } | { ok: false; error: string }> {
   let admin: ReturnType<typeof createAdminClient>;
   try {
@@ -407,6 +424,16 @@ export async function resendUserInvitation(options: {
   if (inviteError) {
     return { ok: false, error: inviteError.message };
   }
+
+  await recordAuditEvent({
+    actorUserId: options.actorUserId ?? null,
+    actorRoleSnapshot: options.actorUserId ? "ADMIN" : null,
+    eventCategory: "invitation",
+    action: "invitation_resent",
+    targetEntityType: "profile",
+    targetEntityId: options.userId,
+    summary: `Invitation resent to ${email}.`,
+  });
 
   return { ok: true, alreadyConfirmed: false };
 }

@@ -5,7 +5,7 @@
  *   npm run migrate:approved-auth -- --dry-run
  *   npm run migrate:approved-auth -- --execute
  *
- * Requires SOURCE_* (or .env.local) + TARGET_* (or .env.production.local).
+ * Requires SOURCE_* (or .env.local) + TARGET_* (or .env.ops.production).
  * Execute uses:
  *   - source: `supabase db query --linked` (CLI must be linked to harbaugh-forms-dev)
  *   - target: pooler URL from TARGET_SUPABASE_URL + TARGET_DB_PASSWORD

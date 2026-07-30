@@ -1,3 +1,5 @@
+import { assertAppSupabaseTargetAllowed } from "@/lib/supabase/project-guard";
+
 export function getSupabaseEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -19,6 +21,8 @@ export function assertSupabaseEnv() {
       "NEXT_PUBLIC_SUPABASE_URL looks invalid. Copy the Project URL from Supabase Dashboard → Project Settings → API.",
     );
   }
+
+  assertAppSupabaseTargetAllowed(url);
 
   return { url, publishableKey };
 }
