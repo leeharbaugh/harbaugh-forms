@@ -10,10 +10,19 @@ import {
   resetAdminActionRateLimitsForTests,
 } from "./rate-limit.ts";
 import {
+  AGENT_SETTINGS_DEPENDENCY,
   canProceedWithTestUserDeletion,
   classifyOwnedLibraryRow,
   summarizeBlockingReasons,
 } from "./test-user-deletion-policy.ts";
+import {
+  buildPublicDeletionFailure,
+  TestUserDeletionOperationError,
+} from "./test-user-deletion-failure.ts";
+import {
+  IDENTITY_CLEANUP_DEPENDENCIES,
+  runRetrySafeIdentityCleanup,
+} from "./test-user-identity-cleanup.ts";
 import { MANDATORY_AUDIT_ACTIONS } from "../audit/constants.ts";
 import { sanitizeAuditMetadata } from "../audit/sanitize.ts";
 import { validateNewPassword } from "../auth/password-policy.ts";
@@ -120,6 +129,166 @@ describe("test-user deletion policy", () => {
     );
     assert.equal(reasons.length, 1);
     assert.match(reasons[0]!, /Global forms/);
+  });
+
+  it("maps agent settings to the actual user_id-keyed private table", () => {
+    assert.deepEqual(AGENT_SETTINGS_DEPENDENCY, {
+      summaryKey: "agent_settings",
+      tableName: "user_agent_settings",
+      ownershipColumn: "user_id",
+      countSelectColumn: "user_id",
+      cleanupStep: "user_agent_settings",
+      label: "Agent settings",
+      classification: "safe_to_delete",
+    });
+    const cleanup = IDENTITY_CLEANUP_DEPENDENCIES.find(
+      (dependency) => dependency.operationKey === "agentSettings",
+    );
+    assert.equal(cleanup?.cleanupStep, AGENT_SETTINGS_DEPENDENCY.cleanupStep);
+    assert.equal(cleanup?.label, AGENT_SETTINGS_DEPENDENCY.label);
+
+    const migration = readRepo(
+      "supabase/migrations/20260713200000_phase_a_multi_user_foundation.sql",
+    );
+    assert.match(
+      migration,
+      /create table if not exists public\.user_agent_settings \(\s*user_id uuid primary key/s,
+    );
+    const deletionSource = readRepo("lib/admin/delete-test-user.ts");
+    assert.equal(
+      deletionSource.includes(
+        "select(column, { count: \"exact\", head: true })",
+      ),
+      true,
+    );
+  });
+});
+
+describe("test-user agent-settings cleanup regression", () => {
+  function fixture(options?: { agentSettingsPresent?: boolean }) {
+    const state = {
+      membershipPresent: true,
+      agentSettingsPresent: options?.agentSettingsPresent ?? true,
+      preferencesPresent: false,
+      profilePresent: true,
+      authPresent: true,
+      authDeleteCalls: 0,
+    };
+    const operations = {
+      memberships: async () => {
+        const count = state.membershipPresent ? 1 : 0;
+        state.membershipPresent = false;
+        return { count };
+      },
+      agentSettings: async () => {
+        const count = state.agentSettingsPresent ? 1 : 0;
+        state.agentSettingsPresent = false;
+        return { count };
+      },
+      preferences: async () => {
+        const count = state.preferencesPresent ? 1 : 0;
+        state.preferencesPresent = false;
+        return { count };
+      },
+      profile: async () => {
+        const count = state.profilePresent ? 1 : 0;
+        state.profilePresent = false;
+        return { count };
+      },
+      authUser: async () => {
+        state.authDeleteCalls += 1;
+        const count = state.authPresent ? 1 : 0;
+        state.authPresent = false;
+        return count === 0 ? { alreadyAbsent: true } : { count };
+      },
+    };
+    return { state, operations };
+  }
+
+  it("hard-deletes a manual test-user fixture with agent settings and permits email reuse", async () => {
+    const { state, operations } = fixture();
+    const result = await runRetrySafeIdentityCleanup(operations);
+    assert.equal(result.ok, true);
+    assert.equal(state.agentSettingsPresent, false);
+    assert.equal(state.profilePresent, false);
+    assert.equal(state.authPresent, false);
+    assert.equal(state.authDeleteCalls, 1);
+    assert.equal(
+      result.steps.some(
+        (step) =>
+          step.step === AGENT_SETTINGS_DEPENDENCY.cleanupStep &&
+          step.status === "deleted" &&
+          step.count === 1,
+      ),
+      true,
+    );
+    // Auth hard deletion is the condition that allows the same email to be reused.
+    assert.equal(!state.authPresent, true);
+  });
+
+  it("succeeds on retry when agent settings or another safe row is already absent", async () => {
+    const { state, operations } = fixture({ agentSettingsPresent: false });
+    state.membershipPresent = false;
+    const result = await runRetrySafeIdentityCleanup(operations);
+    assert.equal(result.ok, true);
+    assert.equal(state.authDeleteCalls, 1);
+    assert.equal(
+      result.steps.find(
+        (step) => step.step === AGENT_SETTINGS_DEPENDENCY.cleanupStep,
+      )?.count,
+      0,
+    );
+  });
+
+  it("never attempts Auth deletion after an unexpected application cleanup failure", async () => {
+    const { state, operations } = fixture();
+    operations.agentSettings = async () => ({
+      error: Object.assign(new Error("internal database detail"), {
+        code: "42501",
+      }),
+    });
+    const result = await runRetrySafeIdentityCleanup(operations);
+    assert.equal(result.ok, false);
+    assert.equal(state.authDeleteCalls, 0);
+    assert.equal(state.authPresent, true);
+    if (result.ok) return;
+    assert.equal(result.failedOperation, "agentSettings");
+    assert.equal(result.authDeletionAttempted, false);
+  });
+
+  it("returns actionable structured errors for empty database messages", () => {
+    const operationError = new TestUserDeletionOperationError({
+      context: {
+        dependencyKey: AGENT_SETTINGS_DEPENDENCY.summaryKey,
+        dependencyLabel: AGENT_SETTINGS_DEPENDENCY.label,
+        stage: "dependency_summary",
+      },
+      cause: { message: "" },
+    });
+    assert.match(operationError.message, /Agent settings could not be removed/);
+    assert.match(operationError.message, /No Auth deletion was attempted/);
+    assert.match(operationError.message, /DEL-[A-F0-9]{8}/);
+    assert.notEqual(operationError.message.trim(), "Agent settings:");
+  });
+
+  it("does not expose raw database details or secrets in browser failures", () => {
+    const raw = Object.assign(
+      new Error("SQL detail service_role secret-password-value"),
+      { code: "23503" },
+    );
+    const failure = buildPublicDeletionFailure({
+      context: {
+        dependencyKey: AGENT_SETTINGS_DEPENDENCY.summaryKey,
+        dependencyLabel: AGENT_SETTINGS_DEPENDENCY.label,
+        stage: "identity_cleanup",
+      },
+      error: raw,
+    });
+    const serialized = JSON.stringify(failure);
+    assert.equal(serialized.includes("SQL detail"), false);
+    assert.equal(serialized.includes("service_role"), false);
+    assert.equal(serialized.includes("secret-password-value"), false);
+    assert.equal(failure.databaseCode, "23503");
   });
 });
 

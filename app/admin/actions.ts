@@ -16,6 +16,11 @@ import {
   buildTestUserDeletionSummary,
   permanentlyDeleteTestUser,
 } from "@/lib/admin/delete-test-user";
+import {
+  buildPublicDeletionFailure,
+  internalDeletionErrorMessage,
+  toPublicDeletionFailureResult,
+} from "@/lib/admin/test-user-deletion-failure";
 import { assertAdminActionRateLimit } from "@/lib/admin/rate-limit";
 import {
   addOrganizationMembership,
@@ -225,7 +230,32 @@ export async function previewTestUserDeletionAction(userId: string) {
     const summary = await buildTestUserDeletionSummary(userId);
     return { ok: true as const, summary };
   } catch (error) {
-    return { ok: false as const, error: toErrorMessage(error) };
+    const deletionFailure = toPublicDeletionFailureResult(error);
+    if (deletionFailure) {
+      console.error("Test-user deletion preview failed", {
+        reference: deletionFailure.failure.reference,
+        dependencyKey: deletionFailure.failure.dependencyKey,
+        stage: deletionFailure.failure.stage,
+        internalMessage: internalDeletionErrorMessage(error),
+      });
+      return { ok: false as const, ...deletionFailure };
+    }
+    if (error instanceof AdminAuthorizationError) {
+      return { ok: false as const, error: error.message };
+    }
+    const failure = buildPublicDeletionFailure({
+      context: {
+        dependencyKey: "dependency_summary",
+        dependencyLabel: "Deletion dependency summary",
+        stage: "dependency_summary",
+      },
+      error,
+    });
+    console.error("Test-user deletion preview failed", {
+      reference: failure.reference,
+      internalMessage: internalDeletionErrorMessage(error),
+    });
+    return { ok: false as const, error: failure.explanation, failure };
   }
 }
 
@@ -256,7 +286,32 @@ export async function permanentlyDeleteTestUserAction(options: {
     }
     return result;
   } catch (error) {
-    return { ok: false as const, error: toErrorMessage(error) };
+    const deletionFailure = toPublicDeletionFailureResult(error);
+    if (deletionFailure) {
+      console.error("Test-user deletion action failed", {
+        reference: deletionFailure.failure.reference,
+        dependencyKey: deletionFailure.failure.dependencyKey,
+        stage: deletionFailure.failure.stage,
+        internalMessage: internalDeletionErrorMessage(error),
+      });
+      return { ok: false as const, ...deletionFailure };
+    }
+    if (error instanceof AdminAuthorizationError) {
+      return { ok: false as const, error: error.message };
+    }
+    const failure = buildPublicDeletionFailure({
+      context: {
+        dependencyKey: "deletion_workflow",
+        dependencyLabel: "Test-user deletion workflow",
+        stage: "application_cleanup",
+      },
+      error,
+    });
+    console.error("Test-user deletion action failed", {
+      reference: failure.reference,
+      internalMessage: internalDeletionErrorMessage(error),
+    });
+    return { ok: false as const, error: failure.explanation, failure };
   }
 }
 

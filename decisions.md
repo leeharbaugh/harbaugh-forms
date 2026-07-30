@@ -37,6 +37,37 @@ Ordinary deactivate/ban leaves Auth identity and blocks email reuse for disposab
 
 ---
 
+## Test-user agent settings are private, retry-safe cleanup dependencies
+
+**Date:** 2026-07-30
+
+**Decision:**
+
+`public.user_agent_settings` is user-owned configuration for deletion-policy purposes. Its physical primary/ownership key is `user_id` (there is no generic `id` column), and `user_id` references `auth.users(id) ON DELETE CASCADE`. Test-user dependency summaries and cleanup must map the domain key `agent_settings`, physical table/column, cleanup step, and human label explicitly. Cleanup deletes this row before profile/Auth deletion; zero rows is a successful idempotent retry.
+
+Auth hard deletion must not be attempted until every application identity-cleanup operation succeeds. Deletion failures returned to the browser are structured and sanitized: dependency label, stage, safe explanation, optional database code, retry guidance, completed-step status, and a non-sensitive server-log reference. Empty or raw database messages must never become the user-facing error.
+
+**Reason:**
+
+The first production smoke test selected a nonexistent `id` column while counting `user_agent_settings`. Supabase returned an error with an empty message, producing the incomplete UI text `user_agent_settings: ` before cleanup began. Explicit schema mapping prevents this class of alias/primary-key error; retry-safe sequencing and structured failures prevent unsafe Auth deletion and unusable diagnostics.
+
+**Consequences:**
+
+* Agent settings are safe to hard-delete only as private configuration for a disposable test user; shared GLOBAL/ORGANIZATION business ownership remains blocking.
+* Missing agent settings, memberships, preferences, or profile rows do not make a retry fail.
+* Raw database details, stack traces, credentials, and record contents stay server-side.
+* `deleteUser(userId, false)` remains last, after application cleanup.
+
+**Related files:**
+
+* `lib/admin/test-user-deletion-policy.ts`
+* `lib/admin/test-user-identity-cleanup.ts`
+* `lib/admin/test-user-deletion-failure.ts`
+* `lib/admin/delete-test-user.ts`
+* `components/admin/admin-manual-user-controls.tsx`
+
+---
+
 ## Manually confirmed accounts without invitation email
 
 **Date:** 2026-07-30

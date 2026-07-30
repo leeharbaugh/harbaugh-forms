@@ -28,6 +28,20 @@ export type DeletionDependencySummary = {
   canDelete: boolean;
 };
 
+/**
+ * Keep the domain identifier, physical table, cleanup step, and display label
+ * explicit. The table is keyed by user_id and has no generic id column.
+ */
+export const AGENT_SETTINGS_DEPENDENCY = {
+  summaryKey: "agent_settings",
+  tableName: "user_agent_settings",
+  ownershipColumn: "user_id",
+  countSelectColumn: "user_id",
+  cleanupStep: "user_agent_settings",
+  label: "Agent settings",
+  classification: "safe_to_delete",
+} as const;
+
 export function classifyOwnedLibraryRow(scope: string | null | undefined): DependencyClass {
   if (scope === "PRIVATE") {
     return "safe_to_delete";

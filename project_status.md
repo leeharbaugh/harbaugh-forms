@@ -6,6 +6,34 @@
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
+### Test-user hard-deletion production smoke failure (2026-07-30)
+
+**Status:** Root cause fixed and fully validated on `fix/test-user-agent-settings-deletion`; PR/production rollout pending.
+
+**Observed:** Lee’s first deletion smoke test stopped with the incomplete UI message `User_Agent_Settings:` while opening the deletion dependency summary.
+
+**Root cause:** The generic dependency counter selected `id` from every table. The actual private configuration table is `public.user_agent_settings`, whose primary/ownership key is `user_id` and whose FK is `user_id → auth.users(id) ON DELETE CASCADE`. Production and development both return an error with an empty message for the invalid `select id` count, so string concatenation collapsed to `user_agent_settings: `. The failure occurred during preview, before permanent cleanup.
+
+**Production read-only state verification:**
+
+* Production ref `eetonalyyyssvkyfdoxh` was explicitly verified before queries; CLI remained linked to development `ewxsxwzezhkeawnjvigx`.
+* Exactly one marked test user was present; Auth account, profile, one membership, and one agent-settings row remained.
+* No private contacts, properties, packets, defaults, representation agreements, forms, collections, or fields were present for that user.
+* No deletion snapshot and no `test_user_deletion_failed` audit existed, confirming that no cleanup or Auth deletion was attempted.
+* No production user was modified, deleted, or recreated during diagnosis.
+
+**Fix:**
+
+* Dependency descriptor explicitly separates `agent_settings` (summary key), `user_agent_settings` (table/cleanup step), `user_id` (ownership/count column), and `Agent settings` (label).
+* Counts select the real ownership column instead of assuming `id`.
+* Identity cleanup checks every delete result, treats zero rows as retry-safe success, and calls `deleteUser(userId, false)` only after memberships, agent settings, preferences, and profile cleanup succeed.
+* Other private-data reads and retained historical-reference updates now fail closed instead of allowing Auth deletion after an unobserved query/update error.
+* Browser failures are structured and sanitized with dependency label, stage, explanation, optional DB code, retry guidance, completed steps, and `DEL-…` log reference. Empty/raw DB messages are not exposed.
+
+**Validation:** `tsc --noEmit`, targeted ESLint, `npm run build:validate`, admin lifecycle/invite (37 passed), auth confirm (27), auth bootstrap (6), admin audit (11), admin org (4), library permissions (13), secure publish (11), UI lists (29), field defaults (77), form-copy/global packet regressions (89), form lifecycle (47), storage (18), Supabase guard (8), user preferences (5), and packet lifecycle (7) all passed. Focused lifecycle suite: 23 passed, including agent-settings success, missing-row retry, no-Auth-on-failure, email reuse, safeguards, and sanitized error regressions.
+
+No migration was changed or added. Lee’s production deletion retry remains pending until rollout completes.
+
 ### Global Admin test-user cleanup + manual create — production rollout (2026-07-30)
 
 **Status:** **Complete on production** (schema + application). Lee’s interactive smoke test remains **pending**.
