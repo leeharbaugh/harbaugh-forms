@@ -12,52 +12,52 @@ Each decision should include:
 
 ---
 
-## Organization, brokerage, and office are distinct concepts
+## Organizations remain the brokerage administration workflow
 
 **Date:** 2026-07-29
 
 **Decision:**
-Application organization/tenant (`organizations`), licensed brokerage entity (typically `organizations` with `organization_type = 'BROKERAGE'`), brokerage office/branch (`brokerage_offices`), licensed individual broker (broker fields on the organization plus optional TREC verification metadata), licensed sales agent (`user_agent_settings` + membership), user membership (`organization_members`), and application role (`profiles.app_role`) remain distinct. A brokerage may contain multiple offices. Individual broker licenses (`BRK` / `SALE`) must not be confused with business-entity or branch licenses. Legacy `brokerage_settings` remains the form-resolution singleton for compatibility and is not collapsed into organizations.
+Existing `Admin → Organizations` remains the authoritative workflow for creating and maintaining multiple brokerages. A separate Brokerage/Offices administration feature was reviewed in Preview and intentionally abandoned. Brokerage offices are not modeled at this time. `organizations` continues to represent brokerage tenants (`organization_type = 'BROKERAGE'` when applicable). Legacy `brokerage_settings` remains the form-resolution singleton for compatibility and is not collapsed into organizations.
 
 **Reason:**
-Global Admins need to administer agents across brokerages and offices without losing historical packet/form behavior that still reads `brokerage_settings`.
+Lee determined Organizations is sufficient for multi-brokerage administration. Office branching added complexity without enough product value for the initial release.
 
 **Consequences:**
 
-* Offices are normalized in `brokerage_offices`; memberships may reference `brokerage_office_id`.
-* Davey Goosmann Realty was not duplicated; a Main Office was seeded from existing org address data.
-* Future form-resolver migration to org/office context is deliberate and separate.
+* `/admin/brokerages`, office CRUD, membership office assignment, and office-specific invite selectors were removed.
+* Cleanup migration `20260730010000_remove_brokerage_offices_and_trec.sql` drops development-only office schema while retaining audit tables.
+* Original combined migration `20260729210000_brokerage_offices_trec_audit.sql` remains immutable in history; both migrations together yield the audit-only final schema if ever applied elsewhere.
 
 **Related files or migrations:**
 
 * `supabase/migrations/20260729210000_brokerage_offices_trec_audit.sql`
-* `lib/admin/manage-brokerage-offices.ts`
+* `supabase/migrations/20260730010000_remove_brokerage_offices_and_trec.sql`
+* `lib/admin/manage-organizations.ts`
 * `lib/types/brokerage-settings.ts`
 
 ---
 
-## TREC license lookup via official Open Data (server-side)
+## Manual license numbers; TREC automatic lookup abandoned
 
 **Date:** 2026-07-29
 
 **Decision:**
-TREC Broker/Sales Agent data comes from the official Texas Open Data dataset `s7ft-44qi` (Socrata), not HTML scraping. Lookup runs only on authenticated Global Admin server routes/actions. Administrators must explicitly select a candidate; name-only search never auto-selects. Manual entry/override remains available with a recorded reason. Sponsorship/related-broker information produces warnings and never silently reassigns brokerage membership. License numbers are stored as text; formatting/hyphens are preserved.
+TREC automatic license lookup and autofill were reviewed in Preview and intentionally abandoned. Agent and broker license numbers continue to be entered manually through existing profile/invite/organization fields (`trec_license_number`, `broker_license_number`, etc.). No TREC Open Data integration, candidate UI, verification metadata columns, or TREC environment variables are part of the application.
 
 **Reason:**
-Official daily Open Data is the supported API surface; silent name matching and HTML scraping are unsafe for license identity.
+Automatic lookup is not necessary for the initial product and did not provide enough reliability or simplicity.
 
 **Consequences:**
 
-* Optional `TREC_SODA_APP_TOKEN` / `TEXAS_OPEN_DATA_APP_TOKEN` improve rate limits but are not required for local development.
-* Automated tests mock Open Data responses.
-* Authoritative form license values remain the profile/`brokerage_settings` fields expected by existing resolvers; verification metadata is additive.
+* `lib/trec/*`, `POST /api/admin/trec-lookup`, TREC invite UI, and TREC verification columns are removed.
+* `TREC_SODA_APP_TOKEN` / `TEXAS_OPEN_DATA_APP_TOKEN` are not required and should not be documented as active configuration.
+* Invitation returns to the prior simple manual license-number workflow (plus retained audit events).
 
 **Related files:**
 
-* `lib/trec/normalize.ts`
-* `lib/trec/lookup.ts`
-* `app/api/admin/trec-lookup/route.ts`
-* `components/admin/trec-license-lookup.tsx`
+* `lib/admin/invite-validation.ts`
+* `components/admin/admin-users-page.tsx`
+* `supabase/migrations/20260730010000_remove_brokerage_offices_and_trec.sql`
 
 ---
 
@@ -66,20 +66,22 @@ Official daily Open Data is the supported API surface; silent name matching and 
 **Date:** 2026-07-29
 
 **Decision:**
-Ordinary business audit logging is globally configurable by Global Admins (`audit_settings.ordinary_logging_enabled`). Audit-configuration changes, Global Admin role grants/removals, unauthorized audit-setting attempts (when practical), and future impersonation start/end are always recorded even when ordinary logging is disabled. Audit events are append-only. Metadata is minimized through an allowlist/sanitizer (no passwords, tokens, secrets, full rows, or full request bodies). Browser clients cannot insert arbitrary audit rows; trusted server/service-role writers are required.
+Basic audit logging is retained. Ordinary business audit logging is globally configurable by Global Admins (`audit_settings.ordinary_logging_enabled`). Audit-configuration enable/disable events are always recorded even when ordinary logging is disabled. Global Admin role grants/removals and related mandatory security actions remain recorded. Audit events are append-only. Metadata is minimized through a sanitizer (no passwords, tokens, secrets, full rows, or full request bodies). Browser clients cannot insert arbitrary audit rows; trusted server/service-role writers are required. The initial event set is intentionally modest and will expand later based on actual needs. Audit enable/disable remains Global Admin-only.
 
 **Reason:**
-Operators need on/off control for volume without losing the ability to prove that logging was disabled or that admin privileges changed.
+Operators need on/off control for volume without losing the ability to prove that logging was disabled or that admin privileges changed. Lee retained audit after abandoning brokerage-office and TREC features.
 
 **Consequences:**
 
 * Disabling logging cannot suppress the disable event itself; prior events remain readable.
 * Cross-organization audit visibility is Global Admin only.
+* Office- and TREC-specific audit event types were removed with those features.
 * Feature development and schema validation occur on `harbaugh-forms-dev` before any production rollout; production migrations remain deliberate and separate from feature coding.
 
 **Related files or migrations:**
 
 * `supabase/migrations/20260729210000_brokerage_offices_trec_audit.sql`
+* `supabase/migrations/20260730010000_remove_brokerage_offices_and_trec.sql`
 * `lib/audit/sanitize.ts`
 * `lib/audit/record.ts`
 * `lib/audit/constants.ts`

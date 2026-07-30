@@ -4,22 +4,6 @@ import type { MembershipRole } from "@/lib/types/organization";
 export type InviteMembershipInput = {
   organizationId: string;
   membershipRole: MembershipRole;
-  brokerageOfficeId?: string | null;
-};
-
-export type LicenseVerificationInput = {
-  source: "trec" | "manual";
-  licenseType?: string | null;
-  reportedFullName?: string | null;
-  licenseStatus?: string | null;
-  expirationDate?: string | null;
-  relatedLicenseNumber?: string | null;
-  relatedLicenseName?: string | null;
-  lookupAt?: string | null;
-  manualOverrideReason?: string | null;
-  acknowledgedInactiveLicense?: boolean;
-  acknowledgedSponsorshipMismatch?: boolean;
-  sponsorshipMismatchDetails?: string | null;
 };
 
 export type InviteUserInput = {
@@ -32,7 +16,6 @@ export type InviteUserInput = {
   preferredName?: string | null;
   displayName?: string | null;
   primaryOrganizationId: string;
-  primaryBrokerageOfficeId?: string | null;
   additionalMemberships?: InviteMembershipInput[];
   agentEmail?: string | null;
   agentPhone?: string | null;
@@ -43,7 +26,6 @@ export type InviteUserInput = {
   city?: string | null;
   state?: string | null;
   zip?: string | null;
-  licenseVerification?: LicenseVerificationInput | null;
 };
 
 export type InviteValidationResult =
@@ -61,7 +43,6 @@ export type NormalizedInviteInput = {
   preferredName: string | null;
   displayName: string;
   primaryOrganizationId: string;
-  primaryBrokerageOfficeId: string | null;
   memberships: InviteMembershipInput[];
   agentEmail: string | null;
   agentPhone: string | null;
@@ -72,7 +53,6 @@ export type NormalizedInviteInput = {
   city: string | null;
   state: string | null;
   zip: string | null;
-  licenseVerification: LicenseVerificationInput | null;
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -142,18 +122,9 @@ export function validateInviteUserInput(
     return { ok: false, error: "Invalid account status." };
   }
 
-  const primaryBrokerageOfficeId =
-    input.primaryBrokerageOfficeId?.trim() || null;
-
   const additional = input.additionalMemberships ?? [];
-  const membershipMap = new Map<
-    string,
-    { membershipRole: MembershipRole; brokerageOfficeId: string | null }
-  >();
-  membershipMap.set(primaryOrganizationId, {
-    membershipRole: "MEMBER",
-    brokerageOfficeId: primaryBrokerageOfficeId,
-  });
+  const membershipMap = new Map<string, MembershipRole>();
+  membershipMap.set(primaryOrganizationId, "MEMBER");
 
   for (const membership of additional) {
     const orgId = membership.organizationId?.trim();
@@ -166,32 +137,12 @@ export function validateInviteUserInput(
     ) {
       return { ok: false, error: "Invalid organization membership role." };
     }
-    membershipMap.set(orgId, {
-      membershipRole: membership.membershipRole,
-      brokerageOfficeId:
-        orgId === primaryOrganizationId
-          ? primaryBrokerageOfficeId
-          : membership.brokerageOfficeId?.trim() || null,
-    });
+    membershipMap.set(orgId, membership.membershipRole);
   }
 
-  const licenseVerification = input.licenseVerification ?? null;
-  if (licenseVerification) {
-    if (
-      licenseVerification.source !== "trec" &&
-      licenseVerification.source !== "manual"
-    ) {
-      return { ok: false, error: "Invalid license verification source." };
-    }
-    if (
-      licenseVerification.source === "manual" &&
-      !(licenseVerification.manualOverrideReason?.trim())
-    ) {
-      return {
-        ok: false,
-        error: "A reason is required for manual license entry or override.",
-      };
-    }
+  // Primary defaults to MEMBER unless an additional entry overrides it.
+  if (!membershipMap.has(primaryOrganizationId)) {
+    membershipMap.set(primaryOrganizationId, "MEMBER");
   }
 
   const middleName = input.middleName?.trim() || null;
@@ -224,12 +175,10 @@ export function validateInviteUserInput(
       preferredName,
       displayName,
       primaryOrganizationId,
-      primaryBrokerageOfficeId,
       memberships: [...membershipMap.entries()].map(
-        ([organizationId, membership]) => ({
+        ([organizationId, membershipRole]) => ({
           organizationId,
-          membershipRole: membership.membershipRole,
-          brokerageOfficeId: membership.brokerageOfficeId,
+          membershipRole,
         }),
       ),
       agentEmail,
@@ -241,7 +190,6 @@ export function validateInviteUserInput(
       city: input.city?.trim() || null,
       state: input.state?.trim()?.toUpperCase() || "TX",
       zip: input.zip?.trim() || null,
-      licenseVerification,
     },
   };
 }

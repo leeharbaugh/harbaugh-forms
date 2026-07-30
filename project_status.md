@@ -6,11 +6,20 @@
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
-### Admin brokerage / TREC / audit phase (development only — 2026-07-29)
+### Admin audit logging phase (development only — revised 2026-07-29)
 
 **Feature branch:** `feature/admin-brokerage-trec-audit`  
 **Starting commit:** `7a7baced48d2631167fdb6d82c29479a41912e07` (main tip at branch create)  
-**Branch status:** development implementation reviewed, committed, and pushed for Preview; **not merged**; **not deployed to production**; **no production migration applied**.
+**Branch status:** revised after Lee Preview review to **audit-only**; brokerage-office administration and TREC lookup removed; **not merged**; **not deployed to production**; **no production migration applied**.
+
+#### Lee Preview review (2026-07-29)
+
+Lee decided:
+
+1. Existing `Admin → Organizations` is sufficient for creating/maintaining multiple brokerages.
+2. The new Brokerage/Offices administration feature is unnecessary and removed.
+3. TREC license lookup/autofill is unnecessary and removed.
+4. Basic audit logging is retained (modest scope; expand later).
 
 #### Environment verification
 
@@ -31,77 +40,59 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 | Feature-branch push | Creates a **Vercel Preview** only; Preview is configured to use **development** Supabase (`harbaugh-forms-dev`) |
 | PR open/update | No repo-local automation applies production migrations |
 | Merge/push to `main` | Triggers Vercel **Production** deploy of application code; does **not** auto-apply Supabase migrations |
-| Supabase production migrations | **Manual / deliberate only** (`supabase db push` against linked prod or runbook). Never automatic on git push |
-| Dangerous scripts | `npm run import:approved-production-data`, `migrate:approved-auth`, `sync:condo-txr-1605-prod`, etc. require explicit execution + `.env.production.local` |
-| Env distinction | Preview/local → `harbaugh-forms-dev` / `ewxsxwzezhkeawnjvigx`; Production → `harbaugh-forms-prod` / `eetonalyyyssvkyfdoxh` + production Vercel env |
+| Supabase production migrations | **Manual / deliberate only**. Never automatic on git push |
+| Env distinction | Preview/local → `harbaugh-forms-dev` / `ewxsxwzezhkeawnjvigx`; Production → `harbaugh-forms-prod` / `eetonalyyyssvkyfdoxh` |
 
-**Safeguard used:** verified CLI link + `.env.local` host before `db push`; refused any production target; no merge to `main`.
+**Safeguard used:** verified CLI link + `.env.local` host before development `db push`; refused any production target; no merge to `main`.
 
-#### Final review corrections (2026-07-29)
+#### Schema (development)
 
-* Fixed TREC `LAST, FIRST MIDDLE` name parsing (`parseTrecFullName`) so autofill does not treat the surname as a given name.
-* Manual license entry is always available in the invite UI (not only after a failed search).
-* Audit date filters ignore invalid date strings instead of throwing.
-* Re-marked `lib/trec/lookup.ts` as `server-only`.
-* Candidate list now shows related/sponsoring broker when present.
+Original migration (immutable; already applied to development): `20260729210000_brokerage_offices_trec_audit.sql`
 
-#### Schema (development applied)
+Cleanup migration (forward-only; applied to development only): `20260730010000_remove_brokerage_offices_and_trec.sql`
 
-Migration: `20260729210000_brokerage_offices_trec_audit.sql`
+| Final object | Status |
+|--------------|--------|
+| `audit_settings` | **Retained** |
+| `audit_events` | **Retained** (without `brokerage_office_id`) |
+| `brokerage_offices` | **Removed** |
+| `organization_members.brokerage_office_id` | **Removed** |
+| TREC verification columns on `user_agent_settings` / `organizations` | **Removed** |
+| Preexisting manual license fields (`trec_license_number`, `broker_license_number`, etc.) | **Preserved** |
+| `organizations` / memberships / invitations / packets | **Preserved** |
 
-| Change | Detail |
-|--------|--------|
-| `brokerage_offices` | New table (org FK, address, phone, optional branch license, `is_main_office`, soft-delete status, dates) |
-| `organization_members.brokerage_office_id` | Nullable FK + org-match trigger |
-| `user_agent_settings` | TREC verification metadata columns |
-| `organizations` | Broker TREC verification metadata columns |
-| `audit_settings` | Singleton ordinary-logging toggle |
-| `audit_events` | Append-only business audit log (RLS: admin select; authenticated insert/update/delete denied) |
-| DGR seed | Existing Davey Goosmann Realty org **not duplicated**; seeded `Main Office` + Lee membership office assignment |
+**Migration strategy:** Do not edit the already-applied combined migration. Cleanup is a new forward-only migration without `CASCADE`. If this branch is later merged, both migrations run together and yield the audit-only schema.
 
-**Compatibility:** legacy `brokerage_settings` singleton retained for form resolvers. Multi-user brokerage master records remain `organizations` (`organization_type = BROKERAGE`). Form fill still reads licenses from `brokerage_settings` until a later deliberate resolver migration.
+#### Routes / UI
 
-#### Pages / routes added
+| Item | Status |
+|------|--------|
+| `/admin/audit` | **Retained** (Global Admin) |
+| `/admin/organizations` (+ detail) | **Preserved** (authoritative multi-brokerage admin) |
+| `/admin/users` invite | Restored to manual license entry; no office / no TREC lookup |
+| `/admin/brokerages` | **Removed** (stale URL → normal not-found) |
+| Brokerages nav item | **Removed** |
+| `POST /api/admin/trec-lookup` | **Removed** |
 
-| Route | Purpose |
-|-------|---------|
-| `/admin/brokerages` | Global Admin brokerage list (active/inactive) |
-| `/admin/organizations/[id]` | Extended with offices CRUD + designated broker display |
-| `/admin/audit` | Audit log + ordinary-logging setting |
-| `/admin/users` | Invite flow: office select + TREC lookup / manual override |
-| `POST /api/admin/trec-lookup` | Authenticated Global Admin TREC Open Data lookup |
+#### Authorization / RLS (retained audit)
 
-#### Authorization / RLS
-
-- Brokerage office mutate: `is_app_admin()` only
-- Office select: app admin or active org member
 - Audit settings / cross-org audit events: app admin only
 - Audit event insert via authenticated role: **denied** (trusted service-role writes only)
 - Audit append-only trigger blocks UPDATE/DELETE
-- TREC routes: `requireAppAdmin()`
-- Org deactivate blocked while active members/invites remain unless acknowledged
 - All `/admin/*` routes gated by `requireAppAdminPage()` in admin layout
 
-#### TREC integration
+#### Env vars
 
-- Official dataset `s7ft-44qi` via Socrata (`data.texas.gov`)
-- Server-side only; optional `TREC_SODA_APP_TOKEN` / `TEXAS_OPEN_DATA_APP_TOKEN`
-- SALE + BRK only; explicit admin selection; manual override with reason; sponsorship mismatch is warning only
-- Automated tests use mocked responses (no live Open Data dependency)
-- Live TREC smoke verification deferred to Preview manual checklist
+| Variable | Status |
+|----------|--------|
+| `TREC_SODA_APP_TOKEN` / `TEXAS_OPEN_DATA_APP_TOKEN` | **Abandoned** — not part of the application |
+| Existing Supabase + site URL vars | unchanged |
 
-#### New / related env vars (names only)
-
-| Variable | Env | Required? |
-|----------|-----|-----------|
-| `TREC_SODA_APP_TOKEN` or `TEXAS_OPEN_DATA_APP_TOKEN` | Dev now; Prod later | Optional (higher rate limits) |
-| Existing Supabase + site URL vars | unchanged | Yes |
-
-#### Tests / build (final validation)
+#### Tests / build (cleanup validation)
 
 | Suite | Result |
 |-------|--------|
-| `npm run test:brokerage-trec-audit` | **17 pass** |
+| `npm run test:admin-audit` | **11 pass** |
 | `npm run test:admin-invite` | **14 pass** |
 | `npm run test:admin-orgs` | **4 pass** |
 | `npm run test:field-defaults` | **77 pass** |
@@ -109,49 +100,49 @@ Migration: `20260729210000_brokerage_offices_trec_audit.sql`
 | `npm run test:form-copy-global` | **89 pass** |
 | `npm run test:field-instance-sync` | **17 pass** |
 | `npm run test:library-permissions` | **13 pass** |
-| `npx tsc --noEmit` | **pass** |
+| `npx tsc --noEmit` | **pass** (after clearing stale `.next/types`) |
 | ESLint on changed sources | **pass** |
-| `npm run build` | **pass** (recorded after final review) |
+| `npm run build` | **pass** — routes include `/admin/audit`; no `/admin/brokerages` or `/api/admin/trec-lookup` |
 
-#### Development data checks (final)
+#### Development data checks
 
 | Check | Result |
 |-------|--------|
-| DGR org count (license 9006865) | **1** (not duplicated) |
-| Dee broker on org | present (`0283607`) |
-| Lee agent | present (`0712335`) |
-| Main Office seeded | yes; Lee membership assigned |
-| Dev packets / packet_forms / field_instances | **8 / 33 / 1502** (unchanged by this work) |
+| DGR org (license 9006865) | **1** remains |
+| Dee broker on org | remains (`0283607`) |
+| Lee agent | remains (`0712335`) |
+| `brokerage_offices` table | gone (PostgREST PGRST205) |
+| Office / TREC verification columns | gone |
+| `audit_settings` / `audit_events` | present (8 events retained) |
+| Dev packets / packet_forms / field_instances | **21 / 68 / 1502** (field_instances unchanged from prior recorded 1502; packet counts grew independently of this cleanup) |
 
 #### Commit / push / Preview
 
 | Item | Status |
 |------|--------|
-| Feature commit | `7cbb964bec3d2ac09599a1e52d6af1185232a232` (tip includes docs: `7ea2f6935804627125054f04bf7649f34f4e3246`) |
+| Cleanup commit | pending push |
 | Remote branch | `origin/feature/admin-brokerage-trec-audit` |
-| Preview Deployment | **success** — https://harbaugh-forms-rkeiryubg-lee-harbaugh-s-projects.vercel.app (prior docs-push Preview also succeeded; Vercel dashboard for tip: https://vercel.com/lee-harbaugh-s-projects/harbaugh-forms/ESCuXku4HX8Ui3nii8UcptqBUAXa) |
+| Preview Deployment | pending after push |
 | Production rollout | **still pending / not authorized** |
 
 #### Remaining Preview smoke tests
 
-Lee should run the Preview checklist after the Preview URL is available (brokerages, offices, TREC invite, audit toggle, non-admin denial, existing packets).
+Lee should confirm Organizations admin, invite with manual license, Audit Log toggle, non-admin denial, and existing packets on the new Preview.
 
 #### Unresolved risks / deferred
 
-- Form resolvers still use legacy `brokerage_settings` singleton (not yet org/office-aware)
-- Business-entity / branch license types (BLLC, REB, etc.) not modeled beyond optional `branch_license_number`
+- Form resolvers still use legacy `brokerage_settings` singleton
+- Broader audit event coverage intentionally deferred
 - No production rollout yet
-- Broader DB integration tests for RLS insert-deny rely on policy SQL + service-role writer pattern
 
-#### Production rollout steps (**not performed**)
+#### Production rollout steps (**not performed / not authorized**)
 
-1. Lee review of branch + Preview smoke tests
+1. Lee review of revised branch + Preview smoke tests
 2. Merge to `main` only after approval (deploys app code; still does not migrate DB)
 3. Link CLI to `harbaugh-forms-prod` deliberately; verify ref `eetonalyyyssvkyfdoxh`
-4. Apply `20260729210000_brokerage_offices_trec_audit.sql` to production only
-5. Set optional production TREC app token
-6. Smoke-test admin brokerages, invite+TREC, audit toggle on production
-7. Confirm DGR / Lee / Dee unchanged; packet fingerprints unchanged
+4. Apply **both** `20260729210000_brokerage_offices_trec_audit.sql` and `20260730010000_remove_brokerage_offices_and_trec.sql` to production only (net: audit-only schema)
+5. Smoke-test Organizations, invite (manual license), audit toggle on production
+6. Confirm DGR / Lee / Dee unchanged; packet fingerprints unchanged
 
 ### Form #1 Buyer Rep placement corruption — investigated and repaired (2026-07-28)
 
@@ -507,7 +498,7 @@ Document names only; never store values in Git.
 - `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SECRET_KEY`
 - `NEXT_PUBLIC_SITE_URL`
 - `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN`
-- Optional for TREC lookup rate limits: `TREC_SODA_APP_TOKEN` or `TEXAS_OPEN_DATA_APP_TOKEN`
+- Existing Supabase + site URL vars (see environment files; not committed)
 
 Confirm additional names from `.env.example` and code before work on a new machine.
 

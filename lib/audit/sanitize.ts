@@ -99,11 +99,9 @@ const SAFE_UPDATE_VALUE_KEYS = new Set([
   "name",
   "legal_name",
   "status",
-  "office_name",
   "city",
   "state",
   "zip",
-  "is_main_office",
   "membership_role",
   "app_role",
   "onboarding_status",
@@ -111,7 +109,6 @@ const SAFE_UPDATE_VALUE_KEYS = new Set([
   "brokerage_license_number",
   "broker_license_number",
   "trec_license_number",
-  "license_verification_source",
   "ordinary_logging_enabled",
 ]);
 

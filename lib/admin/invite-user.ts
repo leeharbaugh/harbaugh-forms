@@ -52,59 +52,6 @@ async function assertOrganizationsActive(
   return null;
 }
 
-async function assertOfficesActiveForMemberships(
-  admin: ReturnType<typeof createAdminClient>,
-  memberships: Array<{
-    organizationId: string;
-    brokerageOfficeId?: string | null;
-  }>,
-): Promise<string | null> {
-  const officeIds = [
-    ...new Set(
-      memberships
-        .map((m) => m.brokerageOfficeId?.trim())
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ];
-  if (officeIds.length === 0) {
-    return null;
-  }
-
-  const { data, error } = await admin
-    .from("brokerage_offices")
-    .select("id, status, organization_id")
-    .in("id", officeIds);
-
-  if (error) {
-    return error.message;
-  }
-
-  const byId = new Map(
-    (data ?? []).map((row) => [
-      row.id as string,
-      {
-        status: row.status as string,
-        organizationId: row.organization_id as string,
-      },
-    ]),
-  );
-
-  for (const membership of memberships) {
-    const officeId = membership.brokerageOfficeId?.trim();
-    if (!officeId) {
-      continue;
-    }
-    const office = byId.get(officeId);
-    if (!office || office.status !== "ACTIVE") {
-      return "Inactive or missing brokerage offices cannot be selected for new invitations.";
-    }
-    if (office.organizationId !== membership.organizationId) {
-      return "Selected office does not belong to the selected brokerage.";
-    }
-  }
-  return null;
-}
-
 export async function findAuthUserIdByEmail(
   admin: ReturnType<typeof createAdminClient>,
   email: string,
@@ -186,7 +133,6 @@ export async function provisionInvitedUserRecords(options: {
         .update({
           status: "ACTIVE",
           membership_role: membership.membershipRole,
-          brokerage_office_id: membership.brokerageOfficeId ?? null,
         })
         .eq("id", existingMembership.id);
 
@@ -200,7 +146,6 @@ export async function provisionInvitedUserRecords(options: {
           organization_id: membership.organizationId,
           user_id: userId,
           membership_role: membership.membershipRole,
-          brokerage_office_id: membership.brokerageOfficeId ?? null,
           status: "ACTIVE",
         });
 
@@ -210,7 +155,6 @@ export async function provisionInvitedUserRecords(options: {
     }
   }
 
-  const verification = invite.licenseVerification;
   const { error: agentError } = await admin.from("user_agent_settings").upsert(
     {
       user_id: userId,
@@ -229,23 +173,6 @@ export async function provisionInvitedUserRecords(options: {
       city: invite.city,
       state: invite.state,
       zip: invite.zip,
-      ...(verification
-        ? {
-            trec_license_type: verification.licenseType ?? null,
-            trec_reported_full_name: verification.reportedFullName ?? null,
-            trec_license_status: verification.licenseStatus ?? null,
-            trec_expiration_date: verification.expirationDate ?? null,
-            trec_related_license_number:
-              verification.relatedLicenseNumber ?? null,
-            trec_related_license_name: verification.relatedLicenseName ?? null,
-            trec_lookup_at: verification.lookupAt ?? null,
-            license_verified_at: nowIso,
-            license_verification_source: verification.source,
-            license_manual_override_reason:
-              verification.manualOverrideReason ?? null,
-            license_verified_by_user_id: invitedByUserId,
-          }
-        : {}),
     },
     { onConflict: "user_id" },
   );
@@ -287,14 +214,6 @@ export async function inviteAndProvisionUser(options: {
   );
   if (orgError) {
     return { ok: false, error: orgError };
-  }
-
-  const officeError = await assertOfficesActiveForMemberships(
-    admin,
-    invite.memberships,
-  );
-  if (officeError) {
-    return { ok: false, error: officeError };
   }
 
   const existingId = await findAuthUserIdByEmail(admin, invite.loginEmail);
@@ -384,51 +303,16 @@ export async function inviteAndProvisionUser(options: {
     actorUserId: options.invitedByUserId,
     actorRoleSnapshot: "ADMIN",
     organizationId: invite.primaryOrganizationId,
-    brokerageOfficeId: invite.primaryBrokerageOfficeId,
     eventCategory: "invitation",
-    action: "agent_invitation_created",
+    action: "invitation_created",
     targetEntityType: "profile",
     targetEntityId: userId,
-    summary: `Invited agent ${invite.displayName} (${invite.loginEmail}).`,
+    summary: `Invited user ${invite.displayName} (${invite.loginEmail}).`,
     metadata: {
-      hasTrecLicense: Boolean(invite.trecLicenseNumber),
-      verificationSource: invite.licenseVerification?.source ?? null,
-      manualOverride: invite.licenseVerification?.source === "manual",
+      hasLicenseNumber: Boolean(invite.trecLicenseNumber),
+      membershipCount: invite.memberships.length,
     },
   });
-
-  if (invite.licenseVerification?.source === "manual") {
-    await recordAuditEvent({
-      actorUserId: options.invitedByUserId,
-      actorRoleSnapshot: "ADMIN",
-      organizationId: invite.primaryOrganizationId,
-      brokerageOfficeId: invite.primaryBrokerageOfficeId,
-      eventCategory: "trec",
-      action: "manual_license_entry_used",
-      targetEntityType: "profile",
-      targetEntityId: userId,
-      summary: "Manual license entry used during invitation.",
-      metadata: {
-        reason: invite.licenseVerification.manualOverrideReason,
-      },
-    });
-  } else if (invite.licenseVerification?.source === "trec") {
-    await recordAuditEvent({
-      actorUserId: options.invitedByUserId,
-      actorRoleSnapshot: "ADMIN",
-      organizationId: invite.primaryOrganizationId,
-      brokerageOfficeId: invite.primaryBrokerageOfficeId,
-      eventCategory: "trec",
-      action: "trec_candidate_selected",
-      targetEntityType: "profile",
-      targetEntityId: userId,
-      summary: "TREC candidate selected during invitation.",
-      metadata: {
-        licenseType: invite.licenseVerification.licenseType,
-        licenseStatus: invite.licenseVerification.licenseStatus,
-      },
-    });
-  }
 
   return {
     ok: true,
@@ -470,14 +354,6 @@ export async function retryProvisionInvitedUser(options: {
     return { ok: false, error: orgError };
   }
 
-  const officeError = await assertOfficesActiveForMemberships(
-    admin,
-    validated.value.memberships,
-  );
-  if (officeError) {
-    return { ok: false, error: officeError };
-  }
-
   const provisionError = await provisionInvitedUserRecords({
     admin,
     userId: options.userId,
@@ -507,6 +383,7 @@ export async function retryProvisionInvitedUser(options: {
 export async function resendUserInvitation(options: {
   userId: string;
   origin: string;
+  actorUserId?: string | null;
 }): Promise<{ ok: true; alreadyConfirmed: boolean } | { ok: false; error: string }> {
   let admin: ReturnType<typeof createAdminClient>;
   try {
@@ -549,7 +426,8 @@ export async function resendUserInvitation(options: {
   }
 
   await recordAuditEvent({
-    actorUserId: null,
+    actorUserId: options.actorUserId ?? null,
+    actorRoleSnapshot: options.actorUserId ? "ADMIN" : null,
     eventCategory: "invitation",
     action: "invitation_resent",
     targetEntityType: "profile",

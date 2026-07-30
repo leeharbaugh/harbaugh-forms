@@ -142,7 +142,7 @@ export function AdminAuditPage({
         open={pendingDisable}
         title="Disable ordinary audit logging?"
         message={
-          "Mandatory security events will still be recorded, but routine activity (invitations, brokerage changes, TREC lookups, and similar events) will stop being written until logging is re-enabled. This affects compliance visibility."
+          "Mandatory security events will still be recorded, but routine activity (invitations, organization changes, and similar events) will stop being written until logging is re-enabled. This affects compliance visibility."
         }
         confirmLabel="Disable logging"
         confirmingLabel="Disabling…"

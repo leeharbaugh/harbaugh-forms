@@ -7,12 +7,11 @@ import {
   setUserAppRoleAction,
 } from "@/app/admin/actions";
 import { AdminSectionNav } from "@/components/admin/admin-section-nav";
-import { TrecLicenseLookup } from "@/components/admin/trec-license-lookup";
 import { ListEmptyState } from "@/components/list-empty-state";
 import { ListPageHeader } from "@/components/list-page-header";
 import { ListRowActions } from "@/components/list-row-actions";
 import type { AdminUserListItem } from "@/lib/admin/list-users";
-import type { InviteUserInput, LicenseVerificationInput } from "@/lib/admin/invite-validation";
+import type { InviteUserInput } from "@/lib/admin/invite-validation";
 import { formatPhoneInput } from "@/lib/phone-format";
 import { membershipRoleLabel } from "@/lib/ui/list-badges";
 import { Button } from "@/components/ui/button";
@@ -36,25 +35,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
-type OrgOption = {
-  id: string;
-  name: string;
-  brokerLicenseNumber?: string | null;
-  brokerFirstName?: string | null;
-  brokerMiddleName?: string | null;
-  brokerLastName?: string | null;
-};
-
-type OfficeOption = {
-  id: string;
-  organizationId: string;
-  officeName: string;
-};
+type OrgOption = { id: string; name: string };
 
 type AdminUsersPageProps = {
   users: AdminUserListItem[];
   organizations: OrgOption[];
-  offices: OfficeOption[];
 };
 
 function formatDate(value: string | null): string {
@@ -68,7 +53,7 @@ function formatDate(value: string | null): string {
   return date.toLocaleString();
 }
 
-export function AdminUsersPage({ users, organizations, offices }: AdminUsersPageProps) {
+export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,16 +71,12 @@ export function AdminUsersPage({ users, organizations, offices }: AdminUsersPage
   const [primaryOrganizationId, setPrimaryOrganizationId] = useState(
     organizations[0]?.id ?? "",
   );
-  const [primaryBrokerageOfficeId, setPrimaryBrokerageOfficeId] = useState("");
   const [membershipRole, setMembershipRole] = useState<"MEMBER" | "ORG_ADMIN">(
     "MEMBER",
   );
   const [agentEmail, setAgentEmail] = useState("");
   const [agentPhone, setAgentPhone] = useState("");
   const [trecLicenseNumber, setTrecLicenseNumber] = useState("");
-  const [licenseVerification, setLicenseVerification] =
-    useState<LicenseVerificationInput | null>(null);
-  const [licenseConfirmed, setLicenseConfirmed] = useState(false);
   const [title, setTitle] = useState("");
   const [addressLine1, setAddressLine1] = useState("");
   const [addressLine2, setAddressLine2] = useState("");
@@ -104,40 +85,6 @@ export function AdminUsersPage({ users, organizations, offices }: AdminUsersPage
   const [zip, setZip] = useState("");
 
   const sortedUsers = useMemo(() => users, [users]);
-
-  const selectedOrganization = useMemo(
-    () => organizations.find((org) => org.id === primaryOrganizationId) ?? null,
-    [organizations, primaryOrganizationId],
-  );
-
-  const officesForSelectedOrg = useMemo(
-    () =>
-      offices.filter((office) => office.organizationId === primaryOrganizationId),
-    [offices, primaryOrganizationId],
-  );
-
-  const selectedBrokerName = useMemo(() => {
-    if (!selectedOrganization) {
-      return null;
-    }
-    const parts = [
-      selectedOrganization.brokerFirstName,
-      selectedOrganization.brokerMiddleName,
-      selectedOrganization.brokerLastName,
-    ]
-      .map((part) => part?.trim())
-      .filter(Boolean);
-    return parts.length > 0 ? parts.join(" ") : null;
-  }, [selectedOrganization]);
-
-  const inviteFullName = useMemo(
-    () =>
-      [firstName, middleName, lastName]
-        .map((part) => part.trim())
-        .filter(Boolean)
-        .join(" "),
-    [firstName, middleName, lastName],
-  );
 
   const buildInviteInput = (): InviteUserInput => ({
     loginEmail,
@@ -149,14 +96,12 @@ export function AdminUsersPage({ users, organizations, offices }: AdminUsersPage
     preferredName: preferredName || null,
     displayName: displayName || null,
     primaryOrganizationId,
-    primaryBrokerageOfficeId: primaryBrokerageOfficeId || null,
     additionalMemberships: primaryOrganizationId
       ? [{ organizationId: primaryOrganizationId, membershipRole }]
       : [],
     agentEmail: agentEmail || null,
     agentPhone: agentPhone || null,
     trecLicenseNumber: trecLicenseNumber || null,
-    licenseVerification,
     title: title || null,
     addressLine1: addressLine1 || null,
     addressLine2: addressLine2 || null,
@@ -166,16 +111,6 @@ export function AdminUsersPage({ users, organizations, offices }: AdminUsersPage
   });
 
   const onInvite = () => {
-    if (!licenseConfirmed || !licenseVerification) {
-      setError(
-        "Search TREC and confirm a license (or complete manual entry) before sending the invitation.",
-      );
-      return;
-    }
-    if (!trecLicenseNumber.trim()) {
-      setError("A TREC license number is required.");
-      return;
-    }
     setMessage(null);
     setError(null);
     startTransition(async () => {
@@ -198,9 +133,6 @@ export function AdminUsersPage({ users, organizations, offices }: AdminUsersPage
       setAgentEmail("");
       setAgentPhone("");
       setTrecLicenseNumber("");
-      setLicenseVerification(null);
-      setLicenseConfirmed(false);
-      setPrimaryBrokerageOfficeId("");
       setTitle("");
       setAddressLine1("");
       setAddressLine2("");
@@ -346,10 +278,7 @@ export function AdminUsersPage({ users, organizations, offices }: AdminUsersPage
             <Select
               id="primaryOrganizationId"
               value={primaryOrganizationId}
-              onChange={(e) => {
-                setPrimaryOrganizationId(e.target.value);
-                setPrimaryBrokerageOfficeId("");
-              }}
+              onChange={(e) => setPrimaryOrganizationId(e.target.value)}
             >
               <option value="">Select organization</option>
               {organizations.map((org) => (
@@ -375,29 +304,7 @@ export function AdminUsersPage({ users, organizations, offices }: AdminUsersPage
               Does not grant application-level business-data access.
             </p>
           </div>
-          {primaryOrganizationId ? (
-            <div className="grid gap-2">
-              <Label htmlFor="primaryBrokerageOfficeId">Primary office</Label>
-              <Select
-                id="primaryBrokerageOfficeId"
-                value={primaryBrokerageOfficeId}
-                onChange={(e) => setPrimaryBrokerageOfficeId(e.target.value)}
-              >
-                <option value="">No office selected</option>
-                {officesForSelectedOrg.map((office) => (
-                  <option key={office.id} value={office.id}>
-                    {office.officeName}
-                  </option>
-                ))}
-              </Select>
-              {officesForSelectedOrg.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No active offices for this organization.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-          <div className="grid gap-2 md:col-span-2">
+          <div className="grid gap-2">
             <Label htmlFor="agentEmail">Agent/business email</Label>
             <Input
               id="agentEmail"
@@ -415,33 +322,12 @@ export function AdminUsersPage({ users, organizations, offices }: AdminUsersPage
               placeholder="XXX-XXX-XXXX"
             />
           </div>
-          <div className="grid gap-2 md:col-span-2">
-            <TrecLicenseLookup
-              mode="SALE"
-              initialName={inviteFullName}
-              initialLicenseNumber={trecLicenseNumber}
-              appBrokerLicenseNumber={
-                selectedOrganization?.brokerLicenseNumber ?? null
-              }
-              appBrokerName={selectedBrokerName}
-              onSelected={({ licenseNumber, verification, fillNames }) => {
-                setTrecLicenseNumber(licenseNumber);
-                setLicenseVerification(verification);
-                setLicenseConfirmed(true);
-                if (fillNames?.firstName && !firstName.trim()) {
-                  setFirstName(fillNames.firstName);
-                }
-                if (fillNames?.middleName && !middleName.trim()) {
-                  setMiddleName(fillNames.middleName);
-                }
-                if (fillNames?.lastName && !lastName.trim()) {
-                  setLastName(fillNames.lastName);
-                }
-              }}
-              onClear={() => {
-                setLicenseVerification(null);
-                setLicenseConfirmed(false);
-              }}
+          <div className="grid gap-2">
+            <Label htmlFor="trecLicenseNumber">TREC license number</Label>
+            <Input
+              id="trecLicenseNumber"
+              value={trecLicenseNumber}
+              onChange={(e) => setTrecLicenseNumber(e.target.value)}
             />
           </div>
           <div className="grid gap-2">
@@ -495,18 +381,9 @@ export function AdminUsersPage({ users, organizations, offices }: AdminUsersPage
           </div>
         </div>
         <div>
-          <Button
-            type="button"
-            disabled={isPending || !licenseConfirmed}
-            onClick={onInvite}
-          >
+          <Button type="button" disabled={isPending} onClick={onInvite}>
             {isPending ? "Sending invitation…" : "Send invitation"}
           </Button>
-          {!licenseConfirmed ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Confirm a TREC license above before inviting.
-            </p>
-          ) : null}
         </div>
         </CardContent>
       </Card>

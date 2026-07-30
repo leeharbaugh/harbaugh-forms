@@ -20,15 +20,4 @@ export type UserAgentSettings = {
   zip: string | null;
   trec_license_number: string | null;
   title: string | null;
-  trec_license_type?: string | null;
-  trec_reported_full_name?: string | null;
-  trec_license_status?: string | null;
-  trec_expiration_date?: string | null;
-  trec_related_license_number?: string | null;
-  trec_related_license_name?: string | null;
-  trec_lookup_at?: string | null;
-  license_verified_at?: string | null;
-  license_verification_source?: "trec" | "manual" | null;
-  license_manual_override_reason?: string | null;
-  license_verified_by_user_id?: string | null;
 };

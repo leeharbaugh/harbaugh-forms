@@ -12,10 +12,9 @@ export { buildAuditUpdateDiff, sanitizeAuditMetadata, MANDATORY_AUDIT_ACTIONS };
 export type { AuditMetadata };
 
 export type AuditEventCategory =
-  | "brokerage"
+  | "organization"
   | "invitation"
   | "user"
-  | "trec"
   | "audit_config"
   | "security"
   | "contact"
@@ -35,7 +34,6 @@ export type RecordAuditEventInput = {
   actorDisplayName?: string | null;
   actorRoleSnapshot?: string | null;
   organizationId?: string | null;
-  brokerageOfficeId?: string | null;
   eventCategory: AuditEventCategory | string;
   action: string;
   targetEntityType?: string | null;
@@ -113,7 +111,6 @@ export async function recordAuditEvent(
       actor_display_name: input.actorDisplayName ?? null,
       actor_role_snapshot: input.actorRoleSnapshot ?? null,
       organization_id: input.organizationId ?? null,
-      brokerage_office_id: input.brokerageOfficeId ?? null,
       event_category: input.eventCategory,
       action: input.action,
       target_entity_type: input.targetEntityType ?? null,
@@ -207,7 +204,6 @@ export type AuditEventListFilters = {
   dateTo?: string | null;
   actorUserId?: string | null;
   organizationId?: string | null;
-  brokerageOfficeId?: string | null;
   eventCategory?: string | null;
   action?: string | null;
   targetEntityType?: string | null;
@@ -225,7 +221,6 @@ export type AuditEventRow = {
   actor_display_name: string | null;
   actor_role_snapshot: string | null;
   organization_id: string | null;
-  brokerage_office_id: string | null;
   event_category: string;
   action: string;
   target_entity_type: string | null;
@@ -270,9 +265,6 @@ export async function listAuditEvents(filters: AuditEventListFilters = {}): Prom
   }
   if (filters.organizationId) {
     query = query.eq("organization_id", filters.organizationId);
-  }
-  if (filters.brokerageOfficeId) {
-    query = query.eq("brokerage_office_id", filters.brokerageOfficeId);
   }
   if (filters.eventCategory) {
     query = query.eq("event_category", filters.eventCategory);

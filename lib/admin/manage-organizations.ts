@@ -5,9 +5,6 @@ import {
   validateOrganizationInput,
   type OrganizationInput,
 } from "@/lib/admin/organization-validation";
-import {
-  getOrganizationDeactivationBlockers,
-} from "@/lib/admin/manage-brokerage-offices";
 import { recordAuditEvent } from "@/lib/audit/record";
 import { buildAuditUpdateDiff } from "@/lib/audit/sanitize";
 import type {
@@ -22,7 +19,6 @@ export type AdminOrganizationListItem = Organization & {
   memberCount: number;
   activeMemberCount: number;
   activeAgentCount: number;
-  activeOfficeCount: number;
 };
 
 export async function listAdminOrganizations(): Promise<
@@ -80,12 +76,7 @@ export async function listAdminOrganizations(): Promise<
 
   const countsByOrg = new Map<
     string,
-    {
-      memberCount: number;
-      activeMemberCount: number;
-      activeAgentCount: number;
-      activeOfficeCount: number;
-    }
+    { memberCount: number; activeMemberCount: number; activeAgentCount: number }
   >();
 
   for (const orgId of orgIds) {
@@ -93,7 +84,6 @@ export async function listAdminOrganizations(): Promise<
       memberCount: 0,
       activeMemberCount: 0,
       activeAgentCount: 0,
-      activeOfficeCount: 0,
     });
   }
 
@@ -112,27 +102,11 @@ export async function listAdminOrganizations(): Promise<
     }
   }
 
-  const { data: offices, error: officesError } = await admin
-    .from("brokerage_offices")
-    .select("organization_id")
-    .in("organization_id", orgIds)
-    .eq("status", "ACTIVE");
-  if (officesError) {
-    throw new Error(officesError.message);
-  }
-  for (const row of offices ?? []) {
-    const current = countsByOrg.get(row.organization_id as string);
-    if (current) {
-      current.activeOfficeCount += 1;
-    }
-  }
-
   return (organizations ?? []).map((org) => {
     const counts = countsByOrg.get(org.id as string) ?? {
       memberCount: 0,
       activeMemberCount: 0,
       activeAgentCount: 0,
-      activeOfficeCount: 0,
     };
     return {
       ...(org as Organization),
@@ -189,13 +163,13 @@ export async function createOrganization(
       actorDisplayName: actor.displayName,
       actorRoleSnapshot: "ADMIN",
       organizationId: organization.id,
-      eventCategory: "brokerage",
-      action: "brokerage_created",
+      eventCategory: "organization",
+      action: "organization_created",
       targetEntityType: "organization",
       targetEntityId: organization.id,
-      summary: `Created brokerage "${organization.name}".`,
+      summary: `Created organization "${organization.name}".`,
       metadata: {
-        brokerageLicenseNumber: organization.brokerage_license_number,
+        organizationType: organization.organization_type,
       },
     });
   }
@@ -220,8 +194,6 @@ export async function updateOrganization(
     .eq("id", organizationId)
     .neq("status", "DELETED")
     .maybeSingle();
-
-  const previousBrokerLicense = before?.broker_license_number ?? null;
 
   const { data, error } = await admin
     .from("organizations")
@@ -249,44 +221,13 @@ export async function updateOrganization(
       actorDisplayName: actor.displayName,
       actorRoleSnapshot: "ADMIN",
       organizationId: organization.id,
-      eventCategory: "brokerage",
-      action: "brokerage_updated",
+      eventCategory: "organization",
+      action: "organization_updated",
       targetEntityType: "organization",
       targetEntityId: organization.id,
-      summary: `Updated brokerage "${organization.name}".`,
+      summary: `Updated organization "${organization.name}".`,
       metadata: diff,
     });
-
-    if (
-      previousBrokerLicense !== organization.broker_license_number ||
-      before?.broker_first_name !== organization.broker_first_name ||
-      before?.broker_last_name !== organization.broker_last_name
-    ) {
-      await recordAuditEvent({
-        actorUserId: actor.userId,
-        actorDisplayName: actor.displayName,
-        actorRoleSnapshot: "ADMIN",
-        organizationId: organization.id,
-        eventCategory: "brokerage",
-        action: previousBrokerLicense
-          ? "designated_broker_changed"
-          : "designated_broker_assigned",
-        targetEntityType: "organization",
-        targetEntityId: organization.id,
-        summary: previousBrokerLicense
-          ? `Changed designated broker for "${organization.name}".`
-          : `Assigned designated broker for "${organization.name}".`,
-        metadata: {
-          changedFields: ["broker_license_number", "broker_first_name", "broker_last_name"],
-          safeOldValues: {
-            broker_license_number: previousBrokerLicense,
-          },
-          safeNewValues: {
-            broker_license_number: organization.broker_license_number,
-          },
-        },
-      });
-    }
   }
 
   return { ok: true, organization };
@@ -298,30 +239,8 @@ export async function setOrganizationStatus(
   actor?: {
     userId: string;
     displayName?: string | null;
-    acknowledgeActiveAssignments?: boolean;
   },
-): Promise<
-  | { ok: true }
-  | {
-      ok: false;
-      error: string;
-      blockers?: Awaited<ReturnType<typeof getOrganizationDeactivationBlockers>>;
-    }
-> {
-  if (status === "INACTIVE") {
-    const blockers = await getOrganizationDeactivationBlockers(organizationId);
-    if (
-      (blockers.activeMembershipCount > 0 || blockers.invitedProfileCount > 0) &&
-      !actor?.acknowledgeActiveAssignments
-    ) {
-      return {
-        ok: false,
-        error: `Cannot deactivate brokerage while ${blockers.activeMembershipCount} active member(s) and ${blockers.invitedProfileCount} invited profile(s) remain. Review affected records and confirm acknowledgement.`,
-        blockers,
-      };
-    }
-  }
-
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("organizations")
@@ -344,15 +263,17 @@ export async function setOrganizationStatus(
       actorDisplayName: actor.displayName,
       actorRoleSnapshot: "ADMIN",
       organizationId,
-      eventCategory: "brokerage",
+      eventCategory: "organization",
       action:
-        status === "ACTIVE" ? "brokerage_reactivated" : "brokerage_deactivated",
+        status === "ACTIVE"
+          ? "organization_reactivated"
+          : "organization_deactivated",
       targetEntityType: "organization",
       targetEntityId: organizationId,
       summary:
         status === "ACTIVE"
-          ? `Reactivated brokerage "${data.name}".`
-          : `Deactivated brokerage "${data.name}".`,
+          ? `Reactivated organization "${data.name}".`
+          : `Deactivated organization "${data.name}".`,
     });
   }
 
