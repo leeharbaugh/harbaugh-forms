@@ -12,6 +12,33 @@ Each decision should include:
 
 ---
 
+## Production target enforcement respects the server/browser boundary
+
+**Date:** 2026-07-29
+
+**Decision:**
+Production Supabase target enforcement uses the documented Vercel server/build runtime contract (`VERCEL_ENV=production`) only on server and build paths. Browser code must not require `VERCEL_ENV` or another server-only variable to use the public Supabase URL that was compiled into and served by an already validated deployment. Browser-runtime behavior and server/build-runtime behavior require separate regression coverage.
+
+**Reason:**
+The initial guard was imported by the browser Supabase client. `NEXT_PUBLIC_SUPABASE_URL` was available there, but `VERCEL_ENV` was not, so the real Production browser deterministically threw after successful login and prevented every authenticated page from loading.
+
+**Consequences:**
+
+* Local and Preview server/build processes still reject the production project unless explicitly authorized.
+* Real Vercel Production server/build processes continue to require `VERCEL_ENV=production`.
+* Browser client creation allows the deployment-provided public Supabase URL without reading server-only environment state.
+* `test:supabase-guard` and `test:auth-bootstrap` cover both runtime contexts.
+
+**Related files:**
+
+* `lib/supabase/project-guard.ts`
+* `lib/supabase/project-guard.test.ts`
+* `lib/auth/authenticated-bootstrap.test.ts`
+* `lib/supabase/env.ts`
+* `lib/supabase/client.ts`
+
+---
+
 ## Production ops credentials stay outside Next.js auto-load
 
 **Date:** 2026-07-29
