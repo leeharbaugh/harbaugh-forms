@@ -8,7 +8,18 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
 ### Test-user hard-deletion production smoke failure (2026-07-30)
 
-**Status:** Root cause fixed and fully validated on `fix/test-user-agent-settings-deletion`; PR/production rollout pending.
+**Status:** **Fixed and deployed to production.** Lee’s deletion retest remains **pending**.
+
+| Item | Value |
+|------|--------|
+| Feature/fix branch commit | `b48d2acb5d6df9125910ac7007c41f48c3837171` |
+| PR | [#29](https://github.com/leeharbaugh/harbaugh-forms/pull/29) — squash-merged |
+| Final `main` commit | `0f80dea9bdf20bc3a91b4b14f7110619aa07fba9` |
+| Branch cleanup | Bug-fix branch deleted locally and on `origin` |
+| Vercel Production deployment | `dpl_A9j1QAgwws6RrLxirvH3Yo8jcJ4H` (`harbaugh-forms-3dzqqmzqz-…`) |
+| Production deployment commit | `0f80dea9bdf20bc3a91b4b14f7110619aa07fba9` |
+| Serving | `https://forms.harbaughrealestate.com` |
+| New migration | **None** — no schema change required |
 
 **Observed:** Lee’s first deletion smoke test stopped with the incomplete UI message `User_Agent_Settings:` while opening the deletion dependency summary.
 
@@ -32,7 +43,9 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
 **Validation:** `tsc --noEmit`, targeted ESLint, `npm run build:validate`, admin lifecycle/invite (37 passed), auth confirm (27), auth bootstrap (6), admin audit (11), admin org (4), library permissions (13), secure publish (11), UI lists (29), field defaults (77), form-copy/global packet regressions (89), form lifecycle (47), storage (18), Supabase guard (8), user preferences (5), and packet lifecycle (7) all passed. Focused lifecycle suite: 23 passed, including agent-settings success, missing-row retry, no-Auth-on-failure, email reuse, safeguards, and sanitized error regressions.
 
-No migration was changed or added. Lee’s production deletion retry remains pending until rollout completes.
+**Non-destructive availability after deploy:** login 200; `/` and `/admin/users` gate to login; `/auth/change-password` 200. No production deletion retry was performed.
+
+Lee’s production deletion retest remains pending.
 
 ### Global Admin test-user cleanup + manual create — production rollout (2026-07-30)
 
