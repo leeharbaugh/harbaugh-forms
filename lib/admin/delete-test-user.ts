@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  AGENT_SETTINGS_DEPENDENCY,
   canProceedWithTestUserDeletion,
   classifyOwnedLibraryRow,
   summarizeBlockingReasons,
@@ -8,6 +9,13 @@ import {
   type DeletionDependencySummary,
   type DependencyBucket,
 } from "@/lib/admin/test-user-deletion-policy";
+import {
+  TestUserDeletionOperationError,
+  internalDeletionErrorMessage,
+  type DeletionFailureStage,
+  type PublicDeletionFailure,
+} from "@/lib/admin/test-user-deletion-failure";
+import { runRetrySafeIdentityCleanup } from "@/lib/admin/test-user-identity-cleanup";
 import { wouldRemoveFinalActiveAdmin } from "@/lib/admin/invite-validation";
 import { recordAuditEvent } from "@/lib/audit/record";
 import {
@@ -26,8 +34,14 @@ async function countEq(
   column: string,
   value: string,
   extra?: { eq?: Record<string, string>; neq?: Record<string, string> },
+  dependency?: { key: string; label: string },
 ): Promise<number> {
-  let query = admin.from(table).select("id", { count: "exact", head: true }).eq(column, value);
+  // Select the ownership column itself. Not every dependency table has an
+  // `id` column (user_agent_settings is keyed by user_id).
+  let query = admin
+    .from(table)
+    .select(column, { count: "exact", head: true })
+    .eq(column, value);
   if (extra?.eq) {
     for (const [k, v] of Object.entries(extra.eq)) {
       query = query.eq(k, v);
@@ -40,7 +54,14 @@ async function countEq(
   }
   const { count, error } = await query;
   if (error) {
-    throw new Error(`${table}: ${error.message}`);
+    throw new TestUserDeletionOperationError({
+      context: {
+        dependencyKey: dependency?.key ?? table,
+        dependencyLabel: dependency?.label ?? "Dependency summary",
+        stage: "dependency_summary",
+      },
+      cause: error,
+    });
   }
   return count ?? 0;
 }
@@ -55,7 +76,19 @@ async function listOwnedScoped(
     .select("id, scope, status")
     .eq("owner_user_id", userId);
   if (error) {
-    throw new Error(`${table}: ${error.message}`);
+    throw new TestUserDeletionOperationError({
+      context: {
+        dependencyKey: table,
+        dependencyLabel:
+          table === "forms"
+            ? "Owned forms"
+            : table === "collections"
+              ? "Owned collections"
+              : "Owned fields",
+        stage: "dependency_summary",
+      },
+      cause: error,
+    });
   }
   return (data ?? []) as Array<{
     id: number;
@@ -91,7 +124,14 @@ export async function buildTestUserDeletionSummary(
     .eq("id", userId)
     .maybeSingle();
   if (profileError) {
-    throw new Error(profileError.message);
+    throw new TestUserDeletionOperationError({
+      context: {
+        dependencyKey: "profile",
+        dependencyLabel: "Profile",
+        stage: "dependency_summary",
+      },
+      cause: profileError,
+    });
   }
   if (!profile) {
     throw new Error("Profile not found.");
@@ -161,11 +201,12 @@ export async function buildTestUserDeletionSummary(
     await countEq(admin, "packet_forms", "owner_user_id", userId),
   );
 
-  const { data: packetIds } = await admin
-    .from("packets")
-    .select("id")
-    .eq("owner_user_id", userId);
-  const packetIdList = (packetIds ?? []).map((r) => r.id as number);
+  const packetIdList = (await selectIdsEq(
+    admin,
+    "packets",
+    "owner_user_id",
+    userId,
+  )) as number[];
   let fieldInstanceCount = 0;
   if (packetIdList.length > 0) {
     const { count, error } = await admin
@@ -173,7 +214,14 @@ export async function buildTestUserDeletionSummary(
       .select("id", { count: "exact", head: true })
       .in("packet_id", packetIdList);
     if (error) {
-      throw new Error(error.message);
+      throw new TestUserDeletionOperationError({
+        context: {
+          dependencyKey: "field_instances",
+          dependencyLabel: "Field instances",
+          stage: "dependency_summary",
+        },
+        cause: error,
+      });
     }
     fieldInstanceCount = count ?? 0;
   }
@@ -205,10 +253,20 @@ export async function buildTestUserDeletionSummary(
   );
   pushBucket(
     buckets,
-    "user_agent_settings",
-    "Agent settings",
-    "safe_to_delete",
-    await countEq(admin, "user_agent_settings", "user_id", userId),
+    AGENT_SETTINGS_DEPENDENCY.summaryKey,
+    AGENT_SETTINGS_DEPENDENCY.label,
+    AGENT_SETTINGS_DEPENDENCY.classification,
+    await countEq(
+      admin,
+      AGENT_SETTINGS_DEPENDENCY.tableName,
+      AGENT_SETTINGS_DEPENDENCY.ownershipColumn,
+      userId,
+      undefined,
+      {
+        key: AGENT_SETTINGS_DEPENDENCY.summaryKey,
+        label: AGENT_SETTINGS_DEPENDENCY.label,
+      },
+    ),
   );
   pushBucket(
     buckets,
@@ -285,40 +343,46 @@ export async function buildTestUserDeletionSummary(
   );
 
   // Historical — retain rows, null actor refs
-  const { count: publishedCount } = await admin
-    .from("forms")
-    .select("id", { count: "exact", head: true })
-    .eq("published_by_user_id", userId);
+  const publishedCount = await countEq(
+    admin,
+    "forms",
+    "published_by_user_id",
+    userId,
+  );
   pushBucket(
     buckets,
     "published_by",
     "Forms published-by references",
     "historical_retain",
-    publishedCount ?? 0,
+    publishedCount,
   );
 
-  const { count: stateEventCount } = await admin
-    .from("form_state_events")
-    .select("id", { count: "exact", head: true })
-    .eq("performed_by_user_id", userId);
+  const stateEventCount = await countEq(
+    admin,
+    "form_state_events",
+    "performed_by_user_id",
+    userId,
+  );
   pushBucket(
     buckets,
     "form_state_events",
     "Form state events (actor retained via snapshot / null FK)",
     "historical_retain",
-    stateEventCount ?? 0,
+    stateEventCount,
   );
 
-  const { count: auditCount } = await admin
-    .from("audit_events")
-    .select("id", { count: "exact", head: true })
-    .eq("actor_user_id", userId);
+  const auditCount = await countEq(
+    admin,
+    "audit_events",
+    "actor_user_id",
+    userId,
+  );
   pushBucket(
     buckets,
     "audit_events",
     "Audit events",
     "historical_retain",
-    auditCount ?? 0,
+    auditCount,
   );
 
   pushBucket(
@@ -366,7 +430,7 @@ async function deleteStoragePrefix(
       if (/not found|does not exist/i.test(error.message)) {
         continue;
       }
-      throw new Error(`${bucket}/${path}: ${error.message}`);
+      throw error;
     }
     const files: string[] = [];
     for (const item of data ?? []) {
@@ -382,7 +446,7 @@ async function deleteStoragePrefix(
         .from(bucket)
         .remove(files);
       if (removeError) {
-        throw new Error(removeError.message);
+        throw removeError;
       }
       deleted += files.length;
     }
@@ -403,9 +467,38 @@ async function deleteByIds(
     .delete({ count: "exact" })
     .in("id", ids);
   if (error) {
-    throw new Error(`${table} delete: ${error.message}`);
+    throw error;
   }
   return count ?? ids.length;
+}
+
+async function selectIdsEq(
+  admin: AdminClient,
+  table: string,
+  column: string,
+  value: string,
+): Promise<Array<number | string>> {
+  const { data, error } = await admin
+    .from(table)
+    .select("id")
+    .eq(column, value);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.id as number | string);
+}
+
+async function selectIdsIn(
+  admin: AdminClient,
+  table: string,
+  column: string,
+  values: Array<number | string>,
+): Promise<Array<number | string>> {
+  if (values.length === 0) return [];
+  const { data, error } = await admin
+    .from(table)
+    .select("id")
+    .in(column, values);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.id as number | string);
 }
 
 export type PermanentDeleteTestUserResult =
@@ -419,6 +512,7 @@ export type PermanentDeleteTestUserResult =
   | {
       ok: false;
       error: string;
+      failure?: PublicDeletionFailure;
       userId?: string;
       email?: string | null;
       steps?: CleanupStepResult[];
@@ -484,9 +578,25 @@ export async function permanentlyDeleteTestUser(options: {
 
   const userId = options.targetUserId;
   let authDeleted = false;
+  let authDeletionAttempted = false;
+  let failureContext: {
+    dependencyKey: string;
+    dependencyLabel: string;
+    stage: DeletionFailureStage;
+    fallbackExplanation?: string;
+  } = {
+    dependencyKey: "application_data",
+    dependencyLabel: "Application data",
+    stage: "application_cleanup",
+  };
 
   try {
     // Snapshot first (idempotent upsert)
+    failureContext = {
+      dependencyKey: "snapshot",
+      dependencyLabel: "Deleted-user snapshot",
+      stage: "snapshot",
+    };
     const { error: snapError } = await admin.from("deleted_user_snapshots").upsert(
       {
         auth_user_id: userId,
@@ -506,10 +616,15 @@ export async function permanentlyDeleteTestUser(options: {
       { onConflict: "auth_user_id" },
     );
     if (snapError) {
-      throw new Error(`snapshot: ${snapError.message}`);
+      throw snapError;
     }
     steps.push({ step: "snapshot", status: "ok", count: 1 });
 
+    failureContext = {
+      dependencyKey: "storage",
+      dependencyLabel: "Private storage objects",
+      stage: "storage",
+    };
     const storagePrefix = `users/${userId}`;
     const templatesDeleted = await deleteStoragePrefix(
       admin,
@@ -527,25 +642,33 @@ export async function permanentlyDeleteTestUser(options: {
       count: templatesDeleted + docsDeleted,
     });
 
-    const { data: packets } = await admin
-      .from("packets")
-      .select("id")
-      .eq("owner_user_id", userId);
-    const packetIds = (packets ?? []).map((p) => p.id as number);
+    failureContext = {
+      dependencyKey: "private_application_data",
+      dependencyLabel: "Private application data",
+      stage: "application_cleanup",
+    };
+    const packetIds = (await selectIdsEq(
+      admin,
+      "packets",
+      "owner_user_id",
+      userId,
+    )) as number[];
 
     if (packetIds.length > 0) {
-      const { data: instances } = await admin
-        .from("field_instances")
-        .select("id")
-        .in("packet_id", packetIds);
-      const instanceIds = (instances ?? []).map((r) => r.id as number);
+      const instanceIds = (await selectIdsIn(
+        admin,
+        "field_instances",
+        "packet_id",
+        packetIds,
+      )) as number[];
 
       if (instanceIds.length > 0) {
-        const { data: mappings } = await admin
-          .from("field_instance_mappings")
-          .select("id")
-          .in("field_instance_id", instanceIds);
-        const mappingIds = (mappings ?? []).map((r) => r.id as number);
+        const mappingIds = (await selectIdsIn(
+          admin,
+          "field_instance_mappings",
+          "field_instance_id",
+          instanceIds,
+        )) as number[];
         steps.push({
           step: "field_instance_mappings",
           status: "deleted",
@@ -561,31 +684,35 @@ export async function permanentlyDeleteTestUser(options: {
         steps.push({ step: "field_instances", status: "skipped", count: 0 });
       }
 
-      const { data: packetForms } = await admin
-        .from("packet_forms")
-        .select("id")
-        .in("packet_id", packetIds);
+      const packetFormIds = await selectIdsIn(
+        admin,
+        "packet_forms",
+        "packet_id",
+        packetIds,
+      );
       steps.push({
         step: "packet_forms",
         status: "deleted",
         count: await deleteByIds(
           admin,
           "packet_forms",
-          (packetForms ?? []).map((r) => r.id as number),
+          packetFormIds,
         ),
       });
 
-      const { data: packetContacts } = await admin
-        .from("packet_contacts")
-        .select("id")
-        .in("packet_id", packetIds);
+      const packetContactIds = await selectIdsIn(
+        admin,
+        "packet_contacts",
+        "packet_id",
+        packetIds,
+      );
       steps.push({
         step: "packet_contacts",
         status: "deleted",
         count: await deleteByIds(
           admin,
           "packet_contacts",
-          (packetContacts ?? []).map((r) => r.id as number),
+          packetContactIds,
         ),
       });
 
@@ -606,23 +733,26 @@ export async function permanentlyDeleteTestUser(options: {
       }
     }
 
-    const { data: properties } = await admin
-      .from("properties")
-      .select("id")
-      .eq("owner_user_id", userId);
-    const propertyIds = (properties ?? []).map((p) => p.id as number);
+    const propertyIds = (await selectIdsEq(
+      admin,
+      "properties",
+      "owner_user_id",
+      userId,
+    )) as number[];
     if (propertyIds.length > 0) {
-      const { data: hoas } = await admin
-        .from("property_hoas")
-        .select("id")
-        .in("property_id", propertyIds);
+      const hoaIds = await selectIdsIn(
+        admin,
+        "property_hoas",
+        "property_id",
+        propertyIds,
+      );
       steps.push({
         step: "property_hoas",
         status: "deleted",
         count: await deleteByIds(
           admin,
           "property_hoas",
-          (hoas ?? []).map((r) => r.id as number),
+          hoaIds,
         ),
       });
       steps.push({
@@ -635,45 +765,51 @@ export async function permanentlyDeleteTestUser(options: {
       steps.push({ step: "properties", status: "skipped", count: 0 });
     }
 
-    const { data: contacts } = await admin
-      .from("contacts")
-      .select("id")
-      .eq("owner_user_id", userId);
+    const contactIds = await selectIdsEq(
+      admin,
+      "contacts",
+      "owner_user_id",
+      userId,
+    );
     steps.push({
       step: "contacts",
       status: "deleted",
       count: await deleteByIds(
         admin,
         "contacts",
-        (contacts ?? []).map((r) => r.id as number),
+        contactIds,
       ),
     });
 
-    const { data: reps } = await admin
-      .from("representation_agreements")
-      .select("id")
-      .eq("owner_user_id", userId);
+    const representationAgreementIds = await selectIdsEq(
+      admin,
+      "representation_agreements",
+      "owner_user_id",
+      userId,
+    );
     steps.push({
       step: "representation_agreements",
       status: "deleted",
       count: await deleteByIds(
         admin,
         "representation_agreements",
-        (reps ?? []).map((r) => r.id as number),
+        representationAgreementIds,
       ),
     });
 
-    const { data: defaults } = await admin
-      .from("field_defaults")
-      .select("id")
-      .eq("owner_user_id", userId);
+    const fieldDefaultIds = await selectIdsEq(
+      admin,
+      "field_defaults",
+      "owner_user_id",
+      userId,
+    );
     steps.push({
       step: "field_defaults",
       status: "deleted",
       count: await deleteByIds(
         admin,
         "field_defaults",
-        (defaults ?? []).map((r) => r.id as number),
+        fieldDefaultIds,
       ),
     });
 
@@ -682,17 +818,19 @@ export async function permanentlyDeleteTestUser(options: {
     );
     const privateFormIds = privateForms.map((f) => f.id);
     if (privateFormIds.length > 0) {
-      const { data: mappings } = await admin
-        .from("form_field_mappings")
-        .select("id")
-        .in("form_id", privateFormIds);
+      const mappingIds = await selectIdsIn(
+        admin,
+        "form_field_mappings",
+        "form_id",
+        privateFormIds,
+      );
       steps.push({
         step: "private_form_mappings",
         status: "deleted",
         count: await deleteByIds(
           admin,
           "form_field_mappings",
-          (mappings ?? []).map((r) => r.id as number),
+          mappingIds,
         ),
       });
       steps.push({
@@ -710,14 +848,16 @@ export async function permanentlyDeleteTestUser(options: {
     ).filter((c) => c.scope === "PRIVATE");
     const privateCollectionIds = privateCollections.map((c) => c.id);
     if (privateCollectionIds.length > 0) {
-      const { data: cf } = await admin
-        .from("collection_forms")
-        .select("id")
-        .in("collection_id", privateCollectionIds);
+      const collectionFormIds = await selectIdsIn(
+        admin,
+        "collection_forms",
+        "collection_id",
+        privateCollectionIds,
+      );
       await deleteByIds(
         admin,
         "collection_forms",
-        (cf ?? []).map((r) => r.id as number),
+        collectionFormIds,
       );
     }
     steps.push({
@@ -740,34 +880,51 @@ export async function permanentlyDeleteTestUser(options: {
     });
 
     // Null historical refs (also covered by ON DELETE SET NULL, but explicit for clarity)
-    await admin
+    failureContext = {
+      dependencyKey: "historical_references",
+      dependencyLabel: "Historical references",
+      stage: "historical_references",
+    };
+    const historicalErrors: unknown[] = [];
+    const { error: publishedByError } = await admin
       .from("forms")
       .update({ published_by_user_id: null })
       .eq("published_by_user_id", userId);
-    await admin
+    historicalErrors.push(publishedByError);
+    const { error: stateEventError } = await admin
       .from("form_state_events")
       .update({ performed_by_user_id: null })
       .eq("performed_by_user_id", userId);
-    await admin
+    historicalErrors.push(stateEventError);
+    const { error: fieldDefaultActorError } = await admin
       .from("field_defaults")
       .update({ created_by_user_id: null, updated_by_user_id: null })
       .or(`created_by_user_id.eq.${userId},updated_by_user_id.eq.${userId}`);
-    await admin
+    historicalErrors.push(fieldDefaultActorError);
+    const { error: copiedByError } = await admin
       .from("forms")
       .update({ copied_by_user_id: null })
       .eq("copied_by_user_id", userId);
-    await admin
+    historicalErrors.push(copiedByError);
+    const { error: copiedFromOwnerError } = await admin
       .from("forms")
       .update({ copied_from_owner_user_id: null })
       .eq("copied_from_owner_user_id", userId);
-    await admin
+    historicalErrors.push(copiedFromOwnerError);
+    const { error: invitedByError } = await admin
       .from("profiles")
       .update({ invited_by_user_id: null })
       .eq("invited_by_user_id", userId);
-    await admin
+    historicalErrors.push(invitedByError);
+    const { error: auditSettingsError } = await admin
       .from("audit_settings")
       .update({ last_changed_by_user_id: null })
       .eq("last_changed_by_user_id", userId);
+    historicalErrors.push(auditSettingsError);
+    const historicalError = historicalErrors.find(Boolean);
+    if (historicalError) {
+      throw historicalError;
+    }
 
     steps.push({
       step: "null_historical_refs",
@@ -775,54 +932,69 @@ export async function permanentlyDeleteTestUser(options: {
       detail: "Actor/publisher FKs nulled; audit_events retained",
     });
 
-    // CASCADE tables — delete explicitly for clearer step reporting / idempotency
-    await admin.from("organization_members").delete().eq("user_id", userId);
-    steps.push({ step: "organization_members", status: "deleted" });
-
-    await admin.from("user_agent_settings").delete().eq("user_id", userId);
-    steps.push({ step: "user_agent_settings", status: "deleted" });
-
-    await admin.from("user_preferences").delete().eq("user_id", userId);
-    steps.push({ step: "user_preferences", status: "deleted" });
-
-    const { error: profileDeleteError } = await admin
-      .from("profiles")
-      .delete()
-      .eq("id", userId);
-    if (profileDeleteError) {
-      // Profile may already be gone on retry after Auth delete failed previously.
-      if (!/no rows|not found|0 rows/i.test(profileDeleteError.message)) {
-        const { data: stillThere } = await admin
+    const identityCleanup = await runRetrySafeIdentityCleanup({
+      memberships: async () => {
+        const { error, count } = await admin
+          .from("organization_members")
+          .delete({ count: "exact" })
+          .eq("user_id", userId);
+        return { error: error ?? undefined, count: count ?? 0 };
+      },
+      agentSettings: async () => {
+        const { error, count } = await admin
+          .from(AGENT_SETTINGS_DEPENDENCY.tableName)
+          .delete({ count: "exact" })
+          .eq(AGENT_SETTINGS_DEPENDENCY.ownershipColumn, userId);
+        return { error: error ?? undefined, count: count ?? 0 };
+      },
+      preferences: async () => {
+        const { error, count } = await admin
+          .from("user_preferences")
+          .delete({ count: "exact" })
+          .eq("user_id", userId);
+        return { error: error ?? undefined, count: count ?? 0 };
+      },
+      profile: async () => {
+        const { error, count } = await admin
           .from("profiles")
-          .select("id")
-          .eq("id", userId)
-          .maybeSingle();
-        if (stillThere) {
-          throw new Error(`profile: ${profileDeleteError.message}`);
+          .delete({ count: "exact" })
+          .eq("id", userId);
+        return { error: error ?? undefined, count: count ?? 0 };
+      },
+      authUser: async () => {
+        const { error } = await admin.auth.admin.deleteUser(userId, false);
+        if (error && /not found|user not found/i.test(error.message)) {
+          return { alreadyAbsent: true };
         }
-      }
+        return { error: error ?? undefined, count: error ? 0 : 1 };
+      },
+    });
+    authDeletionAttempted = identityCleanup.authDeletionAttempted;
+    if (!identityCleanup.ok) {
+      failureContext = {
+        dependencyKey:
+          identityCleanup.failedOperation === "agentSettings"
+            ? AGENT_SETTINGS_DEPENDENCY.summaryKey
+            : identityCleanup.failedStep,
+        dependencyLabel: identityCleanup.failedLabel,
+        stage:
+          identityCleanup.failedOperation === "authUser"
+            ? "auth_deletion"
+            : "identity_cleanup",
+      };
+      steps.push(...identityCleanup.steps);
+      throw identityCleanup.error;
     }
-    steps.push({ step: "profile", status: "deleted", count: 1 });
+    steps.push(...identityCleanup.steps);
+    authDeleted = identityCleanup.authDeleted;
 
-    const { error: authDeleteError } = await admin.auth.admin.deleteUser(
-      userId,
-      false,
-    );
-    if (authDeleteError) {
-      // Idempotent: Auth user already gone
-      if (!/not found|user not found/i.test(authDeleteError.message)) {
-        throw new Error(`auth delete: ${authDeleteError.message}`);
-      }
-      steps.push({
-        step: "auth_user",
-        status: "skipped",
-        detail: "Auth user already absent",
-      });
-    } else {
-      authDeleted = true;
-      steps.push({ step: "auth_user", status: "deleted", count: 1 });
-    }
-
+    failureContext = {
+      dependencyKey: "audit",
+      dependencyLabel: "Deletion audit record",
+      stage: "audit",
+      fallbackExplanation:
+        "The user cleanup completed, but the mandatory deletion audit could not be recorded. Auth deletion was attempted. Review the server log reference before retrying.",
+    };
     await recordAuditEvent({
       actorUserId: options.actorUserId,
       actorDisplayName: options.actorDisplayName ?? null,
@@ -852,35 +1024,72 @@ export async function permanentlyDeleteTestUser(options: {
       summary,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Deletion failed.";
-    steps.push({ step: "failed", status: "failed", detail: message });
-
-    await recordAuditEvent({
-      actorUserId: options.actorUserId,
-      actorDisplayName: options.actorDisplayName ?? null,
-      actorRoleSnapshot: "ADMIN",
-      eventCategory: "security",
-      action: "test_user_deletion_failed",
-      targetEntityType: "profile",
-      targetEntityId: userId,
-      summary: `Test user deletion failed for ${summary.email ?? userId}.`,
-      metadata: {
-        deletedUserId: userId,
-        failure: message,
-        authDeleted,
-        stepStatuses: steps.map((s) => ({
-          step: s.step,
-          status: s.status,
-        })),
-      },
-      mandatory: true,
-      success: false,
-      failureClassification: "partial_or_failed_cleanup",
+    const operationError =
+      error instanceof TestUserDeletionOperationError
+        ? error
+        : new TestUserDeletionOperationError({
+            context: failureContext,
+            cause: error,
+            steps,
+            authDeletionAttempted,
+          });
+    const { failure } = operationError;
+    steps.push({
+      step: failure.dependencyKey,
+      status: "failed",
+      detail: `See server log reference ${failure.reference}.`,
     });
+
+    console.error("Test-user deletion failed", {
+      reference: failure.reference,
+      dependencyKey: failure.dependencyKey,
+      stage: failure.stage,
+      databaseCode: failure.databaseCode ?? null,
+      authDeletionAttempted,
+      authDeleted,
+      completedSteps: failure.completedSteps,
+      internalMessage: internalDeletionErrorMessage(error),
+    });
+
+    try {
+      await recordAuditEvent({
+        actorUserId: options.actorUserId,
+        actorDisplayName: options.actorDisplayName ?? null,
+        actorRoleSnapshot: "ADMIN",
+        eventCategory: "security",
+        action: "test_user_deletion_failed",
+        targetEntityType: "profile",
+        targetEntityId: userId,
+        summary: `Test user deletion failed for ${summary.email ?? userId}.`,
+        metadata: {
+          deletedUserId: userId,
+          errorReference: failure.reference,
+          dependencyKey: failure.dependencyKey,
+          failureStage: failure.stage,
+          databaseCode: failure.databaseCode ?? null,
+          partialCleanup: failure.partialCleanup,
+          authDeletionAttempted,
+          authDeleted,
+          stepStatuses: steps.map((s) => ({
+            step: s.step,
+            status: s.status,
+          })),
+        },
+        mandatory: true,
+        success: false,
+        failureClassification: "partial_or_failed_cleanup",
+      });
+    } catch (auditError) {
+      console.error("Failed to record test-user deletion failure audit", {
+        reference: failure.reference,
+        internalMessage: internalDeletionErrorMessage(auditError),
+      });
+    }
 
     return {
       ok: false,
-      error: message,
+      error: failure.explanation,
+      failure,
       userId,
       email: summary.email,
       steps,

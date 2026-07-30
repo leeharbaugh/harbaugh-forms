@@ -8,6 +8,7 @@ import {
 } from "@/app/admin/actions";
 import { generateTemporaryPassword } from "@/lib/admin/generate-temporary-password";
 import type { DeletionDependencySummary } from "@/lib/admin/test-user-deletion-policy";
+import type { PublicDeletionFailure } from "@/lib/admin/test-user-deletion-failure";
 import type { AdminUserListItem } from "@/lib/admin/list-users";
 import type { AppRole } from "@/lib/types/profile";
 import { Button } from "@/components/ui/button";
@@ -247,6 +248,8 @@ export function TestUserDeletionControls({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [deletionFailure, setDeletionFailure] =
+    useState<PublicDeletionFailure | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [summary, setSummary] = useState<DeletionDependencySummary | null>(
@@ -258,7 +261,28 @@ export function TestUserDeletionControls({
   return (
     <>
       {message ? <p className="text-xs text-success">{message}</p> : null}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {deletionFailure ? (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <p className="font-medium">
+            {deletionFailure.dependencyLabel} — {deletionFailure.stage.replaceAll("_", " ")}
+          </p>
+          <p className="mt-1">{deletionFailure.explanation}</p>
+          <p className="mt-1">{deletionFailure.retryGuidance}</p>
+          <p className="mt-1 font-mono">Reference: {deletionFailure.reference}</p>
+          {deletionFailure.databaseCode ? (
+            <p className="mt-1 font-mono">
+              Database code: {deletionFailure.databaseCode}
+            </p>
+          ) : null}
+          {deletionFailure.completedSteps.length > 0 ? (
+            <p className="mt-1">
+              Completed steps: {deletionFailure.completedSteps.join(", ")}
+            </p>
+          ) : null}
+        </div>
+      ) : error ? (
+        <p className="text-xs text-destructive">{error}</p>
+      ) : null}
       {resultSteps ? (
         <p className="text-xs text-muted-foreground">{resultSteps}</p>
       ) : null}
@@ -269,6 +293,7 @@ export function TestUserDeletionControls({
         disabled={isPending}
         onClick={() => {
           setError(null);
+          setDeletionFailure(null);
           setMessage(null);
           startTransition(async () => {
             const result = await setUserTestFlagAction({
@@ -296,11 +321,15 @@ export function TestUserDeletionControls({
           disabled={isPending}
           onClick={() => {
             setError(null);
+            setDeletionFailure(null);
             setResultSteps(null);
             startTransition(async () => {
               const preview = await previewTestUserDeletionAction(user.id);
               if (!preview.ok) {
                 setError(preview.error);
+                setDeletionFailure(
+                  "failure" in preview ? (preview.failure ?? null) : null,
+                );
                 return;
               }
               setSummary(preview.summary);
@@ -336,6 +365,7 @@ export function TestUserDeletionControls({
             return;
           }
           setError(null);
+          setDeletionFailure(null);
           startTransition(async () => {
             const result = await permanentlyDeleteTestUserAction({
               userId: user.id,
@@ -343,6 +373,7 @@ export function TestUserDeletionControls({
             });
             if (!result.ok) {
               setError(result.error);
+              setDeletionFailure(result.failure ?? null);
               if (result.steps?.length) {
                 setResultSteps(
                   result.steps
