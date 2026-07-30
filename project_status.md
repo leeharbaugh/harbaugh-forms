@@ -8,7 +8,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
 ### Production authenticated-page outage hotfix (2026-07-29)
 
-**Status:** Code hotfix deployed and automated production authentication verified; Lee's manual password-login confirmation remains required before the incident is considered fully closed.
+**Status:** **Resolved.** Code hotfix deployed, automated production authentication verified, and Lee confirmed successful normal password login on 2026-07-29 at approximately 23:06 America/Chicago.
 
 **Symptom:** Valid password submission on `https://forms.harbaughrealestate.com/auth/login` completed authentication, then the first authenticated page displayed `This page couldn’t load.`
 
@@ -70,6 +70,7 @@ The source stack was:
 - TypeScript, targeted ESLint, and `npm run build:validate`: passed
 - Vercel Preview: Ready; browser access was protected by Vercel team authentication, so the same built code was authenticated locally against development Supabase.
 - Production one-time auth confirmation succeeded twice, including logout/re-login; the authenticated packet landing page rendered and loaded rows.
+- Lee confirmed normal email/password login successfully reached the authenticated application.
 - `Admin → Organizations`, `/admin/audit`, packets 2 and 5, and one generated-document download passed.
 - Hotfix deployment runtime error logs: none.
 - Packet fingerprints remained exactly unchanged: packets `48e3a3b…4b442`, packet forms `6d24214…8a42`, field instances `162b214…1511aa`.
