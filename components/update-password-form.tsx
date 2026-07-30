@@ -22,7 +22,7 @@ export function UpdatePasswordForm({
   mode = "reset",
   ...props
 }: React.ComponentPropsWithoutRef<"div"> & {
-  mode?: "invite" | "reset";
+  mode?: "invite" | "reset" | "forced";
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -46,11 +46,17 @@ export function UpdatePasswordForm({
   };
 
   const title =
-    mode === "invite" ? "Create Your Password" : "Reset Your Password";
+    mode === "invite"
+      ? "Create Your Password"
+      : mode === "forced"
+        ? "Change Your Temporary Password"
+        : "Reset Your Password";
   const description =
     mode === "invite"
       ? "Choose a password to finish accepting your Harbaugh Forms invitation."
-      : "Please enter your new password below.";
+      : mode === "forced"
+        ? "Your administrator created this account with a temporary password. Choose a new password before continuing."
+        : "Please enter your new password below.";
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>

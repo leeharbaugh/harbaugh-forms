@@ -30,6 +30,8 @@ export type AdminUserListItem = {
   agentEmail: string | null;
   trecLicenseNumber: string | null;
   emailConfirmedAt: string | null;
+  isTestUser: boolean;
+  mustChangePassword: boolean;
 };
 
 function isAgentSettingsComplete(row: {
@@ -79,7 +81,7 @@ export async function listAdminUsers(): Promise<AdminUserListItem[]> {
   const { data: profiles, error: profilesError } = await admin
     .from("profiles")
     .select(
-      "id, email, app_role, status, onboarding_status, preferred_name, display_name, first_name, middle_name, last_name, primary_organization_id, invited_at, activated_at, create_date",
+      "id, email, app_role, status, onboarding_status, preferred_name, display_name, first_name, middle_name, last_name, primary_organization_id, invited_at, activated_at, create_date, is_test_user, must_change_password",
     );
   if (profilesError) {
     throw new Error(profilesError.message);
@@ -182,6 +184,8 @@ export async function listAdminUsers(): Promise<AdminUserListItem[]> {
       trecLicenseNumber:
         (agentByUser.get(user.id)?.trec_license_number as string | null) ?? null,
       emailConfirmedAt: user.email_confirmed_at ?? null,
+      isTestUser: Boolean(profile?.is_test_user),
+      mustChangePassword: Boolean(profile?.must_change_password),
     };
   });
 

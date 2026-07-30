@@ -1,10 +1,122 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-07-29 (audit logging live in production)
+**As of:** 2026-07-30 (admin-user migration applied to production Supabase)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
+
+### Production admin-user migration (2026-07-30)
+
+**Status:** **Production database migration applied.** Application feature code is **not** yet on `main` / Vercel Production.
+
+| Item | Value |
+|------|--------|
+| Git working branch | `feature/admin-test-user-cleanup-manual-create` (uncommitted feature work present) |
+| `main` / HEAD commit | `02c95d725111172f5f4eb4dd8561104c09c6f64d` — *Close production authentication outage (#27)* |
+| Production Supabase | `harbaugh-forms-prod` / `eetonalyyyssvkyfdoxh` |
+| Migration applied | `20260730120000_admin_test_user_manual_create.sql` only |
+| CLI after ops | Relinked to development `ewxsxwzezhkeawnjvigx` |
+
+#### Migration history (production)
+
+**Before push:** all prior versions matched local/remote through `20260730010000`; `20260730120000` local-only (remote empty). No older pending migrations or history mismatches.
+
+**Dry-run:** would push only `20260730120000_admin_test_user_manual_create.sql`.
+
+**Push:** applied successfully (`supabase db push --yes` while linked to `eetonalyyyssvkyfdoxh`). Notices only: drop-if-exists for new trigger/policy (expected first apply).
+
+**After push:** local and remote both include `20260730120000`; histories match.
+
+#### Schema verification (production, read-only)
+
+| Object | Result |
+|--------|--------|
+| `profiles.is_test_user` | boolean NOT NULL default `false` |
+| `profiles.must_change_password` | boolean NOT NULL default `false` |
+| Indexes `profiles_is_test_user_idx`, `profiles_must_change_password_idx`, `deleted_user_snapshots_deleted_by_idx` | present |
+| Trigger + function `profiles_protect_admin_user_flags` | present |
+| `forms_published_by_user_id_fkey` / `form_state_events_performed_by_user_id_fkey` | ON DELETE SET NULL |
+| `deleted_user_snapshots` | table present; RLS on; `deleted_user_snapshots_admin_select`; `authenticated` SELECT grant |
+
+No production users were created, deleted, or altered. No `db reset`. No migration repair.
+
+#### Vercel Production application status
+
+| Item | Result |
+|------|--------|
+| Current prod deployment | `dpl_C3CmJx1jHfW4qaKsHQH6AswDGhhn` (`harbaugh-forms-77yx2d8nw-…`) |
+| Serving | `https://forms.harbaughrealestate.com` (alias on this deployment) |
+| Commit | `02c95d725111172f5f4eb4dd8561104c09c6f64d` (matches `main`) |
+| Admin-user app features on this deploy? | **No** — migration file and app changes are not on `main` (404 on GitHub `main` for the migration path; feature remains local/uncommitted on the feature branch) |
+| Redeploy `main`? | **Not needed** — Production already serves current approved `main` |
+
+**Warning:** Production schema now includes the admin-user columns/objects, but the Admin Users UI / server actions for test-user cleanup, manual create, and forced password change are **not** live until the feature is committed, merged to `main`, and deployed. Additive schema alone does not change existing user behavior (`default false` flags).
+
+Lee manual smoke test: deferred (not performed).
+
+### Global Admin user cleanup and manual creation (2026-07-30)
+
+**Status:** Implemented on feature branch `feature/admin-test-user-cleanup-manual-create`. Migration applied to **development** Supabase (`ewxsxwzezhkeawnjvigx`) and **production** Supabase (`eetonalyyyssvkyfdoxh`). Application rollout to Vercel Production still pending merge to `main`.
+
+**Feature branch:** `feature/admin-test-user-cleanup-manual-create`
+
+#### Dependency graph (documented before hard delete)
+
+Hard Auth deletion does **not** cascade safely for all owned business data. Actual FK / ownership map used by the cleanup:
+
+| Class | Tables / resources | Handling |
+|-------|--------------------|----------|
+| CASCADE with `auth.users` | `profiles`, `organization_members`, `user_agent_settings`, `user_preferences` | Explicit delete then Auth hard-delete (idempotent) |
+| Safe private owner data | contacts, properties (+ HOAs), packets (+ packet_forms, packet_contacts, field_instances/mappings), representation_agreements, field_defaults, PRIVATE forms/collections/fields (+ private form mappings), Storage `users/{uid}/**` | Hard-deleted in FK-safe order before Auth delete |
+| Blocking | GLOBAL/ORGANIZATION forms, collections, or fields still owned by the user (non-DELETED) | Blocks streamlined deletion until reassigned/removed |
+| Historical retain | `audit_events` (soft actor refs), `form_state_events`, `forms.published_by_user_id` | Rows retained; actor/publisher FKs nulled (`ON DELETE SET NULL`); `deleted_user_snapshots` written |
+| Guards | Self, non-test users, final active Global Admin | Rejected server-side |
+
+#### Schema
+
+* Migration: `supabase/migrations/20260730120000_admin_test_user_manual_create.sql`
+* `profiles.is_test_user boolean not null default false`
+* `profiles.must_change_password boolean not null default false`
+* Trigger `profiles_protect_admin_user_flags` (service-role / `auth.uid() is null` allowed; users may clear own `must_change_password`)
+* `deleted_user_snapshots` (admin SELECT; service-role writes)
+* `forms.published_by_user_id` and `form_state_events.performed_by_user_id` → `ON DELETE SET NULL`
+
+#### Application surfaces
+
+* Admin Users: separate **Invite (send email)** vs **Create manually (no email)**; Test user badge; mark/unmark test user; permanent delete with dependency summary + exact-email confirmation
+* Manual create uses `auth.admin.createUser` with `email_confirm: true`, provisions profile/membership/agent settings, sets `must_change_password=true`, returns temporary password **once**
+* Forced password change: `/auth/change-password` + proxy gate + login redirect; cleared after successful `updateUser` password
+* All create/delete/preview/test-flag actions call `requireAppAdmin()`; create/delete rate-limited; CSRF remains Next.js server-action Origin protection
+* Hard Auth delete: `deleteUser(userId, false)` so email can be reused (no Auth soft-delete)
+
+#### Validation (development / pre-merge re-run 2026-07-30)
+
+| Check | Result |
+|-------|--------|
+| `test:admin-user-lifecycle` | 17 passed |
+| `test:admin-invite` (includes lifecycle) | 31 passed |
+| `test:auth-confirm` | 27 passed |
+| `test:auth-bootstrap` | 6 passed |
+| `test:admin-audit` | 11 passed |
+| `test:ui-lists` | passed |
+| `test:library-permissions` | passed |
+| `test:secure-publish` | passed |
+| `test:field-defaults` / `test:form-copy-global` | passed |
+| `test:storage-paths` | 18 passed |
+| `test:supabase-guard` | 8 passed |
+| `test:user-preferences` / `test:packet-form-lifecycle` | passed |
+| `tsc --noEmit` | passed |
+| Targeted ESLint | passed |
+| `npm run build:validate` | passed |
+| Dev migration `20260730120000` | present local+remote on `ewxsxwzezhkeawnjvigx` |
+| Prod migration `20260730120000` | already applied (no rewrite; no second push) |
+
+#### Deferred / production
+
+* Production **schema** migration applied 2026-07-30 (see section above)
+* Application merge to `main` + Vercel Production deploy still required for Admin UI/actions
+* Interactive browser smoke of manual create + delete deferred to Lee
 
 ### Production authenticated-page outage hotfix (2026-07-29)
 

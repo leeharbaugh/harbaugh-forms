@@ -31,6 +31,7 @@ export type AuthConfirmErrorCode =
   | "missing_organization_membership";
 
 export const AUTH_UPDATE_PASSWORD_PATH = "/auth/update-password";
+export const AUTH_CHANGE_PASSWORD_PATH = "/auth/change-password";
 export const AUTH_LOGIN_PATH = "/auth/login";
 export const AUTH_ERROR_PATH = "/auth/error";
 
