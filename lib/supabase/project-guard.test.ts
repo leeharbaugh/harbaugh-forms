@@ -5,6 +5,7 @@ import {
   DEV_SUPABASE_PROJECT_REF,
   PROD_SUPABASE_PROJECT_REF,
   assertAppSupabaseTargetAllowed,
+  detectAppSupabaseRuntime,
   extractSupabaseProjectRef,
 } from "./project-guard.ts";
 
@@ -61,6 +62,7 @@ describe("assertAppSupabaseTargetAllowed", () => {
       () =>
         assertAppSupabaseTargetAllowed(
           `https://${PROD_SUPABASE_PROJECT_REF}.supabase.co`,
+          "server",
         ),
       /production Supabase project/,
     );
@@ -73,6 +75,7 @@ describe("assertAppSupabaseTargetAllowed", () => {
     assert.doesNotThrow(() =>
       assertAppSupabaseTargetAllowed(
         `https://${PROD_SUPABASE_PROJECT_REF}.supabase.co`,
+        "server",
       ),
     );
     restoreEnv();
@@ -85,9 +88,48 @@ describe("assertAppSupabaseTargetAllowed", () => {
       () =>
         assertAppSupabaseTargetAllowed(
           `https://${PROD_SUPABASE_PROJECT_REF}.supabase.co`,
+          "server",
         ),
       /production Supabase project/,
     );
     restoreEnv();
+  });
+
+  it("allows the production public URL in browser runtime", () => {
+    delete process.env.VERCEL_ENV;
+    delete process.env[ALLOW_PRODUCTION_APP_ENV];
+    assert.doesNotThrow(() =>
+      assertAppSupabaseTargetAllowed(
+        `https://${PROD_SUPABASE_PROJECT_REF}.supabase.co`,
+        "browser",
+      ),
+    );
+    restoreEnv();
+  });
+
+  it("does not require server-only Vercel variables in a browser", () => {
+    delete process.env.VERCEL_ENV;
+    delete process.env[ALLOW_PRODUCTION_APP_ENV];
+    Object.defineProperty(globalThis, "window", {
+      value: {},
+      configurable: true,
+    });
+    try {
+      assert.equal(detectAppSupabaseRuntime(), "browser");
+      assert.doesNotThrow(() =>
+        assertAppSupabaseTargetAllowed(
+          `https://${PROD_SUPABASE_PROJECT_REF}.supabase.co`,
+        ),
+      );
+    } finally {
+      Reflect.deleteProperty(globalThis, "window");
+      restoreEnv();
+    }
+  });
+});
+
+describe("detectAppSupabaseRuntime", () => {
+  it("detects the Node test process as server runtime", () => {
+    assert.equal(detectAppSupabaseRuntime(), "server");
   });
 });

@@ -9,6 +9,12 @@ export const PROD_SUPABASE_PROJECT_REF = "eetonalyyyssvkyfdoxh";
 /** Explicit override for rare local debugging against production app credentials. */
 export const ALLOW_PRODUCTION_APP_ENV = "HARBAUGH_ALLOW_PRODUCTION_APP";
 
+export type AppSupabaseRuntime = "server" | "browser";
+
+export function detectAppSupabaseRuntime(): AppSupabaseRuntime {
+  return typeof window === "undefined" ? "server" : "browser";
+}
+
 export function extractSupabaseProjectRef(
   url: string | null | undefined,
 ): string | null {
@@ -27,9 +33,17 @@ export function extractSupabaseProjectRef(
  */
 export function assertAppSupabaseTargetAllowed(
   url: string | null | undefined,
+  runtime: AppSupabaseRuntime = detectAppSupabaseRuntime(),
 ): void {
   const ref = extractSupabaseProjectRef(url);
   if (!ref || ref !== PROD_SUPABASE_PROJECT_REF) {
+    return;
+  }
+
+  // VERCEL_ENV is intentionally server-only and is not available in browser
+  // bundles. The server/build guard is authoritative; the browser uses the
+  // public URL already validated by the deployment that served the bundle.
+  if (runtime === "browser") {
     return;
   }
 
