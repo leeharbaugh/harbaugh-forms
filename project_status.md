@@ -6,6 +6,76 @@
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
+### Production authenticated-page outage hotfix (2026-07-29)
+
+**Status:** Code hotfix deployed and automated production authentication verified; Lee's manual password-login confirmation remains required before the incident is considered fully closed.
+
+**Symptom:** Valid password submission on `https://forms.harbaughrealestate.com/auth/login` completed authentication, then the first authenticated page displayed `This page couldn’t load.`
+
+**Failed deployment:**
+
+- Deployment: `dpl_7NdwNKcQBtA2YbfJCkstfFXog3Jk`
+- URL: https://harbaugh-forms-fh0syajov-lee-harbaugh-s-projects.vercel.app
+- Commit: `fe10271d43591974845f7cf98639cb5ba05c5723`
+- Created: 2026-07-29 21:09:55 America/Chicago
+- Custom domain was confirmed to point to this deployment.
+- Correlated login at approximately 21:14:21: `POST /auth/login` → 303, then authenticated `POST /` → 200. No serverless or middleware 5xx, request error ID, or server error digest was emitted.
+
+**Exact client error:**
+
+`Error: Refusing to use the production Supabase project outside Vercel Production. Local development, tests, and feature-branch builds must use development (.env.local → ewxsxwzezhkeawnjvigx). Production operational scripts must load .env.ops.production explicitly.`
+
+The source stack was:
+
+1. `assertAppSupabaseTargetAllowed` (`lib/supabase/project-guard.ts`, throw at original line 44)
+2. `assertSupabaseEnv` (`lib/supabase/env.ts:25`)
+3. browser `createClient` (`lib/supabase/client.ts:5`)
+4. first authenticated client initialization (`components/ensure-profile.tsx:17`; packet loading uses the same client)
+
+**Root cause:** `NEXT_PUBLIC_SUPABASE_URL` was correctly compiled into the browser bundle, but the guard also consulted server-only `VERCEL_ENV`. Browser runtime has no `process`/`VERCEL_ENV`, so every authenticated browser client creation misclassified the real Production deployment as non-production and threw. The Vercel server/build environment was valid; the defect was the browser/server runtime boundary.
+
+**Authentication findings:**
+
+- Supabase password authentication succeeded.
+- The server action wrote the production `sb-eetonalyyyssvkyfdoxh-auth-token` cookie.
+- The following request read the session successfully.
+- The active profile and active Davey Goosmann Realty `ORG_ADMIN` membership resolved.
+- `app_role=ADMIN` Global Admin navigation resolved.
+- Audit code was not called by login or initial application rendering.
+- No live application query referenced removed office/TREC columns.
+- The deterministic browser guard failure affected all authenticated users, not only Lee.
+
+**Hotfix:**
+
+- Branch: `hotfix/authenticated-page-load`
+- Commit: `c34874fa16e9cb9655f98f6d080272d3c226ea64`
+- PR: [#25](https://github.com/leeharbaugh/harbaugh-forms/pull/25)
+- Squash merge: `d40fe11fc03c7a035daf38e120b668b5ebb28259`
+- Production deployment: `dpl_DXQNcgWNyJocvswASrZvGQQFmGEw`
+- URL: https://harbaugh-forms-m0ywpeatl-lee-harbaugh-s-projects.vercel.app
+- Created: 2026-07-29 22:12:11 America/Chicago
+- Custom domain confirmed on the hotfix deployment.
+- Application rollback was not performed. Confirmed rollback candidate was `dpl_Fo3BCQKfDHJwQ41Ywnm57qN5TDez` / commit `7a7bace`; it was compatible with the final additive audit-only schema but unnecessary after the exact defect was proven.
+
+**Validation:**
+
+- `test:supabase-guard`: 8 passed
+- `test:auth-bootstrap`: 6 passed
+- `test:auth-confirm`: 27 passed
+- `test:admin-audit`: 11 passed
+- `test:admin-invite`: 14 passed
+- `test:admin-orgs`: 4 passed
+- `test:ui-lists`: 29 passed
+- `test:user-preferences`: 5 passed
+- TypeScript, targeted ESLint, and `npm run build:validate`: passed
+- Vercel Preview: Ready; browser access was protected by Vercel team authentication, so the same built code was authenticated locally against development Supabase.
+- Production one-time auth confirmation succeeded twice, including logout/re-login; the authenticated packet landing page rendered and loaded rows.
+- `Admin → Organizations`, `/admin/audit`, packets 2 and 5, and one generated-document download passed.
+- Hotfix deployment runtime error logs: none.
+- Packet fingerprints remained exactly unchanged: packets `48e3a3b…4b442`, packet forms `6d24214…8a42`, field instances `162b214…1511aa`.
+- Audit schema remained present (`audit_settings` singleton and `audit_events` readable); `brokerage_offices` remained absent (`PGRST205`).
+- No schema change, migration, seed, import, audit toggle, or production business-data mutation was performed.
+
 ### Admin audit logging — production rollout complete (2026-07-29)
 
 **Feature branch:** `feature/admin-brokerage-trec-audit` (deleted after merge)  
