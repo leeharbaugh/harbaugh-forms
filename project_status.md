@@ -1,16 +1,109 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-07-29
+**As of:** 2026-07-29 (audit logging live in production)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
-### Admin audit logging phase (development only — revised 2026-07-29)
+### Admin audit logging — production rollout complete (2026-07-29)
+
+**Feature branch:** `feature/admin-brokerage-trec-audit` (deleted after merge)  
+**PR:** [#24](https://github.com/leeharbaugh/harbaugh-forms/pull/24) — **squash merge**  
+**Final `main` commit:** `3b81840767ef661a2ab8e6103e0e28fc9d7cd5ce`  
+**Approved Preview (pre-merge):** https://harbaugh-forms-r82v16w95-lee-harbaugh-s-projects.vercel.app  
+**Lee Preview manual checks:** passed (all checklist items)
+
+#### Production application deployment
+
+| Item | Result |
+|------|--------|
+| Vercel Production deploy | **Ready** — https://harbaugh-forms-l10501kxw-lee-harbaugh-s-projects.vercel.app |
+| Public URL | https://forms.harbaughrealestate.com |
+| Env scope | Vercel **Production** vars (project `eetonalyyyssvkyfdoxh`) |
+| Auto DB migrate | **No** — migrations applied manually |
+
+#### Production database migrations
+
+| Step | Result |
+|------|--------|
+| Linked project before push | `eetonalyyyssvkyfdoxh` (`harbaugh-forms-prod`, us-east-1) |
+| Applied | `20260729210000_brokerage_offices_trec_audit.sql` then `20260730010000_remove_brokerage_offices_and_trec.sql` |
+| Migration history | both versions present on remote; no pending for this rollout |
+| Final schema | **audit-only**: `audit_settings` + `audit_events` present; `brokerage_offices` absent; no office FK; no TREC verification columns; no `audit_events.brokerage_office_id` |
+| Audit setting | `ordinary_logging_enabled = true` (ACTIVE singleton) |
+| Protections | append-only trigger live; RLS policies present; anon insert denied; anon settings update affects 0 rows |
+
+#### Production data preservation (before = after)
+
+| Metric | Count / fingerprint |
+|--------|---------------------|
+| Auth users | 6 |
+| profiles | 6 |
+| organizations (non-DELETED) | 1 (DGR only) |
+| organization_members | 6 |
+| user_agent_settings | 6 |
+| brokerage_settings | 1 |
+| contacts | 10 |
+| properties | 7 |
+| packets | 6 |
+| packet_forms | 18 |
+| field_instances | 185 |
+| forms | 46 |
+| collections | 4 |
+| storage buckets / listed entries | form-templates + generated-documents / 3 |
+| packets fingerprint | `48e3a3b2e7fe82870903f70c46d1b71990ce724e080579fe703d2c9774b4b442` (unchanged) |
+| packet_forms fingerprint | `6d2421499781ca2186c926051408ea30c931f6081360d31bf39dfa6934083a42` (unchanged) |
+| field_instances fingerprint | `162b2140ea26dd0bdb9a0324c52d5eaf5fe0376f0a4e3819fb5d36925e5151aa` (unchanged) |
+
+#### Identity checks
+
+| Check | Result |
+|-------|--------|
+| DGR | once — license `9006865` |
+| Dee broker | `0283607` (Dee Davey) |
+| Lee agent | `0712335` (Kenneth Harbaugh) |
+| Packets 2 & 5 | ACTIVE |
+| Packet 2 DELETED forms | ids 25, 26, 35 retained |
+
+#### Production smoke / security
+
+| Check | Result |
+|-------|--------|
+| Ordinary audit while enabled | recorded |
+| Disable ordinary logging | setting false + mandatory `audit_logging_disabled` recorded |
+| Ordinary while disabled | suppressed |
+| Re-enable | setting true + mandatory `audit_logging_enabled` recorded |
+| Append-only update/delete | blocked by trigger |
+| Anon insert audit_events | denied (RLS) |
+| Anon update audit_settings | no row change (enabled remains true) |
+| Anon select audit tables | empty |
+| Brokerage/Offices UI | not in app; unauthenticated `/admin/*` redirects to login |
+| TREC lookup | absent |
+| Manual license fields | retained |
+| Authenticated browser UI walkthrough | API/RLS smoke completed; full interactive UI login handoff via magic-link hash was not established in automation (Lee Preview UI already passed equivalent app code) |
+
+#### Cleanup
+
+| Item | Result |
+|------|--------|
+| Feature branch local/remote | **deleted** |
+| Supabase CLI after rollout | relinked to **development** `ewxsxwzezhkeawnjvigx` |
+| Local branch | `main` @ `3b81840` |
+
+#### Deferred
+
+- Broader audit event coverage beyond current modest set
+- Form resolvers still use legacy `brokerage_settings` singleton
+- Optional future authenticated UI re-check on production by Lee
+
+### Admin audit logging phase (development history — revised 2026-07-29)
+
+Historical development/Preview notes for the feature branch remain below for audit trail. **Production rollout is complete** as of the section above.
 
 **Feature branch:** `feature/admin-brokerage-trec-audit`  
 **Starting commit:** `7a7baced48d2631167fdb6d82c29479a41912e07` (main tip at branch create)  
-**Branch status:** revised after Lee Preview review to **audit-only**; brokerage-office administration and TREC lookup removed; **not merged**; **not deployed to production**; **no production migration applied**.
+**Branch status:** merged via PR #24; feature branch deleted after production validation.
 
 #### Lee Preview review (2026-07-29)
 
@@ -124,7 +217,7 @@ Cleanup migration (forward-only; applied to development only): `20260730010000_r
 | Env-safety commit | `6ebeb1351fa3ebac0639e6c9987034193d16c3d5` |
 | Remote branch | `origin/feature/admin-brokerage-trec-audit` |
 | Preview Deployment | **success / safe for manual testing** — https://harbaugh-forms-r82v16w95-lee-harbaugh-s-projects.vercel.app (dashboard: https://vercel.com/lee-harbaugh-s-projects/harbaugh-forms/BNUFPH1ApWFMvCVkW61KdjFurdxf); Preview env → development Supabase `ewxsxwzezhkeawnjvigx` |
-| Production rollout | **still pending / not authorized** |
+| Production rollout | **complete — see section above** |
 
 #### Remaining Preview smoke tests
 
@@ -165,14 +258,15 @@ Lee should confirm Organizations admin, invite with manual license, Audit Log to
 
 **Documented validation command:** `npm run build:validate` (not bare `npm run build` when validating features locally).
 
-#### Production rollout steps (**not performed / not authorized**)
+#### Production rollout steps (**completed 2026-07-29**)
 
-1. Lee review of revised branch + Preview smoke tests
-2. Merge to `main` only after approval (deploys app code; still does not migrate DB)
-3. Link CLI to `harbaugh-forms-prod` deliberately; verify ref `eetonalyyyssvkyfdoxh`
-4. Apply **both** `20260729210000_brokerage_offices_trec_audit.sql` and `20260730010000_remove_brokerage_offices_and_trec.sql` to production only (net: audit-only schema)
-5. Smoke-test Organizations, invite (manual license), audit toggle on production
-6. Confirm DGR / Lee / Dee unchanged; packet fingerprints unchanged
+1. Lee review of revised branch + Preview smoke tests — **done**
+2. Merge to `main` (PR #24 squash) — **done** (`3b81840`)
+3. Link CLI to `harbaugh-forms-prod`; verify ref `eetonalyyyssvkyfdoxh` — **done**
+4. Apply both migrations — **done**
+5. Smoke-test Organizations/audit (API + RLS) — **done**
+6. Confirm DGR / Lee / Dee + packet fingerprints unchanged — **done**
+7. Relink CLI to development — **done**
 
 ### Form #1 Buyer Rep placement corruption — investigated and repaired (2026-07-28)
 
