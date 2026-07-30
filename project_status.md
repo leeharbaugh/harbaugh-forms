@@ -120,9 +120,9 @@ Cleanup migration (forward-only; applied to development only): `20260730010000_r
 
 | Item | Status |
 |------|--------|
-| Cleanup commit | pending push |
+| Cleanup commit | `862f3b480f0f3cbf1bf0051a730805ff92757e95` |
 | Remote branch | `origin/feature/admin-brokerage-trec-audit` |
-| Preview Deployment | pending after push |
+| Preview Deployment | **success** — https://harbaugh-forms-i5pcnkson-lee-harbaugh-s-projects.vercel.app (dashboard: https://vercel.com/lee-harbaugh-s-projects/harbaugh-forms/BMHLbk9MG5S7t2YB6p8CcZNUNRtQ) |
 | Production rollout | **still pending / not authorized** |
 
 #### Remaining Preview smoke tests
