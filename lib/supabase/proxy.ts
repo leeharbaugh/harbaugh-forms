@@ -58,6 +58,30 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Force password change before any non-auth application route.
+  if (user) {
+    const path = request.nextUrl.pathname;
+    const allowedWhileForced =
+      path.startsWith("/auth") ||
+      path.startsWith("/login");
+    if (!allowedWhileForced) {
+      const userId = typeof user.sub === "string" ? user.sub : null;
+      if (userId) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("must_change_password")
+          .eq("id", userId)
+          .maybeSingle();
+        if (profile?.must_change_password === true) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/auth/change-password";
+          url.search = "";
+          return NextResponse.redirect(url);
+        }
+      }
+    }
+  }
+
   // IMPORTANT: You *must* return the supabaseResponse object as it is.
   // If you're creating a new response object with NextResponse.next() make sure to:
   // 1. Pass the request in it, like so:

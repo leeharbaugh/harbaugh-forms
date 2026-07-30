@@ -12,6 +12,123 @@ Each decision should include:
 
 ---
 
+## Test-user hard deletion (email reuse) with classified dependencies
+
+**Date:** 2026-07-30
+
+**Decision:**
+Disposable accounts marked `profiles.is_test_user = true` may be permanently removed by Global Admins through a trusted service-role workflow that hard-deletes Auth with `deleteUser(userId, false)` (not Auth soft-delete) so the email can be reused. Before confirmation, the server builds a dependency summary and classifies rows as safe to delete, blocking (must reassign), historical retain, or skipped. Private owner-scoped business data and `users/{uid}/**` storage are deleted in FK-safe order. GLOBAL/ORGANIZATION library ownership blocks deletion. Audit events and form lifecycle history are retained; publisher/actor FKs are nulled and a `deleted_user_snapshots` row preserves identity. Self-deletion and deletion of the final active Global Admin are rejected. Streamlined deletion is refused for non-test users.
+
+**Reason:**
+Ordinary deactivate/ban leaves Auth identity and blocks email reuse for disposable test accounts. Cascading Auth delete alone would leave storage orphans, fail on RESTRICT profile FKs, or silently orphan shared library ownership.
+
+**Consequences:**
+
+* Only Global Admins can invoke preview/delete; UI hiding is insufficient.
+* Partial failures return step-level results and mandatory audit (`test_user_deletion_failed` / `test_user_permanently_deleted`).
+* Legitimate shared business records are never silently destroyed.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260730120000_admin_test_user_manual_create.sql`
+* `lib/admin/delete-test-user.ts`
+* `lib/admin/test-user-deletion-policy.ts`
+* `app/admin/actions.ts`
+
+---
+
+## Manually confirmed accounts without invitation email
+
+**Date:** 2026-07-30
+
+**Decision:**
+Global Admins may create users without sending email via `auth.admin.createUser({ email, password, email_confirm: true, user_metadata })`, then provision profile, organization membership, and agent settings using the same conventions as invites. Invitation email flow remains the preferred default and is unchanged. Manual creation UI must warn that email ownership verification is bypassed. Partial failures compensate by deleting orphan Auth/application rows.
+
+**Reason:**
+Operators need confirmed test or bootstrap accounts when invitation delivery is unavailable, without opening public signup.
+
+**Consequences:**
+
+* Manual accounts start `onboarding_status = ACTIVE` (when account status is ACTIVE) with `must_change_password = true`.
+* Duplicate email checks remain server-side.
+* Compensation cleanup must not leave unexplained Auth orphans.
+
+**Related files:**
+
+* `lib/admin/create-manual-user.ts`
+* `lib/admin/manual-create-validation.ts`
+* `components/admin/admin-manual-user-controls.tsx`
+
+---
+
+## One-time temporary passwords; never persist or audit them
+
+**Date:** 2026-07-30
+
+**Decision:**
+Temporary passwords for manually created users are generated or entered by the Global Admin, returned once in the successful server-action response for immediate display, and must never be written to audit metadata, database columns, URLs, browser persistence beyond the one-time UI display, logs, or error-reporting payloads. Audit sanitizer continues to redact password-named keys.
+
+**Reason:**
+Storing temporary credentials would expand blast radius and conflict with forced password change.
+
+**Consequences:**
+
+* UI shows an explicit “shown once / cannot be retrieved later” warning.
+* Audit events record only flags such as `mustChangePassword: true`, never the secret.
+
+**Related files:**
+
+* `lib/admin/generate-temporary-password.ts`
+* `lib/audit/sanitize.ts`
+* `lib/admin/create-manual-user.ts`
+
+---
+
+## Forced password change after manual creation
+
+**Date:** 2026-07-30
+
+**Decision:**
+`profiles.must_change_password` gates application access. Manually created users start with the flag true. After login (and via proxy for authenticated non-auth routes), users are redirected to `/auth/change-password` until they successfully update their password; the flag is then cleared. Users may clear only their own flag from true→false; only admins/service-role may set it true.
+
+**Reason:**
+Administrators who set temporary passwords must not remain able to use that credential indefinitely after handoff.
+
+**Consequences:**
+
+* `/auth/*` remains reachable while forced.
+* Invite/recovery `/auth/update-password` continues to clear the flag after a successful Auth password update when present.
+
+**Related files:**
+
+* `lib/supabase/proxy.ts`
+* `app/auth/change-password/page.tsx`
+* `app/auth/actions.ts`
+
+---
+
+## Global Admin safeguards for test-user marking and deletion
+
+**Date:** 2026-07-30
+
+**Decision:**
+The currently authenticated Global Admin cannot mark themselves as a test user for streamlined deletion, cannot self-hard-delete, and cannot mark or delete the final remaining active Global Admin through this flow. Existing last-admin protections for deactivate/demote remain in force.
+
+**Reason:**
+Prevent lockout and accidental destruction of the sole administrator identity.
+
+**Consequences:**
+
+* Server actions enforce these checks independently of UI.
+* Marking additional admins as test users remains allowed only when another active admin exists.
+
+**Related files:**
+
+* `app/admin/actions.ts` (`setUserTestFlagAction`, `permanentlyDeleteTestUserAction`)
+* `lib/admin/invite-validation.ts` (`wouldRemoveFinalActiveAdmin`)
+
+---
+
 ## Production target enforcement respects the server/browser boundary
 
 **Date:** 2026-07-29

@@ -10,6 +10,13 @@ import {
   retryProvisionInvitedUser,
 } from "@/lib/admin/invite-user";
 import type { InviteUserInput } from "@/lib/admin/invite-validation";
+import { createManualConfirmedUser } from "@/lib/admin/create-manual-user";
+import type { ManualCreateUserInput } from "@/lib/admin/manual-create-validation";
+import {
+  buildTestUserDeletionSummary,
+  permanentlyDeleteTestUser,
+} from "@/lib/admin/delete-test-user";
+import { assertAdminActionRateLimit } from "@/lib/admin/rate-limit";
 import {
   addOrganizationMembership,
   updateOrganizationMembership,
@@ -83,6 +90,34 @@ export async function inviteUserAction(input: InviteUserInput) {
   }
 }
 
+export async function createManualUserAction(input: ManualCreateUserInput) {
+  try {
+    const admin = await requireAppAdmin();
+    const rate = assertAdminActionRateLimit({
+      actorUserId: admin.userId,
+      action: "create_manual_user",
+      maxPerWindow: 10,
+    });
+    if (!rate.ok) {
+      return { ok: false as const, error: rate.error };
+    }
+
+    const result = await createManualConfirmedUser({
+      createdByUserId: admin.userId,
+      createdByDisplayName: admin.profile.display_name,
+      input,
+    });
+    if (result.ok) {
+      revalidateAdminPaths([`/admin/users/${result.userId}`]);
+    }
+    // Temporary password is returned once here for the calling Global Admin.
+    // Callers must not persist it; audit/logging paths never include it.
+    return result;
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
 export async function retryProvisionUserAction(options: {
   userId: string;
   input: InviteUserInput;
@@ -112,6 +147,114 @@ export async function resendInvitationAction(userId: string) {
       origin,
       actorUserId: actor.userId,
     });
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function setUserTestFlagAction(options: {
+  userId: string;
+  isTestUser: boolean;
+}) {
+  try {
+    const actor = await requireAppAdmin();
+    if (options.userId === actor.userId && options.isTestUser) {
+      return {
+        ok: false as const,
+        error:
+          "You cannot mark your own Global Admin account as a test user for streamlined deletion.",
+      };
+    }
+
+    const admin = createAdminClient();
+    const { data: target, error: targetError } = await admin
+      .from("profiles")
+      .select("id, app_role, status, onboarding_status, is_test_user")
+      .eq("id", options.userId)
+      .maybeSingle();
+    if (targetError || !target) {
+      return {
+        ok: false as const,
+        error: targetError?.message ?? "Profile not found.",
+      };
+    }
+
+    if (options.isTestUser) {
+      const currentlyActiveAdmin =
+        target.status === "ACTIVE" &&
+        target.app_role === "ADMIN" &&
+        target.onboarding_status === "ACTIVE";
+      if (currentlyActiveAdmin) {
+        const { count, error: countError } = await admin
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "ACTIVE")
+          .eq("app_role", "ADMIN")
+          .eq("onboarding_status", "ACTIVE");
+        if (countError) {
+          return { ok: false as const, error: countError.message };
+        }
+        if ((count ?? 0) <= 1) {
+          return {
+            ok: false as const,
+            error:
+              "Cannot mark the final active Global Admin as a test user.",
+          };
+        }
+      }
+    }
+
+    const { error: updateError } = await admin
+      .from("profiles")
+      .update({ is_test_user: options.isTestUser })
+      .eq("id", options.userId);
+    if (updateError) {
+      return { ok: false as const, error: updateError.message };
+    }
+
+    revalidateAdminPaths([`/admin/users/${options.userId}`]);
+    return { ok: true as const };
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function previewTestUserDeletionAction(userId: string) {
+  try {
+    await requireAppAdmin();
+    const summary = await buildTestUserDeletionSummary(userId);
+    return { ok: true as const, summary };
+  } catch (error) {
+    return { ok: false as const, error: toErrorMessage(error) };
+  }
+}
+
+export async function permanentlyDeleteTestUserAction(options: {
+  userId: string;
+  confirmationEmail: string;
+}) {
+  try {
+    const actor = await requireAppAdmin();
+    const rate = assertAdminActionRateLimit({
+      actorUserId: actor.userId,
+      action: "delete_test_user",
+      maxPerWindow: 6,
+      minIntervalMs: 2_000,
+    });
+    if (!rate.ok) {
+      return { ok: false as const, error: rate.error };
+    }
+
+    const result = await permanentlyDeleteTestUser({
+      actorUserId: actor.userId,
+      actorDisplayName: actor.profile.display_name,
+      targetUserId: options.userId,
+      confirmationEmail: options.confirmationEmail,
+    });
+    if (result.ok) {
+      revalidateAdminPaths();
+    }
+    return result;
   } catch (error) {
     return { ok: false as const, error: toErrorMessage(error) };
   }

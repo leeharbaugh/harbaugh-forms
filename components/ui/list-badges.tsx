@@ -119,6 +119,23 @@ export function OnboardingStatusBadge({
   );
 }
 
+export function TestUserBadge({
+  isTestUser,
+  className,
+}: CompactBadgeProps & { isTestUser?: boolean | null }) {
+  if (!isTestUser) {
+    return null;
+  }
+  return (
+    <Badge
+      variant="warning"
+      className={cn("shrink-0 font-semibold uppercase tracking-wide", className)}
+    >
+      Test user
+    </Badge>
+  );
+}
+
 export function FormPublicationBadge({
   status,
   publication_state,

@@ -4,6 +4,7 @@ import {
   resendInvitationAction,
   setUserAccountStatusAction,
   setUserAppRoleAction,
+  setUserTestFlagAction,
   updateAdminUserProfileAction,
   upsertAdminAgentSettingsAction,
 } from "@/app/admin/actions";
@@ -22,6 +23,7 @@ import { FormActions } from "@/components/ui/form-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { TestUserBadge } from "@/components/ui/list-badges";
 import type { AdminUserDetail } from "@/lib/admin/manage-user-detail";
 import { formatPhoneInput } from "@/lib/phone-format";
 import Link from "next/link";
@@ -151,9 +153,37 @@ export function AdminUserDetailPage({
             <Badge variant="outline">
               {profile?.onboarding_status ?? "—"}
             </Badge>
+            <TestUserBadge isTestUser={Boolean(profile?.is_test_user)} />
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isPending}
+            onClick={() => {
+              setMessage(null);
+              setError(null);
+              startTransition(async () => {
+                const next = !profile?.is_test_user;
+                const result = await setUserTestFlagAction({
+                  userId: detail.id,
+                  isTestUser: next,
+                });
+                if (!result.ok) {
+                  setError(result.error);
+                  return;
+                }
+                setMessage(
+                  next ? "Marked as test user." : "Removed test-user mark.",
+                );
+                router.refresh();
+              });
+            }}
+          >
+            {profile?.is_test_user ? "Unmark test user" : "Mark test user"}
+          </Button>
           <Button
             type="button"
             size="sm"

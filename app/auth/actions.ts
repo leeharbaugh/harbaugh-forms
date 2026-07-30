@@ -1,7 +1,10 @@
 "use server";
 
 import { isUsableApplicationAccount } from "@/lib/admin/invite-validation";
-import { AUTH_LOGIN_PATH } from "@/lib/auth/email-otp";
+import {
+  AUTH_CHANGE_PASSWORD_PATH,
+  AUTH_LOGIN_PATH,
+} from "@/lib/auth/email-otp";
 import { validateNewPassword } from "@/lib/auth/password-policy";
 import { createClient } from "@/lib/supabase/server";
 import { assertSupabaseEnv, formatAuthNetworkError } from "@/lib/supabase/env";
@@ -23,6 +26,8 @@ export async function loginAction(formData: FormData) {
   if (!email || !password) {
     return { error: "Email and password are required." };
   }
+
+  let forcePasswordChange = false;
 
   try {
     const supabase = await createClient();
@@ -67,9 +72,17 @@ export async function loginAction(formData: FormData) {
       if (typed.onboarding_status === "INVITED") {
         await supabase.rpc("activate_invited_profile");
       }
+
+      if (typed.must_change_password) {
+        forcePasswordChange = true;
+      }
     }
   } catch (error) {
     return { error: formatAuthNetworkError(error) };
+  }
+
+  if (forcePasswordChange) {
+    redirect(AUTH_CHANGE_PASSWORD_PATH);
   }
 
   redirect("/");
@@ -114,6 +127,14 @@ export async function updatePasswordAction(formData: FormData) {
     if (error) {
       return { error: error.message };
     }
+
+    // Clear forced-password flag after a successful Auth password update.
+    // Never log or return the password value.
+    await supabase
+      .from("profiles")
+      .update({ must_change_password: false })
+      .eq("id", user.id)
+      .eq("must_change_password", true);
 
     const { data: profile } = await supabase
       .from("profiles")

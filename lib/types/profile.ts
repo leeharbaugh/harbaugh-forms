@@ -25,6 +25,8 @@ export type Profile = {
   brokerage_name: string | null;
   notes: string | null;
   primary_organization_id: string | null;
+  is_test_user?: boolean;
+  must_change_password?: boolean;
 };
 
 export type ProfileNameFields = Pick<

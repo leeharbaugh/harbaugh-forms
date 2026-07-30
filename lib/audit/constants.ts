@@ -7,4 +7,6 @@ export const MANDATORY_AUDIT_ACTIONS = new Set([
   "global_admin_access_removed",
   "impersonation_started",
   "impersonation_ended",
+  "test_user_permanently_deleted",
+  "test_user_deletion_failed",
 ]);

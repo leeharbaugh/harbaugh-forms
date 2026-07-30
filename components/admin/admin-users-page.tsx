@@ -6,6 +6,10 @@ import {
   setUserAccountStatusAction,
   setUserAppRoleAction,
 } from "@/app/admin/actions";
+import {
+  ManualCreateUserCard,
+  TestUserDeletionControls,
+} from "@/components/admin/admin-manual-user-controls";
 import { AdminSectionNav } from "@/components/admin/admin-section-nav";
 import { ListEmptyState } from "@/components/list-empty-state";
 import { ListPageHeader } from "@/components/list-page-header";
@@ -27,6 +31,7 @@ import {
   AppRoleBadge,
   OnboardingStatusBadge,
   RecordStatusBadge,
+  TestUserBadge,
 } from "@/components/ui/list-badges";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -210,10 +215,10 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Invite user</CardTitle>
+          <CardTitle>Invite user (send email)</CardTitle>
           <CardDescription>
-            Send an invitation and optionally assign a primary organization
-            membership.
+            Send an invitation email and optionally assign a primary organization
+            membership. Prefer this when the recipient can confirm email ownership.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -388,6 +393,8 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
         </CardContent>
       </Card>
 
+      <ManualCreateUserCard organizations={organizations} />
+
       <Card>
         <CardHeader>
           <CardTitle>User directory</CardTitle>
@@ -426,7 +433,10 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
                     className="align-top transition-colors hover:bg-muted/40 focus-within:bg-muted/30"
                   >
                     <td className="px-3 py-2.5">
-                      <div className="font-medium">{user.displayName}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-medium">{user.displayName}</div>
+                        <TestUserBadge isTestUser={user.isTestUser} />
+                      </div>
                       {user.preferredName ? (
                         <div className="text-xs text-muted-foreground">
                           Preferred: {user.preferredName}
@@ -605,6 +615,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
                             Make USER
                           </Button>
                         ) : null}
+                        <TestUserDeletionControls user={user} />
                       </ListRowActions>
                     </td>
                   </tr>
