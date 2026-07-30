@@ -1,19 +1,66 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-07-30 (admin-user migration applied to production Supabase)
+**As of:** 2026-07-30 (admin test-user / manual-create feature live on production)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
-### Production admin-user migration (2026-07-30)
+### Global Admin test-user cleanup + manual create — production rollout (2026-07-30)
 
-**Status:** **Production database migration applied.** Application feature code is **not** yet on `main` / Vercel Production.
+**Status:** **Complete on production** (schema + application). Lee’s interactive smoke test remains **pending**.
 
 | Item | Value |
 |------|--------|
-| Git working branch | `feature/admin-test-user-cleanup-manual-create` (uncommitted feature work present) |
-| `main` / HEAD commit | `02c95d725111172f5f4eb4dd8561104c09c6f64d` — *Close production authentication outage (#27)* |
+| Feature branch commit | `666cff117eb08bd05330063d27f235bae0977804` |
+| PR | [#28](https://github.com/leeharbaugh/harbaugh-forms/pull/28) — squash-merged |
+| Final `main` commit | `67cb5a6fdae696a1bbba3e63c75ed1724b037d5a` |
+| Branch cleanup | Feature branch deleted locally and on `origin` |
+| Production Supabase migration | `20260730120000_admin_test_user_manual_create.sql` — already applied earlier (no rewrite; no second push) |
+| Dev Supabase | Migration present on `ewxsxwzezhkeawnjvigx`; CLI remains linked there |
+| Vercel Production deployment | `dpl_7FBiCh7HuXdjSnmAetbADerXVNDB` (`harbaugh-forms-86gmcayuy-…`) |
+| Production deployment commit | `67cb5a6fdae696a1bbba3e63c75ed1724b037d5a` (matches `main`) |
+| Serving | `https://forms.harbaughrealestate.com` (alias on this deployment) |
+| Admin-user app features on this deploy? | **Yes** |
+
+#### Pre-merge validation (re-run 2026-07-30)
+
+| Check | Result |
+|-------|--------|
+| `test:admin-user-lifecycle` | 17 passed |
+| `test:admin-invite` (includes lifecycle) | 31 passed |
+| `test:auth-confirm` | 27 passed |
+| `test:auth-bootstrap` | 6 passed |
+| `test:admin-audit` | 11 passed |
+| `test:ui-lists` | passed |
+| `test:library-permissions` | passed |
+| `test:secure-publish` | passed |
+| `test:field-defaults` / `test:form-copy-global` | passed |
+| `test:storage-paths` | 18 passed |
+| `test:supabase-guard` | 8 passed |
+| `test:user-preferences` / `test:packet-form-lifecycle` | passed |
+| `tsc --noEmit` | passed |
+| Targeted ESLint | passed |
+| `npm run build:validate` | passed |
+
+#### Non-destructive production availability checks
+
+| Check | Result |
+|-------|--------|
+| `https://forms.harbaughrealestate.com/auth/login` | 200 — login form loads |
+| `/` (unauthenticated) | 307 → `/auth/login` |
+| `/admin/users` (unauthenticated) | 307 → `/auth/login` (route present / gated) |
+| `/auth/change-password` (unauthenticated) | 200 — “Sign in to change your password” (new route live) |
+| Server / build errors | None observed |
+
+No production users were created, marked, unmarked, or deleted during rollout. Lee manual smoke test: **not performed** (deferred to Lee).
+
+### Production admin-user migration (2026-07-30)
+
+**Status:** Applied earlier the same day; histories aligned; schema verified. Remains the live production schema for this feature.
+
+| Item | Value |
+|------|--------|
 | Production Supabase | `harbaugh-forms-prod` / `eetonalyyyssvkyfdoxh` |
 | Migration applied | `20260730120000_admin_test_user_manual_create.sql` only |
 | CLI after ops | Relinked to development `ewxsxwzezhkeawnjvigx` |
@@ -39,27 +86,11 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 | `forms_published_by_user_id_fkey` / `form_state_events_performed_by_user_id_fkey` | ON DELETE SET NULL |
 | `deleted_user_snapshots` | table present; RLS on; `deleted_user_snapshots_admin_select`; `authenticated` SELECT grant |
 
-No production users were created, deleted, or altered. No `db reset`. No migration repair.
-
-#### Vercel Production application status
-
-| Item | Result |
-|------|--------|
-| Current prod deployment | `dpl_C3CmJx1jHfW4qaKsHQH6AswDGhhn` (`harbaugh-forms-77yx2d8nw-…`) |
-| Serving | `https://forms.harbaughrealestate.com` (alias on this deployment) |
-| Commit | `02c95d725111172f5f4eb4dd8561104c09c6f64d` (matches `main`) |
-| Admin-user app features on this deploy? | **No** — migration file and app changes are not on `main` (404 on GitHub `main` for the migration path; feature remains local/uncommitted on the feature branch) |
-| Redeploy `main`? | **Not needed** — Production already serves current approved `main` |
-
-**Warning:** Production schema now includes the admin-user columns/objects, but the Admin Users UI / server actions for test-user cleanup, manual create, and forced password change are **not** live until the feature is committed, merged to `main`, and deployed. Additive schema alone does not change existing user behavior (`default false` flags).
-
-Lee manual smoke test: deferred (not performed).
-
 ### Global Admin user cleanup and manual creation (2026-07-30)
 
-**Status:** Implemented on feature branch `feature/admin-test-user-cleanup-manual-create`. Migration applied to **development** Supabase (`ewxsxwzezhkeawnjvigx`) and **production** Supabase (`eetonalyyyssvkyfdoxh`). Application rollout to Vercel Production still pending merge to `main`.
+**Status:** Merged to `main` and deployed to Vercel Production (`67cb5a6` / `dpl_7FBiCh7HuXdjSnmAetbADerXVNDB`). Migration already on development and production.
 
-**Feature branch:** `feature/admin-test-user-cleanup-manual-create`
+**Feature branch:** `feature/admin-test-user-cleanup-manual-create` (deleted after squash merge of PR #28)
 
 #### Dependency graph (documented before hard delete)
 
@@ -115,7 +146,7 @@ Hard Auth deletion does **not** cascade safely for all owned business data. Actu
 #### Deferred / production
 
 * Production **schema** migration applied 2026-07-30 (see section above)
-* Application merge to `main` + Vercel Production deploy still required for Admin UI/actions
+* Application merge to `main` + Vercel Production deploy completed 2026-07-30 (`67cb5a6` / `dpl_7FBiCh7HuXdjSnmAetbADerXVNDB`)
 * Interactive browser smoke of manual create + delete deferred to Lee
 
 ### Production authenticated-page outage hotfix (2026-07-29)
