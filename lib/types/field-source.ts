@@ -117,6 +117,7 @@ export const CUSTOM_RESOLVER_KEYS = [
   "property_hoa_name",
   "property_hoa_phone",
   "buyer_names",
+  "tenant_names",
   "buyer_notice_phone",
   "buyer_notice_email",
   "buyer_client_address",
@@ -129,6 +130,40 @@ export const CUSTOM_RESOLVER_KEYS = [
   "buyer_rep_retainer_will_not_apply",
   "buyer_rep_intermediary_status_no",
 ] as const;
+
+/** User-facing labels for custom resolver keys in Map Fields / field editors. */
+export const CUSTOM_RESOLVER_LABELS: Record<
+  (typeof CUSTOM_RESOLVER_KEYS)[number],
+  string
+> = {
+  property_hoa_name: "Property HOA name",
+  property_hoa_phone: "Property HOA phone",
+  buyer_names: "All Buyer Names",
+  tenant_names: "Packet Tenant Names",
+  buyer_notice_phone: "Buyer notice phone",
+  buyer_notice_email: "Buyer notice email",
+  buyer_client_address: "Buyer client address",
+  buyer_client_city_state_zip: "Buyer client city/state/ZIP",
+  seller_city_state_zip: "Seller city/state/ZIP",
+  landlord_address: "Landlord address",
+  landlord_city_state_zip: "Landlord city/state/ZIP",
+  brokerage_city_state_zip: "Brokerage city/state/ZIP",
+  buyer_rep_agreement_between: "Buyer rep agreement between",
+  buyer_rep_retainer_will_not_apply: "Buyer rep retainer will not apply",
+  buyer_rep_intermediary_status_no: "Buyer rep intermediary status no",
+};
+
+export function formatCustomResolverKeyLabel(resolverKey: string): string {
+  const normalized = resolverKey.trim().toLowerCase();
+  if (
+    Object.prototype.hasOwnProperty.call(CUSTOM_RESOLVER_LABELS, normalized)
+  ) {
+    return CUSTOM_RESOLVER_LABELS[
+      normalized as (typeof CUSTOM_RESOLVER_KEYS)[number]
+    ];
+  }
+  return resolverKey;
+}
 
 const SOURCE_TYPE_LABELS: Record<FieldSourceType, string> = {
   settings_agent: "Settings · Agent profile",
@@ -383,7 +418,7 @@ export function formatFieldSourceSummary(field: {
   const typeLabel = formatFieldSourceType(field.source_type);
 
   if (field.source_type === "custom_resolver" && field.resolver_key) {
-    return `${typeLabel} · ${field.resolver_key}`;
+    return `${typeLabel} · ${formatCustomResolverKeyLabel(field.resolver_key)}`;
   }
 
   if (field.source_path) {

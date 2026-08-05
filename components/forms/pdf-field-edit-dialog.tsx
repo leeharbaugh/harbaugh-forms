@@ -10,7 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { Field } from "@/lib/types/field";
 import {
   type FieldInput,
   validateFieldInput,
@@ -30,7 +29,6 @@ type PdfFieldEditDialogProps = {
   mapping: PlacedPdfField | null;
   placementValue: PdfMappingEditorInput;
   fieldValue: FieldInput;
-  catalogFields: Field[];
   onPlacementChange: (value: PdfMappingEditorInput) => void;
   onFieldChange: (value: FieldInput) => void;
   onSubmit: () => void;
@@ -80,8 +78,11 @@ export function PdfFieldEditDialog({
   }
 
   const isAcroform = isAcroformImportedMapping(mapping);
+  const hasLinkedField = Boolean(mapping.field_id);
   const placementValidationError = validatePdfPlacementInput(placementValue);
-  const fieldValidationError = validateFieldInput(fieldValue);
+  const fieldValidationError = hasLinkedField
+    ? validateFieldInput(fieldValue)
+    : null;
   const validationError = placementValidationError ?? fieldValidationError;
   const isBusy = isSubmitting || isDeleting;
 
@@ -130,23 +131,31 @@ export function PdfFieldEditDialog({
               />
             </section>
 
-            <section className="space-y-4 border-t pt-6">
-              <div>
-                <h3 className="text-sm font-semibold">
-                  Section B: Filled from (Global automatic source)
-                </h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  These settings update the reusable field definition. Configure
-                  where the field should get its value when a form is created.
-                  Technical source paths remain Admin-only here.
-                </p>
-              </div>
+            {hasLinkedField ? (
+              <section className="space-y-4 border-t pt-6">
+                <div>
+                  <h3 className="text-sm font-semibold">
+                    Section B: Filled from (Global automatic source)
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    These settings update the reusable field definition. Configure
+                    where the field should get its value when a form is created.
+                    Technical source paths remain Admin-only here.
+                  </p>
+                </div>
 
-              <PdfFieldDefinitionFormFields
-                value={fieldValue}
-                onChange={onFieldChange}
-              />
-            </section>
+                <PdfFieldDefinitionFormFields
+                  value={fieldValue}
+                  onChange={onFieldChange}
+                  identityReadOnly
+                />
+              </section>
+            ) : (
+              <p className="border-t pt-6 text-xs text-muted-foreground">
+                This placement is not linked to a reusable field definition, so
+                Value Source cannot be edited here. Link or create a field first.
+              </p>
+            )}
 
             {(error || validationError) && (
               <p className="text-sm text-destructive">

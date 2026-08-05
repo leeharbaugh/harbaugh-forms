@@ -1070,15 +1070,64 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     [scrollPdfPageIntoView],
   );
 
-  const openEditDialog = (mapping: PlacedPdfField) => {
+  const openEditDialog = async (mapping: PlacedPdfField) => {
     setSelectedMappingId(mapping.id);
     setEditingMapping(mapping);
     setEditValue(placedPdfFieldToMappingInput(mapping));
-    const catalogField = catalogFields.find((field) => field.id === mapping.field_id);
-    setEditFieldValue(
-      catalogField ? fieldToInput(catalogField) : emptyFieldInput(),
-    );
     setEditError(null);
+
+    if (!mapping.field_id) {
+      // Unmapped placement: placement-only edit; Section B is hidden.
+      setEditFieldValue(emptyFieldInput());
+      return;
+    }
+
+    const catalogField = catalogFields.find(
+      (field) => field.id === mapping.field_id,
+    );
+    if (catalogField) {
+      setEditFieldValue(fieldToInput(catalogField));
+      return;
+    }
+
+    // Seed identity from the mapping join while we fetch full source metadata.
+    setEditFieldValue({
+      ...emptyFieldInput(),
+      field_key: mapping.field_key || "",
+      field_label: mapping.field_label || "",
+      field_data_type:
+        mapping.field_type === "DATE"
+          ? "date"
+          : mapping.field_type === "CHECKBOX"
+            ? "boolean"
+            : "text",
+      field_widget_type: mapping.field_widget_type || "text",
+    });
+
+    // Catalog list can miss a linked field (pagination / race). Fetch by id
+    // instead of emptying Section B and forcing key/label re-entry.
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("fields")
+      .select("*")
+      .eq("id", mapping.field_id)
+      .maybeSingle();
+
+    if (error || !data) {
+      setEditError(
+        error?.message ??
+          "Could not load this field’s definition. Close and try again, or refresh Map Fields.",
+      );
+      return;
+    }
+
+    const loaded = data as Field;
+    setCatalogFields((current) =>
+      current.some((field) => field.id === loaded.id)
+        ? current
+        : [...current, loaded],
+    );
+    setEditFieldValue(fieldToInput(loaded));
   };
 
   const applyDefaultsPage = (data: FormDefaultsPageData) => {
@@ -1242,9 +1291,12 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
     const placementValidationError = allowStructural
       ? validatePdfPlacementInput(editValue)
       : null;
-    const fieldValidationError = allowStructural
-      ? validateFieldInput(editFieldValue)
-      : null;
+    // Only validate catalog identity/source when a field is linked. Unmapped
+    // AcroForm placements are placement-only and must not demand key/label.
+    const fieldValidationError =
+      allowStructural && editingMapping.field_id
+        ? validateFieldInput(editFieldValue)
+        : null;
     const validationError = placementValidationError ?? fieldValidationError;
     if (validationError) {
       setEditError(validationError);
@@ -2166,7 +2218,7 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => openEditDialog(mapping)}
+                          onClick={() => void openEditDialog(mapping)}
                         >
                           Edit
                         </Button>
@@ -2234,7 +2286,6 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
         mapping={editingMapping}
         placementValue={editValue}
         fieldValue={editFieldValue}
-        catalogFields={catalogFields}
         onPlacementChange={setEditValue}
         onFieldChange={setEditFieldValue}
         onSubmit={() => void handleSaveEdit()}

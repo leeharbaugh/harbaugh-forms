@@ -1,8 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Contact } from "@/lib/types/contact";
-import { formatContactDisplayName } from "@/lib/types/contact";
-import type { ListingOwnerKind } from "@/lib/types/listing-packet-kind";
-import type { PacketWorkflowType } from "@/lib/types/packet-workflow";
+import type { Contact } from "./contact";
+import {
+  formatContactDisplayName,
+  hasUsableContactDisplayName,
+} from "./contact";
+import type { ListingOwnerKind } from "./listing-packet-kind";
+import type { PacketWorkflowType } from "./packet-workflow";
 
 export type PacketContactRole =
   | "PRIMARY"
@@ -140,6 +143,19 @@ export const BUYER_SIDE_PACKET_ROLES: PacketContactRole[] = [
   "PRIMARY",
 ];
 
+/**
+ * Roles used for numbered `tenant_N.*` paths and the `tenant_names` aggregate.
+ * Mirrors getOrderedContactsForNumberedRolePrefix(..., "tenant"): explicit TENANT
+ * first among filtered roles, then common co-party labels used on lease packets.
+ */
+export const TENANT_SIDE_PACKET_ROLES: PacketContactRole[] = [
+  "TENANT",
+  "CO_CLIENT",
+  "SPOUSE",
+  "PRIMARY",
+  "OTHER",
+];
+
 export function getOrderedContactsByPacketRoles(
   packetContacts: PacketContact[],
   roles: PacketContactRole[],
@@ -192,13 +208,10 @@ export function getOrderedContactsForNumberedRolePrefix(
     case "seller":
       return getOrderedSellerContacts(packetContacts);
     case "tenant":
-      return getOrderedContactsByPacketRoles(packetContacts, [
-        "TENANT",
-        "CO_CLIENT",
-        "SPOUSE",
-        "PRIMARY",
-        "OTHER",
-      ]);
+      return getOrderedContactsByPacketRoles(
+        packetContacts,
+        TENANT_SIDE_PACKET_ROLES,
+      );
     case "landlord": {
       const hasExplicitLandlord = packetContacts.some(
         (row) =>
@@ -250,6 +263,39 @@ export function formatJoinedContactNames(contacts: Contact[]): string {
     .map((contact) => formatContactDisplayName(contact))
     .filter(Boolean)
     .join(", ");
+}
+
+/**
+ * Active tenant-side packet contacts for aggregate resolvers (e.g. tenant_names).
+ * Uses the same role set as tenant_1 / tenant_2, excludes inactive contacts and
+ * relationships, omits contacts without a usable display name, and dedupes by
+ * contact id while preserving sort_order.
+ */
+export function getOrderedTenantContacts(
+  packetContacts: PacketContact[],
+): Contact[] {
+  const rows = sortPacketContacts(
+    packetContacts.filter(
+      (row) =>
+        row.status === "ACTIVE" &&
+        row.contacts != null &&
+        row.contacts.status === "ACTIVE" &&
+        TENANT_SIDE_PACKET_ROLES.includes(row.packet_role) &&
+        hasUsableContactDisplayName(row.contacts),
+    ),
+  );
+
+  const seenContactIds = new Set<number>();
+  const contacts: Contact[] = [];
+  for (const row of rows) {
+    const contact = row.contacts as Contact;
+    if (seenContactIds.has(contact.id)) {
+      continue;
+    }
+    seenContactIds.add(contact.id);
+    contacts.push(contact);
+  }
+  return contacts;
 }
 
 export function getOrderedPacketContactNames(

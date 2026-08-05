@@ -1,10 +1,57 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-07-30 (admin test-user / manual-create feature live on production)
+**As of:** 2026-08-05 (Packet Tenant Names resolver shipped; TXR-2216 tenant field source updated; form 51 remains DRAFT)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
+
+### Packet Tenant Names resolver + TXR-2216 source update (2026-08-05)
+
+**Status:** No existing all-tenant aggregation source was found (`buyer_names` joins buyers; lease `txr_2001_tenant_names` uses only `packet_contact` / `tenant_1.full_name`). Implemented reusable custom resolver **`tenant_names`** (display label **Packet Tenant Names**), registered in `CUSTOM_RESOLVER_KEYS`, wired in `resolveCustomResolverKey`, and catalogued via migration `20260805210000_packet_tenant_names_resolver.sql` (applied on development and production).
+
+Production form **51** field `txr_2216_tenant_names` (`2b103fac-…`) source changed from `manual_only` → `custom_resolver` / `resolver_key=tenant_names`. Field key, label, type, widget, placement, and defaults were unchanged. Form **51** remains **`ACTIVE` + `DRAFT`** (not published).
+
+| Item | Result |
+|------|--------|
+| Existing tenant aggregate? | **No** |
+| Resolver key / label | `tenant_names` / **Packet Tenant Names** |
+| Role set | Same as `tenant_1`/`tenant_2`: TENANT, CO_CLIENT, SPOUSE, PRIMARY, OTHER |
+| Join format | Comma-separated (matches `buyer_names`) |
+| Editor defect | Map Fields edit forced `field_key` uppercase on save and presented editable identity fields; fixed by preserving key case + locking key/label/types when editing a linked field |
+| Tests | `test:packet-tenant-names` 14 pass; source-registry 10; field-instance-sync 17; `tsc`; targeted ESLint; `build:validate` |
+| Runtime note | Prefill works in production **after** this application code is deployed to Vercel Production. Until then, metadata is set but the live app build does not yet resolve `tenant_names`. |
+
+### TXR-2216 Itemization of Security Deposit — Option 1 draft placements applied (2026-08-05)
+
+**Status:** Phase 1 coordinate blocker **resolved**. Lee authorized underline/glyph-derived **initial draft** placements (same method as TXR-2217 / batches 38–50). Production form **51** now has **60** new `manual_only` Global fields + **65** ACTIVE draft mappings (3 reuse Globals; `PROPERTY_FULL_ADDRESS` ×3). Form remains **`ACTIVE` + `DRAFT`**. **Not published.** Development mirror **deferred**. Lee’s visual Map Fields review is still required — these coordinates are draft, not final human-verified placements.
+
+| Item | Verified value |
+|------|----------------|
+| Starting branch / commit | `main` @ `6ef2453d0ddfa1113e7786990fb2e6a31351836b` |
+| Ending branch / commit | `main` @ same commit (docs/scripts uncommitted; production DB updated) |
+| Production form ID | **51** |
+| Identity | `TXR-2216` · Itemization of Security Deposit · `TXR-2216-01-05-2026` |
+| Status / publication | `ACTIVE` + **`DRAFT`** (`published_at` null) |
+| PDF path | `global/forms/51/ItemizationOfSecurityDeposit.pdf` |
+| PDF MD5 / bytes | `599fdccc5c3e551f9360e152d1e50a6a` / **181660** — **unchanged** |
+| New fields | **60** `txr_2216_*` · `manual_only` · no defaults / paths / resolvers |
+| Reused Globals | `PROPERTY_FULL_ADDRESS` · `AGENT_NAME` · `BROKERAGE_NAME` (unchanged defs) |
+| Logical fields | **63** |
+| ACTIVE placements | **65** (p1:27 · p2:21 · p3:17) |
+| Calculations / defaults / resolvers / schema / migrations | **None added** |
+| Packets / field_instances / other-form mappings | **Unchanged** (apply isolation OK) |
+| Development TXR-2216 | **Absent** (not mirrored) |
+| Coordinate manifests | `_audit_tmp/txr2216_initial_placement_manifest.json` (+ `.csv`) |
+| Apply / Phase 6 artifacts | `_audit_tmp/txr2216_apply_result.json`, `_audit_tmp/txr2216_phase6_final_validation.json` |
+| Review renders | `_audit_tmp/txr2216_validation_annotated_full.pdf`, `txr2216_validation_page_{1,2,3}.pdf/.png` |
+| Docs | `TXR_2216_FIELD_INVENTORY.md`, `TXR_2216_APPROVAL_MEMO.md` (implementation appendix) |
+
+**Pre-write refinement (before DB write):** page-1 `PROPERTY_FULL_ADDRESS` used first-line `x=238.5` / `width=337.5` (label-prefixed underline convention from TXR-2217) instead of `min(x0)` across continuation lines. No post-render coordinate edits after apply.
+
+**Still required:** Lee visual Map Fields review at `/forms/51/editor` before any Publish. Do not publish. Do not mirror to development until Lee approves placements.
+
+### TXR-2216 discovery + decision review (2026-08-05)
 
 ### Test-user hard-deletion production smoke failure (2026-07-30)
 
@@ -817,13 +864,14 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. Monitor real-world Lee-only production use; review runtime logs periodically
-2. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
-3. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
-4. Add error tracking before broader multi-user exposure
-5. Establish production backup/restore procedures
-6. Consider paid tiers only when recovery, usage, or SLA requirements justify them
-7. Review Mapbox domain restrictions if map behavior fails on the custom domain
+1. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Deploy application code so production resolves `tenant_names` for `txr_2216_tenant_names`. Development mirror remains deferred.
+2. Monitor real-world Lee-only production use; review runtime logs periodically
+3. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
+4. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
+5. Add error tracking before broader multi-user exposure
+6. Establish production backup/restore procedures
+7. Consider paid tiers only when recovery, usage, or SLA requirements justify them
+8. Review Mapbox domain restrictions if map behavior fails on the custom domain
 
 ## Deferred Product Work
 

@@ -9,9 +9,12 @@ export async function findActiveFieldByKey(
   supabase: SupabaseClient,
   fieldKey: string,
 ): Promise<Field | null> {
-  const normalizedKey = fieldKey.trim().toUpperCase();
+  const normalizedKey = fieldKey.trim();
+  if (!normalizedKey) {
+    return null;
+  }
 
-  const { data: globalField, error: globalError } = await supabase
+  const { data: globalExact, error: globalExactError } = await supabase
     .from("fields")
     .select("*")
     .eq("field_key", normalizedKey)
@@ -19,12 +22,29 @@ export async function findActiveFieldByKey(
     .eq("scope", "GLOBAL")
     .maybeSingle();
 
-  if (globalError) {
-    throw globalError;
+  if (globalExactError) {
+    throw globalExactError;
   }
 
-  if (globalField) {
-    return globalField as Field;
+  if (globalExact) {
+    return globalExact as Field;
+  }
+
+  // Case-insensitive fallback for mixed historical key conventions.
+  const { data: globalCi, error: globalCiError } = await supabase
+    .from("fields")
+    .select("*")
+    .ilike("field_key", normalizedKey)
+    .eq("status", "ACTIVE")
+    .eq("scope", "GLOBAL")
+    .limit(2);
+
+  if (globalCiError) {
+    throw globalCiError;
+  }
+
+  if ((globalCi ?? []).length === 1) {
+    return globalCi![0] as Field;
   }
 
   const {
@@ -35,7 +55,7 @@ export async function findActiveFieldByKey(
     return null;
   }
 
-  const { data: privateField, error: privateError } = await supabase
+  const { data: privateExact, error: privateExactError } = await supabase
     .from("fields")
     .select("*")
     .eq("field_key", normalizedKey)
@@ -44,11 +64,32 @@ export async function findActiveFieldByKey(
     .eq("owner_user_id", user.id)
     .maybeSingle();
 
-  if (privateError) {
-    throw privateError;
+  if (privateExactError) {
+    throw privateExactError;
   }
 
-  return (privateField as Field | null) ?? null;
+  if (privateExact) {
+    return privateExact as Field;
+  }
+
+  const { data: privateCi, error: privateCiError } = await supabase
+    .from("fields")
+    .select("*")
+    .ilike("field_key", normalizedKey)
+    .eq("status", "ACTIVE")
+    .eq("scope", "PRIVATE")
+    .eq("owner_user_id", user.id)
+    .limit(2);
+
+  if (privateCiError) {
+    throw privateCiError;
+  }
+
+  if ((privateCi ?? []).length === 1) {
+    return privateCi![0] as Field;
+  }
+
+  return null;
 }
 
 export async function createActiveField(

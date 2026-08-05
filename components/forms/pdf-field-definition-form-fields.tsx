@@ -18,12 +18,15 @@ type PdfFieldDefinitionFormFieldsProps = {
   value: FieldInput;
   onChange: (value: FieldInput) => void;
   readOnly?: boolean;
+  /** When true, key/label/types stay visible but locked (source-only edits). */
+  identityReadOnly?: boolean;
 };
 
 export function PdfFieldDefinitionFormFields({
   value,
   onChange,
   readOnly = false,
+  identityReadOnly = false,
 }: PdfFieldDefinitionFormFieldsProps) {
   const setField = <K extends keyof FieldInput>(
     key: K,
@@ -33,11 +36,15 @@ export function PdfFieldDefinitionFormFields({
   };
 
   const showDefaultChecked = isBooleanField(value);
+  const identityLocked = readOnly || identityReadOnly;
 
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
         Changes in this section affect this reusable field everywhere it is used.
+        {identityReadOnly
+          ? " Field key, label, and types are locked while editing an existing field — change Value source below without re-entering identity metadata."
+          : null}
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -47,9 +54,9 @@ export function PdfFieldDefinitionFormFields({
             id="edit_field_key"
             value={value.field_key}
             onChange={(event) =>
-              setField("field_key", event.target.value.toUpperCase())
+              setField("field_key", event.target.value)
             }
-            disabled={readOnly}
+            disabled={identityLocked}
             required
           />
         </div>
@@ -60,7 +67,7 @@ export function PdfFieldDefinitionFormFields({
             id="edit_field_label"
             value={value.field_label}
             onChange={(event) => setField("field_label", event.target.value)}
-            disabled={readOnly}
+            disabled={identityLocked}
             required
           />
         </div>
@@ -74,7 +81,7 @@ export function PdfFieldDefinitionFormFields({
             onChange={(event) =>
               setField("field_data_type", event.target.value)
             }
-            disabled={readOnly}
+            disabled={identityLocked}
           >
             {FIELD_DATA_TYPES.map((dataType) => (
               <option key={dataType} value={dataType}>
@@ -93,7 +100,7 @@ export function PdfFieldDefinitionFormFields({
             onChange={(event) =>
               setField("field_widget_type", event.target.value)
             }
-            disabled={readOnly}
+            disabled={identityLocked}
           >
             {FIELD_WIDGET_TYPES.map((widgetType) => (
               <option key={widgetType} value={widgetType}>

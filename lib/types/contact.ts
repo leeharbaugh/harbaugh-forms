@@ -160,6 +160,35 @@ export function validateContactInput(input: ContactInput): string | null {
   return null;
 }
 
+/** True when the contact has a usable display name (entity name or person name parts). */
+export function hasUsableContactDisplayName(
+  contact: Pick<
+    Contact,
+    | "contact_type"
+    | "entity_name"
+    | "preferred_name"
+    | "first_name"
+    | "middle_name"
+    | "last_name"
+    | "suffix"
+  >,
+): boolean {
+  if (contact.contact_type === "ENTITY") {
+    return Boolean(contact.entity_name?.trim());
+  }
+
+  if (contact.preferred_name?.trim()) {
+    return true;
+  }
+
+  return Boolean(
+    contact.first_name?.trim() ||
+      contact.middle_name?.trim() ||
+      contact.last_name?.trim() ||
+      contact.suffix?.trim(),
+  );
+}
+
 export function formatContactDisplayName(contact: Contact): string {
   if (contact.contact_type === "ENTITY" && contact.entity_name) {
     return contact.entity_name;

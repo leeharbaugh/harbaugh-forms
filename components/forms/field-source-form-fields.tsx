@@ -8,6 +8,7 @@ import {
   CUSTOM_RESOLVER_KEYS,
   FIELD_SOURCE_TYPES,
   SOURCE_PATH_PRESET_CUSTOM_LEGACY,
+  formatCustomResolverKeyLabel,
   formatFieldSourceStatusDisplay,
   formatFieldSourceType,
   formatSourcePathCustomLegacyLabel,
@@ -184,7 +185,7 @@ export function FieldSourceFormFields({
               <option value="">Select resolver key...</option>
               {CUSTOM_RESOLVER_KEYS.map((key) => (
                 <option key={key} value={key}>
-                  {key}
+                  {formatCustomResolverKeyLabel(key)} ({key})
                 </option>
               ))}
             </Select>

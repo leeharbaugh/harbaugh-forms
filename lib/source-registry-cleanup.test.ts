@@ -93,6 +93,7 @@ const RETAINED_RESOLVER_KEYS = [
   "property_hoa_name",
   "property_hoa_phone",
   "buyer_names",
+  "tenant_names",
   "buyer_notice_phone",
   "buyer_notice_email",
   "buyer_client_address",

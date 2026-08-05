@@ -12,6 +12,30 @@ Each decision should include:
 
 ---
 
+## Packet multi-contact name aggregates use reusable custom resolvers
+
+**Date:** 2026-08-05
+
+**Decision:**
+When a PDF blank must show **all** packet contacts for a role family (for example Tenant Name(s)), use a reusable `custom_resolver` keyed like existing aggregates (`buyer_names`, and now `tenant_names`) rather than a form-specific source or a single numbered path such as `tenant_1.full_name`. Join display names with the same comma-separated convention as `buyer_names` (`formatJoinedContactNames`). Tenant selection uses the same role set as numbered `tenant_N.*` paths (TENANT, CO_CLIENT, SPOUSE, PRIMARY, OTHER), excludes inactive relationships/contacts, omits blank names, and dedupes by contact id. Resolved values remain editable at the packet field-instance level under existing override/refresh rules.
+
+**Reason:**
+Lease and notice forms need all tenant names in one blank. `tenant_1.full_name` underfills multi-tenant packets, and form-scoped duplicates would fragment the source registry.
+
+**Consequences:**
+
+* New multi-contact name blanks should prefer `buyer_names` / `tenant_names` (or a future role-parallel key) over inventing per-form resolvers.
+* Natural “X and Y” Oxford-comma joining remains reserved for specialized composites such as `buyer_rep_agreement_between`, not ordinary name aggregates.
+
+**Related files or migrations:**
+
+* `lib/types/packet-contact.ts` (`getOrderedTenantContacts`)
+* `lib/field-resolver.ts` (`tenant_names`)
+* `lib/types/field-source.ts` (`CUSTOM_RESOLVER_KEYS`)
+* `supabase/migrations/20260805210000_packet_tenant_names_resolver.sql`
+
+---
+
 ## Test-user hard deletion (email reuse) with classified dependencies
 
 **Date:** 2026-07-30

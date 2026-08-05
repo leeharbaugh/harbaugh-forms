@@ -37,6 +37,7 @@ import {
   formatJoinedContactNames,
   getOrderedBuyerContacts,
   getOrderedSellerContacts,
+  getOrderedTenantContacts,
   type PacketContact,
   type PacketContactRole,
   getBuyerClientContactAtIndex,
@@ -850,6 +851,21 @@ function resolveCustomResolverKey(
   if (normalizedKey === "buyer_names") {
     const value = formatJoinedContactNames(
       getOrderedBuyerContacts(context.packetContacts),
+    );
+    if (!value) {
+      return null;
+    }
+
+    return {
+      value,
+      value_json: null,
+      source: "contact_role",
+    };
+  }
+
+  if (normalizedKey === "tenant_names") {
+    const value = formatJoinedContactNames(
+      getOrderedTenantContacts(context.packetContacts),
     );
     if (!value) {
       return null;

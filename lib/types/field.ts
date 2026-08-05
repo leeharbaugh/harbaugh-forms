@@ -413,7 +413,9 @@ export function validateFieldInput(input: FieldInput): string | null {
 
 export function normalizeFieldInput(input: FieldInput) {
   const trim = (value: string) => value.trim();
-  const fieldKey = trim(input.field_key).toUpperCase();
+  // Preserve the stored field_key case. Forcing uppercase renamed lowercase
+  // catalog keys (e.g. txr_2216_*) whenever Map Fields saved source-only edits.
+  const fieldKey = trim(input.field_key);
   const widgetType = normalizeCatalogWidgetType(input.field_widget_type);
 
   return {
