@@ -12,6 +12,37 @@ Each decision should include:
 
 ---
 
+## Fill Form text layout, placement masks, and typed signature annotations
+
+**Date:** 2026-08-05
+
+**Decision:**
+Fill Form preview and generated PDFs share one text-layout policy (`lib/pdf-text-layout.ts`). Multiline behavior is an explicit template placement flag (`form_field_mappings.is_multiline`), not inferred from the current value. Preprinted writing lines may be covered with an opaque white rectangle via placement flag `mask_background` (default false; admin-only in Map Fields; does not alter the source PDF file). Typed “Fill & Sign”–style signatures are stored as packet-form annotations (`packet_form_annotations`), not as `fields` / `field_instances` and not as Authentisign placeholders. Preview font size scales with PDF zoom using `renderedHeight / originalHeight` applied to the configured (or height-derived) point size, with documented min/max clamps.
+
+**Reason:**
+Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` overlay text stayed tiny at high zoom while boxes scaled. Preprinted form lines need an optional non-destructive cover. Occasional agent signatures must not require Global field catalog rows or Authentisign.
+
+**Consequences:**
+
+* Admins enable multiline and/or mask per placement; existing mappings default off.
+* Overlay and download must stay aligned for wrap, mask order (mask then text), and font sizing.
+* Typed signatures: create/move/resize/soft-delete on DRAFT packet forms the user owns; included in generated PDFs; packet-form-specific.
+* Migration is additive and backward-compatible with currently deployed production code (defaults preserve prior single-line/transparent behavior; new table unused until new app code ships). Preferred order: migrate production → validate → deploy app.
+* Deferred: drawn/uploaded signatures, cross-packet signature reuse, cryptographic signing, identity verification.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260805220000_fill_form_presentation_and_annotations.sql`
+* `lib/pdf-text-layout.ts`
+* `lib/fill-packet-form-pdf.ts`
+* `lib/packet-form-annotations.ts`
+* `components/packets/packet-form-field-overlay.tsx`
+* `components/packets/packet-form-signature-overlay.tsx`
+* `public/fonts/Caveat-Regular.ttf` + `public/fonts/OFL.txt` (SIL OFL 1.1)
+* `lib/signature-font.ts` (browser fetch) / `lib/signature-font-server.ts` (Node `fs`; never import from client)
+
+---
+
 ## Packet multi-contact name aggregates use reusable custom resolvers
 
 **Date:** 2026-08-05

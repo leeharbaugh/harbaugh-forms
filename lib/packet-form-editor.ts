@@ -16,6 +16,7 @@ import {
   loadActiveFormFieldMappingsForForm,
   loadFieldInstancesForPacketFormWithoutSync,
 } from "@/lib/field-instances";
+import { loadActivePacketFormAnnotations } from "@/lib/packet-form-annotations";
 import { filterMappableFormFieldMappings } from "@/lib/types/authentisign-excluded-fields";
 import type {
   FieldInstanceMapping,
@@ -123,13 +124,15 @@ export async function loadPacketFormEditorData(
     packetForm.availability_state,
   );
 
-  const [mappings, instances, placementOverrides] = await Promise.all([
-    loadActiveFormFieldMappingsForForm(supabase, packetForm.form_id),
-    valuesEditable
-      ? ensureFieldInstancesForPacketForm(supabase, packetFormId)
-      : loadFieldInstancesForPacketFormWithoutSync(supabase, packetFormId),
-    loadActiveFieldInstanceMappingsForPacketForm(supabase, packetFormId),
-  ]);
+  const [mappings, instances, placementOverrides, annotations] =
+    await Promise.all([
+      loadActiveFormFieldMappingsForForm(supabase, packetForm.form_id),
+      valuesEditable
+        ? ensureFieldInstancesForPacketForm(supabase, packetFormId)
+        : loadFieldInstancesForPacketFormWithoutSync(supabase, packetFormId),
+      loadActiveFieldInstanceMappingsForPacketForm(supabase, packetFormId),
+      loadActivePacketFormAnnotations(supabase, packetFormId),
+    ]);
 
   const fields = buildPacketFormFieldViews({
     mappings: filterMappableFormFieldMappings(mappings),
@@ -172,6 +175,7 @@ export async function loadPacketFormEditorData(
   return {
     packetForm,
     fields,
+    annotations,
     pdfUrl,
     propertyId: resolverContext.packet.property_id,
     hasPacketProperty: resolverContext.packet.properties != null,

@@ -7,8 +7,11 @@ import {
   PacketFormFieldOverlay,
   type PacketFormOverlayField,
 } from "@/components/packets/packet-form-field-overlay";
+import { PacketFormSignatureOverlay } from "@/components/packets/packet-form-signature-overlay";
 import { PacketFormFieldsSidebar } from "@/components/packets/packet-form-fields-sidebar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   loadPacketFormEditorData,
   markPacketFormFinal,
@@ -20,6 +23,15 @@ import {
   saveFieldInstanceValues,
   upsertFieldInstanceMappingPlacement,
 } from "@/lib/packet-form-editor";
+import {
+  createTypedSignatureAnnotation,
+  softDeletePacketFormAnnotation,
+  updatePacketFormAnnotationPlacement,
+} from "@/lib/packet-form-annotations";
+import {
+  defaultTypedSignatureSize,
+  type PacketFormAnnotation,
+} from "@/lib/types/packet-form-annotation";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatAmountInput } from "@/lib/amount-format";
@@ -79,7 +91,7 @@ import {
 } from "@/lib/types/template-pdf-field";
 import { cn } from "@/lib/utils";
 import { usePdfEditorSession } from "@/lib/use-pdf-editor-session";
-import { CircleHelp, Minus, Plus, Download, RefreshCw } from "lucide-react";
+import { CircleHelp, Minus, Plus, Download, RefreshCw, PenLine } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
@@ -107,6 +119,20 @@ export function PacketFormEditor({
   const [formId, setFormId] = useState<number | null>(null);
   const [formName, setFormName] = useState("");
   const [fields, setFields] = useState<PacketFormFieldView[]>([]);
+  const [annotations, setAnnotations] = useState<PacketFormAnnotation[]>([]);
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<
+    string | null
+  >(null);
+  const [updatingAnnotationId, setUpdatingAnnotationId] = useState<
+    string | null
+  >(null);
+  const [signatureDialogOpen, setSignatureDialogOpen] = useState(false);
+  const [signatureDraftText, setSignatureDraftText] = useState("");
+  const [signaturePlaceMode, setSignaturePlaceMode] = useState(false);
+  const [pendingSignatureText, setPendingSignatureText] = useState<string | null>(
+    null,
+  );
+  const [signatureError, setSignatureError] = useState<string | null>(null);
   const [draftValuesByInstanceId, setDraftValuesByInstanceId] = useState<
     Record<string, string>
   >({});
@@ -316,6 +342,7 @@ export function PacketFormEditor({
         setFormId(data.packetForm.form_id);
         setFormName(data.packetForm.forms?.form_name ?? "");
         setFields(data.fields);
+        setAnnotations(data.annotations ?? []);
         const valueState = buildDraftValuesFromFieldViews(data.fields);
         setDraftValuesByInstanceId(valueState);
         setSavedValuesByInstanceId(valueState);
@@ -337,6 +364,7 @@ export function PacketFormEditor({
             : "Failed to load packet form editor.",
         );
         setFields([]);
+        setAnnotations([]);
         setPdfUrl(null);
         setPropertyId(null);
         setHasPacketProperty(false);
@@ -406,6 +434,7 @@ export function PacketFormEditor({
       }
 
       setFields(data.fields);
+      setAnnotations(data.annotations ?? []);
       const valueState = buildDraftValuesFromFieldViews(data.fields);
       setDraftValuesByInstanceId(valueState);
       setSavedValuesByInstanceId(valueState);
@@ -772,7 +801,7 @@ export function PacketFormEditor({
           document_name: documentName,
           storage_path: storagePath,
         },
-        { fields: fieldsWithDraftValues },
+        { fields: fieldsWithDraftValues, annotations },
       );
     } catch (error) {
       setDownloadError(
@@ -1123,6 +1152,200 @@ export function PacketFormEditor({
     "ACTIVE",
     availabilityState,
   );
+
+  const handlePlacePendingSignature = async (
+    pageNumber: number,
+    metrics: PageMetrics,
+    clientX: number,
+    clientY: number,
+    pageElement: HTMLElement,
+  ) => {
+    if (!pendingSignatureText || !valuesEditable) {
+      return;
+    }
+
+    const rect = pageElement.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const size = defaultTypedSignatureSize(pendingSignatureText);
+    const scaleX = metrics.originalWidth / metrics.renderedWidth;
+    const scaleY = metrics.originalHeight / metrics.renderedHeight;
+    const pdfX = Math.min(
+      Math.max(0, metrics.originalWidth - size.width),
+      Math.max(0, x * scaleX - size.width / 2),
+    );
+    const pdfY = Math.min(
+      Math.max(0, metrics.originalHeight - size.height),
+      Math.max(0, y * scaleY - size.height / 2),
+    );
+
+    setSignatureError(null);
+    setUpdatingAnnotationId("pending");
+    try {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("You must be signed in to place a signature.");
+      }
+
+      const created = await createTypedSignatureAnnotation(supabase, {
+        packetId,
+        packetFormId: packetFormRecordId,
+        userId: user.id,
+        input: {
+          page_number: pageNumber,
+          annotation_type: "typed_signature",
+          text_value: pendingSignatureText,
+          x: pdfX,
+          y: pdfY,
+          width: size.width,
+          height: size.height,
+        },
+      });
+      setAnnotations((current) => [...current, created]);
+      setSelectedAnnotationId(created.id);
+      setPendingSignatureText(null);
+      setSignaturePlaceMode(false);
+    } catch (error) {
+      setSignatureError(
+        error instanceof Error ? error.message : "Failed to place signature.",
+      );
+    } finally {
+      setUpdatingAnnotationId(null);
+    }
+  };
+
+  const handleSignatureDragStop = (
+    annotationId: string,
+    metrics: PageMetrics,
+    x: number,
+    y: number,
+  ) => {
+    const annotation = annotations.find((row) => row.id === annotationId);
+    if (!annotation || !valuesEditable) return;
+    const scaleX = metrics.originalWidth / metrics.renderedWidth;
+    const scaleY = metrics.originalHeight / metrics.renderedHeight;
+    const next = {
+      x: x * scaleX,
+      y: y * scaleY,
+      width: annotation.width,
+      height: annotation.height,
+    };
+    const previous = { ...annotation };
+    setAnnotations((current) =>
+      current.map((row) =>
+        row.id === annotationId ? { ...row, ...next } : row,
+      ),
+    );
+    void (async () => {
+      setUpdatingAnnotationId(annotationId);
+      try {
+        const supabase = createClient();
+        const updated = await updatePacketFormAnnotationPlacement(supabase, {
+          annotationId,
+          packetFormId: packetFormRecordId,
+          ...next,
+        });
+        setAnnotations((current) =>
+          current.map((row) => (row.id === annotationId ? updated : row)),
+        );
+      } catch (error) {
+        setAnnotations((current) =>
+          current.map((row) => (row.id === annotationId ? previous : row)),
+        );
+        setSignatureError(
+          error instanceof Error
+            ? error.message
+            : "Failed to move signature.",
+        );
+      } finally {
+        setUpdatingAnnotationId(null);
+      }
+    })();
+  };
+
+  const handleSignatureResizeStop = (
+    annotationId: string,
+    metrics: PageMetrics,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ) => {
+    if (!valuesEditable) return;
+    const annotation = annotations.find((row) => row.id === annotationId);
+    if (!annotation) return;
+    const scaleX = metrics.originalWidth / metrics.renderedWidth;
+    const scaleY = metrics.originalHeight / metrics.renderedHeight;
+    const next = {
+      x: x * scaleX,
+      y: y * scaleY,
+      width: width * scaleX,
+      height: height * scaleY,
+    };
+    const previous = { ...annotation };
+    setAnnotations((current) =>
+      current.map((row) =>
+        row.id === annotationId ? { ...row, ...next } : row,
+      ),
+    );
+    void (async () => {
+      setUpdatingAnnotationId(annotationId);
+      try {
+        const supabase = createClient();
+        const updated = await updatePacketFormAnnotationPlacement(supabase, {
+          annotationId,
+          packetFormId: packetFormRecordId,
+          ...next,
+        });
+        setAnnotations((current) =>
+          current.map((row) => (row.id === annotationId ? updated : row)),
+        );
+      } catch (error) {
+        setAnnotations((current) =>
+          current.map((row) => (row.id === annotationId ? previous : row)),
+        );
+        setSignatureError(
+          error instanceof Error
+            ? error.message
+            : "Failed to resize signature.",
+        );
+      } finally {
+        setUpdatingAnnotationId(null);
+      }
+    })();
+  };
+
+  const handleDeleteSignature = (annotationId: string) => {
+    if (!valuesEditable) return;
+    void (async () => {
+      setUpdatingAnnotationId(annotationId);
+      try {
+        const supabase = createClient();
+        await softDeletePacketFormAnnotation(supabase, {
+          annotationId,
+          packetFormId: packetFormRecordId,
+        });
+        setAnnotations((current) =>
+          current.filter((row) => row.id !== annotationId),
+        );
+        if (selectedAnnotationId === annotationId) {
+          setSelectedAnnotationId(null);
+        }
+      } catch (error) {
+        setSignatureError(
+          error instanceof Error
+            ? error.message
+            : "Failed to delete signature.",
+        );
+      } finally {
+        setUpdatingAnnotationId(null);
+      }
+    })();
+  };
+
   const showMarkFinal = canMarkPacketFormFinal(
     documentState,
     "ACTIVE",
@@ -1214,6 +1437,21 @@ export function PacketFormEditor({
             type="button"
             variant="outline"
             size="sm"
+            onClick={() => {
+              setSignatureError(null);
+              setSignatureDraftText("");
+              setSignatureDialogOpen(true);
+            }}
+            disabled={!valuesEditable || !pdfUrl}
+            title="Place a typed signature on this packet form only (not Authentisign)"
+          >
+            <PenLine className="mr-1.5 h-4 w-4" />
+            Signature
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => void handleDownloadPdf()}
             disabled={!pdfUrl || isDownloadingPdf || formId == null}
           >
@@ -1236,6 +1474,36 @@ export function PacketFormEditor({
       {lifecycleError && (
         <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
           {lifecycleError}
+        </div>
+      )}
+
+      {signatureError && (
+        <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          {signatureError}
+        </div>
+      )}
+
+      {signaturePlaceMode && pendingSignatureText && (
+        <div className="border-b border-violet-200 bg-violet-50 px-4 py-2 text-sm text-violet-950 dark:border-violet-900/40 dark:bg-violet-950/40 dark:text-violet-100">
+          Click on a PDF page to place your typed signature
+          {" "}
+          <span
+            className="font-medium"
+            style={{ fontFamily: '"Caveat", cursive' }}
+          >
+            {pendingSignatureText}
+          </span>
+          .{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => {
+              setSignaturePlaceMode(false);
+              setPendingSignatureText(null);
+            }}
+          >
+            Cancel
+          </button>
         </div>
       )}
 
@@ -1495,10 +1763,29 @@ export function PacketFormEditor({
                             metrics.originalWidth &&
                             metrics.originalHeight && (
                               <div
-                                className="absolute left-0 top-0 overflow-hidden"
+                                className={cn(
+                                  "absolute left-0 top-0 overflow-hidden",
+                                  signaturePlaceMode && "cursor-crosshair",
+                                )}
                                 style={{
                                   width: metrics.renderedWidth,
                                   height: metrics.renderedHeight,
+                                }}
+                                onClick={(event) => {
+                                  if (
+                                    !signaturePlaceMode ||
+                                    !pendingSignatureText
+                                  ) {
+                                    return;
+                                  }
+                                  event.stopPropagation();
+                                  void handlePlacePendingSignature(
+                                    pageNumber,
+                                    metrics as PageMetrics,
+                                    event.clientX,
+                                    event.clientY,
+                                    event.currentTarget,
+                                  );
                                 }}
                               >
                                 {pageFields.map((overlayField) => (
@@ -1560,6 +1847,54 @@ export function PacketFormEditor({
                                     }
                                   />
                                 ))}
+                                {annotations
+                                  .filter(
+                                    (annotation) =>
+                                      annotation.page_number === pageNumber,
+                                  )
+                                  .map((annotation) => (
+                                    <PacketFormSignatureOverlay
+                                      key={annotation.id}
+                                      annotation={annotation}
+                                      metrics={metrics as PageMetrics}
+                                      pageWidthPdf={
+                                        (metrics as PageMetrics).originalWidth
+                                      }
+                                      pageHeightPdf={
+                                        (metrics as PageMetrics).originalHeight
+                                      }
+                                      isSelected={
+                                        selectedAnnotationId === annotation.id
+                                      }
+                                      isUpdating={
+                                        updatingAnnotationId === annotation.id
+                                      }
+                                      readOnly={!valuesEditable}
+                                      onSelect={(id) => {
+                                        setSelectedAnnotationId(id);
+                                        setSelectedFieldKey(null);
+                                      }}
+                                      onDragStop={(id, x, y) =>
+                                        handleSignatureDragStop(
+                                          id,
+                                          metrics as PageMetrics,
+                                          x,
+                                          y,
+                                        )
+                                      }
+                                      onResizeStop={(id, x, y, width, height) =>
+                                        handleSignatureResizeStop(
+                                          id,
+                                          metrics as PageMetrics,
+                                          x,
+                                          y,
+                                          width,
+                                          height,
+                                        )
+                                      }
+                                      onDelete={handleDeleteSignature}
+                                    />
+                                  ))}
                               </div>
                             )}
                         </div>
@@ -1625,6 +1960,60 @@ export function PacketFormEditor({
         onConfirm={() => void handleReopenToDraft()}
         onCancel={() => setConfirmReopenOpen(false)}
       />
+
+      {signatureDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            aria-label="Close signature dialog"
+            onClick={() => setSignatureDialogOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-lg border bg-card p-5 shadow-lg">
+            <h2 className="text-base font-semibold">Typed signature</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Places your typed name on this packet form only. This is not
+              Authentisign and does not create a catalog field.
+            </p>
+            <div className="mt-4 space-y-2">
+              <Label htmlFor="typed_signature_text">Type your name</Label>
+              <Input
+                id="typed_signature_text"
+                value={signatureDraftText}
+                onChange={(event) => setSignatureDraftText(event.target.value)}
+                placeholder="Full name"
+                autoFocus
+              />
+              <div
+                className="rounded-md border bg-muted/30 px-3 py-4 text-center text-3xl"
+                style={{ fontFamily: '"Caveat", cursive', color: "#12124a" }}
+              >
+                {signatureDraftText.trim() || "Preview"}
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSignatureDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={!signatureDraftText.trim()}
+                onClick={() => {
+                  setPendingSignatureText(signatureDraftText.trim());
+                  setSignaturePlaceMode(true);
+                  setSignatureDialogOpen(false);
+                }}
+              >
+                Place on PDF
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

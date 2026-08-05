@@ -1,6 +1,18 @@
+/**
+ * Rewrite fill-packet-form-pdf with multiline wrap, mask_background, and
+ * shared font sizing. Keep AcroForm native fill path; enhance overlay draw.
+ */
 import {
   CHECKBOX_CHECKMARK_FILL_RATIO,
 } from "@/lib/checkbox-constants";
+import {
+  fitTypedSignatureFontSize,
+  layoutTextInBox,
+  PDF_TEXT_PADDING_X,
+  PDF_TEXT_PADDING_Y,
+  resolveFieldFontSize,
+  typedSignatureFontSize,
+} from "@/lib/pdf-text-layout";
 import {
   formatPacketFieldOverlayValue,
   isPacketFieldValueEmpty,
@@ -12,7 +24,8 @@ import {
   getEffectivePdfFieldDimensions,
   isCheckboxPdfField,
 } from "@/lib/types/template-pdf-field";
-import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import type { PacketFormAnnotation } from "@/lib/types/packet-form-annotation";
 
 type ScaledFieldPlacement = {
   pageNumber: number;
@@ -22,6 +35,8 @@ type ScaledFieldPlacement = {
   height: number;
   fontSize: number;
   alignment: string | null;
+  isMultiline: boolean;
+  maskBackground: boolean;
 };
 
 function scaleFieldPlacement(
@@ -45,14 +60,26 @@ function scaleFieldPlacement(
       null,
   });
 
+  const width = effective.width * scaleX;
+  const height = effective.height * scaleY;
+  const isMultiline = fieldView.mapping.is_multiline === true;
+  const fontSize = resolveFieldFontSize({
+    configuredFontSize: placement.font_size,
+    boxHeightPdf: height,
+    isMultiline,
+    scale: 1,
+  });
+
   return {
     pageNumber: placement.page_number,
     x: placement.x * scaleX,
     yFromTop: placement.y * scaleY,
-    width: effective.width * scaleX,
-    height: effective.height * scaleY,
-    fontSize: Math.max(6, (placement.font_size ?? 10) * scaleY),
+    width,
+    height,
+    fontSize,
     alignment: placement.alignment,
+    isMultiline,
+    maskBackground: fieldView.mapping.mask_background === true,
   };
 }
 
@@ -148,6 +175,7 @@ function resolveTextX(
   boxX: number,
   boxWidth: number,
   textWidth: number,
+  paddingX: number,
 ): number {
   const normalized = (alignment ?? "left").trim().toLowerCase();
 
@@ -156,48 +184,112 @@ function resolveTextX(
   }
 
   if (normalized === "right") {
-    return boxX + Math.max(0, boxWidth - textWidth);
+    return boxX + Math.max(0, boxWidth - textWidth - paddingX);
   }
 
-  return boxX + 2;
+  return boxX + paddingX;
+}
+
+function drawMaskIfNeeded(page: PDFPage, placement: ScaledFieldPlacement) {
+  if (!placement.maskBackground) {
+    return;
+  }
+
+  const pageHeight = page.getHeight();
+  const pdfBoxBottom = pdfYFromTop(
+    pageHeight,
+    placement.yFromTop,
+    placement.height,
+  );
+
+  page.drawRectangle({
+    x: placement.x,
+    y: pdfBoxBottom,
+    width: placement.width,
+    height: placement.height,
+    color: rgb(1, 1, 1),
+    borderWidth: 0,
+  });
 }
 
 function drawTextFieldOnPage(
   page: PDFPage,
   placement: ScaledFieldPlacement,
   text: string,
-  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  font: PDFFont,
 ) {
-  const trimmed = text.trim();
-  if (!trimmed) {
+  const content = placement.isMultiline ? text : text.trim();
+  if (!content) {
     return;
   }
 
-  const pageHeight = page.getHeight();
-  const fontSize = placement.fontSize;
-  const textWidth = font.widthOfTextAtSize(trimmed, fontSize);
-  const x = resolveTextX(
-    placement.alignment,
-    placement.x,
-    placement.width,
-    textWidth,
-  );
-  const textY = pageHeight - placement.yFromTop - fontSize - 1;
+  drawMaskIfNeeded(page, placement);
 
-  page.drawText(trimmed, {
-    x,
-    y: Math.max(0, textY),
-    size: fontSize,
-    font,
-    color: rgb(0, 0, 0),
+  const pageHeight = page.getHeight();
+  const layout = layoutTextInBox({
+    text: content,
+    boxWidth: placement.width,
+    boxHeight: placement.height,
+    fontSize: placement.fontSize,
+    isMultiline: placement.isMultiline,
+    measureWidth: (s) => font.widthOfTextAtSize(s, placement.fontSize),
   });
+
+  // Re-measure with the possibly shrunk font size for accurate wrap.
+  const fitted = layoutTextInBox({
+    text: content,
+    boxWidth: placement.width,
+    boxHeight: placement.height,
+    fontSize: layout.fontSize,
+    isMultiline: placement.isMultiline,
+    measureWidth: (s) => font.widthOfTextAtSize(s, layout.fontSize),
+  });
+
+  const fontSize = fitted.fontSize;
+  const lineHeight = fitted.lineHeight;
+  // Top of box in PDF coords: first baseline near top + padding.
+  let baselineFromTop = placement.yFromTop + PDF_TEXT_PADDING_Y + fontSize;
+
+  for (const line of fitted.lines) {
+    if (!line && !placement.isMultiline) {
+      continue;
+    }
+    const textWidth = font.widthOfTextAtSize(line, fontSize);
+    const x = resolveTextX(
+      placement.alignment,
+      placement.x,
+      placement.width,
+      textWidth,
+      PDF_TEXT_PADDING_X,
+    );
+    const textY = pageHeight - baselineFromTop;
+    const boxBottom = pdfYFromTop(
+      pageHeight,
+      placement.yFromTop,
+      placement.height,
+    );
+    // Skip lines that would draw below the placement box.
+    if (textY < boxBottom + 0.5) {
+      break;
+    }
+
+    page.drawText(line || " ", {
+      x,
+      y: Math.max(0, textY),
+      size: fontSize,
+      font,
+      color: rgb(0, 0, 0),
+    });
+
+    baselineFromTop += lineHeight;
+  }
 }
 
 function drawFieldOnPage(
   page: PDFPage,
   fieldView: PacketFormFieldView,
   placement: ScaledFieldPlacement,
-  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  font: PDFFont,
 ) {
   const displayValue = fieldView.displayValue ?? "";
   const fieldMeta = {
@@ -218,7 +310,12 @@ function drawFieldOnPage(
   }
 
   const exportText = resolveExportText(fieldView, displayValue);
-  if (!exportText) {
+  if (!exportText && !placement.maskBackground) {
+    return;
+  }
+
+  if (!exportText && placement.maskBackground) {
+    drawMaskIfNeeded(page, placement);
     return;
   }
 
@@ -231,6 +328,14 @@ function tryFillNativeAcroFormField(
 ): boolean {
   const pdfFieldName = fieldView.mapping.pdf_field_name?.trim();
   if (!pdfFieldName) {
+    return false;
+  }
+
+  // Overlay mask/multiline drawing must own fields that need presentation control.
+  if (
+    fieldView.mapping.mask_background === true ||
+    fieldView.mapping.is_multiline === true
+  ) {
     return false;
   }
 
@@ -309,18 +414,68 @@ function tryFillNativeAcroFormField(
   }
 }
 
+function drawTypedSignatureAnnotation(
+  page: PDFPage,
+  annotation: PacketFormAnnotation,
+  font: PDFFont,
+  pageWidth: number,
+  pageHeight: number,
+  coordPageWidth: number,
+  coordPageHeight: number,
+) {
+  const scaleX = pageWidth / coordPageWidth;
+  const scaleY = pageHeight / coordPageHeight;
+  const x = annotation.x * scaleX;
+  const yFromTop = annotation.y * scaleY;
+  const width = annotation.width * scaleX;
+  const height = annotation.height * scaleY;
+  const text = annotation.text_value.trim();
+  if (!text) return;
+
+  const baseSize = typedSignatureFontSize(height);
+  const drawSize = fitTypedSignatureFontSize({
+    text,
+    boxWidth: width,
+    boxHeight: height,
+    measureWidth: (value) => font.widthOfTextAtSize(value, baseSize),
+  });
+  const baseline = pageHeight - yFromTop - drawSize - 1;
+
+  page.drawText(text, {
+    x,
+    y: Math.max(0, baseline),
+    size: drawSize,
+    font,
+    color: rgb(0.05, 0.05, 0.35),
+  });
+}
+
 /**
  * Write packet form field values onto a PDF byte array.
  * Native AcroForm fields are filled by name when pdf_field_name is set;
  * overlay drawing is used as a fallback for manual placements.
+ * Optional packet-form annotations (typed signatures) are drawn last.
  */
 export async function fillPacketFormPdfBytes(
   sourcePdfBytes: Uint8Array,
   fields: PacketFormFieldView[],
+  options?: {
+    annotations?: PacketFormAnnotation[];
+    signatureFontBytes?: Uint8Array | null;
+  },
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(sourcePdfBytes);
   const pages = pdfDoc.getPages();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  let signatureFont: PDFFont = font;
+  if (options?.signatureFontBytes && options.signatureFontBytes.length > 0) {
+    try {
+      signatureFont = await pdfDoc.embedFont(options.signatureFontBytes);
+    } catch {
+      signatureFont = font;
+    }
+  }
+
   const overlayFields: PacketFormFieldView[] = [];
 
   for (const fieldView of fields) {
@@ -345,6 +500,24 @@ export async function fillPacketFormPdfBytes(
     );
 
     drawFieldOnPage(page, fieldView, scaled, font);
+  }
+
+  const annotations = (options?.annotations ?? []).filter(
+    (row) => row.status === "ACTIVE" && row.annotation_type === "typed_signature",
+  );
+
+  for (const annotation of annotations) {
+    const page = pages[annotation.page_number - 1];
+    if (!page) continue;
+    drawTypedSignatureAnnotation(
+      page,
+      annotation,
+      signatureFont,
+      page.getWidth(),
+      page.getHeight(),
+      page.getWidth(),
+      page.getHeight(),
+    );
   }
 
   return pdfDoc.save();

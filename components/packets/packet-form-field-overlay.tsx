@@ -12,6 +12,14 @@ import {
   resolveCheckboxCheckedState,
   type PacketFieldEditorControl,
 } from "@/lib/types/packet-form-editor";
+import {
+  PDF_TEXT_LINE_HEIGHT_RATIO,
+  PDF_TEXT_PADDING_X,
+  PDF_TEXT_PADDING_Y,
+  approximateHelveticaWidth,
+  layoutTextInBox,
+  resolveFieldFontSize,
+} from "@/lib/pdf-text-layout";
 import { toDateInputValue } from "@/components/packets/packet-form-field-value-input";
 import { formatAmountInput } from "@/lib/amount-format";
 import { formatPhoneInput } from "@/lib/phone-format";
@@ -36,6 +44,8 @@ export type PacketFormOverlayField = {
   page_width: number | null;
   page_height: number | null;
   font_size: number;
+  is_multiline: boolean;
+  mask_background: boolean;
   is_required: boolean;
   hasPlacementOverride: boolean;
   displayValue: string;
@@ -92,6 +102,48 @@ function isInlineEditableField(field: PacketFormOverlayField): boolean {
   return field.editorControl !== "checkbox";
 }
 
+function overlayFontSizePx(
+  field: PacketFormOverlayField,
+  metrics: PageMetrics,
+  rectHeight: number,
+  displayText: string,
+): number {
+  const originalHeight = field.page_height ?? metrics.originalHeight;
+  const scale =
+    originalHeight > 0 ? metrics.renderedHeight / originalHeight : 1;
+  const boxHeightPdf =
+    field.height != null && field.height > 0
+      ? field.height
+      : rectHeight / Math.max(scale, 0.001);
+
+  const basePdf = resolveFieldFontSize({
+    configuredFontSize: field.font_size,
+    boxHeightPdf,
+    isMultiline: field.is_multiline,
+    scale: 1,
+  });
+
+  if (!field.is_multiline || !displayText.trim()) {
+    return basePdf * scale;
+  }
+
+  const widthPdf =
+    field.width != null && field.width > 0
+      ? field.width
+      : metrics.renderedWidth / Math.max(scale, 0.001);
+
+  const layout = layoutTextInBox({
+    text: displayText,
+    boxWidth: widthPdf,
+    boxHeight: boxHeightPdf,
+    fontSize: basePdf,
+    isMultiline: true,
+    measureWidth: (text) => approximateHelveticaWidth(text, basePdf),
+  });
+
+  return layout.fontSize * scale;
+}
+
 export function PacketFormFieldOverlay({
   field,
   metrics,
@@ -111,7 +163,7 @@ export function PacketFormFieldOverlay({
 }: PacketFormFieldOverlayProps) {
   const suppressClickRef = useRef(false);
   const cancelInlineEditRef = useRef(false);
-  const inlineInputRef = useRef<HTMLInputElement>(null);
+  const inlineInputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const interactionRef = useRef<InteractionState | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const rect = pdfToRenderRect(field, metrics);
@@ -131,6 +183,11 @@ export function PacketFormFieldOverlay({
     field.editorControl === "currency"
       ? formatAmountInput(field.displayValue)
       : formatPacketFieldOverlayValue(field.displayValue, field.field_type);
+  const layoutText = isInlineEditing ? inlineEditValue : valueText;
+  const originalHeight = field.page_height ?? metrics.originalHeight;
+  const zoomScale =
+    originalHeight > 0 ? metrics.renderedHeight / originalHeight : 1;
+  const fontPx = overlayFontSizePx(field, metrics, rect.height, layoutText);
   const showPlaceholder = (isSelected || isHovered) && !hasValue;
   const placeholderText = isSignature
     ? "Signature"
@@ -140,6 +197,7 @@ export function PacketFormFieldOverlay({
         ? ""
         : "Empty";
   const placementLocked = isUpdating || isInlineEditing || isSavingValue;
+  const opaqueMask = field.mask_background === true;
 
   useEffect(() => {
     if (!isInlineEditing) {
@@ -147,7 +205,9 @@ export function PacketFormFieldOverlay({
     }
 
     inlineInputRef.current?.focus();
-    inlineInputRef.current?.select();
+    if (inlineInputRef.current && "select" in inlineInputRef.current) {
+      inlineInputRef.current.select();
+    }
   }, [isInlineEditing]);
 
   const suppressClick = () => {
@@ -214,11 +274,11 @@ export function PacketFormFieldOverlay({
   };
 
   const handleInlineKeyDown = (
-    event: React.KeyboardEvent<HTMLInputElement>,
+    event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     event.stopPropagation();
 
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && !field.is_multiline) {
       event.preventDefault();
       onInlineEditSave(field);
       return;
@@ -272,6 +332,15 @@ export function PacketFormFieldOverlay({
         : field.editorControl === "currency"
           ? formatAmountInput(inlineEditValue)
           : inlineEditValue;
+
+  const textStyle: React.CSSProperties = {
+    fontSize: `${fontPx}px`,
+    lineHeight: field.is_multiline ? PDF_TEXT_LINE_HEIGHT_RATIO : 1,
+    paddingLeft: PDF_TEXT_PADDING_X * zoomScale,
+    paddingRight: PDF_TEXT_PADDING_X * zoomScale,
+    paddingTop: PDF_TEXT_PADDING_Y * zoomScale,
+    paddingBottom: PDF_TEXT_PADDING_Y * zoomScale,
+  };
 
   return (
     <Rnd
@@ -358,56 +427,81 @@ export function PacketFormFieldOverlay({
             : "border-amber-500 bg-amber-300/40 shadow-md ring-2 ring-amber-400 ring-offset-1 ring-offset-white dark:ring-offset-zinc-900"
           : isCheckbox
             ? "border-border hover:border-muted-foreground"
-            : hasValue
-              ? "bg-white/85 dark:bg-zinc-900/85"
-              : "border-dashed bg-transparent opacity-70 hover:opacity-100",
+            : opaqueMask
+              ? "bg-white dark:bg-zinc-950"
+              : hasValue
+                ? "bg-white/85 dark:bg-zinc-900/85"
+                : "border-dashed bg-transparent opacity-70 hover:opacity-100",
         (isUpdating || isSavingValue) && "opacity-70",
-        isInlineEditing && "z-[3] bg-white dark:bg-zinc-900",
+        isInlineEditing &&
+          (opaqueMask ? "z-[3] bg-white dark:bg-zinc-950" : "z-[3] bg-white dark:bg-zinc-900"),
       )}
       style={{
         boxSizing: "border-box",
       }}
     >
       {isInlineEditing ? (
-        <input
-          ref={inlineInputRef}
-          type={inputType}
-          inputMode={inputMode}
-          value={inputValue}
-          disabled={isSavingValue}
-          onChange={(event) =>
-            onInlineEditChange(
-              field,
-              field.editorControl === "phone"
-                ? formatPhoneInput(event.target.value)
-                : field.editorControl === "currency"
-                  ? formatAmountInput(event.target.value)
-                  : event.target.value,
-            )
-          }
-          onBlur={handleInlineBlur}
-          onKeyDown={handleInlineKeyDown}
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
-          className="h-full w-full border-0 bg-transparent px-1 py-0.5 text-[10px] leading-tight text-foreground outline-none ring-0 focus:ring-0"
-          style={{
-            fontSize: `${Math.min(field.font_size, rect.height * 0.75)}px`,
-          }}
-          aria-label={field.field_label ?? field.field_key ?? "Field value"}
-        />
+        field.is_multiline ? (
+          <textarea
+            ref={inlineInputRef as React.RefObject<HTMLTextAreaElement>}
+            value={inputValue}
+            disabled={isSavingValue}
+            onChange={(event) => onInlineEditChange(field, event.target.value)}
+            onBlur={handleInlineBlur}
+            onKeyDown={handleInlineKeyDown}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            className="h-full w-full resize-none border-0 bg-transparent text-left text-foreground outline-none ring-0 focus:ring-0"
+            style={{
+              ...textStyle,
+              overflow: "hidden",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              alignItems: "flex-start",
+            }}
+            aria-label={field.field_label ?? field.field_key ?? "Field value"}
+          />
+        ) : (
+          <input
+            ref={inlineInputRef as React.RefObject<HTMLInputElement>}
+            type={inputType}
+            inputMode={inputMode}
+            value={inputValue}
+            disabled={isSavingValue}
+            onChange={(event) =>
+              onInlineEditChange(
+                field,
+                field.editorControl === "phone"
+                  ? formatPhoneInput(event.target.value)
+                  : field.editorControl === "currency"
+                    ? formatAmountInput(event.target.value)
+                    : event.target.value,
+              )
+            }
+            onBlur={handleInlineBlur}
+            onKeyDown={handleInlineKeyDown}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            className="h-full w-full border-0 bg-transparent text-left text-foreground outline-none ring-0 focus:ring-0"
+            style={textStyle}
+            aria-label={field.field_label ?? field.field_key ?? "Field value"}
+          />
+        )
       ) : (
         <button
           type="button"
           className={cn(
-            "flex h-full w-full cursor-pointer items-center overflow-hidden text-left text-[10px] leading-tight",
-            !isCheckbox && "px-1 py-0.5",
+            "flex h-full w-full cursor-pointer overflow-hidden text-left",
             hasValue || isSelected
               ? "text-foreground"
               : "text-muted-foreground",
             isCheckbox
-              ? "justify-center border-transparent bg-transparent p-0 shadow-none"
-              : "justify-start",
+              ? "items-center justify-center border-transparent bg-transparent p-0 shadow-none"
+              : field.is_multiline
+                ? "items-start justify-start"
+                : "items-center justify-start",
           )}
+          style={isCheckbox ? undefined : textStyle}
           onClick={handleContentClick}
           onDoubleClick={handleDoubleClick}
           title={
@@ -421,7 +515,16 @@ export function PacketFormFieldOverlay({
           {isCheckbox ? (
             <AppCheckboxVisual checked={isChecked} />
           ) : hasValue ? (
-            <span className="truncate font-normal">{valueText}</span>
+            <span
+              className={cn(
+                "block w-full font-normal",
+                field.is_multiline
+                  ? "whitespace-pre-wrap break-words"
+                  : "truncate whitespace-nowrap",
+              )}
+            >
+              {valueText}
+            </span>
           ) : showPlaceholder && placeholderText ? (
             <span className="truncate italic opacity-70">{placeholderText}</span>
           ) : null}

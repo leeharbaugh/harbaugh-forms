@@ -1,10 +1,28 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-08-05 (tenant_names + Map Fields hardening live on Vercel Production; TXR-2216 remains DRAFT)
+**As of:** 2026-08-05 (Fill Form multiline/mask/signature annotations + font scaling implemented on development; not production-deployed)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
+
+### Fill Form presentation: multiline, line mask, typed signatures, font scaling (2026-08-05)
+
+**Status:** Implemented on development. **Not deployed to Vercel Production.** Development migration `20260805220000_fill_form_presentation_and_annotations.sql` applied to `harbaugh-forms-dev`. Production migration **not** applied (deliberate).
+
+| Item | Result |
+|------|--------|
+| Multiline wrapping | Placement flag `form_field_mappings.is_multiline`; shared `lib/pdf-text-layout.ts`; Fill Form overlay + pdf-lib generation |
+| Cover preprinted lines | Placement flag `form_field_mappings.mask_background` (opaque white under text; Map Fields control; default off) |
+| Typed signatures | New `packet_form_annotations` (typed_signature only); Fill Form toolbar; Caveat OFL font; soft-delete; RLS via `owns_packet` |
+| Preview font sizing | Overlay fonts scale with `renderedHeight/originalHeight`; removed fixed `text-[10px]` value display |
+| Tests | `test:pdf-text-layout`; annotation contract tests; field-instance-sync; packet-form-lifecycle; storage-paths; `tsc --noEmit`; `build:validate` |
+| Font license | `public/fonts/Caveat-Regular.ttf` + `public/fonts/OFL.txt` (SIL OFL 1.1, Caveat Project Authors) |
+| Deferred | Drawn/uploaded signatures, reusable saved signatures, cryptographic signing, Authentisign integration |
+
+**Root causes addressed:** (1) Multiline clipped because preview used `truncate`/`input` and PDF used a single `drawText` with no wrap. (2) Undersized preview text because display used fixed CSS `10px` while boxes scaled with zoom; clamp was also incorrectly applied after zoom scale (fixed: clamp in PDF space, then multiply by scale).
+
+**Production before deploy:** Apply migration `20260805220000_fill_form_presentation_and_annotations.sql` to production Supabase **first** (backward-compatible with currently deployed app code: new columns default `false`; new table unused by old code), validate schema, then deploy application code. Do not open Fill Form features that write annotations or rely on `is_multiline`/`mask_background` columns until that migration is applied.
 
 ### Packet Tenant Names + Map Fields hardening — Vercel Production deploy (2026-08-05)
 

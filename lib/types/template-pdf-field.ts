@@ -36,6 +36,8 @@ export type PlacedPdfField = {
   page_width: number | null;
   page_height: number | null;
   font_size: number;
+  is_multiline: boolean;
+  mask_background: boolean;
   is_required: boolean;
   notes: string | null;
   pdf_field_name: string | null;
@@ -190,6 +192,8 @@ export function formFieldMappingToPlacedPdfField(
     page_width: mapping.page_width,
     page_height: mapping.page_height,
     font_size: mapping.font_size ?? 10,
+    is_multiline: mapping.is_multiline === true,
+    mask_background: mapping.mask_background === true,
     is_required: mapping.required,
     notes: mapping.notes,
     pdf_field_name: mapping.pdf_field_name,
