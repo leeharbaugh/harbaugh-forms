@@ -1,10 +1,34 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-08-05 (Packet Tenant Names resolver shipped; TXR-2216 tenant field source updated; form 51 remains DRAFT)
+**As of:** 2026-08-05 (tenant_names + Map Fields hardening live on Vercel Production; TXR-2216 remains DRAFT)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
+
+### Packet Tenant Names + Map Fields hardening — Vercel Production deploy (2026-08-05)
+
+**Status:** Application code deployed to Vercel Production. Production app and database metadata are aligned for `tenant_names`.
+
+| Item | Value |
+|------|--------|
+| Commit | `d89d3c78532ab4ea6c5f977c1c75891975f0308c` on `main` |
+| Message | Add packet tenant names resolver and harden field source editing |
+| Vercel Production deployment | `dpl_HhZjE2dWumGVxRPmEfyx2WKWu2WD` |
+| Deployment URL | https://harbaugh-forms-guve6fsw2-lee-harbaugh-s-projects.vercel.app |
+| Status | **Ready** (GitHub Production deployment success) |
+| Custom domain | `https://forms.harbaughrealestate.com` aliased to this deployment |
+| Serving | `https://forms.harbaughrealestate.com` |
+| Migration `20260805210000` | Already present on production and development (no push during deploy) |
+| Form 51 | Remains **`ACTIVE` + `DRAFT`** (`published_at` null) — not published |
+
+**Pre-deploy validation:** `test:packet-tenant-names` 14; `test:source-registry-cleanup` 10; `test:field-instance-sync` 17; `tsc --noEmit`; targeted ESLint; `build:validate` — all passed.
+
+**Resolver smoke (production, read-only):** No ACTIVE multi-tenant packet currently exists in production (packet-contact roles present: `SELLER`×2 on one packet, lone `PRIMARY` on another). Synthetic join check matches canonical formatter: `Alice Tenant, Bob Tenant` (two names) and `A, B, C` (three+). Field `txr_2216_tenant_names` remains `custom_resolver` / `tenant_names`; no packet_forms yet instantiate form 51. **PRIMARY/OTHER note:** role set matches `tenant_1`/`tenant_2`; a lone `PRIMARY` on a non-lease packet would be included if that packet resolved `tenant_names` — no multi-tenant lease packet available to exercise TENANT/CO_CLIENT/SPOUSE in production today.
+
+**Field-editor smoke:** Deployed commit includes catalog-miss fetch-by-id, unmapped Section B hide, linked-field identity lock, and field-key case preservation. Production DB field key remains lowercase `txr_2216_tenant_names` (unchanged). Interactive Map Fields save was not performed (no unnecessary production structural writes); unauthenticated `/forms/51/editor` correctly gates to login (307).
+
+**Availability:** `/auth/login` 200; `/`, `/packets`, `/collections`, `/forms/51/editor` unauthenticated → 307 `/auth/login`.
 
 ### Packet Tenant Names resolver + TXR-2216 source update (2026-08-05)
 
@@ -18,9 +42,9 @@ Production form **51** field `txr_2216_tenant_names` (`2b103fac-…`) source cha
 | Resolver key / label | `tenant_names` / **Packet Tenant Names** |
 | Role set | Same as `tenant_1`/`tenant_2`: TENANT, CO_CLIENT, SPOUSE, PRIMARY, OTHER |
 | Join format | Comma-separated (matches `buyer_names`) |
-| Editor defect | Map Fields edit forced `field_key` uppercase on save and presented editable identity fields; fixed by preserving key case + locking key/label/types when editing a linked field |
+| Editor defect | Map Fields edit forced `field_key` uppercase on save and presented editable identity fields; fixed by preserving key case + locking key/label/types when editing a linked field; catalog miss now fetches by id; unmapped placements hide Section B |
 | Tests | `test:packet-tenant-names` 14 pass; source-registry 10; field-instance-sync 17; `tsc`; targeted ESLint; `build:validate` |
-| Runtime note | Prefill works in production **after** this application code is deployed to Vercel Production. Until then, metadata is set but the live app build does not yet resolve `tenant_names`. |
+| Runtime | Prefill is live on Vercel Production as of commit `d89d3c7` / deployment `dpl_HhZjE2dWumGVxRPmEfyx2WKWu2WD`. |
 
 ### TXR-2216 Itemization of Security Deposit — Option 1 draft placements applied (2026-08-05)
 
@@ -864,7 +888,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Deploy application code so production resolves `tenant_names` for `txr_2216_tenant_names`. Development mirror remains deferred.
+1. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 2. Monitor real-world Lee-only production use; review runtime logs periodically
 3. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
 4. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
