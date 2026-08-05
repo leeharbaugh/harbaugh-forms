@@ -31,6 +31,7 @@ export async function createTypedSignatureAnnotation(
   params: {
     packetId: number;
     packetFormId: number;
+    /** Authenticated user; DB trigger overwrites created_by_user_id with auth.uid(). */
     userId: string;
     input: PacketFormAnnotationInput;
   },
@@ -42,6 +43,8 @@ export async function createTypedSignatureAnnotation(
     throw new Error(validationError);
   }
 
+  // created_by_user_id is set for clarity; the BEFORE INSERT trigger replaces it
+  // with auth.uid() for authenticated sessions (client UUID is not trusted).
   const { data, error } = await supabase
     .from("packet_form_annotations")
     .insert({
@@ -79,11 +82,12 @@ export async function updatePacketFormAnnotationPlacement(
     width: number;
     height: number;
     page_number?: number;
+    text_value?: string;
   },
 ): Promise<PacketFormAnnotation> {
   await assertPacketFormAllowsValueMutation(supabase, params.packetFormId);
 
-  const updates: Record<string, number> = {
+  const updates: Record<string, number | string> = {
     x: params.x,
     y: params.y,
     width: params.width,
@@ -92,6 +96,10 @@ export async function updatePacketFormAnnotationPlacement(
   if (params.page_number != null) {
     updates.page_number = params.page_number;
   }
+  if (params.text_value != null) {
+    updates.text_value = params.text_value.trim();
+  }
+  // Never include created_by_user_id — DB trigger also rejects changes.
 
   const { data, error } = await supabase
     .from("packet_form_annotations")

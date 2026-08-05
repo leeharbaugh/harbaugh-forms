@@ -91,6 +91,26 @@ describe("packet form typed signature annotations", () => {
     );
   });
 
+  it("enforces authoritative created_by via forward migration trigger", () => {
+    const hardening = readFileSync(
+      "supabase/migrations/20260805230000_packet_form_annotations_created_by_immutable.sql",
+      "utf8",
+    );
+    assert.match(hardening, /packet_form_annotations_enforce_created_by/);
+    assert.match(hardening, /new\.created_by_user_id := auth\.uid\(\)/);
+    assert.match(hardening, /new\.created_by_user_id := old\.created_by_user_id/);
+    assert.match(hardening, /created_by_user_id = auth\.uid\(\)/);
+    assert.match(hardening, /INVOKER \+ search_path=public; not SECURITY DEFINER/);
+    assert.doesNotMatch(
+      hardening,
+      /returns trigger\s+language plpgsql\s+security definer/i,
+    );
+    assert.match(hardening, /set search_path = public/);
+    const app = readFileSync("lib/packet-form-annotations.ts", "utf8");
+    assert.match(app, /trigger replaces it/i);
+    assert.match(app, /Never include created_by_user_id/);
+  });
+
   it("keeps browser font loader free of node:fs", () => {
     const browserFont = readFileSync("lib/signature-font.ts", "utf8");
     const serverFont = readFileSync("lib/signature-font-server.ts", "utf8");
@@ -100,6 +120,12 @@ describe("packet form typed signature annotations", () => {
     assert.match(serverFont, /NEVER import this module from Client/);
     assert.match(download, /signature-font"/);
     assert.doesNotMatch(download, /signature-font-server/);
+  });
+
+  it("registers fontkit before embedding Caveat", () => {
+    const fill = readFileSync("lib/fill-packet-form-pdf.ts", "utf8");
+    assert.match(fill, /@pdf-lib\/fontkit/);
+    assert.match(fill, /registerFontkit/);
   });
 
   it("keeps annotations out of field_instances / Authentisign paths", () => {

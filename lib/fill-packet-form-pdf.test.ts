@@ -29,6 +29,11 @@ describe("fillPacketFormPdfBytes source contracts", () => {
     assert.match(source, /options\?\.annotations/);
     assert.doesNotMatch(source, /field_instances/);
   });
+
+  it("registers fontkit before embedding custom signature fonts", () => {
+    assert.match(source, /registerFontkit\(fontkit\)/);
+    assert.match(source, /@pdf-lib\/fontkit/);
+  });
 });
 
 describe("Fill Form overlay font scaling source contracts", () => {

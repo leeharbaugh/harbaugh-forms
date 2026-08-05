@@ -25,6 +25,7 @@ import {
   isCheckboxPdfField,
 } from "@/lib/types/template-pdf-field";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import type { PacketFormAnnotation } from "@/lib/types/packet-form-annotation";
 
 type ScaledFieldPlacement = {
@@ -465,13 +466,15 @@ export async function fillPacketFormPdfBytes(
   },
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(sourcePdfBytes);
+  pdfDoc.registerFontkit(fontkit);
   const pages = pdfDoc.getPages();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   let signatureFont: PDFFont = font;
   if (options?.signatureFontBytes && options.signatureFontBytes.length > 0) {
     try {
       signatureFont = await pdfDoc.embedFont(options.signatureFontBytes);
-    } catch {
+    } catch (error) {
+      console.error("Failed to embed Caveat signature font; falling back to Helvetica.", error);
       signatureFont = font;
     }
   }
