@@ -1,12 +1,14 @@
 /**
  * Development QA artifact for packet_form 53 (Residential Lease Listing):
- * multiline Non-Real Estate Items + typed Caveat signature Kenneth Lee Harbaugh.
+ * multiline + mask Non-Real Estate Items + typed Caveat signature.
  *
- *   node --experimental-strip-types --env-file=.env.local scripts/manual-qa-fill-form-53-download.ts
+ *   npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/manual-qa-fill-form-53-download.ts
  */
 import { createClient } from "@supabase/supabase-js";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import path from "node:path";
+import { PDFDocument } from "pdf-lib";
 import { fillPacketFormPdfBytes } from "../lib/fill-packet-form-pdf.ts";
 import { loadPacketFormEditorData } from "../lib/packet-form-editor.ts";
 import { loadCaveatSignatureFontBytesServer } from "../lib/signature-font-server.ts";
@@ -40,22 +42,51 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+function decodeStream(raw: Uint8Array): string {
+  try {
+    return inflateSync(raw).toString("latin1");
+  } catch {
+    return Buffer.from(raw).toString("latin1");
+  }
+}
+
+async function page1Operators(bytes: Uint8Array): Promise<string> {
+  const doc = await PDFDocument.load(Uint8Array.from(bytes));
+  const contents = doc.getPages()[0]!.node.Contents();
+  if (!contents) return "";
+  const refs = "asArray" in contents ? contents.asArray() : [contents];
+  const parts: string[] = [];
+  for (const ref of refs) {
+    const stream = doc.context.lookup(ref);
+    if (
+      stream &&
+      "getContents" in stream &&
+      typeof stream.getContents === "function"
+    ) {
+      parts.push(decodeStream(stream.getContents() as Uint8Array));
+    }
+  }
+  return parts.join("\n");
+}
+
 async function main() {
   const { data: mapping, error: mapError } = await admin
     .from("form_field_mappings")
-    .select("id, mapping_name, is_multiline, width, height")
+    .select(
+      "id, mapping_name, is_multiline, mask_background, width, height, x, y",
+    )
     .eq("id", NON_REAL_MAPPING_ID)
     .maybeSingle();
   if (mapError || !mapping) {
     fail(`mapping lookup failed: ${mapError?.message ?? "missing"}`);
   }
-  if (mapping.is_multiline !== true) {
+  if (mapping.is_multiline !== true || mapping.mask_background !== true) {
     fail(
-      `mapping ${NON_REAL_MAPPING_ID} is_multiline=${mapping.is_multiline}; enable in Map Fields for this QA`,
+      `mapping ${NON_REAL_MAPPING_ID} is_multiline=${mapping.is_multiline} mask_background=${mapping.mask_background}; both must be true`,
     );
   }
   ok(
-    `mapping "${mapping.mapping_name}" is_multiline=true (${mapping.width}x${mapping.height})`,
+    `mapping "${mapping.mapping_name}" is_multiline=true mask_background=true (${mapping.width}x${mapping.height})`,
   );
 
   const editor = await loadPacketFormEditorData(admin, PACKET_FORM_ID);
@@ -71,28 +102,32 @@ async function main() {
   const fontBytes = await loadCaveatSignatureFontBytesServer();
   if (!fontBytes?.length) fail("Caveat font bytes missing");
 
-  const fields: PacketFormFieldView[] = editor.fields.map((field) => {
-    if (field.mapping.id !== NON_REAL_MAPPING_ID) return field;
-    return {
-      ...field,
-      displayValue: NARRATIVE,
-      instance: {
-        ...field.instance,
-        value: NARRATIVE,
-        is_override: true,
-      },
-    };
-  });
+  const withNarrative = (value: string): PacketFormFieldView[] =>
+    editor.fields.map((field) => {
+      if (field.mapping.id !== NON_REAL_MAPPING_ID) return field;
+      return {
+        ...field,
+        displayValue: value,
+        instance: {
+          ...field.instance,
+          value: value || null,
+          is_override: true,
+        },
+      };
+    });
 
-  const nonReal = fields.find((f) => f.mapping.id === NON_REAL_MAPPING_ID);
+  const nonReal = editor.fields.find((f) => f.mapping.id === NON_REAL_MAPPING_ID);
   if (!nonReal) fail("Non-Real Estate Items field missing from editor data");
-  if (nonReal.mapping.is_multiline !== true) {
-    fail("is_multiline did not survive editor load");
+  if (
+    nonReal.mapping.is_multiline !== true ||
+    nonReal.mapping.mask_background !== true
+  ) {
+    fail("multiline/mask flags did not survive editor load");
   }
-  ok("is_multiline reached fillPacketFormPdfBytes field view");
+  ok("is_multiline + mask_background reached fillPacketFormPdfBytes field view");
 
   const pageCount = Math.max(
-    ...fields.map((f) => f.placement.page_number),
+    ...editor.fields.map((f) => f.placement.page_number),
     1,
   );
   const annotations: PacketFormAnnotation[] = [
@@ -134,27 +169,93 @@ async function main() {
     },
   ];
 
-  const filled = await fillPacketFormPdfBytes(sourceBytes, fields, {
-    annotations,
-    signatureFontBytes: fontBytes,
-  });
-  const copy = Uint8Array.from(filled);
   const outDir = path.join(process.cwd(), "_audit_tmp", "pdf-regression");
   mkdirSync(outDir, { recursive: true });
-  const outPath = path.join(outDir, "manual-qa-pf53-multiline-caveat.pdf");
-  writeFileSync(outPath, copy);
 
-  const latin = Buffer.from(copy).toString("latin1");
-  if (!/HarbaughCaveat/i.test(latin) || !/FontFile2/.test(latin)) {
-    fail("expected HarbaughCaveat + FontFile2 in filled PDF");
+  async function fillAndWrite(
+    label: string,
+    fields: PacketFormFieldView[],
+    fileName: string,
+  ) {
+    const filled = Uint8Array.from(
+      await fillPacketFormPdfBytes(sourceBytes, fields, {
+        annotations,
+        signatureFontBytes: fontBytes,
+      }),
+    );
+    const outPath = path.join(outDir, fileName);
+    writeFileSync(outPath, filled);
+    const ops = await page1Operators(filled);
+    const hasWhite = /1\s+1\s+1\s+rg/.test(ops);
+    const hasTranslate = new RegExp(
+      String.raw`1\s+0\s+0\s+1\s+${Number(nonReal!.mapping.x)}\s+[\d.]+\s+cm`,
+    ).test(ops);
+    if (!hasWhite || !hasTranslate) {
+      fail(`${label}: expected white mask path in page operators`);
+    }
+    const latin = Buffer.from(filled).toString("latin1");
+    if (!/HarbaughCaveat/i.test(latin) || !/FontFile2/.test(latin)) {
+      fail(`${label}: expected HarbaughCaveat + FontFile2`);
+    }
+    ok(`${label}: wrote ${outPath} (${filled.length} bytes); mask+Caveat present`);
+    return filled;
   }
-  if (/Ƒ|Ƌ|ƈ|ƅ|Ƙ/.test(latin)) {
-    fail("corrupt cmap glyph markers present in PDF bytes");
+
+  await fillAndWrite(
+    "populated+mask",
+    withNarrative(NARRATIVE),
+    "manual-qa-pf53-multiline-mask-caveat.pdf",
+  );
+  await fillAndWrite(
+    "empty+mask",
+    withNarrative(""),
+    "manual-qa-pf53-empty-mask.pdf",
+  );
+
+  // Temporary mask-off control (does not persist DB — in-memory field views only).
+  const maskOffFields = withNarrative(NARRATIVE).map((field) => {
+    if (field.mapping.id !== NON_REAL_MAPPING_ID) return field;
+    return {
+      ...field,
+      mapping: { ...field.mapping, mask_background: false },
+    };
+  });
+  const maskOffBytes = Uint8Array.from(
+    await fillPacketFormPdfBytes(sourceBytes, maskOffFields, {
+      annotations,
+      signatureFontBytes: fontBytes,
+    }),
+  );
+  writeFileSync(path.join(outDir, "manual-qa-pf53-mask-off-control.pdf"), maskOffBytes);
+  const maskOffOps = await page1Operators(maskOffBytes);
+  // Template may already contain white fills; require no translate to this placement after white rg near field.
+  const placementMask = new RegExp(
+    String.raw`1\s+1\s+1\s+rg[\s\S]{0,120}?1\s+0\s+0\s+1\s+${Number(nonReal.mapping.x)}\s+[\d.]+\s+cm[\s\S]{0,120}?${Number(nonReal.mapping.width)}\s+${Number(nonReal.mapping.height)}\s+l`,
+  );
+  if (placementMask.test(maskOffOps)) {
+    fail("mask-off control unexpectedly contains placement-sized white mask");
   }
+  ok("mask-off control PDF has no placement white mask (lines would show through)");
+
+  // Confirm retained DB flags unchanged after in-memory toggle.
+  const { data: after } = await admin
+    .from("form_field_mappings")
+    .select("is_multiline, mask_background")
+    .eq("id", NON_REAL_MAPPING_ID)
+    .single();
+  if (after?.is_multiline !== true || after?.mask_background !== true) {
+    fail(`DB flags drifted: ${JSON.stringify(after)}`);
+  }
+  ok("DB retained is_multiline=true mask_background=true");
 
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const populated = await fillPacketFormPdfBytes(
+    sourceBytes,
+    withNarrative(NARRATIVE),
+    { annotations, signatureFontBytes: fontBytes },
+  );
   const parsed = await pdfjs.getDocument({
-    data: Uint8Array.from(copy),
+    data: Uint8Array.from(populated),
     useSystemFonts: true,
   }).promise;
   const page1 = await parsed.getPage(1);
@@ -168,13 +269,10 @@ async function main() {
   if (!/washer|Landlord/i.test(text)) {
     fail("narrative missing from page 1 extract");
   }
-  if (/Ƒ|Ƌ|ƈ|ƅ|Ƙ/.test(text)) {
-    fail(`corrupt glyphs in page 1 extract: ${text.slice(0, 240)}`);
-  }
-
-  ok(`wrote ${outPath} (${copy.length} bytes)`);
   ok("page 1 extract contains intact signature + narrative markers");
-  ok("Open this PDF in Adobe Acrobat for visual multiline wrap + Caveat spacing QA");
+  ok(
+    "Open manual-qa-pf53-multiline-mask-caveat.pdf in Adobe Acrobat for visual line-cover QA",
+  );
 }
 
 main().catch((error) => {

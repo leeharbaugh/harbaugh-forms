@@ -1,6 +1,6 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-08-06 (Fill Form download regressions: multiline flag + Caveat `customName` embed; not production-deployed)
+**As of:** 2026-08-06 (Fill Form download: multiline + Caveat + Non-Real Estate mask; not production-deployed)
 
 ## Current State
 
@@ -8,7 +8,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
 ### Fill Form download regressions: multiline wrap + Caveat spacing (2026-08-06)
 
-**Status:** Fixed on branch `fix/fill-form-pdf-multiline-caveat-download` targeting `main` @ `bd84f908…` (PR #30 squash). **Not merged. Not deployed. No production migrations.**
+**Status:** Fixed on branch `fix/fill-form-pdf-multiline-caveat-download` (PR #31). **Not merged. Not deployed. No production migrations.**
 
 | Item | Result |
 |------|--------|
@@ -17,11 +17,16 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 | Multiline fix | Enable Map Fields **Multiline** for narrative blanks (dev: mapping `f7f8e678-…` set `is_multiline=true`, retained). Download path already honored the flag when true. |
 | Caveat root cause | Embedding Caveat under its default PostScript name **alongside Helvetica** in the filled packet PDF corrupted cmap/advances (extract looked like `KenƑetƋ…` / visually spaced fragments). Not glyph-by-glyph drawing. |
 | Caveat fix | `embedFont(bytes, { subset: true, customName: "HarbaughCaveat" })`; still one intact `drawText(text)`; keep fontkit + `useObjectStreams: false` + public font proxy exclusions |
-| Tests | `test:fill-form-pdf-download`; `test:pdf-text-layout`; annotation auth validate; presentation smoke; field-instance-sync; packet-form-lifecycle; `tsc`; targeted ESLint; `build:validate` |
-| Manual artifact | `_audit_tmp/pdf-regression/manual-qa-pf53-multiline-caveat.pdf` (pf **53**, form **15**) — opened in Adobe Acrobat DC |
-| Migrations | **None new.** Existing `20260805220000` / `20260805230000` unchanged; no follow-up migration required for these two bugs |
+| Preprinted-line mask root cause | **Configuration, not rendering.** Mapping `f7f8e678-…` had `mask_background=false` after multiline enable. Download path already draws opaque white placement rectangle before text when the flag is true (empty and populated). |
+| Mask fix | Dev Map Fields / DB: retain `mask_background=true` with `is_multiline=true` on `f7f8e678-…`. No renderer change required. |
+| Tests | `test:fill-form-pdf-download` (multiline + Caveat + mask on/off/empty); `test:pdf-text-layout`; annotation auth validate; presentation smoke; field-instance-sync; packet-form-lifecycle; `tsc`; targeted ESLint; `build:validate` |
+| Manual artifact | `_audit_tmp/pdf-regression/manual-qa-pf53-multiline-mask-caveat.pdf` (+ empty-mask / mask-off control) — opened in Adobe Acrobat DC |
+| Migrations | **None new.** Existing `20260805220000` / `20260805230000` unchanged. |
+| Production data note | After schema migrations + app deploy, production form **15** mapping for Non-Real Estate Items still needs **`is_multiline=true`** and **`mask_background=true`** applied as ordinary Map Fields / configuration data (not a new migration). |
 
-**Remaining preview vs PDF differences (acceptable):** CSS Caveat vs embedded subset metrics can differ slightly; Non-Real Estate box height remains **28pt** so vertical capacity is limited after wrap (widen height in Map Fields if more printed lines are needed).
+**Retained development mapping `f7f8e678-…`:** `is_multiline=true`, `mask_background=true`, `470×28` (height unchanged; enlarge in Map Fields only if more printed-line rows must be covered).
+
+**Remaining preview vs PDF differences (acceptable):** CSS Caveat vs embedded subset metrics can differ slightly; Non-Real Estate box height remains **28pt** so vertical capacity / printed-line coverage is limited to that rectangle.
 
 ### Fill Form presentation: multiline, line mask, typed signatures, font scaling (2026-08-05)
 
@@ -43,7 +48,7 @@ Production migrations **not** applied (deliberate).
 | Font license | `public/fonts/Caveat-Regular.ttf` + `public/fonts/OFL.txt` (SIL OFL 1.1, Caveat Project Authors) |
 | Deferred | Drawn/uploaded signatures, reusable saved signatures, cryptographic signing, Authentisign integration |
 
-**Root causes addressed:** (1) Multiline clipped because preview used `truncate`/`input` and PDF used a single `drawText` with no wrap. (2) Undersized preview text because display used fixed CSS `10px` while boxes scaled with zoom; clamp was also incorrectly applied after zoom scale (fixed: clamp in PDF space, then multiply by scale). (3) Creator spoof residual: UPDATE could rewrite `created_by_user_id` without DB enforcement (fixed by forward migration trigger). (4) Caveat custom-font embed failed without fontkit and fell back to Helvetica silently. (5) 2026-08-06: narrative downloads without Map Fields multiline flag stay single-line; Caveat+Helvetica default-name embed corrupted advances (fixed via `HarbaughCaveat` customName).
+**Root causes addressed:** (1) Multiline clipped because preview used `truncate`/`input` and PDF used a single `drawText` with no wrap. (2) Undersized preview text because display used fixed CSS `10px` while boxes scaled with zoom; clamp was also incorrectly applied after zoom scale (fixed: clamp in PDF space, then multiply by scale). (3) Creator spoof residual: UPDATE could rewrite `created_by_user_id` without DB enforcement (fixed by forward migration trigger). (4) Caveat custom-font embed failed without fontkit and fell back to Helvetica silently. (5) 2026-08-06: narrative downloads without Map Fields multiline flag stay single-line; Caveat+Helvetica default-name embed corrupted advances (fixed via `HarbaughCaveat` customName). (6) Preprinted lines through wrapped Non-Real Estate text: mapping lacked `mask_background` (enabled and retained).
 
 **Manual QA (development, 2026-08-05 / continued 2026-08-06):**
 - Zoom policy verified at 75 / 100 / 150 / 195 / 250% (configured 10pt → 7.5 / 10 / 15 / 19.5 / 25 CSS px; multiline derived sizes scale linearly; padding uses the same scale factor). Stored PDF coordinates are independent of zoom.
@@ -55,10 +60,10 @@ Production migrations **not** applied (deliberate).
   - Download PDF with mask+wrap materially matched preview; source template PDF unchanged after flag restore.
   - Typed signatures: Caveat dialog preview; place on pages 1 and 11; move persisted; aspect-locked resize persisted; zoom did not mutate stored PDF coords; soft-delete (`status=DELETED`) removed from UI/PDF; replacement download embeds Caveat.
   - DRAFT editable; open/refresh created no automatic annotations; field-instance QA values cleared afterward.
-- **Non-Real Estate Items (mapping `f7f8e678-…`, 2026-08-06):** was not multiline; enabled and **retained** as a legitimate narrative blank (`is_multiline=true`, height still 28). Download regression artifact opened in Adobe Acrobat DC.
+- **Non-Real Estate Items (mapping `f7f8e678-…`, 2026-08-06):** retained `is_multiline=true` + **`mask_background=true`** (470×28). Download artifacts: populated mask, empty mask, mask-off control; Acrobat opened for line-cover QA. Caveat signature remains intact.
 - **Blocking fixes from browser QA:** (1) auth `proxy.ts` matcher excluded `.ttf`/`.otf`/`.woff`/`.woff2`/`.txt` so `/fonts/Caveat-Regular.ttf` is not redirected to login HTML; browser loader rejects non-sfnt payloads. (2) `pdfDoc.save({ useObjectStreams: false })` so Caveat `FontFile2` actually persists on filled downloads for some source PDFs. (3) Caveat embed `customName: "HarbaughCaveat"` + `subset: true` so Helvetica+Caveat fills do not corrupt signature spacing.
 
-**Production before deploy:** Apply **both** migrations to production Supabase **first** (`20260805220000` then `20260805230000`), validate schema/trigger/policies, then deploy application code. Do not reverse the order.
+**Production before deploy:** Apply **both** migrations to production Supabase **first** (`20260805220000` then `20260805230000`), validate schema/trigger/policies, then deploy application code. Do not reverse the order. Separately apply Map Fields flags on production form **15** Non-Real Estate Items (`is_multiline` + `mask_background`) as configuration data.
 
 ### Packet Tenant Names + Map Fields hardening — Vercel Production deploy (2026-08-05)
 

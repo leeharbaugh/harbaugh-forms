@@ -13,6 +13,16 @@ describe("fillPacketFormPdfBytes source contracts", () => {
     assert.ok(maskIdx > 0 && drawTextIdx > maskIdx);
   });
 
+  it("draws opaque white placement rectangle for mask_background", () => {
+    assert.match(source, /color:\s*rgb\(1,\s*1,\s*1\)/);
+    assert.match(source, /placement\.width/);
+    assert.match(source, /placement\.height/);
+    assert.match(
+      source,
+      /if\s*\(\s*!exportText\s*&&\s*placement\.maskBackground\s*\)/,
+    );
+  });
+
   it("uses shared multiline layout helper", () => {
     assert.match(source, /layoutTextInBox/);
     assert.match(source, /isMultiline: placement\.isMultiline/);

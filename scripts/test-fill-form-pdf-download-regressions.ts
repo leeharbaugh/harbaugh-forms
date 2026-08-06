@@ -2,11 +2,13 @@
  * Runtime regressions for browser Download PDF path:
  * 1) multiline wrap when is_multiline=true
  * 2) Caveat signature encoding when Helvetica is also embedded
+ * 3) mask_background opaque rectangle before multiline text
  *
  *   npm run test:fill-form-pdf-download
  */
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
@@ -17,8 +19,6 @@ import {
 import { fillPacketFormPdfBytes } from "../lib/fill-packet-form-pdf.ts";
 import type { PacketFormFieldView } from "../lib/types/packet-form-editor.ts";
 import type { PacketFormAnnotation } from "../lib/types/packet-form-annotation.ts";
-import type { Field } from "../lib/types/field.ts";
-import type { FieldInstanceWithField } from "../lib/types/field-instance.ts";
 import type { Field } from "../lib/types/field.ts";
 import type { FieldInstanceWithField } from "../lib/types/field-instance.ts";
 
@@ -53,12 +53,70 @@ async function extractPage1Text(bytes: Uint8Array): Promise<string> {
   return content.items.map((item: { str?: string }) => item.str ?? "").join("");
 }
 
+function decodeContentStreamBytes(raw: Uint8Array): string {
+  // pdf-lib FlateDecode streams need inflate; uncompressed streams pass through.
+  try {
+    return inflateSync(raw).toString("latin1");
+  } catch {
+    return Buffer.from(raw).toString("latin1");
+  }
+}
+
+/** Decode first-page content streams (latin1 operators) for inspection. */
+async function page1ContentLatin1(bytes: Uint8Array): Promise<string> {
+  const copy = Uint8Array.from(bytes);
+  const doc = await PDFDocument.load(copy);
+  const page = doc.getPages()[0]!;
+  const contents = page.node.Contents();
+  if (!contents) return "";
+  // Contents may be a single stream or an array of streams.
+  const refs = "asArray" in contents ? contents.asArray() : [contents];
+  const parts: string[] = [];
+  for (const ref of refs) {
+    const stream = doc.context.lookup(ref);
+    if (
+      stream &&
+      "getContents" in stream &&
+      typeof stream.getContents === "function"
+    ) {
+      parts.push(decodeContentStreamBytes(stream.getContents() as Uint8Array));
+    }
+  }
+  return parts.join("\n");
+}
+
+function countPlacementMasks(
+  content: string,
+  placement: {
+    x: number;
+    yFromTop: number;
+    width: number;
+    height: number;
+    pageHeight?: number;
+  },
+): number {
+  const pageHeight = placement.pageHeight ?? 792;
+  const pdfY = pageHeight - placement.yFromTop - placement.height;
+  // pdf-lib drawRectangle emits: white rg, then cm translate to (x, pdfY),
+  // then a closed path 0 0 → 0 h → w h → w 0 → h → f (not the `re` operator).
+  const pattern = new RegExp(
+    String.raw`1\s+1\s+1\s+rg[\s\S]{0,120}?1\s+0\s+0\s+1\s+${placement.x}\s+${pdfY}\s+cm[\s\S]{0,120}?0\s+0\s+m[\s\S]{0,80}?${placement.width}\s+${placement.height}\s+l[\s\S]{0,80}?h\s+f`,
+    "g",
+  );
+  return (content.match(pattern) ?? []).length;
+}
+
 function makeFieldView(overrides: {
   isMultiline: boolean;
   value: string;
   width: number;
   height: number;
+  maskBackground?: boolean;
+  x?: number;
+  y?: number;
 }): PacketFormFieldView {
+  const x = overrides.x ?? 84;
+  const y = overrides.y ?? 490;
   return {
     mapping: {
       id: "11111111-1111-4111-8111-111111111111",
@@ -67,8 +125,8 @@ function makeFieldView(overrides: {
       mapping_name: "Page 1 non real estate items",
       occurrence_index: 0,
       page_number: 1,
-      x: 84,
-      y: 490,
+      x,
+      y,
       width: overrides.width,
       height: overrides.height,
       page_width: 612,
@@ -77,7 +135,7 @@ function makeFieldView(overrides: {
       alignment: "left",
       field_widget_type: "text",
       is_multiline: overrides.isMultiline,
-      mask_background: false,
+      mask_background: overrides.maskBackground === true,
       default_value_override: null,
       required: false,
       notes: null,
@@ -128,8 +186,8 @@ function makeFieldView(overrides: {
     } satisfies FieldInstanceWithField,
     placement: {
       page_number: 1,
-      x: 84,
-      y: 490,
+      x,
+      y,
       width: overrides.width,
       height: overrides.height,
       page_width: 612,
@@ -246,6 +304,140 @@ async function testCaveatWithHelvetica() {
   ok("Caveat+Helvetica customName embed extracts intact signature");
 }
 
+async function testMaskBackgroundRegression() {
+  const caveatBytes = new Uint8Array(
+    readFileSync(path.join(process.cwd(), "public", "fonts", "Caveat-Regular.ttf")),
+  );
+
+  // Source with preprinted black writing lines through the placement area.
+  const blank = await PDFDocument.create();
+  const page = blank.addPage([612, 792]);
+  const placement = { x: 84, yFromTop: 490, width: 470, height: 60 };
+  const pdfBottom = 792 - placement.yFromTop - placement.height;
+  for (let i = 0; i < 4; i++) {
+    const y = pdfBottom + 8 + i * 14;
+    page.drawLine({
+      start: { x: placement.x, y },
+      end: { x: placement.x + placement.width, y },
+      thickness: 0.75,
+      color: rgb(0, 0, 0),
+    });
+  }
+  const source = await blank.save();
+
+  const fieldMasked = makeFieldView({
+    isMultiline: true,
+    maskBackground: true,
+    value: NARRATIVE,
+    width: placement.width,
+    height: placement.height,
+    x: placement.x,
+    y: placement.yFromTop,
+  });
+  const fieldUnmasked = makeFieldView({
+    isMultiline: true,
+    maskBackground: false,
+    value: NARRATIVE,
+    width: placement.width,
+    height: placement.height,
+    x: placement.x,
+    y: placement.yFromTop,
+  });
+  const fieldEmptyMasked = makeFieldView({
+    isMultiline: true,
+    maskBackground: true,
+    value: "",
+    width: placement.width,
+    height: placement.height,
+    x: placement.x,
+    y: placement.yFromTop,
+  });
+
+  const maskedBytes = Uint8Array.from(
+    await fillPacketFormPdfBytes(source, [fieldMasked], {
+      annotations: [makeAnnotation(SIGNATURE)],
+      signatureFontBytes: caveatBytes,
+    }),
+  );
+  const unmaskedBytes = Uint8Array.from(
+    await fillPacketFormPdfBytes(source, [fieldUnmasked]),
+  );
+  const emptyMaskedBytes = Uint8Array.from(
+    await fillPacketFormPdfBytes(source, [fieldEmptyMasked]),
+  );
+
+  writeFileSync(path.join(OUT, "regression-mask-on-multiline.pdf"), maskedBytes);
+  writeFileSync(path.join(OUT, "regression-mask-off-multiline.pdf"), unmaskedBytes);
+  writeFileSync(path.join(OUT, "regression-mask-empty.pdf"), emptyMaskedBytes);
+
+  const maskedContent = await page1ContentLatin1(maskedBytes);
+  const unmaskedContent = await page1ContentLatin1(unmaskedBytes);
+  const emptyContent = await page1ContentLatin1(emptyMaskedBytes);
+
+  assert.ok(
+    /1\s+1\s+1\s+rg/.test(maskedContent),
+    "mask on: expected opaque white fill (1 1 1 rg)",
+  );
+  assert.equal(
+    countPlacementMasks(maskedContent, placement),
+    1,
+    `mask on: expected one placement-sized white path at y=${pdfBottom}\n--- content ---\n${maskedContent}`,
+  );
+
+  // Mask must appear before the text block (BT).
+  const whiteIdx = maskedContent.search(/1\s+1\s+1\s+rg/);
+  const fillIdx = maskedContent.search(
+    new RegExp(
+      String.raw`1\s+0\s+0\s+1\s+${placement.x}\s+${pdfBottom}\s+cm[\s\S]{0,160}?h\s+f`,
+    ),
+  );
+  const textIdx = maskedContent.search(/\bBT\b/);
+  assert.ok(whiteIdx >= 0 && fillIdx >= 0, "mask operators missing");
+  assert.ok(textIdx > fillIdx, "mask fill should precede BT text block");
+
+  assert.equal(
+    countPlacementMasks(unmaskedContent, placement),
+    0,
+    "mask off: must not draw placement white rectangle",
+  );
+  assert.equal(
+    /1\s+1\s+1\s+rg/.test(unmaskedContent),
+    false,
+    "mask off: no white fill for field overlay",
+  );
+
+  assert.ok(
+    /1\s+1\s+1\s+rg/.test(emptyContent),
+    "empty+mask: still draws opaque white fill",
+  );
+  assert.equal(
+    countPlacementMasks(emptyContent, placement),
+    1,
+    "empty+mask: placement rectangle present",
+  );
+
+  // Multiline wrap unchanged with mask.
+  const multiLayout = layoutTextInBox({
+    text: NARRATIVE,
+    boxWidth: placement.width,
+    boxHeight: placement.height,
+    fontSize: 9,
+    isMultiline: true,
+    measureWidth: measureHelv(9),
+  });
+  assert.ok(multiLayout.lines.length > 1);
+
+  const maskedText = await extractPage1Text(maskedBytes);
+  assert.ok(maskedText.includes("Kenneth Lee Harbaugh"));
+  assert.ok(maskedText.includes("washer") || maskedText.includes("Landlord"));
+  assert.equal(/Ƒ|Ƌ|ƈ|ƅ|Ƙ/.test(maskedText), false);
+
+  const latin = Buffer.from(maskedBytes).toString("latin1");
+  assert.ok(/HarbaughCaveat|Caveat/i.test(latin) && /FontFile2/.test(latin));
+
+  ok("mask_background on/off/empty + Caveat regression passed");
+}
+
 async function testFillPathRegression() {
   const caveatBytes = new Uint8Array(
     readFileSync(path.join(process.cwd(), "public", "fonts", "Caveat-Regular.ttf")),
@@ -258,6 +450,7 @@ async function testFillPathRegression() {
 
   const fieldMultiline = makeFieldView({
     isMultiline: true,
+    maskBackground: true,
     value: NARRATIVE,
     width: 470,
     height: 60,
@@ -330,6 +523,7 @@ async function testFillPathRegression() {
 async function main() {
   await testMultilineLayoutUnit();
   await testCaveatWithHelvetica();
+  await testMaskBackgroundRegression();
   await testFillPathRegression();
   console.log("\nAll fill-form PDF download regressions passed.");
 }
