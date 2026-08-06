@@ -28,12 +28,17 @@ Production migrations **not** applied (deliberate).
 
 **Root causes addressed:** (1) Multiline clipped because preview used `truncate`/`input` and PDF used a single `drawText` with no wrap. (2) Undersized preview text because display used fixed CSS `10px` while boxes scaled with zoom; clamp was also incorrectly applied after zoom scale (fixed: clamp in PDF space, then multiply by scale). (3) Creator spoof residual: UPDATE could rewrite `created_by_user_id` without DB enforcement (fixed by forward migration trigger). (4) Caveat custom-font embed failed without fontkit and fell back to Helvetica silently.
 
-**Manual QA (development, 2026-08-05):**
+**Manual QA (development, 2026-08-05 / continued 2026-08-06):**
 - Zoom policy verified at 75 / 100 / 150 / 195 / 250% (configured 10pt → 7.5 / 10 / 15 / 19.5 / 25 CSS px; multiline derived sizes scale linearly; padding uses the same scale factor). Stored PDF coordinates are independent of zoom.
 - Caveat embedding confirmed on real DRAFT packet form **62** (Third Party Financing Addendum): signatures drawn on pages 1 and 2; smoke PDF contains `Caveat-Regular` BaseFont + `FontFile2`. Artifact: `_audit_tmp/fill-form-presentation-smoke-62.pdf`.
 - Annotation RLS/auth live probes on packet form **62**: spoofed INSERT creator rewritten to `auth.uid()`; UPDATE cannot transfer creator; move/resize/text/soft-delete work; cross-owner non-admin INSERT blocked; DELETED excluded from ACTIVE reads.
-- Interactive browser Map Fields toggles for multiline/mask: **no ACTIVE mappings currently have the flags enabled in development** (`mask_on=0` at check time). Behavior covered by unit/contract tests; Lee should toggle flags on a lined narrative blank during PR review for visual confirmation.
-- Preview vs PDF: shared `layoutTextInBox` / font helpers; glyph metrics can still differ slightly (browser CSS Caveat vs pdf-lib subsetted Caveat; Helvetica-width heuristic in overlay shrink vs pdf-lib Helvetica for field text).
+- **Browser visual QA (packet 19 / packet_form 53 / form 15 / mapping `7d480d19-…` Lease Special Provisions, page 8):** temporary `is_multiline=true` + `mask_background=true` (restored to false/false afterward).
+  - Natural wrap (≥3 lines), explicit newlines, long unbroken URL hard-break, and vertical clipping all passed in preview at ~80 / 100 / 156 / 195 / 244% zoom.
+  - Empty + mask: opaque white covers preprinted lines inside the placement; mask-off empty restores visibility of underlying lines (filled fields still use light `bg-white/85` readability wash by design).
+  - Download PDF with mask+wrap materially matched preview; source template PDF unchanged after flag restore.
+  - Typed signatures: Caveat dialog preview; place on pages 1 and 11; move persisted; aspect-locked resize persisted; zoom did not mutate stored PDF coords; soft-delete (`status=DELETED`) removed from UI/PDF; replacement download embeds Caveat.
+  - DRAFT editable; open/refresh created no automatic annotations; field-instance QA values cleared afterward.
+- **Blocking fixes from browser QA:** (1) auth `proxy.ts` matcher excluded `.ttf`/`.otf`/`.woff`/`.woff2`/`.txt` so `/fonts/Caveat-Regular.ttf` is not redirected to login HTML; browser loader rejects non-sfnt payloads. (2) `pdfDoc.save({ useObjectStreams: false })` so Caveat `FontFile2` actually persists on filled downloads for some source PDFs.
 
 **Production before deploy:** Apply **both** migrations to production Supabase **first** (`20260805220000` then `20260805230000`), validate schema/trigger/policies, then deploy application code. Do not reverse the order.
 

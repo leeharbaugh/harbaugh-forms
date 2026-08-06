@@ -31,8 +31,12 @@ describe("fillPacketFormPdfBytes source contracts", () => {
   });
 
   it("registers fontkit before embedding custom signature fonts", () => {
-    assert.match(source, /registerFontkit\(fontkit\)/);
+    assert.match(source, /registerFontkit\(/);
     assert.match(source, /@pdf-lib\/fontkit/);
+  });
+
+  it("disables object streams when saving so Caveat FontFile2 persists", () => {
+    assert.match(source, /save\(\{\s*useObjectStreams:\s*false\s*\}\)/);
   });
 });
 

@@ -25,8 +25,13 @@ import {
   isCheckboxPdfField,
 } from "@/lib/types/template-pdf-field";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import fontkitModule from "@pdf-lib/fontkit";
 import type { PacketFormAnnotation } from "@/lib/types/packet-form-annotation";
+
+// Turbopack/webpack may expose either the module namespace or the `.default`
+// export for this UMD/ESM package. pdf-lib requires the real fontkit API.
+const fontkit =
+  (fontkitModule as { default?: unknown }).default ?? fontkitModule;
 
 type ScaledFieldPlacement = {
   pageNumber: number;
@@ -466,7 +471,9 @@ export async function fillPacketFormPdfBytes(
   },
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(sourcePdfBytes);
-  pdfDoc.registerFontkit(fontkit);
+  pdfDoc.registerFontkit(
+    fontkit as Parameters<PDFDocument["registerFontkit"]>[0],
+  );
   const pages = pdfDoc.getPages();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   let signatureFont: PDFFont = font;
@@ -523,5 +530,7 @@ export async function fillPacketFormPdfBytes(
     );
   }
 
-  return pdfDoc.save();
+  // Object streams can omit or obscure custom embedded fonts for some source
+  // PDFs in the browser build; disable them so Caveat FontFile2 is persisted.
+  return pdfDoc.save({ useObjectStreams: false });
 }

@@ -29,6 +29,8 @@ Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` o
 * Typed signatures: create/move/resize/soft-delete on DRAFT packet forms the user owns; included in generated PDFs; packet-form-specific.
 * Creator attribution: DB trigger overwrites INSERT `created_by_user_id` with `auth.uid()` for authenticated sessions; UPDATE always restores OLD; app never sends creator on update.
 * Migration is additive and backward-compatible with currently deployed production code (defaults preserve prior single-line/transparent behavior; new table unused until new app code ships). Preferred order: migrate production (`20260805220000` then `20260805230000`) → validate → deploy app.
+* Static Caveat/OFL files under `public/fonts/` must bypass the auth proxy matcher (`.ttf`/`.txt` exclusions); otherwise unauthenticated fetches receive login HTML and PDF embed fails. Browser font loader rejects non-sfnt payloads.
+* Filled PDF saves use `useObjectStreams: false` so custom Caveat `FontFile2` is reliably present in downloaded bytes for browser fills.
 * Deferred: drawn/uploaded signatures, cross-packet signature reuse, cryptographic signing, identity verification.
 
 **Related files or migrations:**
@@ -41,7 +43,8 @@ Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` o
 * `components/packets/packet-form-field-overlay.tsx`
 * `components/packets/packet-form-signature-overlay.tsx`
 * `public/fonts/Caveat-Regular.ttf` + `public/fonts/OFL.txt` (SIL OFL 1.1)
-* `lib/signature-font.ts` (browser fetch) / `lib/signature-font-server.ts` (Node `fs`; never import from client)
+* `lib/signature-font.ts` (browser fetch + sfnt guard) / `lib/signature-font-server.ts` (Node `fs`; never import from client)
+* `proxy.ts` (exclude font/license static extensions from auth session matcher)
 * `scripts/validate-packet-form-annotation-auth-dev.ts`
 * `scripts/smoke-fill-form-presentation-dev.ts`
 
