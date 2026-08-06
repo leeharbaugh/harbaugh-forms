@@ -443,10 +443,13 @@ function drawTypedSignatureAnnotation(
     text,
     boxWidth: width,
     boxHeight: height,
+    // Measure with the same Caveat instance used for drawing, at the base size.
+    // Advances scale linearly with size for this fitting step.
     measureWidth: (value) => font.widthOfTextAtSize(value, baseSize),
   });
   const baseline = pageHeight - yFromTop - drawSize - 1;
 
+  // Draw the signature as one intact string (never glyph-by-glyph).
   page.drawText(text, {
     x,
     y: Math.max(0, baseline),
@@ -479,7 +482,13 @@ export async function fillPacketFormPdfBytes(
   let signatureFont: PDFFont = font;
   if (options?.signatureFontBytes && options.signatureFontBytes.length > 0) {
     try {
-      signatureFont = await pdfDoc.embedFont(options.signatureFontBytes);
+      // customName avoids a pdf-lib/fontkit encoding corruption that appears when
+      // Caveat is embedded under its default PostScript name alongside Helvetica
+      // in real packet-form PDFs (glyphs render with broken advances / wrong cmap).
+      signatureFont = await pdfDoc.embedFont(options.signatureFontBytes, {
+        subset: true,
+        customName: "HarbaughCaveat",
+      });
     } catch (error) {
       console.error("Failed to embed Caveat signature font; falling back to Helvetica.", error);
       signatureFont = font;

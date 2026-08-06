@@ -38,6 +38,21 @@ describe("fillPacketFormPdfBytes source contracts", () => {
   it("disables object streams when saving so Caveat FontFile2 persists", () => {
     assert.match(source, /save\(\{\s*useObjectStreams:\s*false\s*\}\)/);
   });
+
+  it("embeds Caveat with a customName to avoid Helvetica encoding corruption", () => {
+    assert.match(source, /customName:\s*["']HarbaughCaveat["']/);
+    assert.match(source, /subset:\s*true/);
+  });
+
+  it("draws typed signatures as one intact drawText string", () => {
+    const drawFn = source.slice(
+      source.indexOf("function drawTypedSignatureAnnotation"),
+      source.indexOf("export async function fillPacketFormPdfBytes"),
+    );
+    assert.match(drawFn, /page\.drawText\(text,/);
+    assert.doesNotMatch(drawFn, /for\s*\(.*of\s*text/);
+    assert.doesNotMatch(drawFn, /split\(["']["']\)/);
+  });
 });
 
 describe("Fill Form overlay font scaling source contracts", () => {

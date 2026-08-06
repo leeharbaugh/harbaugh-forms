@@ -114,7 +114,10 @@ async function main() {
     fail("packet PDF has no pages");
   }
 
-  const font = await pdfDoc.embedFont(caveat);
+  const font = await pdfDoc.embedFont(caveat, {
+    subset: true,
+    customName: "HarbaughCaveat",
+  });
   const page1 = pages[0]!;
   const height = 36;
   const width = 160;
@@ -155,11 +158,11 @@ async function main() {
   ok(`wrote smoke PDF ${outPath}`);
 
   const filledText = Buffer.from(filled).toString("latin1");
-  if (!/Caveat/i.test(filledText) || !/FontFile2/.test(filledText)) {
-    fail("Caveat / FontFile2 not found in filled DRAFT packet-form PDF");
+  if (!/HarbaughCaveat/i.test(filledText) || !/FontFile2/.test(filledText)) {
+    fail("HarbaughCaveat / FontFile2 not found in filled DRAFT packet-form PDF");
   }
-  ok("Caveat embedded in filled DRAFT packet-form PDF (BaseFont + FontFile2)");
-  ok(`embedded font name used: ${font.name}`);
+  ok("Caveat embedded as HarbaughCaveat + FontFile2 in filled DRAFT packet-form PDF");
+  ok(`pdf-lib font.name: ${font.name}`);
 
   console.log("\nZoom summary:");
   for (const row of zoomResults) {

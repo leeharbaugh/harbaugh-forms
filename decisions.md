@@ -14,23 +14,27 @@ Each decision should include:
 
 ## Fill Form text layout, placement masks, and typed signature annotations
 
-**Date:** 2026-08-05
+**Date:** 2026-08-05 (Caveat/multiline download corrections 2026-08-06)
 
 **Decision:**
-Fill Form preview and generated PDFs share one text-layout policy (`lib/pdf-text-layout.ts`). Multiline behavior is an explicit template placement flag (`form_field_mappings.is_multiline`), not inferred from the current value. Preprinted writing lines may be covered with an opaque white rectangle via placement flag `mask_background` (default false; admin-only in Map Fields; does not alter the source PDF file). Typed “Fill & Sign”–style signatures are stored as packet-form annotations (`packet_form_annotations`), not as `fields` / `field_instances` and not as Authentisign placeholders. Preview font size scales with PDF zoom using `renderedHeight / originalHeight` applied to the configured (or height-derived) point size, with documented min/max clamps. Annotation `created_by_user_id` is assigned authoritatively by a BEFORE INSERT/UPDATE trigger from `auth.uid()` / OLD and is immutable after insert; authorization remains `owns_packet` / `is_app_admin` (not creator-only). Custom Caveat embedding in pdf-lib requires registering `@pdf-lib/fontkit`.
+Fill Form preview and generated PDFs share one text-layout policy (`lib/pdf-text-layout.ts`). Multiline behavior is an explicit template placement flag (`form_field_mappings.is_multiline`), not inferred from the current value. Preprinted writing lines may be covered with an opaque white rectangle via placement flag `mask_background` (default false; admin-only in Map Fields; does not alter the source PDF file). Typed “Fill & Sign”–style signatures are stored as packet-form annotations (`packet_form_annotations`), not as `fields` / `field_instances` and not as Authentisign placeholders. Preview font size scales with PDF zoom using `renderedHeight / originalHeight` applied to the configured (or height-derived) point size, with documented min/max clamps. Annotation `created_by_user_id` is assigned authoritatively by a BEFORE INSERT/UPDATE trigger from `auth.uid()` / OLD and is immutable after insert; authorization remains `owns_packet` / `is_app_admin` (not creator-only). Custom Caveat embedding in pdf-lib requires registering `@pdf-lib/fontkit`, saving with `useObjectStreams: false`, and embedding Caveat as `{ subset: true, customName: "HarbaughCaveat" }` so it does not corrupt when Helvetica is also embedded in the same document. Typed signatures are drawn as one intact `drawText` string using Caveat metrics for both fitting and rendering.
+
+**Authoritative browser Download PDF path:**
+Packets Fill Form → `downloadFilledPacketFormPdf` → `getFilledPacketFormPdfBytes` → load template bytes + Caveat font bytes + ACTIVE annotations → `fillPacketFormPdfBytes` (Helvetica field overlays + Caveat annotations) → browser download. Do not assume server smoke scripts alone exercise this path.
 
 **Reason:**
-Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` overlay text stayed tiny at high zoom while boxes scaled. Preprinted form lines need an optional non-destructive cover. Occasional agent signatures must not require Global field catalog rows or Authentisign. Client-supplied creator UUIDs must not be trusted. Applied development migrations are immutable, so creator hardening is a forward-only follow-up migration.
+Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` overlay text stayed tiny at high zoom while boxes scaled. Preprinted form lines need an optional non-destructive cover. Occasional agent signatures must not require Global field catalog rows or Authentisign. Client-supplied creator UUIDs must not be trusted. Applied development migrations are immutable, so creator hardening is a forward-only follow-up migration. Post–PR #30 QA: (1) narrative blanks still marked single-line in Map Fields overflow horizontally in downloads even when the browser wraps; (2) default-name Caveat embed beside Helvetica produced broken advances/glyphs in Acrobat.
 
 **Consequences:**
 
-* Admins enable multiline and/or mask per placement; existing mappings default off.
+* Admins enable multiline and/or mask per placement; existing mappings default off. Narrative blanks (e.g. Residential Lease Listing Non-Real Estate Items) must have `is_multiline=true` in Map Fields — the download path does not infer multiline from value length.
 * Overlay and download must stay aligned for wrap, mask order (mask then text), and font sizing.
 * Typed signatures: create/move/resize/soft-delete on DRAFT packet forms the user owns; included in generated PDFs; packet-form-specific.
 * Creator attribution: DB trigger overwrites INSERT `created_by_user_id` with `auth.uid()` for authenticated sessions; UPDATE always restores OLD; app never sends creator on update.
-* Migration is additive and backward-compatible with currently deployed production code (defaults preserve prior single-line/transparent behavior; new table unused until new app code ships). Preferred order: migrate production (`20260805220000` then `20260805230000`) → validate → deploy app.
+* Migration is additive and backward-compatible with currently deployed production code (defaults preserve prior single-line/transparent behavior; new table unused until new app code ships). Preferred order: migrate production (`20260805220000` then `20260805230000`) → validate → deploy app. No additional migration is required for the 2026-08-06 Caveat `customName` / multiline-flag QA fixes.
 * Static Caveat/OFL files under `public/fonts/` must bypass the auth proxy matcher (`.ttf`/`.txt` exclusions); otherwise unauthenticated fetches receive login HTML and PDF embed fails. Browser font loader rejects non-sfnt payloads.
 * Filled PDF saves use `useObjectStreams: false` so custom Caveat `FontFile2` is reliably present in downloaded bytes for browser fills.
+* Caveat must keep `customName: "HarbaughCaveat"` (with subsetting) whenever Helvetica is embedded in the same fill document.
 * Deferred: drawn/uploaded signatures, cross-packet signature reuse, cryptographic signing, identity verification.
 
 **Related files or migrations:**
@@ -38,7 +42,8 @@ Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` o
 * `supabase/migrations/20260805220000_fill_form_presentation_and_annotations.sql`
 * `supabase/migrations/20260805230000_packet_form_annotations_created_by_immutable.sql`
 * `lib/pdf-text-layout.ts`
-* `lib/fill-packet-form-pdf.ts` (registers `@pdf-lib/fontkit`)
+* `lib/fill-packet-form-pdf.ts` (registers `@pdf-lib/fontkit`; Caveat `customName`)
+* `lib/packet-form-download.ts` (browser Download PDF entry)
 * `lib/packet-form-annotations.ts`
 * `components/packets/packet-form-field-overlay.tsx`
 * `components/packets/packet-form-signature-overlay.tsx`
@@ -47,6 +52,8 @@ Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` o
 * `proxy.ts` (exclude font/license static extensions from auth session matcher)
 * `scripts/validate-packet-form-annotation-auth-dev.ts`
 * `scripts/smoke-fill-form-presentation-dev.ts`
+* `scripts/test-fill-form-pdf-download-regressions.ts`
+* `scripts/manual-qa-fill-form-53-download.ts`
 
 ---
 
