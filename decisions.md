@@ -24,6 +24,9 @@ Fill Form preview and generated PDFs share one text-layout policy (`lib/pdf-text
 * `text_value` stores the formatted display string chosen at placement (stable calendar text, not a timezone timestamp). Once placed, the value does not auto-update to “today.”
 * `font_id` = `helvetica`; PDF/preview use standard Helvetica (no custom font embed).
 * Placement is independent of signatures (no auto-pairing). Shared overlay/PDF primitives leave room for future annotation kinds without duplicating drag/resize/zoom.
+* **Authoritative supported annotation types:** `typed_signature` | `date_signed` only. Validator/placement factory use an explicit allowlist (`isPacketFormAnnotationType`); unknown types still return `Unsupported annotation type.`
+* **Browser click path:** Fill Form PDF click → `buildAnnotationInputFromPlacementClick` (`lib/packet-form-annotation-placement.ts`) → `createPacketFormAnnotation`. Date defaults use Helvetica sizing; signature defaults use Caveat sizing. Regression coverage: `lib/packet-form-annotation-placement.test.ts` (not DB-only inserts).
+* **2026-08-06 placement bug:** Dialog/banner recognized `date_signed`, but the click/create path hit `validatePacketFormAnnotationInput` in `lib/types/packet-form-annotation.ts`. Fixed by routing clicks through the shared factory, hardening the allowlist to explicit equality, and building create payloads without spread that can drop `annotation_type`.
 
 **Authoritative browser Download PDF path:**
 Packets Fill Form → `downloadFilledPacketFormPdf` → `getFilledPacketFormPdfBytes` → load template bytes + Caveat font bytes + ACTIVE annotations → `fillPacketFormPdfBytes` (Helvetica field overlays + Caveat signatures + Helvetica dates) → browser download.
@@ -48,6 +51,7 @@ Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` o
 * `supabase/migrations/20260806150000_packet_form_annotations_date_signed.sql`
 * `lib/pdf-text-layout.ts`
 * `lib/date-signed-annotation.ts`
+* `lib/packet-form-annotation-placement.ts`
 * `lib/fill-packet-form-pdf.ts`
 * `lib/packet-form-download.ts`
 * `lib/packet-form-annotations.ts`
@@ -61,6 +65,8 @@ Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` o
 * `scripts/test-fill-form-pdf-download-regressions.ts`
 * `scripts/manual-qa-fill-form-53-download.ts`
 * `scripts/manual-qa-date-signed-53.ts`
+* `scripts/qa-date-signed-placement-path-53.ts`
+* `scripts/qa-date-signed-browser-53.ts`
 
 ---
 

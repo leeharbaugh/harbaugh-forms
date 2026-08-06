@@ -1,10 +1,24 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-08-06 (Fill Form: multiline/mask/Caveat fixes + Date Signed annotation; not production-deployed)
+**As of:** 2026-08-06 (Fill Form Date Signed placement-path fix on PR #31; not production-deployed)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
+
+### Fill Form Date Signed placement fix (2026-08-06)
+
+**Status:** Blocking browser bug fixed on branch `fix/fill-form-pdf-multiline-caveat-download` (PR #31). **Not merged. Not deployed.** Production remains rolled back / unmodified.
+
+| Item | Result |
+|------|--------|
+| Symptom | Date Signed dialog + placement banner OK; PDF click showed red `Unsupported annotation type.` |
+| Exact error source | `validatePacketFormAnnotationInput` → `isPacketFormAnnotationType` in `lib/types/packet-form-annotation.ts` (message `"Unsupported annotation type."`) |
+| Supported allowlist | Explicit only: `typed_signature`, `date_signed` (no deferred kinds) |
+| Fix | Shared click factory `buildAnnotationInputFromPlacementClick` used by the editor; early allowlist check; explicit create payloads (no spread that can drop type); Helvetica date defaults vs Caveat signature defaults kept separate |
+| Regression test | `lib/packet-form-annotation-placement.test.ts` / `npm run test:annotation-placement` (same factory as browser click) |
+| Live factory→persist QA | `scripts/qa-date-signed-placement-path-53.ts` — pages 1 + 11 place/move/resize/reload/PDF/soft-delete; Caveat signature retained |
+| Artifact | `_audit_tmp/pdf-regression/qa-pf53-date-signed-placement-path.pdf` (Acrobat) |
 
 ### Fill Form Date Signed annotation (2026-08-06)
 
@@ -20,8 +34,8 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 | UI | Fill Form toolbar **Date Signed** beside Signature; dialog date + format + preview → place |
 | Render | Helvetica, black, transparent; shared annotation overlay/PDF drawer; independent of signature |
 | Auth/lifecycle | Same as typed signatures (`owns_packet` / admin; creator trigger; DRAFT-editable only) |
-| Tests | `test:date-signed-annotation`; `test:pdf-text-layout`; `test:fill-form-pdf-download`; auth validate; smoke; sync; lifecycle; `tsc`; ESLint; `build:validate` |
-| Artifact | `_audit_tmp/pdf-regression/manual-qa-pf53-date-signed.pdf` (Acrobat) |
+| Tests | `test:date-signed-annotation` (includes placement factory); `test:annotation-placement`; `test:pdf-text-layout`; `test:fill-form-pdf-download`; auth validate; smoke; sync; lifecycle; `tsc`; ESLint; `build:validate` |
+| Artifact | `_audit_tmp/pdf-regression/manual-qa-pf53-date-signed.pdf` + placement-path PDF (Acrobat) |
 | Deferred | Free text, strikethrough, highlight, drawing, images, checkmarks, initials, presets, auto signature/date pairing |
 
 **Production rollout order (updated):** (1) `20260805220000` (2) `20260805230000` (3) **`20260806150000`** → validate → deploy app → apply form **15** Map Fields flags (`is_multiline` + `mask_background` on Non-Real Estate Items) as configuration data.

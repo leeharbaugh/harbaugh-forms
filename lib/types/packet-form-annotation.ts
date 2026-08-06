@@ -45,7 +45,8 @@ export const PACKET_FORM_ANNOTATION_SELECT = "*";
 export function isPacketFormAnnotationType(
   value: string,
 ): value is PacketFormAnnotationType {
-  return (PACKET_FORM_ANNOTATION_TYPES as readonly string[]).includes(value);
+  // Explicit allowlist — do not rely solely on Array.includes for the click path.
+  return value === "typed_signature" || value === "date_signed";
 }
 
 export function validatePacketFormAnnotationInput(

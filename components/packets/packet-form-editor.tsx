@@ -24,21 +24,19 @@ import {
   upsertFieldInstanceMappingPlacement,
 } from "@/lib/packet-form-editor";
 import {
-  createDateSignedAnnotation,
-  createTypedSignatureAnnotation,
+  createPacketFormAnnotation,
   softDeletePacketFormAnnotation,
   updatePacketFormAnnotationPlacement,
 } from "@/lib/packet-form-annotations";
+import { buildAnnotationInputFromPlacementClick } from "@/lib/packet-form-annotation-placement";
 import {
   DATE_SIGNED_FORMATS,
   DEFAULT_DATE_SIGNED_FORMAT,
-  defaultDateSignedSize,
   formatDateSigned,
   localCalendarDateIso,
   type DateSignedFormat,
 } from "@/lib/date-signed-annotation";
 import {
-  defaultTypedSignatureSize,
   type PacketFormAnnotation,
   type PacketFormAnnotationType,
 } from "@/lib/types/packet-form-annotation";
@@ -1180,26 +1178,20 @@ export function PacketFormEditor({
     }
 
     const rect = pageElement.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    const size =
-      pendingPlace.annotation_type === "date_signed"
-        ? defaultDateSignedSize(pendingPlace.text_value)
-        : defaultTypedSignatureSize(pendingPlace.text_value);
-    const scaleX = metrics.originalWidth / metrics.renderedWidth;
-    const scaleY = metrics.originalHeight / metrics.renderedHeight;
-    const pdfX = Math.min(
-      Math.max(0, metrics.originalWidth - size.width),
-      Math.max(0, x * scaleX - size.width / 2),
-    );
-    const pdfY = Math.min(
-      Math.max(0, metrics.originalHeight - size.height),
-      Math.max(0, y * scaleY - size.height / 2),
-    );
+    const overlayX = clientX - rect.left;
+    const overlayY = clientY - rect.top;
 
     setAnnotationError(null);
     setUpdatingAnnotationId("pending");
     try {
+      // Same factory the placement regression tests exercise.
+      const input = buildAnnotationInputFromPlacementClick(pendingPlace, {
+        pageNumber,
+        metrics,
+        overlayX,
+        overlayY,
+      });
+
       const supabase = createClient();
       const {
         data: { user },
@@ -1208,35 +1200,12 @@ export function PacketFormEditor({
         throw new Error("You must be signed in to place an annotation.");
       }
 
-      const created =
-        pendingPlace.annotation_type === "date_signed"
-          ? await createDateSignedAnnotation(supabase, {
-              packetId,
-              packetFormId: packetFormRecordId,
-              userId: user.id,
-              input: {
-                page_number: pageNumber,
-                text_value: pendingPlace.text_value,
-                x: pdfX,
-                y: pdfY,
-                width: size.width,
-                height: size.height,
-              },
-            })
-          : await createTypedSignatureAnnotation(supabase, {
-              packetId,
-              packetFormId: packetFormRecordId,
-              userId: user.id,
-              input: {
-                page_number: pageNumber,
-                annotation_type: "typed_signature",
-                text_value: pendingPlace.text_value,
-                x: pdfX,
-                y: pdfY,
-                width: size.width,
-                height: size.height,
-              },
-            });
+      const created = await createPacketFormAnnotation(supabase, {
+        packetId,
+        packetFormId: packetFormRecordId,
+        userId: user.id,
+        input,
+      });
       setAnnotations((current) => [...current, created]);
       setSelectedAnnotationId(created.id);
       setPendingPlace(null);

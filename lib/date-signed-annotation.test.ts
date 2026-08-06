@@ -110,7 +110,8 @@ describe("date_signed annotation contracts", () => {
       "utf8",
     );
     assert.match(editor, /Date Signed/);
-    assert.match(editor, /createDateSignedAnnotation/);
+    assert.match(editor, /buildAnnotationInputFromPlacementClick/);
+    assert.match(editor, /createPacketFormAnnotation/);
     assert.doesNotMatch(editor, /auto.*date.*signature|pair.*signature.*date/i);
   });
 });
