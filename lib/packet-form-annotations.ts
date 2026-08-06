@@ -1,4 +1,5 @@
 import { assertPacketFormAllowsValueMutation } from "@/lib/packet-form-lifecycle";
+import { PACKET_FORM_DATE_FONT_ID } from "@/lib/date-signed-annotation";
 import {
   PACKET_FORM_ANNOTATION_SELECT,
   PACKET_FORM_SIGNATURE_FONT_ID,
@@ -26,7 +27,18 @@ export async function loadActivePacketFormAnnotations(
   return (data ?? []) as PacketFormAnnotation[];
 }
 
-export async function createTypedSignatureAnnotation(
+function resolveFontId(input: PacketFormAnnotationInput): string {
+  const explicit = input.font_id?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  return input.annotation_type === "date_signed"
+    ? PACKET_FORM_DATE_FONT_ID
+    : PACKET_FORM_SIGNATURE_FONT_ID;
+}
+
+/** Create any supported Fill Form annotation (signature or date signed). */
+export async function createPacketFormAnnotation(
   supabase: SupabaseClient,
   params: {
     packetId: number;
@@ -53,7 +65,7 @@ export async function createTypedSignatureAnnotation(
       page_number: params.input.page_number,
       annotation_type: params.input.annotation_type,
       text_value: params.input.text_value.trim(),
-      font_id: params.input.font_id?.trim() || PACKET_FORM_SIGNATURE_FONT_ID,
+      font_id: resolveFontId(params.input),
       x: params.input.x,
       y: params.input.y,
       width: params.input.width,
@@ -70,6 +82,67 @@ export async function createTypedSignatureAnnotation(
   }
 
   return data as PacketFormAnnotation;
+}
+
+export async function createTypedSignatureAnnotation(
+  supabase: SupabaseClient,
+  params: {
+    packetId: number;
+    packetFormId: number;
+    userId: string;
+    input: Omit<PacketFormAnnotationInput, "annotation_type" | "font_id"> & {
+      font_id?: string;
+      annotation_type?: "typed_signature";
+    };
+  },
+): Promise<PacketFormAnnotation> {
+  // Build explicitly — never inherit a stale annotation_type from spread input.
+  return createPacketFormAnnotation(supabase, {
+    packetId: params.packetId,
+    packetFormId: params.packetFormId,
+    userId: params.userId,
+    input: {
+      page_number: params.input.page_number,
+      annotation_type: "typed_signature",
+      text_value: params.input.text_value,
+      font_id: params.input.font_id?.trim() || PACKET_FORM_SIGNATURE_FONT_ID,
+      x: params.input.x,
+      y: params.input.y,
+      width: params.input.width,
+      height: params.input.height,
+      rotation: params.input.rotation ?? 0,
+    },
+  });
+}
+
+export async function createDateSignedAnnotation(
+  supabase: SupabaseClient,
+  params: {
+    packetId: number;
+    packetFormId: number;
+    userId: string;
+    input: Omit<PacketFormAnnotationInput, "annotation_type" | "font_id"> & {
+      font_id?: string;
+    };
+  },
+): Promise<PacketFormAnnotation> {
+  // Build explicitly — never inherit a stale annotation_type from spread input.
+  return createPacketFormAnnotation(supabase, {
+    packetId: params.packetId,
+    packetFormId: params.packetFormId,
+    userId: params.userId,
+    input: {
+      page_number: params.input.page_number,
+      annotation_type: "date_signed",
+      text_value: params.input.text_value,
+      font_id: params.input.font_id?.trim() || PACKET_FORM_DATE_FONT_ID,
+      x: params.input.x,
+      y: params.input.y,
+      width: params.input.width,
+      height: params.input.height,
+      rotation: params.input.rotation ?? 0,
+    },
+  });
 }
 
 export async function updatePacketFormAnnotationPlacement(

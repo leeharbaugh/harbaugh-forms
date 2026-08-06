@@ -13,6 +13,16 @@ describe("fillPacketFormPdfBytes source contracts", () => {
     assert.ok(maskIdx > 0 && drawTextIdx > maskIdx);
   });
 
+  it("draws opaque white placement rectangle for mask_background", () => {
+    assert.match(source, /color:\s*rgb\(1,\s*1,\s*1\)/);
+    assert.match(source, /placement\.width/);
+    assert.match(source, /placement\.height/);
+    assert.match(
+      source,
+      /if\s*\(\s*!exportText\s*&&\s*placement\.maskBackground\s*\)/,
+    );
+  });
+
   it("uses shared multiline layout helper", () => {
     assert.match(source, /layoutTextInBox/);
     assert.match(source, /isMultiline: placement\.isMultiline/);
@@ -24,8 +34,9 @@ describe("fillPacketFormPdfBytes source contracts", () => {
     assert.match(source, /return false/);
   });
 
-  it("renders typed signature annotations separately from field instances", () => {
-    assert.match(source, /drawTypedSignatureAnnotation/);
+  it("renders packet-form annotations separately from field instances", () => {
+    assert.match(source, /drawPacketFormTextAnnotation/);
+    assert.match(source, /date_signed/);
     assert.match(source, /options\?\.annotations/);
     assert.doesNotMatch(source, /field_instances/);
   });
@@ -37,6 +48,21 @@ describe("fillPacketFormPdfBytes source contracts", () => {
 
   it("disables object streams when saving so Caveat FontFile2 persists", () => {
     assert.match(source, /save\(\{\s*useObjectStreams:\s*false\s*\}\)/);
+  });
+
+  it("embeds Caveat with a customName to avoid Helvetica encoding corruption", () => {
+    assert.match(source, /customName:\s*["']HarbaughCaveat["']/);
+    assert.match(source, /subset:\s*true/);
+  });
+
+  it("draws annotations as one intact drawText string", () => {
+    const drawFn = source.slice(
+      source.indexOf("function drawPacketFormTextAnnotation"),
+      source.indexOf("export async function fillPacketFormPdfBytes"),
+    );
+    assert.match(drawFn, /page\.drawText\(text,/);
+    assert.doesNotMatch(drawFn, /for\s*\(.*of\s*text/);
+    assert.doesNotMatch(drawFn, /split\(["']["']\)/);
   });
 });
 

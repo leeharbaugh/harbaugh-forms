@@ -1,10 +1,66 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-08-05 (Fill Form multiline/mask/signature annotations + font scaling implemented on development; not production-deployed)
+**As of:** 2026-08-06 (Fill Form Date Signed placement-path fix on PR #31; not production-deployed)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
+
+### Fill Form Date Signed placement fix (2026-08-06)
+
+**Status:** Blocking browser bug fixed on branch `fix/fill-form-pdf-multiline-caveat-download` (PR #31). **Not merged. Not deployed.** Production remains rolled back / unmodified.
+
+| Item | Result |
+|------|--------|
+| Symptom | Date Signed dialog + placement banner OK; PDF click showed red `Unsupported annotation type.` |
+| Exact error source | `validatePacketFormAnnotationInput` → `isPacketFormAnnotationType` in `lib/types/packet-form-annotation.ts` (message `"Unsupported annotation type."`) |
+| Supported allowlist | Explicit only: `typed_signature`, `date_signed` (no deferred kinds) |
+| Fix | Shared click factory `buildAnnotationInputFromPlacementClick` used by the editor; early allowlist check; explicit create payloads (no spread that can drop type); Helvetica date defaults vs Caveat signature defaults kept separate |
+| Regression test | `lib/packet-form-annotation-placement.test.ts` / `npm run test:annotation-placement` (same factory as browser click) |
+| Live factory→persist QA | `scripts/qa-date-signed-placement-path-53.ts` — pages 1 + 11 place/move/resize/reload/PDF/soft-delete; Caveat signature retained |
+| Artifact | `_audit_tmp/pdf-regression/qa-pf53-date-signed-placement-path.pdf` (Acrobat) |
+
+### Fill Form Date Signed annotation (2026-08-06)
+
+**Status:** Implemented on branch `fix/fill-form-pdf-multiline-caveat-download` (PR #31). **Not merged. Not deployed.** Development migration applied to `harbaugh-forms-dev` only:
+
+- `20260806150000_packet_form_annotations_date_signed.sql` (widens `annotation_type` CHECK to include `date_signed`)
+
+| Item | Result |
+|------|--------|
+| Type | `date_signed` on existing `packet_form_annotations` (not a field/field_instance) |
+| Storage | `text_value` = formatted display string chosen at placement (calendar date, not timestamp); `font_id` = `helvetica` |
+| Formats | `MM/DD/YYYY` (default), `M/D/YYYY`, `Month D, YYYY` |
+| UI | Fill Form toolbar **Date Signed** beside Signature; dialog date + format + preview → place |
+| Render | Helvetica, black, transparent; shared annotation overlay/PDF drawer; independent of signature |
+| Auth/lifecycle | Same as typed signatures (`owns_packet` / admin; creator trigger; DRAFT-editable only) |
+| Tests | `test:date-signed-annotation` (includes placement factory); `test:annotation-placement`; `test:pdf-text-layout`; `test:fill-form-pdf-download`; auth validate; smoke; sync; lifecycle; `tsc`; ESLint; `build:validate` |
+| Artifact | `_audit_tmp/pdf-regression/manual-qa-pf53-date-signed.pdf` + placement-path PDF (Acrobat) |
+| Deferred | Free text, strikethrough, highlight, drawing, images, checkmarks, initials, presets, auto signature/date pairing |
+
+**Production rollout order (updated):** (1) `20260805220000` (2) `20260805230000` (3) **`20260806150000`** → validate → deploy app → apply form **15** Map Fields flags (`is_multiline` + `mask_background` on Non-Real Estate Items) as configuration data.
+
+### Fill Form download regressions: multiline wrap + Caveat spacing (2026-08-06)
+
+**Status:** Fixed on branch `fix/fill-form-pdf-multiline-caveat-download` (PR #31). **Not merged. Not deployed. No production migrations.**
+
+| Item | Result |
+|------|--------|
+| Authoritative browser Download PDF path | Packets → Fill Form → `downloadFilledPacketFormPdf` → `getFilledPacketFormPdfBytes` → `fillPacketFormPdfBytes(fields, annotations)` with live draft values + Caveat bytes; `save({ useObjectStreams: false })` |
+| Multiline root cause | Not a missing `is_multiline` select/serialization bug. Residential Lease Listing “Non-Real Estate Items” mapping `f7f8e678-…` was `is_multiline=false`, so `layoutTextInBox` emitted one line and pdf-lib drew one overflowing `drawText`. Browser CSS wrap still looked OK. |
+| Multiline fix | Enable Map Fields **Multiline** for narrative blanks (dev: mapping `f7f8e678-…` set `is_multiline=true`, retained). Download path already honored the flag when true. |
+| Caveat root cause | Embedding Caveat under its default PostScript name **alongside Helvetica** in the filled packet PDF corrupted cmap/advances (extract looked like `KenƑetƋ…` / visually spaced fragments). Not glyph-by-glyph drawing. |
+| Caveat fix | `embedFont(bytes, { subset: true, customName: "HarbaughCaveat" })`; still one intact `drawText(text)`; keep fontkit + `useObjectStreams: false` + public font proxy exclusions |
+| Preprinted-line mask root cause | **Configuration, not rendering.** Mapping `f7f8e678-…` had `mask_background=false` after multiline enable. Download path already draws opaque white placement rectangle before text when the flag is true (empty and populated). |
+| Mask fix | Dev Map Fields / DB: retain `mask_background=true` with `is_multiline=true` on `f7f8e678-…`. No renderer change required. |
+| Tests | `test:fill-form-pdf-download` (multiline + Caveat + mask on/off/empty); `test:pdf-text-layout`; annotation auth validate; presentation smoke; field-instance-sync; packet-form-lifecycle; `tsc`; targeted ESLint; `build:validate` |
+| Manual artifact | `_audit_tmp/pdf-regression/manual-qa-pf53-multiline-mask-caveat.pdf` (+ empty-mask / mask-off control) — opened in Adobe Acrobat DC |
+| Migrations | Forward `20260806150000` for `date_signed` (dev applied). Existing `20260805220000` / `20260805230000` unchanged. |
+| Production data note | After schema migrations + app deploy, production form **15** mapping for Non-Real Estate Items still needs **`is_multiline=true`** and **`mask_background=true`** applied as ordinary Map Fields / configuration data (not a new migration). |
+
+**Retained development mapping `f7f8e678-…`:** `is_multiline=true`, `mask_background=true`, `470×28` (height unchanged; enlarge in Map Fields only if more printed-line rows must be covered).
+
+**Remaining preview vs PDF differences (acceptable):** CSS Caveat vs embedded subset metrics can differ slightly; Non-Real Estate box height remains **28pt** so vertical capacity / printed-line coverage is limited to that rectangle.
 
 ### Fill Form presentation: multiline, line mask, typed signatures, font scaling (2026-08-05)
 
@@ -21,16 +77,16 @@ Production migrations **not** applied (deliberate).
 | Typed signatures | New `packet_form_annotations` (typed_signature only); Fill Form toolbar; Caveat OFL font; soft-delete; RLS via `owns_packet` |
 | Creator attribution | DB trigger `packet_form_annotations_enforce_created_by` (INVOKER): INSERT forces `created_by_user_id = auth.uid()`; UPDATE preserves OLD; client UUID is not trusted |
 | Preview font sizing | Overlay fonts scale with `renderedHeight/originalHeight`; clamp in PDF space then × scale |
-| Caveat PDF embed | Requires `@pdf-lib/fontkit` + `PDFDocument.registerFontkit` (silent Helvetica fallback removed as default path) |
-| Tests | `test:pdf-text-layout`; annotation contract tests; `validate:packet-form-annotation-auth-dev`; `smoke:fill-form-presentation-dev`; field-instance-sync; packet-form-lifecycle; storage-paths; `tsc --noEmit`; `build:validate` |
+| Caveat PDF embed | Requires `@pdf-lib/fontkit` + `PDFDocument.registerFontkit`; embed with `subset: true` + `customName: "HarbaughCaveat"` when Helvetica is also present |
+| Tests | `test:pdf-text-layout`; `test:fill-form-pdf-download`; annotation contract tests; `validate:packet-form-annotation-auth-dev`; `smoke:fill-form-presentation-dev`; field-instance-sync; packet-form-lifecycle; storage-paths; `tsc --noEmit`; `build:validate` |
 | Font license | `public/fonts/Caveat-Regular.ttf` + `public/fonts/OFL.txt` (SIL OFL 1.1, Caveat Project Authors) |
 | Deferred | Drawn/uploaded signatures, reusable saved signatures, cryptographic signing, Authentisign integration |
 
-**Root causes addressed:** (1) Multiline clipped because preview used `truncate`/`input` and PDF used a single `drawText` with no wrap. (2) Undersized preview text because display used fixed CSS `10px` while boxes scaled with zoom; clamp was also incorrectly applied after zoom scale (fixed: clamp in PDF space, then multiply by scale). (3) Creator spoof residual: UPDATE could rewrite `created_by_user_id` without DB enforcement (fixed by forward migration trigger). (4) Caveat custom-font embed failed without fontkit and fell back to Helvetica silently.
+**Root causes addressed:** (1) Multiline clipped because preview used `truncate`/`input` and PDF used a single `drawText` with no wrap. (2) Undersized preview text because display used fixed CSS `10px` while boxes scaled with zoom; clamp was also incorrectly applied after zoom scale (fixed: clamp in PDF space, then multiply by scale). (3) Creator spoof residual: UPDATE could rewrite `created_by_user_id` without DB enforcement (fixed by forward migration trigger). (4) Caveat custom-font embed failed without fontkit and fell back to Helvetica silently. (5) 2026-08-06: narrative downloads without Map Fields multiline flag stay single-line; Caveat+Helvetica default-name embed corrupted advances (fixed via `HarbaughCaveat` customName). (6) Preprinted lines through wrapped Non-Real Estate text: mapping lacked `mask_background` (enabled and retained).
 
 **Manual QA (development, 2026-08-05 / continued 2026-08-06):**
 - Zoom policy verified at 75 / 100 / 150 / 195 / 250% (configured 10pt → 7.5 / 10 / 15 / 19.5 / 25 CSS px; multiline derived sizes scale linearly; padding uses the same scale factor). Stored PDF coordinates are independent of zoom.
-- Caveat embedding confirmed on real DRAFT packet form **62** (Third Party Financing Addendum): signatures drawn on pages 1 and 2; smoke PDF contains `Caveat-Regular` BaseFont + `FontFile2`. Artifact: `_audit_tmp/fill-form-presentation-smoke-62.pdf`.
+- Caveat embedding confirmed on real DRAFT packet form **62** (Third Party Financing Addendum): signatures drawn on pages 1 and 2; smoke PDF contains `HarbaughCaveat` + `FontFile2`. Artifact: `_audit_tmp/fill-form-presentation-smoke-62.pdf`.
 - Annotation RLS/auth live probes on packet form **62**: spoofed INSERT creator rewritten to `auth.uid()`; UPDATE cannot transfer creator; move/resize/text/soft-delete work; cross-owner non-admin INSERT blocked; DELETED excluded from ACTIVE reads.
 - **Browser visual QA (packet 19 / packet_form 53 / form 15 / mapping `7d480d19-…` Lease Special Provisions, page 8):** temporary `is_multiline=true` + `mask_background=true` (restored to false/false afterward).
   - Natural wrap (≥3 lines), explicit newlines, long unbroken URL hard-break, and vertical clipping all passed in preview at ~80 / 100 / 156 / 195 / 244% zoom.
@@ -38,9 +94,10 @@ Production migrations **not** applied (deliberate).
   - Download PDF with mask+wrap materially matched preview; source template PDF unchanged after flag restore.
   - Typed signatures: Caveat dialog preview; place on pages 1 and 11; move persisted; aspect-locked resize persisted; zoom did not mutate stored PDF coords; soft-delete (`status=DELETED`) removed from UI/PDF; replacement download embeds Caveat.
   - DRAFT editable; open/refresh created no automatic annotations; field-instance QA values cleared afterward.
-- **Blocking fixes from browser QA:** (1) auth `proxy.ts` matcher excluded `.ttf`/`.otf`/`.woff`/`.woff2`/`.txt` so `/fonts/Caveat-Regular.ttf` is not redirected to login HTML; browser loader rejects non-sfnt payloads. (2) `pdfDoc.save({ useObjectStreams: false })` so Caveat `FontFile2` actually persists on filled downloads for some source PDFs.
+- **Non-Real Estate Items (mapping `f7f8e678-…`, 2026-08-06):** retained `is_multiline=true` + **`mask_background=true`** (470×28). Download artifacts: populated mask, empty mask, mask-off control; Acrobat opened for line-cover QA. Caveat signature remains intact.
+- **Blocking fixes from browser QA:** (1) auth `proxy.ts` matcher excluded `.ttf`/`.otf`/`.woff`/`.woff2`/`.txt` so `/fonts/Caveat-Regular.ttf` is not redirected to login HTML; browser loader rejects non-sfnt payloads. (2) `pdfDoc.save({ useObjectStreams: false })` so Caveat `FontFile2` actually persists on filled downloads for some source PDFs. (3) Caveat embed `customName: "HarbaughCaveat"` + `subset: true` so Helvetica+Caveat fills do not corrupt signature spacing.
 
-**Production before deploy:** Apply **both** migrations to production Supabase **first** (`20260805220000` then `20260805230000`), validate schema/trigger/policies, then deploy application code. Do not reverse the order.
+**Production before deploy:** Apply **both** migrations to production Supabase **first** (`20260805220000` then `20260805230000`), validate schema/trigger/policies, then deploy application code. Do not reverse the order. Separately apply Map Fields flags on production form **15** Non-Real Estate Items (`is_multiline` + `mask_background`) as configuration data.
 
 ### Packet Tenant Names + Map Fields hardening — Vercel Production deploy (2026-08-05)
 

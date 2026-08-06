@@ -56,6 +56,18 @@ describe("packet form typed signature annotations", () => {
       }) ?? "",
       /coordinate/i,
     );
+    assert.match(
+      validatePacketFormAnnotationInput({
+        page_number: 1,
+        annotation_type: "highlight" as never,
+        text_value: "nope",
+        x: 0,
+        y: 0,
+        width: 10,
+        height: 10,
+      }) ?? "",
+      /unsupported/i,
+    );
   });
 
   it("sizes typed signatures from text length", () => {
@@ -131,11 +143,20 @@ describe("packet form typed signature annotations", () => {
   it("keeps annotations out of field_instances / Authentisign paths", () => {
     const fill = readFileSync("lib/fill-packet-form-pdf.ts", "utf8");
     const overlay = readFileSync(
-      "components/packets/packet-form-signature-overlay.tsx",
+      "components/packets/packet-form-annotation-overlay.tsx",
       "utf8",
     );
     assert.match(fill, /annotations/);
     assert.match(overlay, /not Authentisign/i);
     assert.doesNotMatch(fill, /authentisign/i);
+  });
+
+  it("includes forward date_signed type migration", () => {
+    const migration = readFileSync(
+      "supabase/migrations/20260806150000_packet_form_annotations_date_signed.sql",
+      "utf8",
+    );
+    assert.match(migration, /date_signed/);
+    assert.match(migration, /typed_signature/);
   });
 });

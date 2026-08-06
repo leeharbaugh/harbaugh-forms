@@ -7,7 +7,7 @@ import {
   PacketFormFieldOverlay,
   type PacketFormOverlayField,
 } from "@/components/packets/packet-form-field-overlay";
-import { PacketFormSignatureOverlay } from "@/components/packets/packet-form-signature-overlay";
+import { PacketFormAnnotationOverlay } from "@/components/packets/packet-form-annotation-overlay";
 import { PacketFormFieldsSidebar } from "@/components/packets/packet-form-fields-sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,13 +24,21 @@ import {
   upsertFieldInstanceMappingPlacement,
 } from "@/lib/packet-form-editor";
 import {
-  createTypedSignatureAnnotation,
+  createPacketFormAnnotation,
   softDeletePacketFormAnnotation,
   updatePacketFormAnnotationPlacement,
 } from "@/lib/packet-form-annotations";
+import { buildAnnotationInputFromPlacementClick } from "@/lib/packet-form-annotation-placement";
 import {
-  defaultTypedSignatureSize,
+  DATE_SIGNED_FORMATS,
+  DEFAULT_DATE_SIGNED_FORMAT,
+  formatDateSigned,
+  localCalendarDateIso,
+  type DateSignedFormat,
+} from "@/lib/date-signed-annotation";
+import {
   type PacketFormAnnotation,
+  type PacketFormAnnotationType,
 } from "@/lib/types/packet-form-annotation";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -91,7 +99,7 @@ import {
 } from "@/lib/types/template-pdf-field";
 import { cn } from "@/lib/utils";
 import { usePdfEditorSession } from "@/lib/use-pdf-editor-session";
-import { CircleHelp, Minus, Plus, Download, RefreshCw, PenLine } from "lucide-react";
+import { CircleHelp, Minus, Plus, Download, RefreshCw, PenLine, CalendarDays } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
@@ -128,11 +136,16 @@ export function PacketFormEditor({
   >(null);
   const [signatureDialogOpen, setSignatureDialogOpen] = useState(false);
   const [signatureDraftText, setSignatureDraftText] = useState("");
-  const [signaturePlaceMode, setSignaturePlaceMode] = useState(false);
-  const [pendingSignatureText, setPendingSignatureText] = useState<string | null>(
-    null,
+  const [dateDialogOpen, setDateDialogOpen] = useState(false);
+  const [dateDraftIso, setDateDraftIso] = useState(() => localCalendarDateIso());
+  const [dateDraftFormat, setDateDraftFormat] = useState<DateSignedFormat>(
+    DEFAULT_DATE_SIGNED_FORMAT,
   );
-  const [signatureError, setSignatureError] = useState<string | null>(null);
+  const [pendingPlace, setPendingPlace] = useState<{
+    annotation_type: PacketFormAnnotationType;
+    text_value: string;
+  } | null>(null);
+  const [annotationError, setAnnotationError] = useState<string | null>(null);
   const [draftValuesByInstanceId, setDraftValuesByInstanceId] = useState<
     Record<string, string>
   >({});
@@ -1153,71 +1166,59 @@ export function PacketFormEditor({
     availabilityState,
   );
 
-  const handlePlacePendingSignature = async (
+  const handlePlacePendingAnnotation = async (
     pageNumber: number,
     metrics: PageMetrics,
     clientX: number,
     clientY: number,
     pageElement: HTMLElement,
   ) => {
-    if (!pendingSignatureText || !valuesEditable) {
+    if (!pendingPlace || !valuesEditable) {
       return;
     }
 
     const rect = pageElement.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    const size = defaultTypedSignatureSize(pendingSignatureText);
-    const scaleX = metrics.originalWidth / metrics.renderedWidth;
-    const scaleY = metrics.originalHeight / metrics.renderedHeight;
-    const pdfX = Math.min(
-      Math.max(0, metrics.originalWidth - size.width),
-      Math.max(0, x * scaleX - size.width / 2),
-    );
-    const pdfY = Math.min(
-      Math.max(0, metrics.originalHeight - size.height),
-      Math.max(0, y * scaleY - size.height / 2),
-    );
+    const overlayX = clientX - rect.left;
+    const overlayY = clientY - rect.top;
 
-    setSignatureError(null);
+    setAnnotationError(null);
     setUpdatingAnnotationId("pending");
     try {
+      // Same factory the placement regression tests exercise.
+      const input = buildAnnotationInputFromPlacementClick(pendingPlace, {
+        pageNumber,
+        metrics,
+        overlayX,
+        overlayY,
+      });
+
       const supabase = createClient();
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) {
-        throw new Error("You must be signed in to place a signature.");
+        throw new Error("You must be signed in to place an annotation.");
       }
 
-      const created = await createTypedSignatureAnnotation(supabase, {
+      const created = await createPacketFormAnnotation(supabase, {
         packetId,
         packetFormId: packetFormRecordId,
         userId: user.id,
-        input: {
-          page_number: pageNumber,
-          annotation_type: "typed_signature",
-          text_value: pendingSignatureText,
-          x: pdfX,
-          y: pdfY,
-          width: size.width,
-          height: size.height,
-        },
+        input,
       });
       setAnnotations((current) => [...current, created]);
       setSelectedAnnotationId(created.id);
-      setPendingSignatureText(null);
-      setSignaturePlaceMode(false);
+      setPendingPlace(null);
     } catch (error) {
-      setSignatureError(
-        error instanceof Error ? error.message : "Failed to place signature.",
+      setAnnotationError(
+        error instanceof Error ? error.message : "Failed to place annotation.",
       );
     } finally {
       setUpdatingAnnotationId(null);
     }
   };
 
-  const handleSignatureDragStop = (
+  const handleAnnotationDragStop = (
     annotationId: string,
     metrics: PageMetrics,
     x: number,
@@ -1255,10 +1256,10 @@ export function PacketFormEditor({
         setAnnotations((current) =>
           current.map((row) => (row.id === annotationId ? previous : row)),
         );
-        setSignatureError(
+        setAnnotationError(
           error instanceof Error
             ? error.message
-            : "Failed to move signature.",
+            : "Failed to move annotation.",
         );
       } finally {
         setUpdatingAnnotationId(null);
@@ -1266,7 +1267,7 @@ export function PacketFormEditor({
     })();
   };
 
-  const handleSignatureResizeStop = (
+  const handleAnnotationResizeStop = (
     annotationId: string,
     metrics: PageMetrics,
     x: number,
@@ -1307,10 +1308,10 @@ export function PacketFormEditor({
         setAnnotations((current) =>
           current.map((row) => (row.id === annotationId ? previous : row)),
         );
-        setSignatureError(
+        setAnnotationError(
           error instanceof Error
             ? error.message
-            : "Failed to resize signature.",
+            : "Failed to resize annotation.",
         );
       } finally {
         setUpdatingAnnotationId(null);
@@ -1318,7 +1319,7 @@ export function PacketFormEditor({
     })();
   };
 
-  const handleDeleteSignature = (annotationId: string) => {
+  const handleDeleteAnnotation = (annotationId: string) => {
     if (!valuesEditable) return;
     void (async () => {
       setUpdatingAnnotationId(annotationId);
@@ -1335,10 +1336,10 @@ export function PacketFormEditor({
           setSelectedAnnotationId(null);
         }
       } catch (error) {
-        setSignatureError(
+        setAnnotationError(
           error instanceof Error
             ? error.message
-            : "Failed to delete signature.",
+            : "Failed to delete annotation.",
         );
       } finally {
         setUpdatingAnnotationId(null);
@@ -1438,7 +1439,7 @@ export function PacketFormEditor({
             variant="outline"
             size="sm"
             onClick={() => {
-              setSignatureError(null);
+              setAnnotationError(null);
               setSignatureDraftText("");
               setSignatureDialogOpen(true);
             }}
@@ -1447,6 +1448,22 @@ export function PacketFormEditor({
           >
             <PenLine className="mr-1.5 h-4 w-4" />
             Signature
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setAnnotationError(null);
+              setDateDraftIso(localCalendarDateIso());
+              setDateDraftFormat(DEFAULT_DATE_SIGNED_FORMAT);
+              setDateDialogOpen(true);
+            }}
+            disabled={!valuesEditable || !pdfUrl}
+            title="Place the date you signed on this packet form only"
+          >
+            <CalendarDays className="mr-1.5 h-4 w-4" />
+            Date Signed
           </Button>
           <Button
             type="button"
@@ -1477,30 +1494,41 @@ export function PacketFormEditor({
         </div>
       )}
 
-      {signatureError && (
+      {annotationError && (
         <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-          {signatureError}
+          {annotationError}
         </div>
       )}
 
-      {signaturePlaceMode && pendingSignatureText && (
-        <div className="border-b border-violet-200 bg-violet-50 px-4 py-2 text-sm text-violet-950 dark:border-violet-900/40 dark:bg-violet-950/40 dark:text-violet-100">
-          Click on a PDF page to place your typed signature
-          {" "}
+      {pendingPlace && (
+        <div
+          className={cn(
+            "border-b px-4 py-2 text-sm",
+            pendingPlace.annotation_type === "date_signed"
+              ? "border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-900/40 dark:bg-sky-950/40 dark:text-sky-100"
+              : "border-violet-200 bg-violet-50 text-violet-950 dark:border-violet-900/40 dark:bg-violet-950/40 dark:text-violet-100",
+          )}
+        >
+          Click on a PDF page to place your{" "}
+          {pendingPlace.annotation_type === "date_signed"
+            ? "date signed"
+            : "typed signature"}{" "}
           <span
             className="font-medium"
-            style={{ fontFamily: '"Caveat", cursive' }}
+            style={{
+              fontFamily:
+                pendingPlace.annotation_type === "date_signed"
+                  ? 'Helvetica, Arial, sans-serif'
+                  : '"Caveat", cursive',
+            }}
           >
-            {pendingSignatureText}
+            {pendingPlace.text_value}
           </span>
           .{" "}
           <button
             type="button"
             className="underline"
-            onClick={() => {
-              setSignaturePlaceMode(false);
-              setPendingSignatureText(null);
-            }}
+            onClick={() => setPendingPlace(null)}
           >
             Cancel
           </button>
@@ -1765,21 +1793,18 @@ export function PacketFormEditor({
                               <div
                                 className={cn(
                                   "absolute left-0 top-0 overflow-hidden",
-                                  signaturePlaceMode && "cursor-crosshair",
+                                  pendingPlace && "cursor-crosshair",
                                 )}
                                 style={{
                                   width: metrics.renderedWidth,
                                   height: metrics.renderedHeight,
                                 }}
                                 onClick={(event) => {
-                                  if (
-                                    !signaturePlaceMode ||
-                                    !pendingSignatureText
-                                  ) {
+                                  if (!pendingPlace) {
                                     return;
                                   }
                                   event.stopPropagation();
-                                  void handlePlacePendingSignature(
+                                  void handlePlacePendingAnnotation(
                                     pageNumber,
                                     metrics as PageMetrics,
                                     event.clientX,
@@ -1853,7 +1878,7 @@ export function PacketFormEditor({
                                       annotation.page_number === pageNumber,
                                   )
                                   .map((annotation) => (
-                                    <PacketFormSignatureOverlay
+                                    <PacketFormAnnotationOverlay
                                       key={annotation.id}
                                       annotation={annotation}
                                       metrics={metrics as PageMetrics}
@@ -1875,7 +1900,7 @@ export function PacketFormEditor({
                                         setSelectedFieldKey(null);
                                       }}
                                       onDragStop={(id, x, y) =>
-                                        handleSignatureDragStop(
+                                        handleAnnotationDragStop(
                                           id,
                                           metrics as PageMetrics,
                                           x,
@@ -1883,7 +1908,7 @@ export function PacketFormEditor({
                                         )
                                       }
                                       onResizeStop={(id, x, y, width, height) =>
-                                        handleSignatureResizeStop(
+                                        handleAnnotationResizeStop(
                                           id,
                                           metrics as PageMetrics,
                                           x,
@@ -1892,7 +1917,7 @@ export function PacketFormEditor({
                                           height,
                                         )
                                       }
-                                      onDelete={handleDeleteSignature}
+                                      onDelete={handleDeleteAnnotation}
                                     />
                                   ))}
                               </div>
@@ -2003,12 +2028,107 @@ export function PacketFormEditor({
                 type="button"
                 disabled={!signatureDraftText.trim()}
                 onClick={() => {
-                  setPendingSignatureText(signatureDraftText.trim());
-                  setSignaturePlaceMode(true);
+                  setPendingPlace({
+                    annotation_type: "typed_signature",
+                    text_value: signatureDraftText.trim(),
+                  });
                   setSignatureDialogOpen(false);
                 }}
               >
                 Place on PDF
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dateDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            aria-label="Close date signed dialog"
+            onClick={() => setDateDialogOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-lg border bg-card p-5 shadow-lg">
+            <h2 className="text-base font-semibold">Date signed</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Places the date you signed on this packet form only. Independent
+              of the signature annotation. Not Authentisign.
+            </p>
+            <div className="mt-4 space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="date_signed_input">Date</Label>
+                <Input
+                  id="date_signed_input"
+                  type="date"
+                  value={dateDraftIso}
+                  onChange={(event) => setDateDraftIso(event.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="date_signed_format">Format</Label>
+                <select
+                  id="date_signed_format"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+                  value={dateDraftFormat}
+                  onChange={(event) =>
+                    setDateDraftFormat(event.target.value as DateSignedFormat)
+                  }
+                >
+                  {DATE_SIGNED_FORMATS.map((format) => (
+                    <option key={format} value={format}>
+                      {format}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div
+                className="rounded-md border bg-muted/30 px-3 py-4 text-center text-xl"
+                style={{
+                  fontFamily: 'Helvetica, Arial, sans-serif',
+                  color: "#000000",
+                }}
+              >
+                {(() => {
+                  try {
+                    return formatDateSigned(dateDraftIso, dateDraftFormat);
+                  } catch {
+                    return "Invalid date";
+                  }
+                })()}
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDateDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                disabled={!dateDraftIso}
+                onClick={() => {
+                  try {
+                    const text = formatDateSigned(dateDraftIso, dateDraftFormat);
+                    setPendingPlace({
+                      annotation_type: "date_signed",
+                      text_value: text,
+                    });
+                    setDateDialogOpen(false);
+                  } catch (error) {
+                    setAnnotationError(
+                      error instanceof Error
+                        ? error.message
+                        : "Invalid date.",
+                    );
+                  }
+                }}
+              >
+                Place Date
               </Button>
             </div>
           </div>
