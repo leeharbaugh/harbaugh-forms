@@ -12,6 +12,44 @@ Each decision should include:
 
 ---
 
+## Fill Form text layout, placement masks, and typed signature annotations
+
+**Date:** 2026-08-05
+
+**Decision:**
+Fill Form preview and generated PDFs share one text-layout policy (`lib/pdf-text-layout.ts`). Multiline behavior is an explicit template placement flag (`form_field_mappings.is_multiline`), not inferred from the current value. Preprinted writing lines may be covered with an opaque white rectangle via placement flag `mask_background` (default false; admin-only in Map Fields; does not alter the source PDF file). Typed “Fill & Sign”–style signatures are stored as packet-form annotations (`packet_form_annotations`), not as `fields` / `field_instances` and not as Authentisign placeholders. Preview font size scales with PDF zoom using `renderedHeight / originalHeight` applied to the configured (or height-derived) point size, with documented min/max clamps. Annotation `created_by_user_id` is assigned authoritatively by a BEFORE INSERT/UPDATE trigger from `auth.uid()` / OLD and is immutable after insert; authorization remains `owns_packet` / `is_app_admin` (not creator-only). Custom Caveat embedding in pdf-lib requires registering `@pdf-lib/fontkit`.
+
+**Reason:**
+Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` overlay text stayed tiny at high zoom while boxes scaled. Preprinted form lines need an optional non-destructive cover. Occasional agent signatures must not require Global field catalog rows or Authentisign. Client-supplied creator UUIDs must not be trusted. Applied development migrations are immutable, so creator hardening is a forward-only follow-up migration.
+
+**Consequences:**
+
+* Admins enable multiline and/or mask per placement; existing mappings default off.
+* Overlay and download must stay aligned for wrap, mask order (mask then text), and font sizing.
+* Typed signatures: create/move/resize/soft-delete on DRAFT packet forms the user owns; included in generated PDFs; packet-form-specific.
+* Creator attribution: DB trigger overwrites INSERT `created_by_user_id` with `auth.uid()` for authenticated sessions; UPDATE always restores OLD; app never sends creator on update.
+* Migration is additive and backward-compatible with currently deployed production code (defaults preserve prior single-line/transparent behavior; new table unused until new app code ships). Preferred order: migrate production (`20260805220000` then `20260805230000`) → validate → deploy app.
+* Static Caveat/OFL files under `public/fonts/` must bypass the auth proxy matcher (`.ttf`/`.txt` exclusions); otherwise unauthenticated fetches receive login HTML and PDF embed fails. Browser font loader rejects non-sfnt payloads.
+* Filled PDF saves use `useObjectStreams: false` so custom Caveat `FontFile2` is reliably present in downloaded bytes for browser fills.
+* Deferred: drawn/uploaded signatures, cross-packet signature reuse, cryptographic signing, identity verification.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260805220000_fill_form_presentation_and_annotations.sql`
+* `supabase/migrations/20260805230000_packet_form_annotations_created_by_immutable.sql`
+* `lib/pdf-text-layout.ts`
+* `lib/fill-packet-form-pdf.ts` (registers `@pdf-lib/fontkit`)
+* `lib/packet-form-annotations.ts`
+* `components/packets/packet-form-field-overlay.tsx`
+* `components/packets/packet-form-signature-overlay.tsx`
+* `public/fonts/Caveat-Regular.ttf` + `public/fonts/OFL.txt` (SIL OFL 1.1)
+* `lib/signature-font.ts` (browser fetch + sfnt guard) / `lib/signature-font-server.ts` (Node `fs`; never import from client)
+* `proxy.ts` (exclude font/license static extensions from auth session matcher)
+* `scripts/validate-packet-form-annotation-auth-dev.ts`
+* `scripts/smoke-fill-form-presentation-dev.ts`
+
+---
+
 ## Packet multi-contact name aggregates use reusable custom resolvers
 
 **Date:** 2026-08-05

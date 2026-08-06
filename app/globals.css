@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* OFL Caveat — typed packet-form signatures (Fill Form annotations). */
+@font-face {
+  font-family: "Caveat";
+  src: url("/fonts/Caveat-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @layer base {
   :root {
     /* Warm-neutral light theme — Harbaugh Forms UI foundation */

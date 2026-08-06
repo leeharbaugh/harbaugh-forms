@@ -116,6 +116,8 @@ function buildMappingPayload(
     default_value_override: item.pdfDefaultValue,
     required: false,
     notes: `Imported from AcroForm field: ${item.pdfFieldName}`,
+    is_multiline: false,
+    mask_background: false,
     pdf_field_name: item.pdfFieldName,
     pdf_field_type: item.pdfFieldType,
     pdf_export_value: item.pdfExportValue,

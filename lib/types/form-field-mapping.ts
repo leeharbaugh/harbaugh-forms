@@ -17,6 +17,10 @@ export type FormFieldMapping = {
   font_size: number | null;
   alignment: string | null;
   field_widget_type: string | null;
+  /** Wrap text within the placement box (Fill Form + generated PDF). */
+  is_multiline: boolean;
+  /** Opaque white fill under typed text to cover preprinted writing lines. */
+  mask_background: boolean;
   default_value_override: string | null;
   required: boolean;
   notes: string | null;

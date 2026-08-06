@@ -1323,6 +1323,8 @@ export function PdfFieldEditor({ formId }: PdfFieldEditorProps) {
                   normalizedPlacement.mapping.default_value_override,
                 required: normalizedPlacement.mapping.required,
                 notes: normalizedPlacement.mapping.notes,
+                is_multiline: normalizedPlacement.mapping.is_multiline,
+                mask_background: normalizedPlacement.mapping.mask_background,
               }
             : normalizedPlacement.mapping;
 

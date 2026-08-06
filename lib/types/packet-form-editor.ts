@@ -55,6 +55,7 @@ export type PacketFormEditorData = {
     } | null;
   };
   fields: PacketFormFieldView[];
+  annotations: import("@/lib/types/packet-form-annotation").PacketFormAnnotation[];
 };
 
 export function resolvePacketFormPlacement(
@@ -161,6 +162,8 @@ export function packetFormFieldViewToOverlayField(
   page_width: number | null;
   page_height: number | null;
   font_size: number;
+  is_multiline: boolean;
+  mask_background: boolean;
   is_required: boolean;
   hasPlacementOverride: boolean;
   displayValue: string;
@@ -187,6 +190,8 @@ export function packetFormFieldViewToOverlayField(
     page_width: fieldView.placement.page_width,
     page_height: fieldView.placement.page_height,
     font_size: fieldView.placement.font_size ?? 10,
+    is_multiline: fieldView.mapping.is_multiline === true,
+    mask_background: fieldView.mapping.mask_background === true,
     is_required: fieldView.mapping.required,
     hasPlacementOverride: fieldView.hasPlacementOverride,
     displayValue: fieldView.displayValue,

@@ -71,6 +71,8 @@ type MappingRow = {
   default_value_override: string | null;
   required: boolean | null;
   notes: string | null;
+  is_multiline: boolean | null;
+  mask_background: boolean | null;
   status: string;
   pdf_field_name: string | null;
   pdf_field_type: string | null;
@@ -620,6 +622,8 @@ export async function copyFormToGlobalLibrary(
         ),
         required: row.required,
         notes: row.notes,
+        is_multiline: row.is_multiline === true,
+        mask_background: row.mask_background === true,
         status: "ACTIVE",
         pdf_field_name: row.pdf_field_name,
         pdf_field_type: row.pdf_field_type,

@@ -209,6 +209,44 @@ export function PdfPlacementFormFields({
         </Label>
       </div>
 
+      {!isCheckboxMapping && (
+        <>
+          <div className="flex items-center gap-2 sm:col-span-2">
+            <AppCheckbox
+              id="mapping_is_multiline"
+              checked={value.is_multiline}
+              onCheckedChange={(checked) =>
+                setField("is_multiline", checked === true)
+              }
+              disabled={readOnly}
+            />
+            <Label htmlFor="mapping_is_multiline" className="font-normal">
+              Multiline text (wrap within field box)
+            </Label>
+          </div>
+          <div className="flex items-center gap-2 sm:col-span-2">
+            <AppCheckbox
+              id="mapping_mask_background"
+              checked={value.mask_background}
+              onCheckedChange={(checked) =>
+                setField("mask_background", checked === true)
+              }
+              disabled={readOnly}
+            />
+            <div>
+              <Label htmlFor="mapping_mask_background" className="font-normal">
+                Cover preprinted writing lines
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Draws a white rectangle over this placement before typed text so
+                underlying form lines do not show through. Does not alter the
+                source PDF file.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="space-y-2 sm:col-span-2">
         <Label htmlFor="mapping_notes">Notes</Label>
         <Textarea

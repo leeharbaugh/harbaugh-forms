@@ -51,6 +51,8 @@ export type PdfMappingEditorInput = {
   height: string;
   font_size: string;
   alignment: string;
+  is_multiline: boolean;
+  mask_background: boolean;
 };
 
 export const MAPPING_ALIGNMENT_OPTIONS = ["left", "center", "right"] as const;
@@ -90,6 +92,8 @@ export function emptyPdfMappingEditorInput(
     height: String(defaults.height),
     font_size: "10",
     alignment: "left",
+    is_multiline: false,
+    mask_background: false,
   };
 }
 
@@ -123,6 +127,8 @@ export function placedPdfFieldToMappingInput(
     height: String(effective.height),
     font_size: String(placed.font_size),
     alignment: placed.alignment ?? "left",
+    is_multiline: placed.is_multiline === true,
+    mask_background: placed.mask_background === true,
   };
 }
 
@@ -294,6 +300,8 @@ export function normalizePdfMappingEditorInput(input: PdfMappingEditorInput) {
       default_value_override: trim(input.default_value_override) || null,
       required: input.required,
       notes: trim(input.notes) || null,
+      is_multiline: input.is_multiline === true,
+      mask_background: input.mask_background === true,
     },
   };
 }

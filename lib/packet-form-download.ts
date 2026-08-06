@@ -1,5 +1,7 @@
 import { fillPacketFormPdfBytes } from "@/lib/fill-packet-form-pdf";
 import { loadPacketFormEditorData } from "@/lib/packet-form-editor";
+import { loadActivePacketFormAnnotations } from "@/lib/packet-form-annotations";
+import { loadCaveatSignatureFontBytes } from "@/lib/signature-font";
 import { sanitizePdfFileName } from "@/lib/form-storage";
 import {
   buildSortablePacketFormFileName,
@@ -14,6 +16,7 @@ import {
   downloadStorageBytesWithFallback,
 } from "@/lib/storage-path-resolve";
 import type { PacketFormFieldView } from "@/lib/types/packet-form-editor";
+import type { PacketFormAnnotation } from "@/lib/types/packet-form-annotation";
 import type { PacketForm } from "@/lib/types/packet";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -100,6 +103,7 @@ export async function getFilledPacketFormPdfBytes(
   document: PacketFormDownloadTarget,
   options?: {
     fields?: PacketFormFieldView[];
+    annotations?: PacketFormAnnotation[];
   },
 ): Promise<Uint8Array> {
   if (!document.storage_path?.trim()) {
@@ -113,16 +117,29 @@ export async function getFilledPacketFormPdfBytes(
   const sourceBytesPromise = downloadStoragePdfBytes(supabase, document);
 
   let fields = options?.fields;
-  if (!fields) {
+  let annotations = options?.annotations;
+  if (!fields || !annotations) {
     const editorData = await loadPacketFormEditorData(supabase, document.id);
     if (editorData.packetForm.packet_id !== document.packet_id) {
       throw new Error("Packet form does not belong to this packet.");
     }
-    fields = editorData.fields;
+    fields = fields ?? editorData.fields;
+    annotations = annotations ?? editorData.annotations;
   }
 
-  const sourceBytes = await sourceBytesPromise;
-  return fillPacketFormPdfBytes(sourceBytes, fields);
+  if (!annotations) {
+    annotations = await loadActivePacketFormAnnotations(supabase, document.id);
+  }
+
+  const [sourceBytes, signatureFontBytes] = await Promise.all([
+    sourceBytesPromise,
+    loadCaveatSignatureFontBytes(),
+  ]);
+
+  return fillPacketFormPdfBytes(sourceBytes, fields, {
+    annotations,
+    signatureFontBytes,
+  });
 }
 
 /**
@@ -135,6 +152,7 @@ export async function downloadFilledPacketFormPdf(
   options?: {
     /** When provided (e.g. from the live editor), uses on-screen values including unsaved drafts. */
     fields?: PacketFormFieldView[];
+    annotations?: PacketFormAnnotation[];
     /** Override the browser download filename. */
     fileName?: string;
   },
@@ -163,6 +181,7 @@ export async function downloadFilledPacketFormPdf(
 
   const filledBytes = await getFilledPacketFormPdfBytes(supabase, document, {
     fields: options?.fields,
+    annotations: options?.annotations,
   });
 
   triggerFilledPdfDownload(
