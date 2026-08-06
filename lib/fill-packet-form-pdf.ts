@@ -420,7 +420,7 @@ function tryFillNativeAcroFormField(
   }
 }
 
-function drawTypedSignatureAnnotation(
+function drawPacketFormTextAnnotation(
   page: PDFPage,
   annotation: PacketFormAnnotation,
   font: PDFFont,
@@ -428,6 +428,7 @@ function drawTypedSignatureAnnotation(
   pageHeight: number,
   coordPageWidth: number,
   coordPageHeight: number,
+  color: ReturnType<typeof rgb>,
 ) {
   const scaleX = pageWidth / coordPageWidth;
   const scaleY = pageHeight / coordPageHeight;
@@ -443,19 +444,18 @@ function drawTypedSignatureAnnotation(
     text,
     boxWidth: width,
     boxHeight: height,
-    // Measure with the same Caveat instance used for drawing, at the base size.
-    // Advances scale linearly with size for this fitting step.
+    // Measure with the same font instance used for drawing.
     measureWidth: (value) => font.widthOfTextAtSize(value, baseSize),
   });
   const baseline = pageHeight - yFromTop - drawSize - 1;
 
-  // Draw the signature as one intact string (never glyph-by-glyph).
+  // Draw as one intact string (never glyph-by-glyph).
   page.drawText(text, {
     x,
     y: Math.max(0, baseline),
     size: drawSize,
     font,
-    color: rgb(0.05, 0.05, 0.35),
+    color,
   });
 }
 
@@ -463,7 +463,7 @@ function drawTypedSignatureAnnotation(
  * Write packet form field values onto a PDF byte array.
  * Native AcroForm fields are filled by name when pdf_field_name is set;
  * overlay drawing is used as a fallback for manual placements.
- * Optional packet-form annotations (typed signatures) are drawn last.
+ * Optional packet-form annotations (typed signatures / date signed) are drawn last.
  */
 export async function fillPacketFormPdfBytes(
   sourcePdfBytes: Uint8Array,
@@ -522,20 +522,25 @@ export async function fillPacketFormPdfBytes(
   }
 
   const annotations = (options?.annotations ?? []).filter(
-    (row) => row.status === "ACTIVE" && row.annotation_type === "typed_signature",
+    (row) =>
+      row.status === "ACTIVE" &&
+      (row.annotation_type === "typed_signature" ||
+        row.annotation_type === "date_signed"),
   );
 
   for (const annotation of annotations) {
     const page = pages[annotation.page_number - 1];
     if (!page) continue;
-    drawTypedSignatureAnnotation(
+    const isDate = annotation.annotation_type === "date_signed";
+    drawPacketFormTextAnnotation(
       page,
       annotation,
-      signatureFont,
+      isDate ? font : signatureFont,
       page.getWidth(),
       page.getHeight(),
       page.getWidth(),
       page.getHeight(),
+      isDate ? rgb(0, 0, 0) : rgb(0.05, 0.05, 0.35),
     );
   }
 

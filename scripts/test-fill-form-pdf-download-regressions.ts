@@ -224,6 +224,27 @@ function makeAnnotation(text: string): PacketFormAnnotation {
   };
 }
 
+function makeDateAnnotation(text: string): PacketFormAnnotation {
+  return {
+    id: "55555555-5555-4555-8555-555555555555",
+    packet_id: 19,
+    packet_form_id: 53,
+    page_number: 1,
+    annotation_type: "date_signed",
+    text_value: text,
+    font_id: "helvetica",
+    x: 72,
+    y: 180,
+    width: 90,
+    height: 18,
+    rotation: 0,
+    created_by_user_id: "00000000-0000-4000-8000-000000000099",
+    create_date: new Date().toISOString(),
+    update_date: new Date().toISOString(),
+    status: "ACTIVE",
+  };
+}
+
 async function testMultilineLayoutUnit() {
   const boxWidth = 470;
   const boxHeight = 60;
@@ -466,7 +487,16 @@ async function testFillPathRegression() {
     source,
     [fieldMultiline],
     {
-      annotations: [makeAnnotation(SIGNATURE)],
+      annotations: [
+        makeAnnotation(SIGNATURE),
+        makeDateAnnotation("08/06/2026"),
+        {
+          ...makeDateAnnotation("08/06/2026"),
+          id: "66666666-6666-4666-8666-666666666666",
+          status: "DELETED",
+          text_value: "DELETED_DATE_SHOULD_NOT_APPEAR",
+        },
+      ],
       signatureFontBytes: caveatBytes,
     },
   );
@@ -487,6 +517,15 @@ async function testFillPathRegression() {
   assert.ok(
     multiText.includes("Kenneth Lee Harbaugh"),
     `signature missing/corrupt: ${multiText.slice(0, 200)}`,
+  );
+  assert.ok(
+    multiText.includes("08/06/2026"),
+    `date signed missing: ${multiText.slice(0, 200)}`,
+  );
+  assert.equal(
+    multiText.includes("DELETED_DATE_SHOULD_NOT_APPEAR"),
+    false,
+    "soft-deleted date must be excluded from PDF",
   );
   assert.ok(
     multiText.includes("washer") || multiText.includes("Landlord"),

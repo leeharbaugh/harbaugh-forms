@@ -34,8 +34,9 @@ describe("fillPacketFormPdfBytes source contracts", () => {
     assert.match(source, /return false/);
   });
 
-  it("renders typed signature annotations separately from field instances", () => {
-    assert.match(source, /drawTypedSignatureAnnotation/);
+  it("renders packet-form annotations separately from field instances", () => {
+    assert.match(source, /drawPacketFormTextAnnotation/);
+    assert.match(source, /date_signed/);
     assert.match(source, /options\?\.annotations/);
     assert.doesNotMatch(source, /field_instances/);
   });
@@ -54,9 +55,9 @@ describe("fillPacketFormPdfBytes source contracts", () => {
     assert.match(source, /subset:\s*true/);
   });
 
-  it("draws typed signatures as one intact drawText string", () => {
+  it("draws annotations as one intact drawText string", () => {
     const drawFn = source.slice(
-      source.indexOf("function drawTypedSignatureAnnotation"),
+      source.indexOf("function drawPacketFormTextAnnotation"),
       source.indexOf("export async function fillPacketFormPdfBytes"),
     );
     assert.match(drawFn, /page\.drawText\(text,/);

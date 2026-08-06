@@ -1,9 +1,13 @@
-export const PACKET_FORM_ANNOTATION_TYPES = ["typed_signature"] as const;
+export const PACKET_FORM_ANNOTATION_TYPES = [
+  "typed_signature",
+  "date_signed",
+] as const;
 
 export type PacketFormAnnotationType =
   (typeof PACKET_FORM_ANNOTATION_TYPES)[number];
 
 export const PACKET_FORM_SIGNATURE_FONT_ID = "caveat";
+export const PACKET_FORM_DATE_FONT_ID = "helvetica";
 
 export type PacketFormAnnotation = {
   id: string;
@@ -38,17 +42,25 @@ export type PacketFormAnnotationInput = {
 
 export const PACKET_FORM_ANNOTATION_SELECT = "*";
 
+export function isPacketFormAnnotationType(
+  value: string,
+): value is PacketFormAnnotationType {
+  return (PACKET_FORM_ANNOTATION_TYPES as readonly string[]).includes(value);
+}
+
 export function validatePacketFormAnnotationInput(
   input: PacketFormAnnotationInput,
 ): string | null {
   if (!Number.isFinite(input.page_number) || input.page_number < 1) {
     return "Page number must be at least 1.";
   }
-  if (input.annotation_type !== "typed_signature") {
+  if (!isPacketFormAnnotationType(input.annotation_type)) {
     return "Unsupported annotation type.";
   }
   if (!input.text_value.trim()) {
-    return "Signature text is required.";
+    return input.annotation_type === "date_signed"
+      ? "Date text is required."
+      : "Signature text is required.";
   }
   if (!Number.isFinite(input.width) || input.width <= 0) {
     return "Width must be positive.";

@@ -1,10 +1,30 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-08-06 (Fill Form download: multiline + Caveat + Non-Real Estate mask; not production-deployed)
+**As of:** 2026-08-06 (Fill Form: multiline/mask/Caveat fixes + Date Signed annotation; not production-deployed)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use.
+
+### Fill Form Date Signed annotation (2026-08-06)
+
+**Status:** Implemented on branch `fix/fill-form-pdf-multiline-caveat-download` (PR #31). **Not merged. Not deployed.** Development migration applied to `harbaugh-forms-dev` only:
+
+- `20260806150000_packet_form_annotations_date_signed.sql` (widens `annotation_type` CHECK to include `date_signed`)
+
+| Item | Result |
+|------|--------|
+| Type | `date_signed` on existing `packet_form_annotations` (not a field/field_instance) |
+| Storage | `text_value` = formatted display string chosen at placement (calendar date, not timestamp); `font_id` = `helvetica` |
+| Formats | `MM/DD/YYYY` (default), `M/D/YYYY`, `Month D, YYYY` |
+| UI | Fill Form toolbar **Date Signed** beside Signature; dialog date + format + preview → place |
+| Render | Helvetica, black, transparent; shared annotation overlay/PDF drawer; independent of signature |
+| Auth/lifecycle | Same as typed signatures (`owns_packet` / admin; creator trigger; DRAFT-editable only) |
+| Tests | `test:date-signed-annotation`; `test:pdf-text-layout`; `test:fill-form-pdf-download`; auth validate; smoke; sync; lifecycle; `tsc`; ESLint; `build:validate` |
+| Artifact | `_audit_tmp/pdf-regression/manual-qa-pf53-date-signed.pdf` (Acrobat) |
+| Deferred | Free text, strikethrough, highlight, drawing, images, checkmarks, initials, presets, auto signature/date pairing |
+
+**Production rollout order (updated):** (1) `20260805220000` (2) `20260805230000` (3) **`20260806150000`** → validate → deploy app → apply form **15** Map Fields flags (`is_multiline` + `mask_background` on Non-Real Estate Items) as configuration data.
 
 ### Fill Form download regressions: multiline wrap + Caveat spacing (2026-08-06)
 
@@ -21,7 +41,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 | Mask fix | Dev Map Fields / DB: retain `mask_background=true` with `is_multiline=true` on `f7f8e678-…`. No renderer change required. |
 | Tests | `test:fill-form-pdf-download` (multiline + Caveat + mask on/off/empty); `test:pdf-text-layout`; annotation auth validate; presentation smoke; field-instance-sync; packet-form-lifecycle; `tsc`; targeted ESLint; `build:validate` |
 | Manual artifact | `_audit_tmp/pdf-regression/manual-qa-pf53-multiline-mask-caveat.pdf` (+ empty-mask / mask-off control) — opened in Adobe Acrobat DC |
-| Migrations | **None new.** Existing `20260805220000` / `20260805230000` unchanged. |
+| Migrations | Forward `20260806150000` for `date_signed` (dev applied). Existing `20260805220000` / `20260805230000` unchanged. |
 | Production data note | After schema migrations + app deploy, production form **15** mapping for Non-Real Estate Items still needs **`is_multiline=true`** and **`mask_background=true`** applied as ordinary Map Fields / configuration data (not a new migration). |
 
 **Retained development mapping `f7f8e678-…`:** `is_multiline=true`, `mask_background=true`, `470×28` (height unchanged; enlarge in Map Fields only if more printed-line rows must be covered).
