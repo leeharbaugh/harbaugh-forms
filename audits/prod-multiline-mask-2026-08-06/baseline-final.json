@@ -1,0 +1,14 @@
+{
+  "captured_at": "2026-08-07T00:25:31.281Z",
+  "forms_active": 47,
+  "fields_active": 1509,
+  "mappings_active": 2076,
+  "packets": 7,
+  "packet_forms": 20,
+  "field_instances": 248,
+  "annotations_active": 2,
+  "field_instances_fingerprint": "381dc622427952a1bec693b842efb0d1",
+  "mappings_presentation_fingerprint": "3705ac21a760696723f9f7b7458129b7",
+  "generated_documents_storage_objects": null,
+  "form_templates_storage_objects": null
+}

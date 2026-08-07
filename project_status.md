@@ -1,6 +1,6 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-08-06 (PR #31 Fill Form multiline/mask/typed-signature/Date Signed **live in production**)
+**As of:** 2026-08-07 (Lee multiline/mask workbook approvals **applied in production**; PR #31 Fill Form features remain live)
 
 ## Current State
 
@@ -18,7 +18,8 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Prior rollback baseline | `6ef2453` / `dpl_3q2vJRK9Z2ruvD7WRci5cwVjjL3j` (`87xmn84pt`) — kept on custom domain until promotion |
 | Production project | `harbaugh-forms-prod` / `eetonalyyyssvkyfdoxh` |
 | Migrations (exact order) | `20260805220000` → `20260805230000` → `20260806150000` (all applied; history aligned) |
-| Mapping config | Form **15** Residential Lease Listing · `lease_non_real_estate_items` · mapping **`f7f8e678-43f3-4f9a-9cb2-f1c9bb6b9f05`** · page 1 · `470×28` · **`is_multiline=true`**, **`mask_background=true`** (coords unchanged; only this mapping has both flags) |
+| Mapping config (initial rollout) | Form **15** Residential Lease Listing · `lease_non_real_estate_items` · mapping **`f7f8e678-43f3-4f9a-9cb2-f1c9bb6b9f05`** · page 1 · `470×28` · **`is_multiline=true`**, **`mask_background=true`** (coords unchanged) |
+| Mapping config (2026-08-07 workbook apply) | **79** additional ACTIVE mappings set `is_multiline=true` + `mask_background=true` from Lee’s approved workbook (geometry unchanged); see section below |
 | Integrity | packets **7**; field_instances **248** fingerprint **`7883c5d5d0dfe138134e9eb3a90ef8e9`** (unchanged); packet_forms fingerprint **`d43b3a72003eae61747ede6dffeb3424`** excluding soft-deleted QA pf **39**; generated-documents storage **15** after smoke PDF cleanup |
 | Schema/RLS/trigger | `packet_form_annotations` + creator trigger `packet_form_annotations_enforce_created_by` (INVOKER, safe search_path); types `typed_signature` \| `date_signed`; RLS via `owns_packet` / `is_app_admin` |
 | Unique-URL smoke | Login/collections/packets/Fill Form chrome; Caveat font 200/297900; API annotation create/move/PDF/soft-delete; Deployment Protection bypassed via `vercel curl` / `x-vercel-protection-bypass` for browser |
@@ -28,6 +29,25 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Promotion policy | **Manual domain assignment remains required** for future production releases (auto custom-domain assignment stays disabled) |
 
 **Smoke leftovers (soft-deleted only):** packet_form **39** (`DELETED`); **3** `DELETED` annotations from QA. No ACTIVE annotations. Temporary smoke storage objects removed.
+
+### Multiline / mask mapping audit + Lee approval apply (2026-08-06 → 2026-08-07)
+
+**Status:** Lee completed manual review; workbook is the authoritative approval source; **approved flag updates applied in production** (no deploy, no migrations).
+
+| Item | Result |
+|------|--------|
+| Audit folder | `audits/prod-multiline-mask-2026-08-06/` |
+| Original candidates | **164** rows (HIGH 4 + MEDIUM 42 + REVIEW REQUIRED 118); LEAVE UNCHANGED excluded |
+| Authoritative workbook | `audits/prod-multiline-mask-2026-08-06/multiline-mask-manual-review.xlsx` (Lee-edited; preserved) |
+| Applied audit trail | `audits/prod-multiline-mask-2026-08-06/multiline-mask-manual-review-APPLIED.xlsx` |
+| Rows with ≥1 Lee `1` | **80** (original-audit **60** + Lee-added **20**) |
+| Resolved / unresolved | **80** / **0** (0 conflicts) |
+| Unique mappings changed | **79** (`is_multiline=true` + `mask_background=true`); **1** already correct (`f7f8e678-…` form 15 Non-Real Estate Items) |
+| Geometry changes | **0** — Dimension Review `1` on **80** rows held as backlog (no explicit Lee Notes dimensions) |
+| Prod integrity | packets **7**, packet_forms **20**, FI **248** fingerprint **`381dc622427952a1bec693b842efb0d1`** unchanged; ACTIVE mappings **2075**; annotations ACTIVE **2**; mapping presentation fingerprint `5d5a7ea5…` → `dd8806ae…` explained exactly by the 79 flag updates |
+| Dev mirror | **26** mirrored by mapping ID on `harbaugh-forms-dev`; **53** exceptions (no matching id/identity — do not guess) |
+| QA | Structural PASS on all **80**; 14 in-memory fill PDFs + Acrobat/PNG sample (damages, Special Provisions, tall narratives, Lee-added); no packet/FI/storage writes |
+| Deploy / migrations | **None** |
 
 ### Fill Form Date Signed placement fix (2026-08-06)
 

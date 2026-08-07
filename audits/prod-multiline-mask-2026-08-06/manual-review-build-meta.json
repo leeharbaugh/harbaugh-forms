@@ -1,0 +1,14 @@
+{
+  "built_at": "2026-08-07T00:33:07.459Z",
+  "rows": 164,
+  "byConf": {
+    "REVIEW REQUIRED": 118,
+    "MEDIUM CONFIDENCE": 42,
+    "HIGH CONFIDENCE": 4
+  },
+  "forms": 32,
+  "xlsx": "audits\\prod-multiline-mask-2026-08-06\\multiline-mask-manual-review.xlsx",
+  "csv": "audits\\prod-multiline-mask-2026-08-06\\multiline-mask-manual-review.csv",
+  "page_images": null,
+  "page_images_note": "No system PDF rasterizer (pdftoppm/Ghostscript/ImageMagick) available; Visual Reference points to cached local template PDFs with #page=N."
+}

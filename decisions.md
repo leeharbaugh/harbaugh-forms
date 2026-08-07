@@ -27,6 +27,8 @@ Fill Form preview and generated PDFs share one text-layout policy (`lib/pdf-text
 * Custom domain kept on rollback `6ef2453` / `87xmn84pt` until unique-URL + schema validation passed, then manually aliased to the new deployment (~2026-08-06 23:50 UTC).
 * **Manual production-domain promotion remains required** for future releases; automatic custom-domain assignment stays disabled. Unique `*.vercel.app` URLs may require Deployment Protection bypass for automated smoke.
 * Integrity fingerprints for existing field instances unchanged; temporary smoke annotations soft-deleted; smoke storage objects removed.
+* **2026-08-06 follow-up:** A read-only production audit produced a **164-row** manual review workbook (`audits/prod-multiline-mask-2026-08-06/multiline-mask-manual-review.xlsx`). Lee must enter `1` in the Lee approval columns to authorize later flag updates; blank means no change. Dimension-review approval does not authorize automatic geometry changes.
+* **2026-08-07 apply:** Lee completed the workbook (authoritative). **80** rows had ≥1 approval (`1`): **60** original-audit + **20** Lee-added; all resolved to exact ACTIVE mappings; **0** unresolved; **0** conflicts. Production updated **79** unique mappings to `is_multiline=true` + `mask_background=true` only (geometry unchanged). **1** approved mapping (`f7f8e678-…`) was already correct. Dimension Review backlog: **80** rows — no geometry applied (no explicit Lee Notes dimensions). Dev mirror: **26** by ID; **53** exceptions. Applied trail: `multiline-mask-manual-review-APPLIED.xlsx`. No app deploy; no migrations.
 
 **Date Signed specifics:**
 * Toolbar tool beside Signature; dialog defaults to the user’s local calendar date and format `MM/DD/YYYY`; also supports `M/D/YYYY` and `Month D, YYYY`.

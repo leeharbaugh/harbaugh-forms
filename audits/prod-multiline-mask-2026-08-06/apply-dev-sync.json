@@ -1,0 +1,556 @@
+[
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "85a5e708-61fa-4e71-9031-b9ae02f109c0",
+    "fieldKey": "txr_1954_oral_leases_description",
+    "formId": 31,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "958c8640-3f2d-41e4-96a9-d3297af2f429",
+    "fieldKey": "txr_1953_oral_leases_description",
+    "formId": 32,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "77d2de06-437f-465b-8f5b-5e1e738b13e5",
+    "fieldKey": "txr_1953_representations_exceptions_explain",
+    "formId": 32,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "05d1b59e-cb40-4593-b032-1fb85be91ad6",
+    "fieldKey": "txr_1505_paragraph_changes_text",
+    "formId": 33,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "945ac30a-a9d3-4158-ab67-6e5579ec2cf8",
+    "fieldKey": "contract_amend_repairs_text"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "fc5dedba-84a4-46d2-a3f6-167ae8eb3707",
+    "fieldKey": "contract_amend_other_modifications_text"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "87f3978b-2c19-4772-9e40-29f889a7d6ba",
+    "fieldKey": "txr_1422_paragraph_changes_text",
+    "formId": 34,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "577c03df-6fa5-45b2-9f3c-d0dc81f77e18",
+    "fieldKey": "lease_listing_amend_paragraph_changes"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "8aa0193a-49e5-4179-94f7-cbcad7446111",
+    "fieldKey": "listing_amendment_paragraph_changes"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "8fbf7857-c704-49f1-8eee-7a853c562ecf",
+    "fieldKey": "txr_2004_bitten_explain",
+    "formId": 35,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "b45f2fb6-fe24-4665-b293-86427d7dab95",
+    "fieldKey": "txr_2004_propensity_explain",
+    "formId": 35,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "620e2866-ad42-4662-878e-facf58d42394",
+    "fieldKey": "txr_2004_special_provisions",
+    "formId": 35,
+    "page": 3,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "575ed17c-c983-4e7f-989f-e651bdca27bf",
+    "fieldKey": "OTHER_DOCUMENT_DESCRIPTION"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "480eb876-8366-4c59-aaeb-b0000f0a1c68",
+    "fieldKey": "SPECIAL_PROVISIONS"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "334327f4-d309-4009-9ede-13132377a169",
+    "fieldKey": "txr_2012_special_provisions",
+    "formId": 36,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "f4693dfb-e4f5-476d-95c3-8746f2d2b8bf",
+    "fieldKey": "property_legal_description",
+    "formId": 37,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "7278e7c0-587c-4244-8e44-29fa95d98257",
+    "fieldKey": "txr_1701_exclusions",
+    "formId": 37,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "1c523fd3-643d-43aa-8ec1-8d3e0ec94808",
+    "fieldKey": "TXR_1701_EXCEPTION_DOC",
+    "formId": 37,
+    "page": 3,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "759cd10a-325e-4323-ab54-84d7ca8f1cec",
+    "fieldKey": "TXR_1701_EXCEPTION_DOC_RECORD_REFERENCE",
+    "formId": 37,
+    "page": 3,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "450529b9-34bf-442d-86a7-44caf106bc4b",
+    "fieldKey": "contract_add_district_notices_text",
+    "formId": 37,
+    "page": 9,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "723ff0f1-5191-4838-bff8-213ca0bd8076",
+    "fieldKey": "contract_add_other_text",
+    "formId": 37,
+    "page": 9,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "f1c7b788-ba27-40bc-bf86-7bb7ae60451c",
+    "fieldKey": "property_legal_description",
+    "formId": 38,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "e1cd03c8-3d9e-40eb-ae89-e20d2b9dd859",
+    "fieldKey": "txr_1201_acc_other_text",
+    "formId": 38,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "19b4401c-0c56-4bc0-ac02-ecb3259f0faa",
+    "fieldKey": "LISTING_EXCLUSIONS",
+    "formId": 38,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "b1064e95-5c32-470a-abc4-a3ac42c6fc9b",
+    "fieldKey": "SPECIAL_PROVISIONS",
+    "formId": 38,
+    "page": 10,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "1a484e0d-693f-476c-bc28-a0afd7ea7faa",
+    "fieldKey": "txr_1201_property_condition_exceptions",
+    "formId": 38,
+    "page": 11,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "08446e94-1227-4645-83ba-646472836831",
+    "fieldKey": "txr_2216_damages_description",
+    "formId": 51,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "400a8a88-60d5-4b50-83ff-87710788eeb6",
+    "fieldKey": "txr_2216_unpaid_utilities_description",
+    "formId": 51,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "80ec1d77-8a08-4c47-a1a6-de90eb3b9c6b",
+    "fieldKey": "txr_2216_unpaid_animal_charges_description",
+    "formId": 51,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "36327d71-a622-482e-9867-c4bde516a546",
+    "fieldKey": "txr_2216_abandoned_property_description",
+    "formId": 51,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "3ee65ffb-74c7-44ad-8818-a22ea766d638",
+    "fieldKey": "txr_2216_abandoned_vehicles_description",
+    "formId": 51,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "2dd72b9d-deb9-475c-bcbd-0da28ede5f1e",
+    "fieldKey": "txr_2216_legal_proceeding_description",
+    "formId": 51,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "e382bd38-7548-4d32-ac55-c5332e5730bd",
+    "fieldKey": "txr_2216_unapproved_alterations_description",
+    "formId": 51,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "b4ef21a3-c071-4de2-847f-55123f5f82e7",
+    "fieldKey": "txr_2216_smoking_damages_description",
+    "formId": 51,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "fb9a57f5-5bc2-4cb4-9f01-e2365dbc4d54",
+    "fieldKey": "txr_2216_other_description",
+    "formId": 51,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "a47926b7-f82a-4d88-8e40-eac9c0ca1858",
+    "fieldKey": "SPECIAL_PROVISIONS"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "542cdc3c-e0ba-4dfa-ab12-9438ca1afb94",
+    "fieldKey": "txr_1924_personal_property_description",
+    "formId": 40,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "ff7b46ef-f5c4-42b3-b2ff-73b80dcbd934",
+    "fieldKey": "txr_1950_terminate_other_text",
+    "formId": 43,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "ee524f14-559a-49b5-b69d-6aee0c20970f",
+    "fieldKey": "CONTRACT_SPECIAL_PROVISIONS"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "b561009c-974f-41d4-8b7f-ec26f8281a67",
+    "fieldKey": "contract_add_district_notices_text"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "d9f39f7e-9204-4513-bf61-9a6531fea92b",
+    "fieldKey": "contract_add_other_text"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "aee30999-0b10-438b-915f-88494b374958",
+    "fieldKey": "CONTRACT_SPECIAL_PROVISIONS",
+    "formId": 20,
+    "page": 5,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "a5af5bfc-13a7-42aa-9b85-0e9bf69db8f5",
+    "fieldKey": "txr_2001_property_legal_description"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "d695416c-7522-4567-a0df-ffc232f6a69a",
+    "fieldKey": "TXR_2001_MOVE_IN_LANDLORD_CONDITIONS"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "5f674501-6306-4364-a10c-b2c713fa7a3c",
+    "fieldKey": "TXR_2001_TENANT_SPECIFIC_REPAIR_ITEMS"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "d91c2b34-528a-474f-9eca-1d7b336cb54a",
+    "fieldKey": "TXR_2001_SPECIAL_PROVISIONS"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "130d7b31-6f48-4d03-8186-3ed4d6add9f7",
+    "fieldKey": "lease_listing_exclusions"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "ebb1ad66-5cb4-4416-a1c9-625ae64d8d31",
+    "fieldKey": "lease_optional_common_area_fees_exception"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "3ecc7474-1a04-400c-996d-1a622fa28faa",
+    "fieldKey": "lease_health_safety_condition_exception"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "7d480d19-50b6-463d-93d1-c69f2daa786f",
+    "fieldKey": "lease_special_provisions"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "46ec0932-1d6a-4869-ae2d-b2dee7397f39",
+    "fieldKey": "lease_requirements_special_provisions"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "37662fd3-2206-4069-b83e-8a89e3331286",
+    "fieldKey": "txr_2201_owner_additional_contact",
+    "formId": 47,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "b19d8882-64f6-462c-8598-08eca0fa0977",
+    "fieldKey": "property_legal_description",
+    "formId": 47,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "4616f2e2-36da-4682-96f3-fe72b6587393",
+    "fieldKey": "lease_non_real_estate_items",
+    "formId": 47,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "3812d0c1-a61b-4b19-b013-ef63ceea3a06",
+    "fieldKey": "txr_2201_other_fees",
+    "formId": 47,
+    "page": 4,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "c9efea1b-ff7f-4e35-b283-753226f64e3b",
+    "fieldKey": "lease_health_safety_condition_exception",
+    "formId": 47,
+    "page": 8,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "7c767dc0-3c78-4258-990b-605277dafcb6",
+    "fieldKey": "SPECIAL_PROVISIONS",
+    "formId": 47,
+    "page": 11,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "c587597d-5840-4c40-9df5-861a308bbc94",
+    "fieldKey": "txr_1910_special_provisions",
+    "formId": 48,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "ab5d09a1-d4f0-4925-b86d-c82770d6c9e4",
+    "fieldKey": "txr_1503_protected_properties",
+    "formId": 49,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "e7de7bfa-558d-4136-93c2-c1196821ab35",
+    "fieldKey": "txr_1410_protected_parties",
+    "formId": 50,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "64d6ffb3-07bb-4b4f-957f-20c681038204",
+    "fieldKey": "txr_1701_government_programs",
+    "formId": 37,
+    "page": 5,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "60b7ca5c-5763-4486-b2d0-816a16fd870d",
+    "fieldKey": "txr_1201_lease_comp_other_items",
+    "formId": 38,
+    "page": 4,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "d4e1ce6c-fcd8-4874-bb02-56e5cee10e67",
+    "fieldKey": "txr_1201_lease_comp_other",
+    "formId": 38,
+    "page": 4,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "4bd8489f-00df-41c8-b87f-10e1904a486f",
+    "fieldKey": "txr_1201_renewal_expansion_other",
+    "formId": 38,
+    "page": 4,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "91bed394-9196-42b6-afe5-68be85e645a5",
+    "fieldKey": "OTHER_FEES_REIMBURSABLE_EXPENSES",
+    "formId": 38,
+    "page": 5,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "5f463597-de9b-409e-8e9b-8eab93fd2432",
+    "fieldKey": "mls_delayed_purpose",
+    "formId": 38,
+    "page": 5,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "c1c90368-15b1-4e9b-9461-abb18c6755df",
+    "fieldKey": "KNOWN_DISTRICTS",
+    "formId": 38,
+    "page": 9,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "a25ecbd7-49a1-44f2-96a7-71f785265360",
+    "fieldKey": "txr_2216_light_bulbs_rooms",
+    "formId": 51,
+    "page": 2,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "912f55d6-1a9c-47da-8e66-3e1434e26280",
+    "fieldKey": "txr_2216_outcome_excess_pay_to_address",
+    "formId": 51,
+    "page": 3,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "53d1c72d-b1bc-4d63-bb15-8878c9ff76b2",
+    "fieldKey": "txr_2001_occupants_names_dob"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "913f5f1a-a3bf-4493-83cb-5cac7267b594",
+    "fieldKey": "txr_2001_non_real_property_items"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "f438c14f-e3cf-4dd5-96ae-e5552dde8f30",
+    "fieldKey": "txr_2001_payment_place"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "5cb375d5-c584-4c0b-9d0f-2b0209b5d441",
+    "fieldKey": "TXR_2001_UTILITIES_LANDLORD_PAYS"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "6f72a594-671d-4f7b-ba56-4f1cfbf3b01e",
+    "fieldKey": "lease_reimbursable_expenses"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "583bf9d5-48d1-45a4-a348-294f57dcc013",
+    "fieldKey": "lease_mls_delayed_purpose"
+  },
+  {
+    "status": "MIRRORED_BY_ID",
+    "prodMappingId": "99469076-01e2-48cb-a6d4-1cfde0a963fa",
+    "fieldKey": "lease_requirements_other"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "6e5e3140-6f9b-40b6-875f-d66ed775bfa6",
+    "fieldKey": "PROPERTY_FULL_ADDRESS",
+    "formId": 47,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "0ef3a6d7-9ee3-47de-af10-11430d4f1412",
+    "fieldKey": "txr_1503_fee_other_text",
+    "formId": 49,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  },
+  {
+    "status": "EXCEPTION",
+    "prodMappingId": "d0969270-dda5-4022-95c5-528de3560796",
+    "fieldKey": "txr_1410_fee_other_text",
+    "formId": 50,
+    "page": 1,
+    "reason": "No matching development mapping by id or identity"
+  }
+]

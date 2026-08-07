@@ -1,0 +1,562 @@
+[
+  {
+    "mappingId": "85a5e708-61fa-4e71-9031-b9ae02f109c0",
+    "excelRow": 21,
+    "fieldKey": "txr_1954_oral_leases_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "958c8640-3f2d-41e4-96a9-d3297af2f429",
+    "excelRow": 24,
+    "fieldKey": "txr_1953_oral_leases_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "77d2de06-437f-465b-8f5b-5e1e738b13e5",
+    "excelRow": 25,
+    "fieldKey": "txr_1953_representations_exceptions_explain",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "05d1b59e-cb40-4593-b032-1fb85be91ad6",
+    "excelRow": 27,
+    "fieldKey": "txr_1505_paragraph_changes_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "945ac30a-a9d3-4158-ab67-6e5579ec2cf8",
+    "excelRow": 28,
+    "fieldKey": "contract_amend_repairs_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "fc5dedba-84a4-46d2-a3f6-167ae8eb3707",
+    "excelRow": 29,
+    "fieldKey": "contract_amend_other_modifications_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "87f3978b-2c19-4772-9e40-29f889a7d6ba",
+    "excelRow": 31,
+    "fieldKey": "txr_1422_paragraph_changes_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "577c03df-6fa5-45b2-9f3c-d0dc81f77e18",
+    "excelRow": 33,
+    "fieldKey": "lease_listing_amend_paragraph_changes",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "8aa0193a-49e5-4179-94f7-cbcad7446111",
+    "excelRow": 35,
+    "fieldKey": "listing_amendment_paragraph_changes",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "8fbf7857-c704-49f1-8eee-7a853c562ecf",
+    "excelRow": 36,
+    "fieldKey": "txr_2004_bitten_explain",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "b45f2fb6-fe24-4665-b293-86427d7dab95",
+    "excelRow": 37,
+    "fieldKey": "txr_2004_propensity_explain",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "620e2866-ad42-4662-878e-facf58d42394",
+    "excelRow": 38,
+    "fieldKey": "txr_2004_special_provisions",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "575ed17c-c983-4e7f-989f-e651bdca27bf",
+    "excelRow": 39,
+    "fieldKey": "OTHER_DOCUMENT_DESCRIPTION",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "480eb876-8366-4c59-aaeb-b0000f0a1c68",
+    "excelRow": 40,
+    "fieldKey": "SPECIAL_PROVISIONS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "334327f4-d309-4009-9ede-13132377a169",
+    "excelRow": 48,
+    "fieldKey": "txr_2012_special_provisions",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "f4693dfb-e4f5-476d-95c3-8746f2d2b8bf",
+    "excelRow": 49,
+    "fieldKey": "property_legal_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "7278e7c0-587c-4244-8e44-29fa95d98257",
+    "excelRow": 50,
+    "fieldKey": "txr_1701_exclusions",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "1c523fd3-643d-43aa-8ec1-8d3e0ec94808",
+    "excelRow": 52,
+    "fieldKey": "TXR_1701_EXCEPTION_DOC",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "759cd10a-325e-4323-ab54-84d7ca8f1cec",
+    "excelRow": 53,
+    "fieldKey": "TXR_1701_EXCEPTION_DOC_RECORD_REFERENCE",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "450529b9-34bf-442d-86a7-44caf106bc4b",
+    "excelRow": 58,
+    "fieldKey": "contract_add_district_notices_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "723ff0f1-5191-4838-bff8-213ca0bd8076",
+    "excelRow": 59,
+    "fieldKey": "contract_add_other_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "f1c7b788-ba27-40bc-bf86-7bb7ae60451c",
+    "excelRow": 62,
+    "fieldKey": "property_legal_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "e1cd03c8-3d9e-40eb-ae89-e20d2b9dd859",
+    "excelRow": 63,
+    "fieldKey": "txr_1201_acc_other_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "19b4401c-0c56-4bc0-ac02-ecb3259f0faa",
+    "excelRow": 64,
+    "fieldKey": "LISTING_EXCLUSIONS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "b1064e95-5c32-470a-abc4-a3ac42c6fc9b",
+    "excelRow": 73,
+    "fieldKey": "SPECIAL_PROVISIONS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "1a484e0d-693f-476c-bc28-a0afd7ea7faa",
+    "excelRow": 75,
+    "fieldKey": "txr_1201_property_condition_exceptions",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "08446e94-1227-4645-83ba-646472836831",
+    "excelRow": 76,
+    "fieldKey": "txr_2216_damages_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "400a8a88-60d5-4b50-83ff-87710788eeb6",
+    "excelRow": 77,
+    "fieldKey": "txr_2216_unpaid_utilities_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "80ec1d77-8a08-4c47-a1a6-de90eb3b9c6b",
+    "excelRow": 78,
+    "fieldKey": "txr_2216_unpaid_animal_charges_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "36327d71-a622-482e-9867-c4bde516a546",
+    "excelRow": 82,
+    "fieldKey": "txr_2216_abandoned_property_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "3ee65ffb-74c7-44ad-8818-a22ea766d638",
+    "excelRow": 83,
+    "fieldKey": "txr_2216_abandoned_vehicles_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "2dd72b9d-deb9-475c-bcbd-0da28ede5f1e",
+    "excelRow": 84,
+    "fieldKey": "txr_2216_legal_proceeding_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "e382bd38-7548-4d32-ac55-c5332e5730bd",
+    "excelRow": 85,
+    "fieldKey": "txr_2216_unapproved_alterations_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "b4ef21a3-c071-4de2-847f-55123f5f82e7",
+    "excelRow": 86,
+    "fieldKey": "txr_2216_smoking_damages_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "fb9a57f5-5bc2-4cb4-9f01-e2365dbc4d54",
+    "excelRow": 87,
+    "fieldKey": "txr_2216_other_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "a47926b7-f82a-4d88-8e40-eac9c0ca1858",
+    "excelRow": 115,
+    "fieldKey": "SPECIAL_PROVISIONS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "542cdc3c-e0ba-4dfa-ab12-9438ca1afb94",
+    "excelRow": 117,
+    "fieldKey": "txr_1924_personal_property_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "ff7b46ef-f5c4-42b3-b2ff-73b80dcbd934",
+    "excelRow": 118,
+    "fieldKey": "txr_1950_terminate_other_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "ee524f14-559a-49b5-b69d-6aee0c20970f",
+    "excelRow": 124,
+    "fieldKey": "CONTRACT_SPECIAL_PROVISIONS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "b561009c-974f-41d4-8b7f-ec26f8281a67",
+    "excelRow": 125,
+    "fieldKey": "contract_add_district_notices_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "d9f39f7e-9204-4513-bf61-9a6531fea92b",
+    "excelRow": 126,
+    "fieldKey": "contract_add_other_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "aee30999-0b10-438b-915f-88494b374958",
+    "excelRow": 129,
+    "fieldKey": "CONTRACT_SPECIAL_PROVISIONS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "a5af5bfc-13a7-42aa-9b85-0e9bf69db8f5",
+    "excelRow": 133,
+    "fieldKey": "txr_2001_property_legal_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "d695416c-7522-4567-a0df-ffc232f6a69a",
+    "excelRow": 139,
+    "fieldKey": "TXR_2001_MOVE_IN_LANDLORD_CONDITIONS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "5f674501-6306-4364-a10c-b2c713fa7a3c",
+    "excelRow": 143,
+    "fieldKey": "TXR_2001_TENANT_SPECIFIC_REPAIR_ITEMS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "d91c2b34-528a-474f-9eca-1d7b336cb54a",
+    "excelRow": 144,
+    "fieldKey": "TXR_2001_SPECIAL_PROVISIONS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "130d7b31-6f48-4d03-8186-3ed4d6add9f7",
+    "excelRow": 149,
+    "fieldKey": "lease_listing_exclusions",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "ebb1ad66-5cb4-4416-a1c9-625ae64d8d31",
+    "excelRow": 155,
+    "fieldKey": "lease_optional_common_area_fees_exception",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "3ecc7474-1a04-400c-996d-1a622fa28faa",
+    "excelRow": 156,
+    "fieldKey": "lease_health_safety_condition_exception",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "7d480d19-50b6-463d-93d1-c69f2daa786f",
+    "excelRow": 157,
+    "fieldKey": "lease_special_provisions",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "46ec0932-1d6a-4869-ae2d-b2dee7397f39",
+    "excelRow": 161,
+    "fieldKey": "lease_requirements_special_provisions",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "37662fd3-2206-4069-b83e-8a89e3331286",
+    "excelRow": 164,
+    "fieldKey": "txr_2201_owner_additional_contact",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "b19d8882-64f6-462c-8598-08eca0fa0977",
+    "excelRow": 166,
+    "fieldKey": "property_legal_description",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "4616f2e2-36da-4682-96f3-fe72b6587393",
+    "excelRow": 167,
+    "fieldKey": "lease_non_real_estate_items",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "3812d0c1-a61b-4b19-b013-ef63ceea3a06",
+    "excelRow": 173,
+    "fieldKey": "txr_2201_other_fees",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "c9efea1b-ff7f-4e35-b283-753226f64e3b",
+    "excelRow": 175,
+    "fieldKey": "lease_health_safety_condition_exception",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "7c767dc0-3c78-4258-990b-605277dafcb6",
+    "excelRow": 176,
+    "fieldKey": "SPECIAL_PROVISIONS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "c587597d-5840-4c40-9df5-861a308bbc94",
+    "excelRow": 181,
+    "fieldKey": "txr_1910_special_provisions",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "ab5d09a1-d4f0-4925-b86d-c82770d6c9e4",
+    "excelRow": 182,
+    "fieldKey": "txr_1503_protected_properties",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "e7de7bfa-558d-4136-93c2-c1196821ab35",
+    "excelRow": 184,
+    "fieldKey": "txr_1410_protected_parties",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "64d6ffb3-07bb-4b4f-957f-20c681038204",
+    "excelRow": 54,
+    "fieldKey": "txr_1701_government_programs",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "60b7ca5c-5763-4486-b2d0-816a16fd870d",
+    "excelRow": 65,
+    "fieldKey": "txr_1201_lease_comp_other_items",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "d4e1ce6c-fcd8-4874-bb02-56e5cee10e67",
+    "excelRow": 66,
+    "fieldKey": "txr_1201_lease_comp_other",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "4bd8489f-00df-41c8-b87f-10e1904a486f",
+    "excelRow": 67,
+    "fieldKey": "txr_1201_renewal_expansion_other",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "91bed394-9196-42b6-afe5-68be85e645a5",
+    "excelRow": 68,
+    "fieldKey": "OTHER_FEES_REIMBURSABLE_EXPENSES",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "5f463597-de9b-409e-8e9b-8eab93fd2432",
+    "excelRow": 69,
+    "fieldKey": "mls_delayed_purpose",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "c1c90368-15b1-4e9b-9461-abb18c6755df",
+    "excelRow": 72,
+    "fieldKey": "KNOWN_DISTRICTS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "a25ecbd7-49a1-44f2-96a7-71f785265360",
+    "excelRow": 81,
+    "fieldKey": "txr_2216_light_bulbs_rooms",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "912f55d6-1a9c-47da-8e66-3e1434e26280",
+    "excelRow": 88,
+    "fieldKey": "txr_2216_outcome_excess_pay_to_address",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "53d1c72d-b1bc-4d63-bb15-8878c9ff76b2",
+    "excelRow": 134,
+    "fieldKey": "txr_2001_occupants_names_dob",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "913f5f1a-a3bf-4493-83cb-5cac7267b594",
+    "excelRow": 135,
+    "fieldKey": "txr_2001_non_real_property_items",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "f438c14f-e3cf-4dd5-96ae-e5552dde8f30",
+    "excelRow": 137,
+    "fieldKey": "txr_2001_payment_place",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "5cb375d5-c584-4c0b-9d0f-2b0209b5d441",
+    "excelRow": 138,
+    "fieldKey": "TXR_2001_UTILITIES_LANDLORD_PAYS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "f7f8e678-43f3-4f9a-9cb2-f1c9bb6b9f05",
+    "excelRow": 150,
+    "fieldKey": "lease_non_real_estate_items",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "6f72a594-671d-4f7b-ba56-4f1cfbf3b01e",
+    "excelRow": 151,
+    "fieldKey": "lease_reimbursable_expenses",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "583bf9d5-48d1-45a4-a348-294f57dcc013",
+    "excelRow": 152,
+    "fieldKey": "lease_mls_delayed_purpose",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "99469076-01e2-48cb-a6d4-1cfde0a963fa",
+    "excelRow": 162,
+    "fieldKey": "lease_requirements_other",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "6e5e3140-6f9b-40b6-875f-d66ed775bfa6",
+    "excelRow": 165,
+    "fieldKey": "PROPERTY_FULL_ADDRESS",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "0ef3a6d7-9ee3-47de-af10-11430d4f1412",
+    "excelRow": 183,
+    "fieldKey": "txr_1503_fee_other_text",
+    "ok": true,
+    "issues": []
+  },
+  {
+    "mappingId": "d0969270-dda5-4022-95c5-528de3560796",
+    "excelRow": 185,
+    "fieldKey": "txr_1410_fee_other_text",
+    "ok": true,
+    "issues": []
+  }
+]
