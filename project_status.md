@@ -1,14 +1,37 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-08-06 (Fill Form Date Signed placement-path fix on PR #31; not production-deployed)
+**As of:** 2026-08-06 (PR #31 Fill Form multiline/mask/typed-signature/Date Signed **live in production**)
 
 ## Current State
 
-Harbaugh Forms is **live** for controlled **Lee-only** production use.
+Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
+
+### Production rollout — Fill Form presentation + Date Signed (2026-08-06)
+
+**Status:** **Complete.** PR #31 squash-merged to `main`, production migrations applied, mapping flags set, unique-URL validated, then custom domain manually promoted.
+
+| Item | Result |
+|------|--------|
+| PR | [#31](https://github.com/leeharbaugh/harbaugh-forms/pull/31) squash-merged |
+| Merge commit | `d93cc5936f511c561f7538a5d035126ed2976cc9` (`d93cc59`) |
+| Unique deploy URL | `https://harbaugh-forms-8m60uqcrp-lee-harbaugh-s-projects.vercel.app` (`dpl_EcDG5xuCGTA9VrmKDVWF2irn1Qtb`) |
+| Prior rollback baseline | `6ef2453` / `dpl_3q2vJRK9Z2ruvD7WRci5cwVjjL3j` (`87xmn84pt`) — kept on custom domain until promotion |
+| Production project | `harbaugh-forms-prod` / `eetonalyyyssvkyfdoxh` |
+| Migrations (exact order) | `20260805220000` → `20260805230000` → `20260806150000` (all applied; history aligned) |
+| Mapping config | Form **15** Residential Lease Listing · `lease_non_real_estate_items` · mapping **`f7f8e678-43f3-4f9a-9cb2-f1c9bb6b9f05`** · page 1 · `470×28` · **`is_multiline=true`**, **`mask_background=true`** (coords unchanged; only this mapping has both flags) |
+| Integrity | packets **7**; field_instances **248** fingerprint **`7883c5d5d0dfe138134e9eb3a90ef8e9`** (unchanged); packet_forms fingerprint **`d43b3a72003eae61747ede6dffeb3424`** excluding soft-deleted QA pf **39**; generated-documents storage **15** after smoke PDF cleanup |
+| Schema/RLS/trigger | `packet_form_annotations` + creator trigger `packet_form_annotations_enforce_created_by` (INVOKER, safe search_path); types `typed_signature` \| `date_signed`; RLS via `owns_packet` / `is_app_admin` |
+| Unique-URL smoke | Login/collections/packets/Fill Form chrome; Caveat font 200/297900; API annotation create/move/PDF/soft-delete; Deployment Protection bypassed via `vercel curl` / `x-vercel-protection-bypass` for browser |
+| PDF artifact | `_audit_tmp/prod-rollout-d93cc59/prod-smoke-lease-listing-fill.pdf` — HarbaughCaveat + FontFile2 + Helvetica present |
+| Custom-domain promotion | ~2026-08-06 23:50 UTC — `forms.harbaughrealestate.com` + `harbaugh-forms.vercel.app` → `8m60uqcrp` / `d93cc59`; HTTPS/HSTS OK; unique URL remains available |
+| Live smoke | Login, collections, packets, Fill Form open, Signature + Date Signed dialogs, Caveat font asset, no schema-cache errors, **0 ACTIVE** annotations remaining |
+| Promotion policy | **Manual domain assignment remains required** for future production releases (auto custom-domain assignment stays disabled) |
+
+**Smoke leftovers (soft-deleted only):** packet_form **39** (`DELETED`); **3** `DELETED` annotations from QA. No ACTIVE annotations. Temporary smoke storage objects removed.
 
 ### Fill Form Date Signed placement fix (2026-08-06)
 
-**Status:** Blocking browser bug fixed on branch `fix/fill-form-pdf-multiline-caveat-download` (PR #31). **Not merged. Not deployed.** Production remains rolled back / unmodified.
+**Status:** Included in PR #31 merge `d93cc59` and now live in production (see rollout section above).
 
 | Item | Result |
 |------|--------|
@@ -22,7 +45,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 
 ### Fill Form Date Signed annotation (2026-08-06)
 
-**Status:** Implemented on branch `fix/fill-form-pdf-multiline-caveat-download` (PR #31). **Not merged. Not deployed.** Development migration applied to `harbaugh-forms-dev` only:
+**Status:** Live in production (PR #31 / `d93cc59`). Production migration applied:
 
 - `20260806150000_packet_form_annotations_date_signed.sql` (widens `annotation_type` CHECK to include `date_signed`)
 
@@ -38,37 +61,32 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use.
 | Artifact | `_audit_tmp/pdf-regression/manual-qa-pf53-date-signed.pdf` + placement-path PDF (Acrobat) |
 | Deferred | Free text, strikethrough, highlight, drawing, images, checkmarks, initials, presets, auto signature/date pairing |
 
-**Production rollout order (updated):** (1) `20260805220000` (2) `20260805230000` (3) **`20260806150000`** → validate → deploy app → apply form **15** Map Fields flags (`is_multiline` + `mask_background` on Non-Real Estate Items) as configuration data.
-
 ### Fill Form download regressions: multiline wrap + Caveat spacing (2026-08-06)
 
-**Status:** Fixed on branch `fix/fill-form-pdf-multiline-caveat-download` (PR #31). **Not merged. Not deployed. No production migrations.**
+**Status:** Live in production (PR #31 / `d93cc59`). Production form **15** mapping `f7f8e678-43f3-4f9a-9cb2-f1c9bb6b9f05` configured with `is_multiline=true` and `mask_background=true`.
 
 | Item | Result |
 |------|--------|
 | Authoritative browser Download PDF path | Packets → Fill Form → `downloadFilledPacketFormPdf` → `getFilledPacketFormPdfBytes` → `fillPacketFormPdfBytes(fields, annotations)` with live draft values + Caveat bytes; `save({ useObjectStreams: false })` |
 | Multiline root cause | Not a missing `is_multiline` select/serialization bug. Residential Lease Listing “Non-Real Estate Items” mapping `f7f8e678-…` was `is_multiline=false`, so `layoutTextInBox` emitted one line and pdf-lib drew one overflowing `drawText`. Browser CSS wrap still looked OK. |
-| Multiline fix | Enable Map Fields **Multiline** for narrative blanks (dev: mapping `f7f8e678-…` set `is_multiline=true`, retained). Download path already honored the flag when true. |
+| Multiline fix | Enable Map Fields **Multiline** for narrative blanks (prod+dev: mapping `f7f8e678-…` set `is_multiline=true`). Download path already honored the flag when true. |
 | Caveat root cause | Embedding Caveat under its default PostScript name **alongside Helvetica** in the filled packet PDF corrupted cmap/advances (extract looked like `KenƑetƋ…` / visually spaced fragments). Not glyph-by-glyph drawing. |
 | Caveat fix | `embedFont(bytes, { subset: true, customName: "HarbaughCaveat" })`; still one intact `drawText(text)`; keep fontkit + `useObjectStreams: false` + public font proxy exclusions |
 | Preprinted-line mask root cause | **Configuration, not rendering.** Mapping `f7f8e678-…` had `mask_background=false` after multiline enable. Download path already draws opaque white placement rectangle before text when the flag is true (empty and populated). |
-| Mask fix | Dev Map Fields / DB: retain `mask_background=true` with `is_multiline=true` on `f7f8e678-…`. No renderer change required. |
+| Mask fix | Map Fields / DB: retain `mask_background=true` with `is_multiline=true` on `f7f8e678-…`. No renderer change required. |
 | Tests | `test:fill-form-pdf-download` (multiline + Caveat + mask on/off/empty); `test:pdf-text-layout`; annotation auth validate; presentation smoke; field-instance-sync; packet-form-lifecycle; `tsc`; targeted ESLint; `build:validate` |
 | Manual artifact | `_audit_tmp/pdf-regression/manual-qa-pf53-multiline-mask-caveat.pdf` (+ empty-mask / mask-off control) — opened in Adobe Acrobat DC |
-| Migrations | Forward `20260806150000` for `date_signed` (dev applied). Existing `20260805220000` / `20260805230000` unchanged. |
-| Production data note | After schema migrations + app deploy, production form **15** mapping for Non-Real Estate Items still needs **`is_multiline=true`** and **`mask_background=true`** applied as ordinary Map Fields / configuration data (not a new migration). |
+| Migrations | Forward `20260806150000` for `date_signed`. Existing `20260805220000` / `20260805230000` unchanged. |
 
-**Retained development mapping `f7f8e678-…`:** `is_multiline=true`, `mask_background=true`, `470×28` (height unchanged; enlarge in Map Fields only if more printed-line rows must be covered).
+**Production mapping `f7f8e678-43f3-4f9a-9cb2-f1c9bb6b9f05`:** `is_multiline=true`, `mask_background=true`, `470×28` (height unchanged; enlarge in Map Fields only if more printed-line rows must be covered).
 
 **Remaining preview vs PDF differences (acceptable):** CSS Caveat vs embedded subset metrics can differ slightly; Non-Real Estate box height remains **28pt** so vertical capacity / printed-line coverage is limited to that rectangle.
 
 ### Fill Form presentation: multiline, line mask, typed signatures, font scaling (2026-08-05)
 
-**Status:** Implemented on development. **Not deployed to Vercel Production.** Development migrations applied to `harbaugh-forms-dev`:
+**Status:** **Live in production** (migrations + app via PR #31 rollout 2026-08-06).
 - `20260805220000_fill_form_presentation_and_annotations.sql`
 - `20260805230000_packet_form_annotations_created_by_immutable.sql` (creator attribution hardening)
-
-Production migrations **not** applied (deliberate).
 
 | Item | Result |
 |------|--------|
@@ -97,7 +115,7 @@ Production migrations **not** applied (deliberate).
 - **Non-Real Estate Items (mapping `f7f8e678-…`, 2026-08-06):** retained `is_multiline=true` + **`mask_background=true`** (470×28). Download artifacts: populated mask, empty mask, mask-off control; Acrobat opened for line-cover QA. Caveat signature remains intact.
 - **Blocking fixes from browser QA:** (1) auth `proxy.ts` matcher excluded `.ttf`/`.otf`/`.woff`/`.woff2`/`.txt` so `/fonts/Caveat-Regular.ttf` is not redirected to login HTML; browser loader rejects non-sfnt payloads. (2) `pdfDoc.save({ useObjectStreams: false })` so Caveat `FontFile2` actually persists on filled downloads for some source PDFs. (3) Caveat embed `customName: "HarbaughCaveat"` + `subset: true` so Helvetica+Caveat fills do not corrupt signature spacing.
 
-**Production before deploy:** Apply **both** migrations to production Supabase **first** (`20260805220000` then `20260805230000`), validate schema/trigger/policies, then deploy application code. Do not reverse the order. Separately apply Map Fields flags on production form **15** Non-Real Estate Items (`is_multiline` + `mask_background`) as configuration data.
+**Production deploy (completed 2026-08-06):** Migrations `20260805220000` → `20260805230000` → `20260806150000` applied first; schema/trigger/RLS validated; app deployed via PR #31 (`d93cc59`); form **15** Non-Real Estate Items mapping flags applied; unique-URL validated; custom domain manually promoted. See rollout section above.
 
 ### Packet Tenant Names + Map Fields hardening — Vercel Production deploy (2026-08-05)
 

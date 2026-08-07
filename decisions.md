@@ -14,10 +14,19 @@ Each decision should include:
 
 ## Fill Form text layout, placement masks, and typed signature annotations
 
-**Date:** 2026-08-05 (Caveat/multiline/mask download corrections + Date Signed 2026-08-06)
+**Date:** 2026-08-05 (Caveat/multiline/mask download corrections + Date Signed 2026-08-06; **production rollout 2026-08-06**)
 
 **Decision:**
 Fill Form preview and generated PDFs share one text-layout policy (`lib/pdf-text-layout.ts`). Multiline behavior is an explicit template placement flag (`form_field_mappings.is_multiline`), not inferred from the current value. Preprinted writing lines may be covered with an opaque white rectangle via placement flag `mask_background` (default false; admin-only in Map Fields; does not alter the source PDF file). Typed “Fill & Sign”–style signatures and **Date Signed** stamps are stored as packet-form annotations (`packet_form_annotations`), not as `fields` / `field_instances` and not as Authentisign placeholders. Annotation types today: `typed_signature` (Caveat) and `date_signed` (Helvetica). Preview font size scales with PDF zoom using `renderedHeight / originalHeight` applied to the configured (or height-derived) point size, with documented min/max clamps. Annotation `created_by_user_id` is assigned authoritatively by a BEFORE INSERT/UPDATE trigger from `auth.uid()` / OLD and is immutable after insert; authorization remains `owns_packet` / `is_app_admin` (not creator-only). Custom Caveat embedding in pdf-lib requires registering `@pdf-lib/fontkit`, saving with `useObjectStreams: false`, and embedding Caveat as `{ subset: true, customName: "HarbaughCaveat" }` so it does not corrupt when Helvetica is also embedded in the same document. Typed signatures and dates are each drawn as one intact `drawText` string.
+
+**Production rollout (2026-08-06):**
+* PR #31 squash-merged to `main` as `d93cc5936f511c561f7538a5d035126ed2976cc9`.
+* Unique Vercel deployment `https://harbaugh-forms-8m60uqcrp-lee-harbaugh-s-projects.vercel.app` (`dpl_EcDG5xuCGTA9VrmKDVWF2irn1Qtb`) validated before domain promotion.
+* Production migrations applied in order on `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`): `20260805220000` → `20260805230000` → `20260806150000`.
+* Production mapping `f7f8e678-43f3-4f9a-9cb2-f1c9bb6b9f05` (form 15 Non-Real Estate Items) set to `is_multiline=true` + `mask_background=true` only; coordinates unchanged.
+* Custom domain kept on rollback `6ef2453` / `87xmn84pt` until unique-URL + schema validation passed, then manually aliased to the new deployment (~2026-08-06 23:50 UTC).
+* **Manual production-domain promotion remains required** for future releases; automatic custom-domain assignment stays disabled. Unique `*.vercel.app` URLs may require Deployment Protection bypass for automated smoke.
+* Integrity fingerprints for existing field instances unchanged; temporary smoke annotations soft-deleted; smoke storage objects removed.
 
 **Date Signed specifics:**
 * Toolbar tool beside Signature; dialog defaults to the user’s local calendar date and format `MM/DD/YYYY`; also supports `M/D/YYYY` and `Month D, YYYY`.
@@ -40,7 +49,7 @@ Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` o
 * Overlay and download must stay aligned for wrap, mask order (mask then text; empty values still mask), and font sizing.
 * Typed signatures and date signed: create/move/resize/soft-delete on DRAFT packet forms the user owns; included in generated PDFs; packet-form-specific; independently placed.
 * Creator attribution: DB trigger overwrites INSERT `created_by_user_id` with `auth.uid()`; UPDATE always restores OLD.
-* Preferred production order: migrate (`20260805220000` → `20260805230000` → **`20260806150000`**) → validate → deploy app → apply Map Fields flags on form 15 Non-Real Estate Items as configuration data.
+* Preferred production order (executed 2026-08-06): migrate (`20260805220000` → `20260805230000` → **`20260806150000`**) → validate → deploy app / unique-URL smoke → apply Map Fields flags on form 15 Non-Real Estate Items as configuration data → **manually** promote custom domain.
 * Static Caveat/OFL files under `public/fonts/` must bypass the auth proxy matcher; filled PDF saves use `useObjectStreams: false`; Caveat keep `customName: "HarbaughCaveat"`.
 * **Deferred annotation tools (do not implement in this tranche):** general free text, strikethrough, highlight, drawing, uploaded images, checkmarks, initials, reusable saved presets, automatic signature/date pairing. Prefer shared annotation primitives when those arrive.
 
