@@ -59,7 +59,7 @@ export function CreateCustomPacketForm({
     const supabase = createClient();
 
     try {
-      let resolvedPropertyId: number | null = null;
+      let resolvedPropertyId: number | null = propertyId;
       if (propertyMode === "new" && property.street_address.trim()) {
         resolvedPropertyId = await saveNewPropertyWithDuplicateHandling(
           supabase,
@@ -70,8 +70,6 @@ export function CreateCustomPacketForm({
           setIsSubmitting(false);
           return;
         }
-      } else if (propertyMode === "existing") {
-        resolvedPropertyId = propertyId;
       }
 
       const { packetId } = await createCustomPacket(supabase, {

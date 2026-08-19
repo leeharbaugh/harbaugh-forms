@@ -91,23 +91,25 @@ export function PropertyPicker({
   }, []);
 
   const loadProperties = useCallback(async () => {
+    const trimmedSearch = searchQuery.trim();
+    if (!trimmedSearch) {
+      setListResults([]);
+      setListError(null);
+      setIsLoadingList(false);
+      return;
+    }
+
     setIsLoadingList(true);
     setListError(null);
 
     const supabase = createClient();
-    const trimmedSearch = searchQuery.trim();
+    const term = `%${trimmedSearch}%`;
 
-    let query = supabase
+    const { data, error } = await supabase
       .from("properties")
       .select("*")
       .eq("status", "ACTIVE")
-      .order("street_address", { ascending: true })
-      .order("city", { ascending: true })
-      .limit(20);
-
-    if (trimmedSearch) {
-      const term = `%${trimmedSearch}%`;
-      query = query.or(
+      .or(
         [
           `street_address.ilike.${term}`,
           `unit.ilike.${term}`,
@@ -116,10 +118,10 @@ export function PropertyPicker({
           `zip.ilike.${term}`,
           `mls_number.ilike.${term}`,
         ].join(","),
-      );
-    }
-
-    const { data, error } = await query;
+      )
+      .order("street_address", { ascending: true })
+      .order("city", { ascending: true })
+      .limit(20);
 
     if (error) {
       setListError(error.message);
@@ -132,10 +134,8 @@ export function PropertyPicker({
   }, [searchQuery]);
 
   useEffect(() => {
-    if (mode === "existing") {
-      void loadSelectedProperty(propertyId);
-    }
-  }, [mode, propertyId, loadSelectedProperty]);
+    void loadSelectedProperty(propertyId);
+  }, [propertyId, loadSelectedProperty]);
 
   useEffect(() => {
     if (mode !== "existing") {
@@ -180,25 +180,31 @@ export function PropertyPicker({
   };
 
   const switchToNew = () => {
+    if (mode === "new") {
+      return;
+    }
+
     setSaveError(null);
+    setListError(null);
     applySelection({
       property_mode: "new",
-      property_id: null,
       property: emptyPropertyInput(),
     });
-    setSelectedProperty(null);
-    setListError(null);
   };
 
   const switchToExisting = () => {
+    if (mode === "existing") {
+      return;
+    }
+
     setSaveError(null);
+    setListError(null);
     applySelection({
       property_mode: "existing",
-      property_id: null,
-      property: emptyPropertyInput(),
+      ...(selectedProperty
+        ? { property: propertyToInput(selectedProperty) }
+        : {}),
     });
-    setSelectedProperty(null);
-    setListError(null);
   };
 
   const handleSaveNewProperty = async () => {
@@ -261,6 +267,8 @@ export function PropertyPicker({
     }
   };
 
+  const hasSearchQuery = searchQuery.trim().length > 0;
+
   const propertyValidationError =
     mode === "new" ? validatePropertyInput(property) : null;
 
@@ -311,55 +319,55 @@ export function PropertyPicker({
                   disabled={disabled}
                 />
 
-                <div className="rounded-md border">
-                  {isLoadingList ? (
-                    <p className="p-3 text-sm text-muted-foreground">
-                      Loading properties…
-                    </p>
-                  ) : listError ? (
-                    <p className="p-3 text-sm text-destructive">{listError}</p>
-                  ) : listResults.length === 0 ? (
-                    <p className="p-3 text-sm text-muted-foreground">
-                      {searchQuery.trim()
-                        ? "No matching properties found."
-                        : "No active properties found. Create a new property instead."}
-                    </p>
-                  ) : (
-                    <div className="divide-y">
-                      {listResults.map((result) => {
-                        const isSelected = propertyId === result.id;
-                        return (
-                          <button
-                            key={result.id}
-                            type="button"
-                            className="flex w-full items-start justify-between gap-3 p-3 text-left hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => selectProperty(result)}
-                            disabled={isSelected}
-                          >
-                            <div>
-                              <p className="font-medium">
-                                {formatPropertyAddress(result)}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {formatPropertyReference(result.id)}
-                                {" · "}
-                                {formatPropertyType(result.property_type)}
-                                {result.mls_number
-                                  ? ` · MLS ${result.mls_number}`
-                                  : ""}
-                              </p>
-                            </div>
-                            {isSelected && (
-                              <span className="text-xs text-muted-foreground">
-                                Selected
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                {hasSearchQuery && (
+                  <div className="rounded-md border">
+                    {isLoadingList ? (
+                      <p className="p-3 text-sm text-muted-foreground">
+                        Loading properties…
+                      </p>
+                    ) : listError ? (
+                      <p className="p-3 text-sm text-destructive">{listError}</p>
+                    ) : listResults.length === 0 ? (
+                      <p className="p-3 text-sm text-muted-foreground">
+                        No matching properties found.
+                      </p>
+                    ) : (
+                      <div className="divide-y">
+                        {listResults.map((result) => {
+                          const isSelected = propertyId === result.id;
+                          return (
+                            <button
+                              key={result.id}
+                              type="button"
+                              className="flex w-full items-start justify-between gap-3 p-3 text-left hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => selectProperty(result)}
+                              disabled={isSelected}
+                            >
+                              <div>
+                                <p className="font-medium">
+                                  {formatPropertyAddress(result)}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {formatPropertyReference(result.id)}
+                                  {" · "}
+                                  {formatPropertyType(result.property_type)}
+                                  {result.mls_number
+                                    ? ` · MLS ${result.mls_number}`
+                                    : ""}
+                                </p>
+                              </div>
+                              {isSelected && (
+                                <span className="text-xs text-muted-foreground">
+                                  Selected
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -412,7 +420,6 @@ export function PropertyPicker({
                 setSaveError(null);
                 applySelection({
                   property_mode: "new",
-                  property_id: null,
                   property: nextProperty,
                 });
               }}

@@ -80,11 +80,18 @@ async function resolvePropertyId(
   const supabase = createClient();
 
   if (propertyMode === "new") {
-    if (!property.street_address.trim()) {
-      if (required) {
+    // Required packets commit a new property only via Save and select,
+    // which switches mode to "existing". Keep the assigned property if the
+    // user merely opened the create-new UI.
+    if (required) {
+      if (propertyId == null) {
         throw new Error(getPropertyRequiredMessage(workflowType));
       }
-      return null;
+      return propertyId;
+    }
+
+    if (!property.street_address.trim()) {
+      return propertyId;
     }
 
     return saveNewPropertyWithDuplicateHandling(

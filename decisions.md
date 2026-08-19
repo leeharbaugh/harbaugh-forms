@@ -12,6 +12,173 @@ Each decision should include:
 
 ---
 
+## Packet assigned property is independent of property-entry UI mode
+
+**Date:** 2026-08-18
+
+**Decision:**
+The packet's assigned property is independent from the property-entry UI mode. Toggling between "Select existing property" and "Create new property" must not clear or replace the currently assigned property. Property assignment changes only when the user explicitly selects or commits a replacement property, or uses an explicit removal action.
+
+The search/create UI mode is a temporary entry surface. An already-assigned `property_id` stays in state while the user inspects the create-new form or returns to search. Typing into the new-property form is draft-only until the existing commit point: **Save and select property**, selecting a different existing search result, or (for optional/custom New Packet only) saving a filled new-property draft with the parent create form. Required listing/contract packets still commit a new property only through **Save and select property**.
+
+**Reason:**
+Edit Packet treated entry-mode as assignment. Switching to **Create new property** immediately set `property_id` to null and cleared the selected-property display, so switching back looked like the packet no longer had a property. Users were exploring how to replace a property, not requesting that it be removed.
+
+**Consequences:**
+
+* New Packet and Edit Packet stay consistent because they share `PropertyPicker`.
+* A packet with an assigned property still shows that property after Create new → Select existing with no commit.
+* A new packet with no property yet still stays empty when toggling modes.
+* Selecting another existing property, or successfully saving/selecting a new one, still replaces the assignment.
+* There is no separate “remove property” control in this UI; assignment is cleared only by an explicit replacement/commit path, not by changing modes.
+
+**Related files or migrations:**
+
+* `components/properties/property-picker.tsx`
+* `components/packets/create-custom-packet-form.tsx`
+* `components/packets/create-packet-from-collection-form.tsx`
+* `components/packets/packet-edit-form.tsx`
+* `lib/ui/form-controls.test.ts`
+* No SQL migration
+
+---
+
+## Packet property selection does not list all properties for a blank existing-property search
+
+**Date:** 2026-08-18
+
+**Decision:**
+Packet property selection should not display the full list of available properties when the existing-property search field is blank. Search results should appear only in response to user-entered search text, while an already-selected property remains visible independently of the search query.
+
+Whitespace-only input is treated as no search (trimmed empty string). The search textbox itself remains available. Create-new-property and other existing property-selection choices are unchanged. This is a UI/state condition on the shared picker, not a new search architecture.
+
+**Reason:**
+Showing every active property as soon as **Select existing property** is chosen made the New Packet and Edit Packet screens noisy and encouraged browsing instead of searching. The selected property already has its own display; listing unrelated properties under a blank search was unnecessary and risked looking like the current selection had been replaced.
+
+**Consequences:**
+
+* New Packet and Edit Packet stay consistent because they share `PropertyPicker`.
+* Users must type a search term to see matches; they do not get an unfiltered catalog under the box.
+* Edit Packet continues to show the already-linked property without requiring a new search.
+* Clearing the search after a selection does not clear or replace that selection.
+* Unfiltered property data is no longer fetched solely to populate that blank-search list.
+
+**Related files or migrations:**
+
+* `components/properties/property-picker.tsx`
+* `components/packets/create-custom-packet-form.tsx`
+* `components/packets/create-packet-from-collection-form.tsx`
+* `components/packets/packet-edit-form.tsx`
+* `lib/ui/form-controls.test.ts`
+* No SQL migration
+
+---
+
+## TXR-1957 / T-47.1 Draft catalog uses existing sources only
+
+**Date:** 2026-08-17
+
+**Decision:**
+T-47.1 (TXR-1957, production Global form **53**, ACTIVE + DRAFT) received catalog fields and PDF placements through the existing `fields` / `form_field_mappings` / `field_defaults` architecture. No new table, no schema migration, and no development form clone. The form already existed as a production Draft shell (`global/forms/53/T-47-not-affidavit.pdf`, 0 AcroForm fields). Declarant **Signed** lines were not mapped (Authentisign / packet-annotation exclusion).
+
+Source mapping:
+
+* Reuse `property_legal_description` and `property_county` for the property-description and county blanks (legal description is not the street address).
+* Reuse `seller_name_1` / `seller_name_2` for page-2 “My name is” blanks.
+* Map declarant DOB to existing `packet_contact` paths `seller_1.date_of_birth` / `seller_2.date_of_birth` (contacts already store DOB in UI/schema). Do not add a new DOB column.
+* Leave page-1 combined **Declarant** `manual_only` — the removed `seller_names` resolver is not revived, and `seller_name_1` would underfill two-owner packets.
+* Leave both declarant **address** blanks `manual_only` — live `seller_N.address` is street lines only, not a full mailing address with city/state/ZIP.
+* Leave GF number, declaration date, survey date, execution county, and execution day/month/year `manual_only`. Do not resurrect `contract_details` for survey date. Do not invent a combined execution-date hidden field.
+
+Lee Personal form-specific defaults only: exceptions `None`; both execution states `Texas`. No Organization or Global defaults.
+
+**Reason:**
+Automatic fill is used only where a live source’s meaning matches the blank. A manual field is preferable to reviving abandoned resolvers or mapping street-only contact address into a declaration address.
+
+**Consequences:**
+
+* Map Fields review remains required before Publish (`/forms/53/editor`).
+* Development does not receive a parallel TXR-1957 shell unless Lee later authorizes a mirror.
+* Future two-owner name aggregates should use a reusable resolver (as `buyer_names` / `tenant_names` do), not a form-specific hack.
+
+**Related files or migrations:**
+
+* `lib/txr-1957-inventory.ts`
+* `lib/txr-1957-manifest.test.ts`
+* `scripts/txr1957-apply-production.ts`
+* `TXR_1957_FIELD_IMPLEMENTATION.md`
+* No SQL migration
+
+---
+
+## Native e-signature is a planned in-app packet workflow
+
+**Date:** 2026-08-16
+
+**Decision:**
+Harbaugh Forms will eventually provide a **native e-signature workflow** so users can prepare packet documents for signature inside the product. Signature preparation should assign signature and initial locations to specific parties/signers. The same workflow should apply to documents generated from Harbaugh Forms templates/collections **and** to one-off PDFs imported into a packet. Design must distinguish a **placed** signature/initial annotation (already completed on the document) from a **signer field** (a location where a named signer still needs to sign or initial). Signature locations belong on the packet/document (annotation) model, not on the reusable form-field catalog. Future implementation should treat auditability as a requirement: signer identity, document version, timestamps, completed-signature state, and a reliable record of what was signed.
+
+This decision does **not** select an external e-signature vendor, cryptographic architecture, signing-ceremony UX, or database enum set. Prior documentation treated **Authentisign** as the expected handler for signature/initial lines (catalog extraction skips those fields; deferred “Authentisign integration” was listed as the path that might set packet-form `document_state = SIGNED`). That research and the current inventory-exclusion policy remain valid as historical/operational context. They are **not** a committed vendor or architecture for this product capability.
+
+**Reason:**
+Agents need to collect signatures and initials on both generated forms and received third-party PDFs without routing every location through Map Fields / the Global field catalog. Typed Fill Form signatures already exist as packet-form annotations and are explicitly not Authentisign placeholders; a full signing workflow is still missing (`SIGNED` exists on packet forms but the UI does not enter it). Committing a vendor now would over-constrain a feature that is not being implemented in this pass.
+
+**Consequences:**
+
+* Treat native e-signature as a **major** future product area, related to but distinct from imported-document markup tools.
+* Do not implement signature locations as reusable `fields` / `field_instances` solely so they can be signed.
+* Preserve Authentisign-exclusion behavior for standard form inventory/extraction until a signing design replaces or supplements it.
+* Packet-form lifecycle `SIGNED` / `VOID` remain unused by UI until a real signing workflow exists; do not invent a parallel document-state model in documentation.
+* Vendor choice, certificate/crypto design, remote signer authentication, and exact annotation-type names remain open.
+
+**Related files or migrations:**
+
+* `project_status.md` (Future Product Roadmap)
+* `lib/types/authentisign-excluded-fields.ts`
+* `lib/types/packet-form-lifecycle.ts`
+* `lib/packet-form-annotations.ts`
+* `supabase/migrations/20260805220000_fill_form_presentation_and_annotations.sql`
+
+---
+
+## One-off packet PDFs and document annotations are not reusable form-catalog fields
+
+**Date:** 2026-08-16
+
+**Decision:**
+A packet should eventually contain both (1) reusable/template-based documents generated from Harbaugh Forms forms/collections and (2) one-off externally supplied PDFs imported **directly into that packet**. Importing a received PDF must not require creating a reusable Form record, adding it to the global/private form library, mapping fields, publishing it, or adding it to a Collection.
+
+Fill Form should eventually offer fast, **packet-document-specific** annotation tools, with first-iteration intent including Add Text, Strikethrough, Initial field/box, and Signature field/box. Later tools (checkmark, X, underline, highlight) are optional and not first-iteration requirements.
+
+These quick annotations are **not** reusable Harbaugh Forms fields. They must not be matched to catalog keys (for example `SELLER_NAME`), must not create catalog rows, and must not participate in form-field defaults, source mapping, or global/private field management. They are stored as document-specific annotations (page, position, size, content). A strikethrough is graphical only.
+
+Preferred implementation direction: **extend the existing `packet_form_annotations` architecture** (positioning/sizing, PDF embedding, soft deletion, creator attribution) where it fits, rather than forcing markup into `fields` / `field_instances` or creating an unnecessary parallel concept.
+
+Possible future annotation concepts include typed signature, typed initial, free text, strikethrough, signer initial field, and signer signature field. Those names are product concepts, **not** finalized database enum values. Production today remains allowlisted to `typed_signature` and `date_signed` only. A placed annotation (already-drawn initials/signature/text) is conceptually different from an uncompleted signer field assigned to a party.
+
+**Reason:**
+Real transactions include PDFs the agent did not generate (for example a buyer’s offer on the agent’s listing). The agent may need to import that PDF into the existing listing packet, strike an incorrect seller name, type the correction, and place initial boxes for each party—without promoting the offer into the reusable form library. Typed-signature work already proved packet-form annotations can persist independently of the field catalog.
+
+**Consequences:**
+
+* Custom-packet `origin = external_upload` remains the existing attach path; the product intent is broader: import into **any** packet, including collection-backed listing packets, without a Form/Collection prerequisite.
+* Do not use Map Fields, scoped defaults, or source resolvers for one-off markup.
+* Do not treat first-iteration markup tools as implemented; current Fill Form annotation tools remain Signature and Date Signed.
+* E-signature signer fields should share this packet-document annotation direction where appropriate, but imported-document markup is a **distinct** feature area, not a subset of e-signature.
+* Exact schema for imported-document origin, annotation type enums, and signer-assignment columns is **not** decided here.
+
+**Related files or migrations:**
+
+* `project_status.md` (Future Product Roadmap)
+* `lib/packet-form-annotations.ts`
+* `lib/types/packet-form-annotation.ts`
+* `lib/packet-form-annotation-placement.ts`
+* `components/packets/packet-form-annotation-overlay.tsx`
+* `supabase/migrations/20260805220000_fill_form_presentation_and_annotations.sql`
+* `supabase/migrations/20260725040000_packets_custom_nullable_collection.sql` (existing custom-packet / `external_upload` attach path)
+
+---
+
 ## Fill Form text layout, placement masks, and typed signature annotations
 
 **Date:** 2026-08-05 (Caveat/multiline/mask download corrections + Date Signed 2026-08-06; **production rollout 2026-08-06**)
@@ -53,7 +220,7 @@ Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` o
 * Creator attribution: DB trigger overwrites INSERT `created_by_user_id` with `auth.uid()`; UPDATE always restores OLD.
 * Preferred production order (executed 2026-08-06): migrate (`20260805220000` → `20260805230000` → **`20260806150000`**) → validate → deploy app / unique-URL smoke → apply Map Fields flags on form 15 Non-Real Estate Items as configuration data → **manually** promote custom domain.
 * Static Caveat/OFL files under `public/fonts/` must bypass the auth proxy matcher; filled PDF saves use `useObjectStreams: false`; Caveat keep `customName: "HarbaughCaveat"`.
-* **Deferred annotation tools (do not implement in this tranche):** general free text, strikethrough, highlight, drawing, uploaded images, checkmarks, initials, reusable saved presets, automatic signature/date pairing. Prefer shared annotation primitives when those arrive.
+* **Deferred in this tranche (PR #31):** general free text, strikethrough, highlight, drawing, uploaded images, checkmarks, initials, reusable saved presets, automatic signature/date pairing. Those remain unimplemented. Product direction as of 2026-08-16: extend `packet_form_annotations` for document-specific markup and future signer fields (see decisions above); do not route those tools through the reusable field catalog. First-iteration markup intent is Add Text, Strikethrough, Initial field/box, and Signature field/box. Checkmark/X/underline/highlight, drawn/uploaded signatures, and saved presets remain later/optional.
 
 **Related files or migrations:**
 
@@ -458,7 +625,7 @@ Invitees previously landed on `/auth/confirm?next=/auth/update-password` after S
 **Date:** 2026-07-25
 
 **Decision:**
-Packets may use `packet_type = 'custom'` with `collection_id` null. Custom packets start with zero `packet_forms`. User documents continue to attach through existing `packet_forms` rows with `origin = external_upload` (and the existing `generated-documents` storage layout). No parallel packet-file storage was introduced. Forms remain `GLOBAL` or `PRIVATE` only; creating Global forms requires application `ADMIN` (not `ORG_ADMIN` alone).
+Packets may use `packet_type = 'custom'` with `collection_id` null. Custom packets start with zero `packet_forms`. User documents continue to attach through existing `packet_forms` rows with `origin = external_upload` (and the existing `generated-documents` storage layout). No parallel packet-file storage was introduced. Forms remain `GLOBAL` or `PRIVATE` only; creating Global forms requires application `ADMIN` (not `ORG_ADMIN` alone). This attach path is the existing implementation for custom packets; it does **not** by itself satisfy the later product intent to import one-off received PDFs into collection-backed packets (for example an existing listing packet) without creating a reusable Form or Collection entry. See the 2026-08-16 imported-packet-document decision.
 
 **Reason:**
 Production feedback needed empty upload-only packets and explicit Private/Global form creation without inventing new storage or Organization-scoped forms.
@@ -910,7 +1077,7 @@ Refresh Values and open-time initialization can rewrite packet snapshots. Agents
 * `DRAFT`: editable; Refresh Values requires confirmation; Mark Final is available.
 * `FINAL`: read-only values; Refresh blocked; ordinary open loads existing instances only (no inserts/updates); Reopen to Draft is available and does not recalculate.
 * Mark Final may insert genuinely missing mapped instances using the packet owner’s resolution context, then sets `document_state = FINAL` without updating existing instances.
-* `SIGNED` / `VOID`: read-only; no UI transition into these states in the current task; Signed cannot be reopened.
+* `SIGNED` / `VOID`: read-only; no UI transition into these states until a real signing workflow exists; Signed cannot be reopened. Native in-app e-signature is the planned product capability (2026-08-16); Authentisign remains prior research, not a committed vendor. Do not change `document_state` values in this documentation pass.
 * Authenticated field-instance and field-instance-mapping INSERT/UPDATE require an ACTIVE DRAFT parent form.
 * Privileged sessions (`auth.uid()` null) may still perform migration/admin SQL.
 * Future enhancement: before/after field-diff preview prior to Refresh Values.
