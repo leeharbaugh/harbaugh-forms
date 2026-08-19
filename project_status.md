@@ -1,46 +1,50 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-08-18 (packet property-entry mode no longer clears the assigned property; development-only, not deployed)
+**As of:** 2026-08-18 (packet property-picker search + assignment-mode fixes live in production)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
-### Packet property-entry mode no longer clears the assigned property (2026-08-18)
+### Packet property picker production rollout (2026-08-18)
 
-**Status:** Development-only UI/state fix. **Not deployed to production.** No schema, migration, RLS, or packet/property relationship changes.
+**Status:** **Complete.** Two related UI/state improvements are live. **No schema, migration, RLS, or packet/property relationship changes.**
 
-**Bug:** On Edit Packet, a packet with an assigned property lost that assignment if the user clicked **Create new property** and then **Select existing property** without creating anything.
-
-**Fix:** The packet’s assigned `property_id` is independent of the property-entry UI mode. Toggling between **Select existing property** and **Create new property** changes only the entry UI (and resets the new-property draft). Assignment changes only when the user selects another existing property, clicks **Save and select property**, or (for optional/custom New Packet) commits a filled new-property draft with the parent create form.
+**App commit:** `c208ad36e37f97379b6b433339a05608f26cb484` (`c208ad3`)  
+**Also pushed:** prior unpushed `4a7f7dcd910d4bf31dd398f99bff91ad0675cc1b` (`4a7f7dc`, documentation/audit trail only)
 
 | Item | Result |
 |------|--------|
-| Shared component | `components/properties/property-picker.tsx` |
-| Consumers | New Packet (`create-custom-packet-form.tsx`, `create-packet-from-collection-form.tsx`) and Edit Packet (`packet-edit-form.tsx`) |
-| Mode toggle | Does not set `property_id: null` or clear `selectedProperty` |
-| New-property typing | Draft updates do not clear the assigned `property_id` |
-| Required listing/contract create | New property still commits only via **Save and select property** |
-| Optional/custom create | Parent-form save of a filled new-property draft remains the existing commit path |
-| Validation | `npx tsc --noEmit`; targeted ESLint; `npm run test:form-controls`; `npm run build:validate` |
-| Deploy | **None** — development environment only |
+| Unique deploy URL | `https://harbaugh-forms-avuwhz2w9-lee-harbaugh-s-projects.vercel.app` |
+| Deployment ID | `dpl_85mK8L8SEkLungQ84anWhSK8FoVx` |
+| GitHub Production deployment | SHA `c208ad3` |
+| Production project | `harbaugh-forms-prod` / `eetonalyyyssvkyfdoxh` |
+| Migrations | **None** |
+| Env-var changes | **None** |
+| Custom domain | `forms.harbaughrealestate.com` + `harbaugh-forms.vercel.app` serve `dpl_85mK8L8SEkLungQ84anWhSK8FoVx` |
+| New production baseline | `c208ad3` / `dpl_85mK8L8SEkLungQ84anWhSK8FoVx` |
+
+**1. Hide initial property list.** Choosing **Select existing property** still shows the search box. A blank/whitespace query does not list all properties and does not show an empty-results message. Matching results appear only after the user types. The assigned property stays visible independently of the search query.
+
+**2. Preserve assigned property while toggling modes.** The packet’s assigned `property_id` is independent of picker UI mode. Switching **Select existing property** ↔ **Create new property** (including re-clicking the active mode) does not clear assignment. Typing a new-property draft does not clear assignment. Replacement happens only at a commit point (selecting another existing property, **Save and select property**, or optional/custom parent-form save of a filled new-property draft). Edit Packet continues saving `propertyId` regardless of which picker mode is open.
+
+| Validation | Result |
+|------------|--------|
+| Local | `npx tsc --noEmit`; targeted ESLint; `npm run test:form-controls` (23/23); `npm run build:validate` against development |
+| Unique URL | Login HTML `data-dpl-id=dpl_85mK8L8SEkLungQ84anWhSK8FoVx`; browser SSO Deployment Protection blocked authenticated unique-URL UI (`vercel curl` bypassed protection for HTML checks) |
+| Live domain | Login; Collections; Packets; Edit Packet **11** (505 Valley Spring Drive / `#8`): blank search shows no full list; “Presidio” returns 5444 Presidio Dr; clearing search keeps `#8`; Create new → Select existing keeps `#8`; packet `property_id` unchanged (`update_date` still 2026-08-09). New Packet listing: blank search empty; search + select `#8`; mode toggle preserves it; cancelled without creating. Buyer Rep: no property picker. No packet data mutations. |
+
+**Unexpected:** When the Production deployment became Ready, Vercel auto-assigned `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` to it before unique-URL authenticated UI smoke. Policy remains: unique-URL validation first, then **manual** custom-domain promotion; automatic custom-domain assignment should stay disabled. Verify the Vercel project domain setting before the next production push.
+
+Shared component: `components/properties/property-picker.tsx`. Consumers: New Packet (`create-custom-packet-form.tsx`, `create-packet-from-collection-form.tsx`) and Edit Packet (`packet-edit-form.tsx`).
+
+### Packet property-entry mode no longer clears the assigned property (2026-08-18)
+
+Implemented in `c208ad3` and included in the production rollout above.
 
 ### Packet existing-property search hides the full list until the user types (2026-08-18)
 
-**Status:** Development-only UI change. **Not deployed to production.** No schema, migration, RLS, or packet/property relationship changes.
-
-When creating or editing a packet and choosing **Select existing property**, the search textbox still appears, but the previous default of showing all available properties underneath a blank search is gone. Matching results appear only after the user enters a non-whitespace search term. An already-selected property stays visible independently of the search query (including on Edit Packet).
-
-| Item | Result |
-|------|--------|
-| Shared component | `components/properties/property-picker.tsx` |
-| Consumers | New Packet (`create-custom-packet-form.tsx`, `create-packet-from-collection-form.tsx`) and Edit Packet (`packet-edit-form.tsx`) |
-| Blank query | No property-result list; no “no results” message; no unfiltered fetch |
-| Typed query | Existing address/unit/city/state/ZIP/MLS search + result UI + selection behavior |
-| Selected property | Loaded via `propertyId`; clearing the search after selection does not clear it |
-| Other modes | **Create new property** and workflows without property selection are unchanged |
-| Validation | `npx tsc --noEmit`; targeted ESLint on changed source; `npm run test:form-controls`; `npm run build:validate` |
-| Deploy | **None** — development environment only |
+Implemented in `c208ad3` and included in the production rollout above.
 
 ### TXR-1957 T-47.1 Residential Real Property Declaration in Lieu of Affidavit (2026-08-17)
 
@@ -1229,6 +1233,7 @@ See `decisions.md` for architectural decisions. Highlights:
 - One-off imported packet PDFs should not require the reusable form-library workflow; quick PDF annotations are not reusable fields
 - Packet existing-property search shows matches only after the user types; a blank query does not list all properties, and the selected property stays independent of the search box
 - Packet assigned property is independent of the property-entry UI mode; toggling Select existing / Create new does not clear or replace the assignment
+- Production Vercel deployments should be validated at the unique deployment URL before manual custom-domain promotion; automatic custom-domain assignment should remain disabled
 
 ---
 
