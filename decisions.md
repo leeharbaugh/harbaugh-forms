@@ -12,6 +12,49 @@ Each decision should include:
 
 ---
 
+## Pre-signature amendments use an exclusive agent lock and retain participant links
+
+**Date:** 2026-09-05
+
+**Decision:**
+An In Progress **Signing** remains amendable until its first signature or initial is successfully accepted. Before opening a Signing for amendment, the server must atomically verify that the Signing is still active, no signature or initial event exists, no participant currently has the signing experience open, and no other amendment is active. If those checks pass, the agent receives an exclusive amendment lock.
+
+While the agent holds that lock, participants cannot enter or act in the signing experience. A participant who follows an existing link is told that the sender is updating the Signing and should try again later. When the agent saves or cancels the update and the lock is released, retained participants may return through the same participant-specific links and see the current Signing. Adding or removing documents before the first signature does not by itself require replacement links because each link identifies a participant's access to the Signing rather than one fixed document revision.
+
+Multiple participants may have the Signing open concurrently when no agent amendment lock exists. Any active participant signing experience blocks the agent from acquiring the amendment lock. “Open” means an active signing experience maintained by a renewable lease or heartbeat, not a link that was clicked sometime in the past or an abandoned browser tab. Locks must release on explicit exit and expire safely after inactivity or lost connection; exact timing and implementation remain technical design.
+
+The first successfully accepted signature or initial permanently freezes the Signing's document set, participant roster, participant identity snapshots, and assigned signer fields. After that event, the agent cannot amend the Signing; a material correction requires ending it and creating another Signing. The server must validate Signing state, participant access, lock ownership, and the current package revision on every meaningful action, not only when a link first opens.
+
+Concurrent agent and participant actions must be serialized without partial success. Whichever side first acquires the applicable server-side lock blocks the other. An accepted signature or initial is never discarded to allow a later amendment. If the agent acquires the amendment lock first, a participant action is rejected with the temporary-update message; if a participant is already active or the first signature/initial has been accepted, the agent cannot begin or save an amendment.
+
+If a pre-signature amendment supersedes participant-entered dates, text, checkbox selections, or other unsigned work from an earlier package revision, that work does not carry into the revised package. Relevant historical events may remain in the audit trail, but the participant resumes cleanly against the current package. Removing a participant revokes that participant's existing access; re-adding the person as a new participant requires new participant-specific access. Retained participants keep their existing links unless those links independently expire or are revoked.
+
+All participants may review every document in the Signing. Harbaugh Forms will not implement participant-specific document hiding.
+
+This decision establishes locking and access semantics, not table names, lock durations, token formats, real-time transport, or concurrency primitives.
+
+**Reason:**
+An agent should be able to correct an already-sent Signing when nobody has started signing without rebuilding the workflow or redistributing links. Exclusive amendment access prevents a participant from reviewing or signing a package while it is changing, while reusable participant-specific links keep the recovery flow simple. Freezing at the first accepted signature or initial preserves the exact package against which legally meaningful signing activity began.
+
+**Consequences:**
+
+* Activation no longer freezes the Signing configuration by itself; the first accepted signature or initial is the permanent freeze boundary.
+* Before that boundary, amendments require an exclusive agent lock and zero active participant signing experiences.
+* Participant access uses renewable activity leases so abandoned tabs cannot block amendments indefinitely.
+* Retained participants reuse their links after an amendment; removed participants lose access.
+* Participants blocked by an active amendment may retry the same link after the lock is released.
+* Superseded unsigned participant input does not carry into the revised package.
+* Every participant may review every included document.
+* No application code, schema, migration, storage, route, or configuration change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing participants may be linked or ad hoc, and all are eligible in parallel** (2026-09-05); **Signing lifecycle distinguishes setup, active signing, completion, decline, and cancellation** (2026-09-05); **A Signing may be completed remotely or in person on a shared device** (2026-08-24)
+* No SQL migration; no schema change
+
+---
+
 ## Signing participants may be linked or ad hoc, and all are eligible in parallel
 
 **Date:** 2026-09-05
@@ -21,7 +64,7 @@ A **signing participant** is a person participating in one particular Signing. T
 
 An ad hoc participant requires only a name and email address. A participant may also have an optional descriptive transaction role such as Buyer, Seller, Tenant, Landlord, Agent, Broker, Attorney, or Other. A role provides context; it is not an identity category and does not by itself grant access or determine which fields the participant may complete.
 
-While the Signing is Draft, the agent may edit participant names, email addresses, roles, explicit User/Contact associations, and assigned signer fields. Activating the Signing freezes those values as the participant's historical identity snapshot for that Signing. Later edits to a linked User or Contact must not rewrite the Signing's participant history. The retained User and Contact references remain useful associations, but the frozen name, email, and role used for the Signing are the historical record.
+While the Signing is Draft—or while it is In Progress but still eligible for an exclusive pre-signature amendment—the agent may edit participant names, email addresses, roles, explicit User/Contact associations, and assigned signer fields. The first accepted signature or initial freezes those values as the participant's historical identity snapshot for that Signing. Later edits to a linked User or Contact must not rewrite the Signing's participant history. The retained User and Contact references remain useful associations, but the frozen name, email, and role used for the Signing are the historical record.
 
 An email address is a delivery destination, not a unique person identifier. Multiple participants, Users, or Contacts may share the same email address. The system must not merge participants or silently create User/Contact associations from an email match. It may suggest possible existing records, but the agent must explicitly select any association. Each remote participant receives participant-specific access even when multiple invitations go to the same inbox; completing or authenticating one participant must not complete or authenticate another participant who shares that email.
 
@@ -37,7 +80,7 @@ Real participants do not fit mutually exclusive application-identity categories.
 * User and Contact references are optional, may coexist, and require explicit agent selection.
 * Name and email are required for every participant; role is optional.
 * Ad hoc participants are first-class and do not cause automatic User or Contact creation.
-* Participant identity values and associations freeze when the Signing becomes In Progress.
+* Participant identity values and associations freeze when the first signature or initial is accepted.
 * Shared email addresses are valid and never collapse distinct participants or their access.
 * All participants become eligible together at activation; no sequence numbers or signing stages are required in the initial design.
 * Exact participant schema and authentication mechanics remain part of later technical design.
@@ -59,14 +102,14 @@ Real participants do not fit mutually exclusive application-identity categories.
 A durable **Signing** has five user-facing/domain lifecycle states:
 
 * **Draft** — the Signing and its immutable document version or versions exist, but the agent is still configuring participants and assigned signer fields. No participant may sign yet.
-* **In Progress** — the Signing has been activated. Remote invitations may have been sent, or an in-person signing ceremony may have started. The document set, participant roster, participant identity snapshots, and assigned signer fields are frozen; all required participants are eligible to sign.
+* **In Progress** — the Signing has been activated. Remote invitations may have been sent, or an in-person signing ceremony may have started. All required participants are eligible to sign. Until the first signature or initial is accepted, the agent may amend the Signing only under the exclusive-lock rules in the later 2026-09-05 decision. The first accepted signature or initial freezes the document set, participant roster, participant identity snapshots, and assigned signer fields.
 * **Complete** — every required participant has completed every required signing action.
 * **Declined** — a participant affirmatively refused to sign. The participant may provide an optional reason. No further signing is allowed within that Signing.
 * **Cancelled** — the agent ended the Signing before completion.
 
 The ordinary lifecycle is **Draft → In Progress → Complete**. The agent may move a Draft or In Progress Signing to Cancelled. A participant decline moves an In Progress Signing to Declined. Complete, Declined, and Cancelled are terminal outcomes for that Signing.
 
-All events and evidence already collected remain preserved when a Signing is Declined or Cancelled, including partial signatures or initials, consent records, participant actions, timestamps, and immutable document versions. A material correction after activation requires a new Signing rather than changing the activated Signing.
+All events and evidence already collected remain preserved when a Signing is Declined or Cancelled, including partial signatures or initials, consent records, participant actions, timestamps, and immutable document versions. Before the first signature or initial, an agent may amend an In Progress Signing under the exclusive-lock rules recorded later on 2026-09-05. After the first signature or initial, a material correction requires a new Signing rather than changing the activated Signing.
 
 **Ready**, **Sent**, **Partially Signed**, and **Expired** are not primary durable Signing states:
 
@@ -85,7 +128,7 @@ The lifecycle must work consistently for remote and in-person Signings while cle
 **Consequences:**
 
 * Participants cannot sign while a Signing is Draft.
-* Activating a Signing freezes its documents and signing configuration. Changes to those materials require cancelling or otherwise terminating that Signing and creating another one.
+* Activating a Signing makes all required participants eligible. The first accepted signature or initial freezes its documents and signing configuration; changes after that boundary require cancelling or otherwise terminating that Signing and creating another one.
 * A participant decline terminates further signing in that Signing and is distinguishable from agent cancellation.
 * Terminal outcomes never erase partial signing evidence or append-only events.
 * UI may display derived readiness, delivery, partial-progress, and access-expiration information without turning those into primary Signing lifecycle states.
@@ -235,7 +278,7 @@ A 2026-08-18 read-only audit of packet forms, generated PDFs, document states, a
 
 6. **A signing participant is a Signing-scoped concept.** Do not equate a signer with either an application User or a Contact. A signing participant is a person participating in a particular Signing and may reference a Harbaugh Forms User, a Contact, both, or neither. Ad hoc participants require only a name and email address; Contact creation is never required. The model must remain flexible enough for a person to occupy different roles at different times. Example: Lee Harbaugh may simultaneously be a Harbaugh Forms User, a Contact, the listing agent on the transaction, and a signing participant who must sign the listing agreement. Do not force such a person into only one identity category. See the 2026-09-05 participant decision.
 
-7. **Historical participant identity is snapshotted at activation.** Signing records must not depend solely on live User or Contact values. The name, email address, optional role, and explicit User/Contact associations used for a Signing freeze when it becomes In Progress. If a linked User or Contact is edited later, the historical Signing record remains unchanged. Email is not a unique identity key; shared addresses do not merge participants or associations. See the 2026-09-05 participant decision.
+7. **Historical participant identity is snapshotted at the first signature or initial.** Signing records must not depend solely on live User or Contact values. The name, email address, optional role, and explicit User/Contact associations used for a Signing freeze when its first signature or initial is accepted. Before that boundary, an In Progress Signing may be amended only under the exclusive-lock rules in the later 2026-09-05 decision. If a linked User or Contact is edited afterward, the historical Signing record remains unchanged. Email is not a unique identity key; shared addresses do not merge participants or associations.
 
 8. **Signing links always enter a dedicated signing experience.** The recipient signing experience will be a dedicated, reduced signing UI, likely under a route namespace such as `/sign/...`. A signing link should enter this signing experience even when the signing participant is also an authenticated Harbaugh Forms User. Existing app authentication may provide additional identity context, but it must not bypass the signing ceremony or redirect the person directly into the normal agent application. Signing context and normal application context are separate.
 
@@ -251,7 +294,7 @@ A 2026-08-18 read-only audit of packet forms, generated PDFs, document states, a
 
 * **B. Resolved 2026-09-05 — `packet_forms.document_state`.** Creating a Signing is the immutable snapshot boundary; `FINAL` is not required, and signing status does not belong on the working `packet_form`. The existing `SIGNED` value is unused rather than legacy behavior and should be removed during implementation if dependency and data checks confirm that it is unused. Exact migration mechanics remain technical design, and `VOID` is not resolved by this decision.
 
-* **C. Resolved 2026-09-05 — participant identity and eligibility.** Participants may reference a User, Contact, both, or neither; ad hoc participants require name and email; roles are optional; email is non-unique and never silently links identities; historical values freeze at activation; and all participants are eligible in parallel without configurable signing order. Exact schema and authentication mechanics remain technical design.
+* **C. Resolved 2026-09-05 — participant identity and eligibility.** Participants may reference a User, Contact, both, or neither; ad hoc participants require name and email; roles are optional; email is non-unique and never silently links identities; historical values freeze at the first accepted signature or initial; and all participants are eligible in parallel without configurable signing order. Exact schema and authentication mechanics remain technical design.
 
 **Remaining open questions:**
 
