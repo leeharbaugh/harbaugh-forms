@@ -12,6 +12,45 @@ Each decision should include:
 
 ---
 
+## Signing participants may be linked or ad hoc, and all are eligible in parallel
+
+**Date:** 2026-09-05
+
+**Decision:**
+A **signing participant** is a person participating in one particular Signing. The participant may reference a Harbaugh Forms User, a Contact, both, or neither. A User and Contact may represent the same person, and those references are not mutually exclusive. Creating a Contact is never required to add someone to a Signing.
+
+An ad hoc participant requires only a name and email address. A participant may also have an optional descriptive transaction role such as Buyer, Seller, Tenant, Landlord, Agent, Broker, Attorney, or Other. A role provides context; it is not an identity category and does not by itself grant access or determine which fields the participant may complete.
+
+While the Signing is Draft, the agent may edit participant names, email addresses, roles, explicit User/Contact associations, and assigned signer fields. Activating the Signing freezes those values as the participant's historical identity snapshot for that Signing. Later edits to a linked User or Contact must not rewrite the Signing's participant history. The retained User and Contact references remain useful associations, but the frozen name, email, and role used for the Signing are the historical record.
+
+An email address is a delivery destination, not a unique person identifier. Multiple participants, Users, or Contacts may share the same email address. The system must not merge participants or silently create User/Contact associations from an email match. It may suggest possible existing records, but the agent must explicitly select any association. Each remote participant receives participant-specific access even when multiple invitations go to the same inbox; completing or authenticating one participant must not complete or authenticate another participant who shares that email.
+
+Harbaugh Forms will not initially support configurable signing order. When a Signing becomes In Progress, all required participants are eligible to sign in parallel. Remote participants may act in any order or concurrently. In-person participants naturally take turns while sharing a device, but that handoff sequence is not a configured business ordering. Completion occurs when every required participant has completed every required assigned action. Signing-order configuration may be added later only if real use demonstrates a need.
+
+This decision settles participant identity relationships, minimum ad hoc information, snapshot timing, email non-uniqueness, and the absence of configurable signing order. It does not prescribe table names, columns, role enums, invitation-token mechanics, or exact authentication controls.
+
+**Reason:**
+Real participants do not fit mutually exclusive application-identity categories. The same person may be both a User and Contact, while another signer may have no prior Harbaugh Forms record. Preserving the values actually used in the Signing protects historical accuracy without forcing contact creation or treating a shared email address as proof that two records are the same person. Configurable signing order adds setup and enforcement complexity without a demonstrated business need.
+
+**Consequences:**
+
+* User and Contact references are optional, may coexist, and require explicit agent selection.
+* Name and email are required for every participant; role is optional.
+* Ad hoc participants are first-class and do not cause automatic User or Contact creation.
+* Participant identity values and associations freeze when the Signing becomes In Progress.
+* Shared email addresses are valid and never collapse distinct participants or their access.
+* All participants become eligible together at activation; no sequence numbers or signing stages are required in the initial design.
+* Exact participant schema and authentication mechanics remain part of later technical design.
+* No application code, schema, migration, storage, route, or configuration change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing lifecycle distinguishes setup, active signing, completion, decline, and cancellation** (2026-09-05); **A Signing may be completed remotely or in person on a shared device** (2026-08-24); **Native e-signature uses one working packet form, many immutable versions, and a dedicated signing experience** (2026-08-19)
+* No SQL migration; no schema change
+
+---
+
 ## Signing lifecycle distinguishes setup, active signing, completion, decline, and cancellation
 
 **Date:** 2026-09-05
@@ -19,8 +58,8 @@ Each decision should include:
 **Decision:**
 A durable **Signing** has five user-facing/domain lifecycle states:
 
-* **Draft** — the Signing and its immutable document version or versions exist, but the agent is still configuring participants, signing order, and assigned signer fields. No participant may sign yet.
-* **In Progress** — the Signing has been activated. Remote invitations may have been sent, or an in-person signing ceremony may have started. The document set, participant roster, signing order, and assigned signer fields are frozen.
+* **Draft** — the Signing and its immutable document version or versions exist, but the agent is still configuring participants and assigned signer fields. No participant may sign yet.
+* **In Progress** — the Signing has been activated. Remote invitations may have been sent, or an in-person signing ceremony may have started. The document set, participant roster, participant identity snapshots, and assigned signer fields are frozen; all required participants are eligible to sign.
 * **Complete** — every required participant has completed every required signing action.
 * **Declined** — a participant affirmatively refused to sign. The participant may provide an optional reason. No further signing is allowed within that Signing.
 * **Cancelled** — the agent ended the Signing before completion.
@@ -163,7 +202,7 @@ The fact that other real-estate/e-signature products may also use the generic wo
 * Do not use envelope, signing request, signing package, dispatch, folio, signet, or other coined terms as the name of that object.
 * Do not treat a signer browser/authentication session as a durable domain object named “Signing Session” merely because the overall object is named Signing.
 * Exact schema/table names remain open until technical design is completed. Do not invent table names from this product noun.
-* Narrows open question D in the 2026-08-19 native e-signature architecture decision. Does **not** resolve open questions A, B, C, or E.
+* Narrows open question D in the 2026-08-19 native e-signature architecture decision. This terminology decision did not itself resolve A, B, C, or E; later 2026-09-05 decisions resolve B and C at the domain level.
 
 **Related files or migrations:**
 
@@ -194,9 +233,9 @@ A 2026-08-18 read-only audit of packet forms, generated PDFs, document states, a
 
 5. **Legitimate later changes create derivative versions.** A signed historical version remains immutable. If the working `packet_form` later changes legitimately, a newly rendered version is created rather than overwriting the prior signed artifact. Future versioning design should support parent/derivative provenance where appropriate. The exact parent-version representation is **not** decided here.
 
-6. **A signing participant is a transaction-scoped concept.** Do not equate a signer with either an application User or a Contact. A signing participant is a person participating in a particular Signing. A signing participant may reference a Harbaugh Forms User, a Contact, both, or, in narrowly permitted situations, neither. The data model must remain flexible enough for a person to occupy different roles at different times. Example: Lee Harbaugh may simultaneously be a Harbaugh Forms User, the listing agent on the transaction, and a signing participant who must sign the listing agreement. Do not force such a person into only one identity category. Exact participant-schema constraints are **not** decided here.
+6. **A signing participant is a Signing-scoped concept.** Do not equate a signer with either an application User or a Contact. A signing participant is a person participating in a particular Signing and may reference a Harbaugh Forms User, a Contact, both, or neither. Ad hoc participants require only a name and email address; Contact creation is never required. The model must remain flexible enough for a person to occupy different roles at different times. Example: Lee Harbaugh may simultaneously be a Harbaugh Forms User, a Contact, the listing agent on the transaction, and a signing participant who must sign the listing agreement. Do not force such a person into only one identity category. See the 2026-09-05 participant decision.
 
-7. **Historical participant identity is snapshotted.** Signing records must not depend solely on live User or Contact values. Important historical identity/contact information used for a Signing must be preserved as a snapshot, such as name at send/signing time, the email address used for the signing invitation, the relevant signing/transaction role, and other identity information later determined to be evidentially important. If the linked User or Contact is edited later, the historical signing record must remain unchanged.
+7. **Historical participant identity is snapshotted at activation.** Signing records must not depend solely on live User or Contact values. The name, email address, optional role, and explicit User/Contact associations used for a Signing freeze when it becomes In Progress. If a linked User or Contact is edited later, the historical Signing record remains unchanged. Email is not a unique identity key; shared addresses do not merge participants or associations. See the 2026-09-05 participant decision.
 
 8. **Signing links always enter a dedicated signing experience.** The recipient signing experience will be a dedicated, reduced signing UI, likely under a route namespace such as `/sign/...`. A signing link should enter this signing experience even when the signing participant is also an authenticated Harbaugh Forms User. Existing app authentication may provide additional identity context, but it must not bypass the signing ceremony or redirect the person directly into the normal agent application. Signing context and normal application context are separate.
 
@@ -212,13 +251,13 @@ A 2026-08-18 read-only audit of packet forms, generated PDFs, document states, a
 
 * **B. Resolved 2026-09-05 — `packet_forms.document_state`.** Creating a Signing is the immutable snapshot boundary; `FINAL` is not required, and signing status does not belong on the working `packet_form`. The existing `SIGNED` value is unused rather than legacy behavior and should be removed during implementation if dependency and data checks confirm that it is unused. Exact migration mechanics remain technical design, and `VOID` is not resolved by this decision.
 
+* **C. Resolved 2026-09-05 — participant identity and eligibility.** Participants may reference a User, Contact, both, or neither; ad hoc participants require name and email; roles are optional; email is non-unique and never silently links identities; historical values freeze at activation; and all participants are eligible in parallel without configurable signing order. Exact schema and authentication mechanics remain technical design.
+
 **Remaining open questions:**
 
 The following remain unresolved except where a later decision has narrowed them. They must not be treated as decided by this 2026-08-19 checkpoint.
 
 * **A. Final immutable-version schema.** The exact table name, columns, constraints, storage-path scheme, parent-version implementation, and RLS rules remain to be designed.
-
-* **C. Participant schema details.** The final schema for User/Contact relationships, participant roles, identity matching, and whether both a User reference and a Contact reference may coexist has not yet been finalized. The principle of flexible identity relationships is settled; exact constraints are not.
 
 * **D. Temporary authentication/session terminology and final schema names.** The durable overall object is now named **Signing** / **Signings** (see the 2026-08-21 decision). **Envelope** is explicitly rejected. The exact terminology for temporary authentication/browser-session objects remains open; that runtime state is not necessarily a durable domain object named “Signing Session.” Final schema/table names remain open until technical design is completed.
 
