@@ -1,10 +1,16 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-08-18 (packet property-picker search + assignment-mode fixes live in production)
+**As of:** 2026-09-05 (Signing snapshot boundary and working-document state responsibility settled; native e-signature architecture design continues; packet property-picker search + assignment-mode fixes remain live in production)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
+
+### Native e-signature architecture design (2026-08-19)
+
+**Status:** Design in progress. **No signing implementation, migration, or schema change.**
+
+A read-only immutable-document audit is complete. Durable architecture decisions are recorded in `decisions.md` (working `packet_form`, future one-to-many immutable rendered versions, transaction-scoped signing participants, dedicated signing experience). The durable signing-workflow object is named **Signing** / **Signings**, and Signings may be remote or in person on a shared device. **Create Signing** is the immutable snapshot boundary: `FINAL` is not required, the working document may remain editable, and signing status belongs to the Signing domain rather than `packet_forms.document_state`. The unused pre-existing `SIGNED` value is a later implementation/migration concern after dependency checks; no schema change has been made. Open questions remain, including the final version schema, participant details, temporary authentication/session terminology, copy-recipient storage, exact table names, and the separate future meaning of `VOID`. Next work is continued technical/domain design before implementation.
 
 ### Packet property picker production rollout (2026-08-18)
 
@@ -1082,19 +1088,20 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
-2. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
-3. Monitor real-world Lee-only production use; review runtime logs periodically
-4. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
-5. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
-6. Add error tracking before broader multi-user exposure
-7. Establish production backup/restore procedures
-8. Consider paid tiers only when recovery, usage, or SLA requirements justify them
-9. Review Mapbox domain restrictions if map behavior fails on the custom domain
+1. **Native e-signature:** continue technical/domain design from the 2026-08-19 architecture checkpoint in `decisions.md`. Do not begin signing implementation, migrations, or schema changes yet.
+2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
+3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
+4. Monitor real-world Lee-only production use; review runtime logs periodically
+5. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
+6. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
+7. Add error tracking before broader multi-user exposure
+8. Establish production backup/restore procedures
+9. Consider paid tiers only when recovery, usage, or SLA requirements justify them
+10. Review Mapbox domain restrictions if map behavior fails on the custom domain
 
 ## Future Product Roadmap
 
-Two **major** planned feature areas. They are related through the packet/document model and the existing `packet_form_annotations` infrastructure, but they are **distinct product efforts**. Neither is implemented today.
+Two **major** planned feature areas. They are related through the packet/document model and the existing `packet_form_annotations` infrastructure, but they are **distinct product efforts**. Neither is implemented today. Native e-signature architecture design is in progress; durable decisions and remaining open questions are in `decisions.md`.
 
 ### Native E-Signature Workflow
 
@@ -1230,6 +1237,7 @@ See `decisions.md` for architectural decisions. Highlights:
 - Invitation-only access; invite confirmation uses token-hash `verifyOtp` (PKCE preserved separately); HostPapa DNS changes limited to intended subdomain records
 - Packet-form annotations (`typed_signature`, `date_signed`) are packet-document-specific, not catalog fields; future markup and e-signature should extend that model
 - Native e-signature is planned in-app; Authentisign remains prior research / current inventory-exclusion policy, not a committed vendor
+- Native e-signature architecture decisions are in `decisions.md`: working `packet_form`, future immutable rendered versions, dedicated signing experience; durable workflow object named Signing / Signings (2026-08-21); remote and in-person modes (2026-08-24); Create Signing as the immutable snapshot boundary with no `FINAL` prerequisite (2026-09-05); schema and implementation have not begun
 - One-off imported packet PDFs should not require the reusable form-library workflow; quick PDF annotations are not reusable fields
 - Packet existing-property search shows matches only after the user types; a blank query does not list all properties, and the selected property stays independent of the search box
 - Packet assigned property is independent of the property-entry UI mode; toggling Select existing / Create new does not clear or replace the assignment

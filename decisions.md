@@ -12,6 +12,195 @@ Each decision should include:
 
 ---
 
+## Creating a Signing snapshots the working document without requiring Final
+
+**Date:** 2026-09-05
+
+**Decision:**
+Creating a **Signing** is the immutable snapshot boundary. The action captures the exact current state of each included working `packet_form` as an immutable rendered document version for that Signing. A `packet_form` does **not** need to be in `FINAL` document state before this action, and creating or completing a Signing does not change the working `packet_form` to `SIGNED`.
+
+The working document remains independent from the captured version. It may remain open and editable after the Signing is created. Later edits do not change the Signing's immutable version. If the revised document is sent for signatures later, the system creates another immutable version and ordinarily another Signing. Existing signed, partially signed, cancelled, or abandoned versions remain unchanged.
+
+If the editor contains unsaved changes when the user chooses **Create Signing**, that action must establish one clean persisted snapshot point before rendering. From the user's perspective, the current edits are secured and the immutable version is created as one action. Technical design must prevent the rendered version from mixing values from different saves or revisions. The exact concurrency mechanism is not defined here.
+
+`packet_forms.document_state` describes the working document, not signing progress. `FINAL` remains an optional working-document lock that an agent may use to prevent ordinary editing; it is not a signing prerequisite. Signing progress and completion belong to the Signing domain and its participants and immutable document versions.
+
+The existing `SIGNED` value is an unused, pre-existing `packet_forms.document_state` schema value; there is no current signing behavior or UI transition attached to it. It should not be preserved merely because it exists. During implementation design, dependency and data checks must confirm whether it is unused; if so, it should be removed through an appropriate forward migration together with corresponding lifecycle definitions. This documentation decision does not perform or authorize that migration. The separate meaning and future of `VOID` are not decided here.
+
+**Reason:**
+Requiring an agent to mark a working document Final immediately before creating a Signing would add a state transition without improving the evidentiary boundary. The durable fact is the exact immutable version captured for the Signing. Keeping working-document state separate allows an agent to continue editing, correct a document, and create later immutable versions without altering the history of any earlier Signing.
+
+**Consequences:**
+
+* **Create Signing** must save or otherwise persist current editor changes before capturing one internally consistent immutable version.
+* The editor may remain open after snapshot creation; subsequent edits affect only the working document unless the user deliberately creates another Signing.
+* `DRAFT` and `FINAL` remain working-document concepts. `FINAL` is optional for creating a Signing.
+* Signing status must not be inferred from or stored as `packet_forms.document_state = SIGNED` in the future signing architecture.
+* Open question B from the 2026-08-19 native e-signature architecture decision is resolved at the domain level. Exact implementation and migration details remain part of later technical design.
+* No application code, schema, migration, storage, route, or configuration change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Native e-signature uses one working packet form, many immutable versions, and a dedicated signing experience** (2026-08-19); **Packet Form Document Lifecycle** (2026-07-17)
+* No SQL migration; no schema change
+
+---
+
+## A Signing may be completed remotely or in person on a shared device
+
+**Date:** 2026-08-24
+
+**Decision:**
+A durable **Signing** may be completed through either of two participant experiences:
+
+* **Remote Signing** — participants receive invitations and authenticate remotely according to rules established in later technical design.
+* **In-Person Signing** — participants sign sequentially on a shared device under the agent's supervision, without requiring email invitations, emailed links, or one-time passcodes merely to move the device from one participant to the next.
+
+Both modes use the same Signing, signing-participant, signing-event, and immutable-document-version concepts. In-person signing is not a separate document type and does not bypass the signing ceremony. Each participant must have a distinct handoff and signature-adoption step, must act only in that participant's assigned fields, and must affirm completion before the device advances to another participant. A participant who is also the agent completes their own participant turn rather than using ordinary document-editing behavior as a substitute for the signing ceremony.
+
+The signing record must preserve which participant completed each field, the participant's adopted signature, meaningful action timestamps and ordering, affirmative electronic-record/signature consent, the exact immutable document version reviewed and signed, and that the Signing used an agent-supervised in-person mode when applicable. Temporary shared-device/browser state remains runtime state and is not thereby established as a durable domain object named “Signing Session.”
+
+This decision settles the availability and high-level boundaries of in-person signing. It does **not** define the exact handoff UX, identity-confirmation language, consent text, session controls, authentication rules, database schema/table names, or storage design.
+
+**Reason:**
+An agent may be physically present with a buyer, seller, tenant, landlord, or other participant who is ready to sign immediately. Requiring the parties to print and scan documents—or to exchange email invitations and one-time passcodes while sharing the same laptop—adds friction without improving that in-person experience. A controlled participant-by-participant ceremony preserves the convenience of shared-device signing while retaining clear attribution and an auditable record that the participant, rather than the logged-in agent, adopted and applied the signature.
+
+**Consequences:**
+
+* Future signing UX must support choosing an appropriate remote or in-person participant experience without creating a different durable object for in-person use.
+* In-person signing must include an explicit participant handoff; the logged-in agent's application identity must not silently stand in for another participant.
+* In-person mode does not require email delivery or remote OTP solely for shared-device access, but later technical design must still establish appropriate identity confirmation, consent, access isolation, and session-safety controls.
+* All signing modes continue to consume immutable document versions, preserve append-only signing events, and keep the signing experience separate from normal packet editing.
+* Existing open questions about exact authentication/browser-session terminology and final schema/table names remain open.
+* No implementation, schema, migration, route, storage, or configuration design is authorized by this decision.
+
+**Related files or migrations:**
+
+* This file: **The durable signing-workflow object is named Signing / Signings** (2026-08-21); **Native e-signature uses one working packet form, many immutable versions, and a dedicated signing experience** (2026-08-19); **Native e-signature is a planned in-app packet workflow** (2026-08-16)
+* No SQL migration; no schema change
+
+---
+
+## The durable signing-workflow object is named Signing / Signings
+
+**Date:** 2026-08-21
+
+**Decision:**
+The durable object representing a specific set of documents sent through an electronic signing workflow is named **Signing** (singular user-facing/domain noun) and **Signings** (plural / feature-section noun).
+
+This terminology replaces the previously open naming question around terms such as envelope, signing request, signing session, signing package, dispatch, folio, signet, and other coined terms. **Envelope** is explicitly rejected.
+
+Do **not** collapse all signing-related concepts into this one term. The following conceptual distinctions remain:
+
+* **Signing** — the durable overall signing workflow/object involving one or more documents and one or more participants.
+* **Signing participant** — a person participating in that Signing.
+* **Signing event** — an immutable historical action/event within the Signing.
+* **Signer browser/authentication session** — temporary runtime/authentication state and **not necessarily a durable domain object named “Signing Session.”**
+* **Immutable document version** — the exact rendered document artifact associated with signing activity.
+
+The exact database table names remain open unless existing naming conventions make an obvious later choice. Do not create schema names merely because the product noun is now settled. This decision does **not** authorize implementation, schema, migrations, or storage-path design.
+
+**Reason:**
+The governing usability principle is: an agent who has never used Harbaugh Forms should be able to see the object name and quickly understand what it represents. “Signing” passes that test better than the alternatives and uses ordinary, generic real-estate/e-signature language.
+
+Intended UI language includes Create Signing, Send Signing, Open Signing, Signing In Progress, Signing Complete, Cancel Signing, Signings, “The signing is almost complete,” and “I sent the signing to the sellers.”
+
+The fact that other real-estate/e-signature products may also use the generic word “Signing” is not a reason to avoid it.
+
+**Consequences:**
+
+* Use **Signing** / **Signings** in future product, UI, and domain documentation for the durable overall signing-workflow object.
+* Do not use envelope, signing request, signing package, dispatch, folio, signet, or other coined terms as the name of that object.
+* Do not treat a signer browser/authentication session as a durable domain object named “Signing Session” merely because the overall object is named Signing.
+* Exact schema/table names remain open until technical design is completed. Do not invent table names from this product noun.
+* Narrows open question D in the 2026-08-19 native e-signature architecture decision. Does **not** resolve open questions A, B, C, or E.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Native e-signature uses one working packet form, many immutable versions, and a dedicated signing experience** (2026-08-19); **Native e-signature is a planned in-app packet workflow** (2026-08-16)
+* No SQL migration; no schema change
+
+---
+
+## Native e-signature uses one working packet form, many immutable versions, and a dedicated signing experience
+
+**Date:** 2026-08-19
+
+**Decision:**
+This is a durable design checkpoint for native e-signature architecture. It records settled product/architecture principles before the signing subsystem is designed in further technical detail. It does **not** authorize implementation, schema, migrations, or storage-path design. Product terminology for the durable overall signing-workflow object is now settled as **Signing** / **Signings** (see the 2026-08-21 decision); remaining signing-related terms are listed under Open questions.
+
+A 2026-08-18 read-only audit of packet forms, generated PDFs, document states, and storage confirmed that a `packet_form` is the logical document instance in a packet, not an immutable rendered PDF, and that filled PDFs are generated on demand rather than stored as historical artifacts. The principles below follow from that investigation and from subsequent product direction. They refine, and do not replace, the 2026-08-16 decision that native e-signature is a planned in-app packet workflow.
+
+**Settled:**
+
+1. **`packet_form` remains the logical working document.** A `packet_form` continues to represent the logical/current document instance within a packet. It is not itself an immutable rendered PDF version. The existing packet / form / field-instance architecture remains the working-document layer.
+
+2. **One `packet_form` may have many immutable rendered versions.** Future signing functionality will introduce a one-to-many relationship conceptually like `packet_form` → many immutable rendered document versions. Each immutable version represents the exact PDF bytes that existed at a particular point in the document's history. The final table name and schema are **not** defined here.
+
+3. **Signing versions preserve exact historical evidence.** An immutable rendered version must eventually preserve enough information to establish exactly what document existed at that moment, including at minimum the exact stored PDF bytes and a cryptographic hash such as SHA-256. Historical versions are never overwritten. The hash is for document identification, integrity, and provenance. It is not a claim that copies of the file outside Harbaugh Forms cannot be altered.
+
+4. **Multiple signed versions are allowed.** A single logical `packet_form` may legitimately have multiple signed or partially signed immutable versions over time. Examples include correcting a contract and obtaining new signatures; changing one or more terms and obtaining new initials; abandoning an earlier signing attempt and fully executing a later version; and entering a legitimate post-signature value such as an effective date and creating a derivative version. Harbaugh Forms should preserve the history and provenance of these versions rather than trying to prevent them. Harbaugh Forms also should not attempt to determine which of several signed versions is legally controlling. Its responsibility is to preserve an accurate history of what occurred in the system.
+
+5. **Legitimate later changes create derivative versions.** A signed historical version remains immutable. If the working `packet_form` later changes legitimately, a newly rendered version is created rather than overwriting the prior signed artifact. Future versioning design should support parent/derivative provenance where appropriate. The exact parent-version representation is **not** decided here.
+
+6. **A signing participant is a transaction-scoped concept.** Do not equate a signer with either an application User or a Contact. A signing participant is a person participating in a particular Signing. A signing participant may reference a Harbaugh Forms User, a Contact, both, or, in narrowly permitted situations, neither. The data model must remain flexible enough for a person to occupy different roles at different times. Example: Lee Harbaugh may simultaneously be a Harbaugh Forms User, the listing agent on the transaction, and a signing participant who must sign the listing agreement. Do not force such a person into only one identity category. Exact participant-schema constraints are **not** decided here.
+
+7. **Historical participant identity is snapshotted.** Signing records must not depend solely on live User or Contact values. Important historical identity/contact information used for a Signing must be preserved as a snapshot, such as name at send/signing time, the email address used for the signing invitation, the relevant signing/transaction role, and other identity information later determined to be evidentially important. If the linked User or Contact is edited later, the historical signing record must remain unchanged.
+
+8. **Signing links always enter a dedicated signing experience.** The recipient signing experience will be a dedicated, reduced signing UI, likely under a route namespace such as `/sign/...`. A signing link should enter this signing experience even when the signing participant is also an authenticated Harbaugh Forms User. Existing app authentication may provide additional identity context, but it must not bypass the signing ceremony or redirect the person directly into the normal agent application. Signing context and normal application context are separate.
+
+9. **Signing mode never edits its source document.** The signing UI consumes an immutable document version. It must not edit that immutable signing version or the underlying working `packet_form`. If a signing participant is also a Harbaugh Forms User and discovers a document problem while signing, they may exit signing and return to the regular packet/application workflow. Any correction occurs against the working document outside the signing ceremony and may result in a new immutable document version and/or a new Signing.
+
+10. **Partial signing activity must be preserved.** Future signing architecture will use append-only signing events. Each meaningful signature or initial action should be preserved individually so that abandoned or interrupted signing sessions retain an accurate history of what the participant completed. A participant may resume later according to future authentication/session rules. The event-table schema is **not** defined here.
+
+11. **Copy-only recipients should not universally require Contact records.** A person who must actually participate in a signing workflow should normally relate to an appropriate User or Contact when one exists. However, a person who merely receives a completed copy—for example an attorney, broker, compliance recipient, or other forwarding recipient—should not necessarily be forced into the Contacts system. The future UI may offer an option such as `Save as Contact`, but creating a Contact should not be a universal prerequisite for copy-only delivery. The final copy-recipient storage model is **not** decided here.
+
+12. **One application, separate signing experience.** Harbaugh Forms will remain one product/codebase rather than creating a separate Authentisign-style application. The signing subsystem should nevertheless be treated as a bounded domain with a focused signer-facing UI distinct from the normal agent/admin application shell. The intended conceptual split is: regular Harbaugh Forms UI for agents/users; dedicated signer UI for signing participants; shared underlying database/document/version architecture.
+
+**Resolved since this checkpoint:**
+
+* **B. Resolved 2026-09-05 — `packet_forms.document_state`.** Creating a Signing is the immutable snapshot boundary; `FINAL` is not required, and signing status does not belong on the working `packet_form`. The existing `SIGNED` value is unused rather than legacy behavior and should be removed during implementation if dependency and data checks confirm that it is unused. Exact migration mechanics remain technical design, and `VOID` is not resolved by this decision.
+
+**Remaining open questions:**
+
+The following remain unresolved except where a later decision has narrowed them. They must not be treated as decided by this 2026-08-19 checkpoint.
+
+* **A. Final immutable-version schema.** The exact table name, columns, constraints, storage-path scheme, parent-version implementation, and RLS rules remain to be designed.
+
+* **C. Participant schema details.** The final schema for User/Contact relationships, participant roles, identity matching, and whether both a User reference and a Contact reference may coexist has not yet been finalized. The principle of flexible identity relationships is settled; exact constraints are not.
+
+* **D. Temporary authentication/session terminology and final schema names.** The durable overall object is now named **Signing** / **Signings** (see the 2026-08-21 decision). **Envelope** is explicitly rejected. The exact terminology for temporary authentication/browser-session objects remains open; that runtime state is not necessarily a durable domain object named “Signing Session.” Final schema/table names remain open until technical design is completed.
+
+* **E. Copy-recipient storage.** The principle that copy-only recipients need not become Contacts is settled. The exact model for storing those recipients remains open.
+
+**Reason:**
+Native e-signature cannot be implemented on today’s on-demand filled PDF, because that output is disposable and is not a historical artifact. Real Texas transactions also produce more than one signed or partially signed artifact for the same logical document (corrections, new initials, abandoned attempts, post-signature effective dates). Harbaugh Forms should keep an accurate provenance trail rather than collapsing that history into a single current file or choosing which version is legally controlling. Signer identity is a workflow role, not a User-or-Contact exclusive category, and the signing ceremony must stay distinct from ordinary agent application editing.
+
+**Consequences:**
+
+* Continue technical and domain design from this checkpoint before any signing implementation.
+* Do not begin signing migrations, tables, RLS, storage-path schemes, or application routes on the strength of this decision.
+* Do not treat `packet_form` as the immutable signed PDF. Do not model historical versions as additional ACTIVE `packet_forms` of the same form.
+* Do not invent a final version/participant/event/copy-recipient schema in later documentation until those open questions are resolved.
+* Product terminology for the durable overall object is **Signing** / **Signings** (2026-08-21). Envelope is rejected. Temporary authentication/session terminology and exact table names remain open (question D).
+* Current packet-form lifecycle behavior remains unchanged during this documentation phase: the UI does not enter `SIGNED` / `VOID`. At the domain level, question B is resolved by the 2026-09-05 snapshot-boundary decision; no schema or lifecycle implementation change has yet been made. See **Packet Form Document Lifecycle**.
+* Vendor choice, certificate/crypto design beyond storing a document hash such as SHA-256, remote-signer authentication/session rules, and exact annotation-type names remain open, as in the 2026-08-16 native e-signature decision.
+* Authentisign remains prior research and the current inventory-exclusion policy, not a committed vendor and not a separate product to recreate.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only; Future Product Roadmap)
+* This file: **The durable signing-workflow object is named Signing / Signings** (2026-08-21); **Native e-signature is a planned in-app packet workflow** (2026-08-16); **Packet Form Document Lifecycle** (2026-07-17); **Packet Field-Instance Snapshots**; **One-off packet PDFs and document annotations are not reusable form-catalog fields**
+* `lib/types/packet-form-lifecycle.ts`
+* `lib/packet-form-lifecycle.ts`
+* `lib/packet-form-download.ts`
+* `lib/fill-packet-form-pdf.ts`
+* No SQL migration; no schema change
+
+---
+
 ## Packet assigned property is independent of property-entry UI mode
 
 **Date:** 2026-08-18
@@ -118,7 +307,7 @@ Automatic fill is used only where a live source’s meaning matches the blank. A
 **Decision:**
 Harbaugh Forms will eventually provide a **native e-signature workflow** so users can prepare packet documents for signature inside the product. Signature preparation should assign signature and initial locations to specific parties/signers. The same workflow should apply to documents generated from Harbaugh Forms templates/collections **and** to one-off PDFs imported into a packet. Design must distinguish a **placed** signature/initial annotation (already completed on the document) from a **signer field** (a location where a named signer still needs to sign or initial). Signature locations belong on the packet/document (annotation) model, not on the reusable form-field catalog. Future implementation should treat auditability as a requirement: signer identity, document version, timestamps, completed-signature state, and a reliable record of what was signed.
 
-This decision does **not** select an external e-signature vendor, cryptographic architecture, signing-ceremony UX, or database enum set. Prior documentation treated **Authentisign** as the expected handler for signature/initial lines (catalog extraction skips those fields; deferred “Authentisign integration” was listed as the path that might set packet-form `document_state = SIGNED`). That research and the current inventory-exclusion policy remain valid as historical/operational context. They are **not** a committed vendor or architecture for this product capability.
+This decision does **not** select an external e-signature vendor, cryptographic architecture, or database enum set. High-level signing-architecture principles (working `packet_form` versus immutable rendered versions, transaction-scoped participants, dedicated signing experience, append-only signing events) are recorded separately in the 2026-08-19 native e-signature architecture decision. Prior documentation treated **Authentisign** as the expected handler for signature/initial lines (catalog extraction skips those fields; deferred “Authentisign integration” was listed as the path that might set packet-form `document_state = SIGNED`). That research and the current inventory-exclusion policy remain valid as historical/operational context. They are **not** a committed vendor or architecture for this product capability.
 
 **Reason:**
 Agents need to collect signatures and initials on both generated forms and received third-party PDFs without routing every location through Map Fields / the Global field catalog. Typed Fill Form signatures already exist as packet-form annotations and are explicitly not Authentisign placeholders; a full signing workflow is still missing (`SIGNED` exists on packet forms but the UI does not enter it). Committing a vendor now would over-constrain a feature that is not being implemented in this pass.
@@ -128,8 +317,8 @@ Agents need to collect signatures and initials on both generated forms and recei
 * Treat native e-signature as a **major** future product area, related to but distinct from imported-document markup tools.
 * Do not implement signature locations as reusable `fields` / `field_instances` solely so they can be signed.
 * Preserve Authentisign-exclusion behavior for standard form inventory/extraction until a signing design replaces or supplements it.
-* Packet-form lifecycle `SIGNED` / `VOID` remain unused by UI until a real signing workflow exists; do not invent a parallel document-state model in documentation.
-* Vendor choice, certificate/crypto design, remote signer authentication, and exact annotation-type names remain open.
+* Packet-form lifecycle `SIGNED` / `VOID` remain unused by UI. The 2026-09-05 snapshot-boundary decision resolves that future signing status does not belong in `packet_forms.document_state`; no schema or implementation change has yet been made, and the separate future of `VOID` remains open.
+* Vendor choice, certificate/crypto design, remote signer authentication/session rules, and exact annotation-type names remain open. Dedicated signing-experience principles are recorded in the 2026-08-19 architecture decision.
 
 **Related files or migrations:**
 
@@ -1077,7 +1266,7 @@ Refresh Values and open-time initialization can rewrite packet snapshots. Agents
 * `DRAFT`: editable; Refresh Values requires confirmation; Mark Final is available.
 * `FINAL`: read-only values; Refresh blocked; ordinary open loads existing instances only (no inserts/updates); Reopen to Draft is available and does not recalculate.
 * Mark Final may insert genuinely missing mapped instances using the packet owner’s resolution context, then sets `document_state = FINAL` without updating existing instances.
-* `SIGNED` / `VOID`: read-only; no UI transition into these states until a real signing workflow exists; Signed cannot be reopened. Native in-app e-signature is the planned product capability (2026-08-16); Authentisign remains prior research, not a committed vendor. Do not change `document_state` values in this documentation pass.
+* `SIGNED` / `VOID`: currently read-only, with no UI transition into either state. Native in-app e-signature is the planned product capability (2026-08-16); Authentisign remains prior research, not a committed vendor. **Resolved for future signing architecture on 2026-09-05:** Creating a Signing captures an immutable version without requiring `FINAL`; signing status belongs to the Signing domain, not the working `packet_form`. `SIGNED` is an unused pre-existing schema value, not legacy signing behavior. If implementation-time dependency and data checks confirm it is unused, remove it through a forward migration and update lifecycle definitions. No schema change is authorized by this documentation decision. The separate meaning and future of `VOID` remain open.
 * Authenticated field-instance and field-instance-mapping INSERT/UPDATE require an ACTIVE DRAFT parent form.
 * Privileged sessions (`auth.uid()` null) may still perform migration/admin SQL.
 * Future enhancement: before/after field-diff preview prior to Refresh Values.
