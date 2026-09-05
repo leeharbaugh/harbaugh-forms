@@ -12,6 +12,55 @@ Each decision should include:
 
 ---
 
+## Signing lifecycle distinguishes setup, active signing, completion, decline, and cancellation
+
+**Date:** 2026-09-05
+
+**Decision:**
+A durable **Signing** has five user-facing/domain lifecycle states:
+
+* **Draft** — the Signing and its immutable document version or versions exist, but the agent is still configuring participants, signing order, and assigned signer fields. No participant may sign yet.
+* **In Progress** — the Signing has been activated. Remote invitations may have been sent, or an in-person signing ceremony may have started. The document set, participant roster, signing order, and assigned signer fields are frozen.
+* **Complete** — every required participant has completed every required signing action.
+* **Declined** — a participant affirmatively refused to sign. The participant may provide an optional reason. No further signing is allowed within that Signing.
+* **Cancelled** — the agent ended the Signing before completion.
+
+The ordinary lifecycle is **Draft → In Progress → Complete**. The agent may move a Draft or In Progress Signing to Cancelled. A participant decline moves an In Progress Signing to Declined. Complete, Declined, and Cancelled are terminal outcomes for that Signing.
+
+All events and evidence already collected remain preserved when a Signing is Declined or Cancelled, including partial signatures or initials, consent records, participant actions, timestamps, and immutable document versions. A material correction after activation requires a new Signing rather than changing the activated Signing.
+
+**Ready**, **Sent**, **Partially Signed**, and **Expired** are not primary durable Signing states:
+
+* Ready is validation derived from whether a Draft has all required setup.
+* Sent is a remote-delivery event or presentation status and does not apply universally to in-person signing.
+* Partially Signed is derived from participant/action progress while the Signing remains In Progress.
+* Expired ordinarily describes an invitation or access credential. An expired link may be replaced without changing the Signing's durable lifecycle state.
+
+**Void** is not the Signing's cancellation term. The user-facing workflow action is **Cancel Signing**, producing a Cancelled Signing. This does not resolve whether the existing working-document `VOID` value has a separate future purpose.
+
+This decision establishes domain and user-facing lifecycle semantics. It does not prescribe database enum names, tables, columns, transition implementation, invitation-expiration policy, or exact participant-status schema.
+
+**Reason:**
+The lifecycle must work consistently for remote and in-person Signings while clearly distinguishing who ended an unsuccessful workflow. Cancelled records an agent decision; Declined records a participant's affirmative refusal. Delivery and partial-progress details should not obscure the small set of durable workflow outcomes.
+
+**Consequences:**
+
+* Participants cannot sign while a Signing is Draft.
+* Activating a Signing freezes its documents and signing configuration. Changes to those materials require cancelling or otherwise terminating that Signing and creating another one.
+* A participant decline terminates further signing in that Signing and is distinguishable from agent cancellation.
+* Terminal outcomes never erase partial signing evidence or append-only events.
+* UI may display derived readiness, delivery, partial-progress, and access-expiration information without turning those into primary Signing lifecycle states.
+* Exact schema names and enforcement mechanisms remain open until technical design.
+* No application code, schema, migration, storage, route, or configuration change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Creating a Signing snapshots the working document without requiring Final** (2026-09-05); **A Signing may be completed remotely or in person on a shared device** (2026-08-24)
+* No SQL migration; no schema change
+
+---
+
 ## Creating a Signing snapshots the working document without requiring Final
 
 **Date:** 2026-09-05

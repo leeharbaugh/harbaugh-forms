@@ -1,6 +1,6 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-05 (Signing snapshot boundary and working-document state responsibility settled; native e-signature architecture design continues; packet property-picker search + assignment-mode fixes remain live in production)
+**As of:** 2026-09-05 (Signing snapshot boundary, lifecycle, and working-document state responsibility settled; native e-signature architecture design continues; packet property-picker search + assignment-mode fixes remain live in production)
 
 ## Current State
 
@@ -10,7 +10,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Status:** Design in progress. **No signing implementation, migration, or schema change.**
 
-A read-only immutable-document audit is complete. Durable architecture decisions are recorded in `decisions.md` (working `packet_form`, future one-to-many immutable rendered versions, transaction-scoped signing participants, dedicated signing experience). The durable signing-workflow object is named **Signing** / **Signings**, and Signings may be remote or in person on a shared device. **Create Signing** is the immutable snapshot boundary: `FINAL` is not required, the working document may remain editable, and signing status belongs to the Signing domain rather than `packet_forms.document_state`. The unused pre-existing `SIGNED` value is a later implementation/migration concern after dependency checks; no schema change has been made. Open questions remain, including the final version schema, participant details, temporary authentication/session terminology, copy-recipient storage, exact table names, and the separate future meaning of `VOID`. Next work is continued technical/domain design before implementation.
+A read-only immutable-document audit is complete. Durable architecture decisions are recorded in `decisions.md` (working `packet_form`, future one-to-many immutable rendered versions, transaction-scoped signing participants, dedicated signing experience). The durable signing-workflow object is named **Signing** / **Signings**, and Signings may be remote or in person on a shared device. **Create Signing** is the immutable snapshot boundary: `FINAL` is not required, the working document may remain editable, and signing status belongs to the Signing domain rather than `packet_forms.document_state`. The Signing lifecycle is **Draft → In Progress → Complete**, with distinct terminal **Declined** and **Cancelled** outcomes; activation freezes signing materials and configuration, and terminal outcomes preserve partial evidence. The unused pre-existing `SIGNED` value is a later implementation/migration concern after dependency checks; no schema change has been made. Open questions remain, including the final version schema, participant details, temporary authentication/session terminology, copy-recipient storage, exact table names, and the separate future meaning of `VOID`. Next work is continued technical/domain design before implementation.
 
 ### Packet property picker production rollout (2026-08-18)
 
@@ -1237,7 +1237,7 @@ See `decisions.md` for architectural decisions. Highlights:
 - Invitation-only access; invite confirmation uses token-hash `verifyOtp` (PKCE preserved separately); HostPapa DNS changes limited to intended subdomain records
 - Packet-form annotations (`typed_signature`, `date_signed`) are packet-document-specific, not catalog fields; future markup and e-signature should extend that model
 - Native e-signature is planned in-app; Authentisign remains prior research / current inventory-exclusion policy, not a committed vendor
-- Native e-signature architecture decisions are in `decisions.md`: working `packet_form`, future immutable rendered versions, dedicated signing experience; durable workflow object named Signing / Signings (2026-08-21); remote and in-person modes (2026-08-24); Create Signing as the immutable snapshot boundary with no `FINAL` prerequisite (2026-09-05); schema and implementation have not begun
+- Native e-signature architecture decisions are in `decisions.md`: working `packet_form`, future immutable rendered versions, dedicated signing experience; durable workflow object named Signing / Signings (2026-08-21); remote and in-person modes (2026-08-24); Create Signing as the immutable snapshot boundary with no `FINAL` prerequisite, plus Draft / In Progress / Complete / Declined / Cancelled lifecycle semantics (2026-09-05); schema and implementation have not begun
 - One-off imported packet PDFs should not require the reusable form-library workflow; quick PDF annotations are not reusable fields
 - Packet existing-property search shows matches only after the user types; a blank query does not list all properties, and the selected property stays independent of the search box
 - Packet assigned property is independent of the property-entry UI mode; toggling Select existing / Create new does not clear or replace the assignment
