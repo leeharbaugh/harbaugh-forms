@@ -266,32 +266,73 @@ async function main() {
     ok("failed validation left form DRAFT with no FORM_PUBLISHED audit");
   }
 
-  // Direct ordinary table update cannot bypass
+  // Direct browser table writes cannot bypass the trusted publication path or
+  // forge lifecycle history. Use a normal authenticated session (not the
+  // service-role client) even though this fixture is Global and Lee is an app
+  // admin: the database guard must apply to every browser role.
   {
-    const userLike = createClient(url, anonKey!, {
+    const { data: linkData, error: linkError } =
+      await admin.auth.admin.generateLink({
+        type: "magiclink",
+        email: "lee@leeharbaugh.com",
+      });
+    if (linkError || !linkData?.properties?.hashed_token) {
+      fail(`could not mint session for lifecycle writer test: ${linkError?.message}`);
+    }
+    const browserClient = createClient(url, anonKey!, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    // Without a session, RLS should block; even with service we test trigger for auth path later.
-    const { error } = await admin
+    const { error: otpError } = await browserClient.auth.verifyOtp({
+      token_hash: linkData.properties.hashed_token,
+      type: "email",
+    });
+    if (otpError) {
+      fail(`browser session verify failed: ${otpError.message}`);
+    }
+
+    const { error: publishError } = await browserClient
       .from("forms")
       .update({ publication_state: "PUBLISHED" })
       .eq("id", formId);
-    // Service role bypasses trigger auth.uid() null path — so this MAY succeed.
-    // Revert if it did; the authenticated-path test is the authoritative one.
-    if (!error) {
-      await admin
-        .from("forms")
-        .update({
-          publication_state: "DRAFT",
-          published_at: null,
-          published_by_user_id: null,
-        })
-        .eq("id", formId);
-      ok(
-        "service-role direct update can repair (auth.uid null bypass); reverted to DRAFT",
-      );
+    if (!publishError) {
+      fail("authenticated browser client directly published a form");
     }
-    void userLike;
+    const { data: stillDraft, error: draftError } = await admin
+      .from("forms")
+      .select("publication_state")
+      .eq("id", formId)
+      .single();
+    if (draftError || stillDraft?.publication_state !== "DRAFT") {
+      fail("blocked direct publish changed the form state");
+    }
+    ok(`authenticated direct publish rejected (${publishError.message})`);
+
+    const { error: eventError } = await browserClient
+      .from("form_state_events")
+      .insert({
+        form_id: formId,
+        event_type: "FORM_PUBLISHED",
+        from_status: "ACTIVE",
+        to_status: "ACTIVE",
+        from_publication_state: "DRAFT",
+        to_publication_state: "PUBLISHED",
+        reason: "forged browser event",
+        performed_by_user_id: LEE_USER_ID,
+        status: "ACTIVE",
+      });
+    if (!eventError) {
+      fail("authenticated browser client forged a lifecycle event");
+    }
+    const { count: forgedEventCount, error: eventCountError } = await admin
+      .from("form_state_events")
+      .select("id", { count: "exact", head: true })
+      .eq("form_id", formId)
+      .eq("reason", "forged browser event");
+    if (eventCountError || (forgedEventCount ?? 0) !== 0) {
+      fail("blocked lifecycle-event insert left a forged event behind");
+    }
+    ok(`authenticated lifecycle-event insert rejected (${eventError.message})`);
+    await browserClient.auth.signOut();
   }
 
   // Valid trusted publish

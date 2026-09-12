@@ -29,6 +29,29 @@ async function makePdfBytes(pageCount: number): Promise<Uint8Array> {
 }
 
 describe("secure publish source contracts", () => {
+  it("removes browser write access to lifecycle evidence and direct publication", () => {
+    const sql = readRepo(
+      "supabase/migrations/20260912150000_secure_form_lifecycle_writes.sql",
+    );
+    assert.match(
+      sql,
+      /revoke insert, update, delete on table public\.form_state_events from authenticated/i,
+    );
+    assert.match(
+      sql,
+      /drop policy if exists "form_state_events_insert"/i,
+    );
+    assert.match(
+      sql,
+      /revoke all on function public\.insert_form_state_event\(/i,
+    );
+    assert.match(sql, /app\.form_lifecycle_actor/);
+    assert.match(
+      sql,
+      /forms can only be published through the trusted publish operation/i,
+    );
+  });
+
   it("revokes client EXECUTE and grants only service_role in the new migration", () => {
     const sql = readRepo(
       "supabase/migrations/20260725180000_secure_publish_form_template.sql",

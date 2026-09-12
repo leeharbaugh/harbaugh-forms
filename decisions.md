@@ -2775,3 +2775,22 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 **Reason:** The previous `latest` declaration did not describe the actual locked framework version, which remained Next.js 16.2.10 and carried critical and high security advisories. A tested, explicit semver range keeps future installations on the patched release line while the lockfile makes deployment reproducible.
 
 **Consequences:** Framework updates require the same build and targeted regression checks before deployment. The remaining audit report is a moderate `baseline-browser-mapping` report whose resolved 2.11.22 version is outside the advisory's affected range; do not accept the package manager's unrelated downgrade proposal merely to silence that report. Reassess it when the upstream audit metadata or dependency chain changes.
+
+---
+
+## Security remediation — trusted form publication and lifecycle evidence
+
+**Date:** 2026-09-12
+
+**Decision:** Form publication is a trusted server/database operation, never a browser table update. `form_state_events` are generated only by the database lifecycle trigger and cannot be written, edited, or deleted by browser clients. The trusted publication operation supplies the verified actor in transaction-local state; the lifecycle transition rejects a direct `DRAFT` to `PUBLISHED` update when that verified actor is absent.
+
+**Reason:** Restricting the `publish_form_template` RPC alone did not prevent an authenticated client from updating `forms.publication_state` directly, and the prior table/RPC writer surface allowed forged lifecycle evidence. A published form must represent the validated publication workflow, and its history must reflect actual state changes.
+
+**Consequences:** The existing server action remains the publication entry point and continues to validate the PDF and structural fingerprint before calling the service-role RPC. Legitimate lifecycle events retain their automatic actor attribution. Future maintenance scripts requiring direct database repair remain privileged operations and should not be exposed as browser-accessible RPCs. This security change does not alter Native Signing design or implementation.
+
+**Related files:**
+
+* `supabase/migrations/20260912150000_secure_form_lifecycle_writes.sql`
+* `lib/forms/form-lifecycle-actions.ts`
+* `lib/forms/secure-publish.test.ts`
+* `scripts/validate-secure-publish-dev.ts`
