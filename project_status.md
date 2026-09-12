@@ -1292,13 +1292,15 @@ Deployment: commit `adb8f07` passed its isolated Vercel deployment check and was
 
 ## Security remediation — F2/F8 trusted form publication and lifecycle evidence (2026-09-12)
 
-**Status:** Implemented and applied to development only. Production rollout is pending review and a deliberate migration/deployment promotion.
+**Status:** Complete in development and production.
 
 The original secure-publish RPC was already restricted to the trusted server pathway, but a normal authenticated table update could still make an `ACTIVE + DRAFT` form `PUBLISHED`. Browser clients could also insert forged rows in `form_state_events`. The new forward-only migration removes browser write privileges and write policies from lifecycle evidence, revokes direct execution of its event-insert helper, and allows a publish transition only when the service-role-only publish operation has supplied its verified transaction actor.
 
 Development validation used disposable records and a normal authenticated browser session. Direct publication was rejected, direct lifecycle-event insertion was rejected, the form remained DRAFT after the failed bypass, and the trusted publish operation still succeeded with a correctly attributed `FORM_PUBLISHED` event. All disposable forms, packet forms, packets, and test storage objects were cleaned up.
 
 **Validation:** `npm run validate:secure-publish-dev`; `npm run test:secure-publish` (12); `npm run test:form-lifecycle` (47); `npx tsc --noEmit`; migration diff check.
+
+**Production rollout:** migration `20260912150000_secure_form_lifecycle_writes.sql` applied successfully after migration-history preflight. Vercel deployment `5PgDepMTRHsDDVweqwDespBdfZK5` for commit `27d0d1b` was manually promoted to `forms.harbaughrealestate.com` on 2026-09-12. The live sign-in page loaded successfully after promotion.
 
 **Related files:**
 
