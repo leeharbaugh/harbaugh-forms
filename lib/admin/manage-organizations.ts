@@ -1,5 +1,6 @@
 import "server-only";
 
+import { requireAppAdmin } from "@/lib/admin/require-app-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   validateOrganizationInput,
@@ -24,6 +25,7 @@ export type AdminOrganizationListItem = Organization & {
 export async function listAdminOrganizations(): Promise<
   AdminOrganizationListItem[]
 > {
+  await requireAppAdmin();
   const admin = createAdminClient();
 
   const { data: organizations, error } = await admin
@@ -118,6 +120,7 @@ export async function listAdminOrganizations(): Promise<
 export async function getAdminOrganization(
   organizationId: string,
 ): Promise<Organization | null> {
+  await requireAppAdmin();
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("organizations")

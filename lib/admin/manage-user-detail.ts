@@ -1,5 +1,6 @@
 import "server-only";
 
+import { requireAppAdmin } from "@/lib/admin/require-app-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatPhoneInput } from "@/lib/phone-format";
 import {
@@ -69,6 +70,7 @@ function nullableTrim(value: string | null | undefined): string | null {
 export async function getAdminUserDetail(
   userId: string,
 ): Promise<AdminUserDetail | null> {
+  await requireAppAdmin();
   const admin = createAdminClient();
 
   const { data: authData, error: authError } =
@@ -236,6 +238,7 @@ export async function upsertAdminAgentSettings(
 export async function listDirectoryUsersForMembershipPicker(): Promise<
   Array<{ id: string; label: string; email: string | null }>
 > {
+  await requireAppAdmin();
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("profiles")

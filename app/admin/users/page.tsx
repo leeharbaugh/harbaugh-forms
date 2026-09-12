@@ -1,5 +1,6 @@
 import { AdminUsersPage } from "@/components/admin/admin-users-page";
 import { listAdminUsers } from "@/lib/admin/list-users";
+import { requireAppAdminPage } from "@/lib/admin/require-app-admin-page";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -7,6 +8,7 @@ import { Suspense } from "react";
 async function AdminUsersContent() {
   // Admin directory is request-time only (Auth Admin API + profile merges).
   await connection();
+  await requireAppAdminPage();
 
   const users = await listAdminUsers();
   const admin = createAdminClient();

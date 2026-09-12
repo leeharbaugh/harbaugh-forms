@@ -1,5 +1,6 @@
 import "server-only";
 
+import { requireAppAdmin } from "@/lib/admin/require-app-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   MembershipRole,
@@ -22,6 +23,7 @@ export type AdminMembershipListItem = OrganizationMember & {
 export async function listOrganizationMemberships(
   organizationId: string,
 ): Promise<AdminMembershipListItem[]> {
+  await requireAppAdmin();
   const admin = createAdminClient();
 
   const { data: memberships, error } = await admin

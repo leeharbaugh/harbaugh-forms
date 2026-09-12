@@ -5,6 +5,7 @@ import {
   sanitizeAuditMetadata,
   type AuditMetadata,
 } from "@/lib/audit/sanitize";
+import { requireAppAdmin } from "@/lib/admin/require-app-admin";
 import { MANDATORY_AUDIT_ACTIONS } from "@/lib/audit/constants";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -67,7 +68,7 @@ function isMandatoryEvent(input: RecordAuditEventInput): boolean {
   return MANDATORY_AUDIT_ACTIONS.has(input.action);
 }
 
-export async function getAuditSettings(): Promise<AuditSettingsRow | null> {
+async function loadAuditSettings(): Promise<AuditSettingsRow | null> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("audit_settings")
@@ -80,8 +81,14 @@ export async function getAuditSettings(): Promise<AuditSettingsRow | null> {
   return (data as AuditSettingsRow | null) ?? null;
 }
 
+/** Read audit configuration for the administrator console. */
+export async function getAuditSettings(): Promise<AuditSettingsRow | null> {
+  await requireAppAdmin();
+  return loadAuditSettings();
+}
+
 export async function isOrdinaryAuditLoggingEnabled(): Promise<boolean> {
-  const settings = await getAuditSettings();
+  const settings = await loadAuditSettings();
   return settings?.ordinary_logging_enabled !== false;
 }
 
@@ -241,6 +248,7 @@ export async function listAuditEvents(filters: AuditEventListFilters = {}): Prom
   page: number;
   pageSize: number;
 }> {
+  await requireAppAdmin();
   const page = Math.max(1, filters.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, filters.pageSize ?? 25));
   const from = (page - 1) * pageSize;

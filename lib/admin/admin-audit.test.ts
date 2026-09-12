@@ -58,6 +58,55 @@ describe("mandatory audit actions", () => {
   });
 });
 
+describe("privileged admin readers", () => {
+  it("authorizes every exported service-role reader before it reads data", () => {
+    const readers = [
+      ["lib/admin/list-users.ts", "listAdminUsers"],
+      ["lib/admin/manage-organizations.ts", "listAdminOrganizations"],
+      ["lib/admin/manage-organizations.ts", "getAdminOrganization"],
+      ["lib/admin/manage-memberships.ts", "listOrganizationMemberships"],
+      ["lib/admin/manage-user-detail.ts", "getAdminUserDetail"],
+      ["lib/admin/manage-user-detail.ts", "listDirectoryUsersForMembershipPicker"],
+      ["lib/audit/record.ts", "getAuditSettings"],
+      ["lib/audit/record.ts", "listAuditEvents"],
+    ];
+
+    for (const [path, functionName] of readers) {
+      const source = readRepo(path);
+      assert.match(
+        source,
+        new RegExp(
+          `export async function ${functionName}[\\s\\S]*?await requireAppAdmin\\(\\)[\\s\\S]*?createAdminClient\\(`,
+        ),
+        `${path}:${functionName} must authorize before using the service-role client`,
+      );
+    }
+  });
+
+  it("authorizes each admin page before rendering privileged data", () => {
+    for (const path of [
+      "app/admin/users/page.tsx",
+      "app/admin/users/[id]/page.tsx",
+      "app/admin/organizations/page.tsx",
+      "app/admin/organizations/[id]/page.tsx",
+      "app/admin/audit/page.tsx",
+    ]) {
+      const source = readRepo(path);
+      assert.match(source, /requireAppAdminPage/);
+      assert.match(source, /await requireAppAdminPage\(\)/);
+    }
+  });
+
+  it("keeps ordinary audit logging independent from the admin-console reader", () => {
+    const source = readRepo("lib/audit/record.ts");
+    assert.match(source, /async function loadAuditSettings/);
+    assert.match(
+      source,
+      /isOrdinaryAuditLoggingEnabled[\s\S]*?loadAuditSettings\(\)/,
+    );
+  });
+});
+
 describe("abandoned brokerage office and TREC features removed", () => {
   it("does not expose Brokerages navigation", () => {
     const nav = readRepo("components/admin/admin-section-nav.tsx");

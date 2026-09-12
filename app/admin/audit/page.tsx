@@ -1,4 +1,5 @@
 import { AdminAuditPage } from "@/components/admin/admin-audit-page";
+import { requireAppAdminPage } from "@/lib/admin/require-app-admin-page";
 import { getAuditSettings, listAuditEvents } from "@/lib/audit/record";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -17,6 +18,7 @@ async function AdminAuditContent({
   };
 }) {
   await connection();
+  await requireAppAdminPage();
 
   const page = Math.max(1, Number.parseInt(searchParams.page ?? "1", 10) || 1);
   const successParam = searchParams.success?.trim();

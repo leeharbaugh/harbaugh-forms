@@ -1,5 +1,6 @@
 import "server-only";
 
+import { requireAppAdmin } from "@/lib/admin/require-app-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AppRole, OnboardingStatus, ProfileStatus } from "@/lib/types/profile";
 import type { MembershipRole } from "@/lib/types/organization";
@@ -54,6 +55,7 @@ function isAgentSettingsComplete(row: {
 }
 
 export async function listAdminUsers(): Promise<AdminUserListItem[]> {
+  await requireAppAdmin();
   const admin = createAdminClient();
 
   const authUsers: Array<{

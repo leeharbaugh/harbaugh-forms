@@ -1,5 +1,6 @@
 import { AdminUserDetailPage } from "@/components/admin/admin-user-detail-page";
 import { getAdminUserDetail } from "@/lib/admin/manage-user-detail";
+import { requireAppAdminPage } from "@/lib/admin/require-app-admin-page";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
@@ -7,6 +8,7 @@ import { Suspense } from "react";
 
 async function UserDetailContent({ userId }: { userId: string }) {
   await connection();
+  await requireAppAdminPage();
   const detail = await getAdminUserDetail(userId);
   if (!detail) {
     notFound();

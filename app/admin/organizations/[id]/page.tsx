@@ -2,6 +2,7 @@ import { AdminOrganizationDetailPage } from "@/components/admin/admin-organizati
 import { listOrganizationMemberships } from "@/lib/admin/manage-memberships";
 import { getAdminOrganization } from "@/lib/admin/manage-organizations";
 import { listDirectoryUsersForMembershipPicker } from "@/lib/admin/manage-user-detail";
+import { requireAppAdminPage } from "@/lib/admin/require-app-admin-page";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -14,6 +15,7 @@ async function OrganizationDetailContent({
   edit: boolean;
 }) {
   await connection();
+  await requireAppAdminPage();
   const organization = await getAdminOrganization(organizationId);
   if (!organization) {
     notFound();
