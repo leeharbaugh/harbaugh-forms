@@ -47,6 +47,7 @@
     "sync:condo-txr-1605-prod": "node --experimental-strip-types --env-file=.env.local --env-file=.env.ops.production scripts/sync-condo-txr-1605-to-production.ts",
     "rollback:condo-txr-1605-prod": "node --experimental-strip-types --env-file=.env.local --env-file=.env.ops.production scripts/rollback-condo-txr-1605-production.ts",
     "test:condo-txr-1605-manifest": "node --experimental-strip-types --test lib/condo-txr-1605-manifest.test.ts",
+    "test:txr-1957-manifest": "node --experimental-strip-types --test lib/txr-1957-manifest.test.ts",
     "test:condo-txr-1605-prod-sync": "node --experimental-strip-types --test lib/condo-txr-1605-production-sync.test.ts",
     "test:form-lifecycle": "node --experimental-strip-types --test lib/types/form-lifecycle.test.ts lib/types/packet-form-lifecycle.test.ts lib/types/form-publish-readiness.test.ts",
     "test:secure-publish": "node --experimental-strip-types --test lib/forms/secure-publish.test.ts",
