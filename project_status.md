@@ -1286,4 +1286,4 @@ Updated the locked Next.js release from 16.2.10 to 16.3.5 and changed the applic
 
 Validation passed: `npx tsc --noEmit`, the administrator-audit suite (14 tests), the TXR-1957 manifest suite (11 tests), and the production build. A dependency audit no longer reports critical or high production findings. It still reports one moderate `baseline-browser-mapping` advisory even though the resolved package is version 2.11.22, outside the reported affected range; the package manager's automatic fix proposal does not offer a safe applicable lockfile change, so it is recorded for follow-up rather than forcing a downgrade.
 
-Next: deploy this focused framework update to its staging URL, repeat the ordinary-user and administrator smoke checks there, then promote it only after that verification succeeds.
+Deployment: commit `adb8f07` passed its isolated Vercel deployment check and was promoted to `forms.harbaughrealestate.com` on 2026-09-12. The production deployment is `2Q4H8jfQV`; the public login page loaded successfully before promotion. Follow up with ordinary-user and administrator smoke checks using normal, non-production test accounts.
