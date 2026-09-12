@@ -2763,3 +2763,15 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 **Decision:** Security remediation and Native Signing remain separate workstreams. F6 changes only authorization around existing administrator data access; they do not change the approved Signing architecture or authorize Signing implementation.
 
 **Consequences:** Resume Native Signing from the dedicated Signing decisions near the beginning of this document. Record future vulnerability fixes in clearly labeled Security sections and do not use security work to implicitly revise Signing workflow, participant, artifact, or identity decisions.
+
+---
+
+## Security remediation — lock framework updates to a tested version
+
+**Date:** 2026-09-12
+
+**Decision:** Pin the `next` dependency to `^16.3.5` and commit its regenerated lockfile. Keep React and React DOM on their existing tested 19.2.7 release for this focused security repair.
+
+**Reason:** The previous `latest` declaration did not describe the actual locked framework version, which remained Next.js 16.2.10 and carried critical and high security advisories. A tested, explicit semver range keeps future installations on the patched release line while the lockfile makes deployment reproducible.
+
+**Consequences:** Framework updates require the same build and targeted regression checks before deployment. The remaining audit report is a moderate `baseline-browser-mapping` report whose resolved 2.11.22 version is outside the advisory's affected range; do not accept the package manager's unrelated downgrade proposal merely to silence that report. Reassess it when the upstream audit metadata or dependency chain changes.

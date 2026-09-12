@@ -1264,7 +1264,7 @@ Completed the F6 repair from the security report. Each affected administrator pa
 
 Validation passed: targeted ESLint, `npx tsc --noEmit`, admin-audit (14), admin-organization (4), and admin-user-lifecycle (23) tests. In a local development role-matrix check, ordinary HTML and RSC requests emitted a Next redirect instruction before protected data and did not contain a synthetic administrator marker; an administrator response contained that marker. Repository-wide lint remains unsuitable as a gate because it scans existing generated `.next` output and unrelated debug scripts.
 
-Next: review and deploy the focused repair, then repeat the role-matrix check in the deployed environment without using production data fixtures.
+Deployment: commit `39ca2f4` passed its Vercel deployment checks and was manually promoted to `forms.harbaughrealestate.com` on 2026-09-12. A manual smoke test confirmed the live site remained functional.
 
 ---
 
@@ -1272,8 +1272,18 @@ Next: review and deploy the focused repair, then repeat the role-matrix check in
 
 ### Security remediation — active
 
-F6 is implemented locally and awaits deployment plus a manual administrator smoke test. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
+F6 is deployed and has passed a manual administrator smoke test. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
 
 ### Native Signing — planning paused
 
 The Native Signing decisions in `decisions.md` remain the source of truth for the future feature. No Signing schema or product implementation is authorized by the F6 repair. When Signing work resumes, begin with those dedicated Signing sections rather than this security status entry.
+
+---
+
+## Security remediation — F1 framework dependency update (2026-09-12)
+
+Updated the locked Next.js release from 16.2.10 to 16.3.5 and changed the application dependency from the unpinned `latest` tag to `^16.3.5`. The regenerated lockfile also updates the related Next.js packages and their transitive runtime dependencies.
+
+Validation passed: `npx tsc --noEmit`, the administrator-audit suite (14 tests), the TXR-1957 manifest suite (11 tests), and the production build. A dependency audit no longer reports critical or high production findings. It still reports one moderate `baseline-browser-mapping` advisory even though the resolved package is version 2.11.22, outside the reported affected range; the package manager's automatic fix proposal does not offer a safe applicable lockfile change, so it is recorded for follow-up rather than forcing a downgrade.
+
+Next: deploy this focused framework update to its staging URL, repeat the ordinary-user and administrator smoke checks there, then promote it only after that verification succeeds.
