@@ -12,6 +12,634 @@ Each decision should include:
 
 ---
 
+## Working Signing data model records workflow, revisions, documents, participants, placements, artifacts, and events separately
+
+**Date:** 2026-09-10
+
+**Decision:**
+The following is the approved working relational model for native Signings. It records the table boundaries and relationships needed for later implementation; it does not authorize a migration or settle every column type, index, constraint, trigger, or access policy.
+
+* **`signings`** is the central workflow row. It owns the originating brokerage, source Packet when applicable, immutable original-sender snapshot, current primary agent, lifecycle and finalization state, sender timezone, requested completion date, reminder settings, and references to both the current and frozen package revisions. A Signing does not carry a single document foreign key because one Signing may contain many documents.
+* **`signing_documents`** is the Signing-owned logical-document row. It links to `signings`, optionally retains its source Packet Form/provenance, and remains the same logical contract or addendum across permitted revisions.
+* **`signing_document_versions`** contains the immutable prepared PDF versions of one `signing_document`, including ordered version lineage, supersession relationship, the package revision that introduced it, creation reason, source snapshot, prepared-artifact storage reference, and fingerprint. A completed signed PDF is not a replacement version in this table.
+* **`signing_package_revisions`** records each successfully promoted, whole-package configuration. It has a monotonic revision number per Signing, predecessor reference, initial/amendment reason, immutable amendment note where applicable, promoter snapshot, and promotion time. Private, incomplete preparation is not itself a package revision. `signings.current_package_revision_id` names the one actionable revision; after the first accepted signature or initial, `signings.frozen_package_revision_id` pins it and must identify that same revision.
+* **`signing_package_revision_documents`** binds each package revision to its exact `signing_document` and immutable `signing_document_version`. It preserves display order, the frozen document display name used by participants, filenames, and completed delivery, and a source-title snapshot. A later Packet Form rename never rewrites this record.
+* **`signing_participants`** records the durable person-in-the-workflow, including current participant status, optional User and Contact associations, and current identity/consent/finish/decline state. Email is not unique and neither association is required. **`signing_package_revision_participants`** freezes the participant name, email, optional role, order, and relevant identity association snapshot for one package revision. Signer assignments refer to that revision-specific participant snapshot.
+* **`signing_fields`** records each immutable Signature, Initials, or system-generated Date Signed location on one package-revision document. It includes the assigned revision participant, required/optional status, page and geometry, and the linked Signature field when it is an automatic date. Participants never receive editable text, selection, or manual-date fields through this model.
+* **`signing_adopted_marks`** preserves each participant's Signing-scoped signature or initials adoption, including typed or drawn representation, adoption/lock times, and an optional source User-preset reference. **`signing_field_placements`** records every accepted use of an adopted mark in a field: server acceptance time, rendered sender-local date when applicable, accepted/removed/replaced disposition, replacement relationship, and an idempotency identity. A field can have only one effective accepted placement at a time, without erasing earlier activity.
+* **`signing_artifacts`** stores immutable generated outputs rather than placing completed PDFs on document versions. Artifact categories are separate completed-document PDFs, the one Signing-wide audit certificate, and an optional combined-package PDF. Every artifact identifies its Signing and frozen package revision; a completed document additionally identifies its document version. It retains storage reference, fingerprint, size/page facts, frozen filename, generation/verification times, audit-history sequence boundary where relevant, and idempotency reference. Recipient-specific certificate variants remain Signing-wide certificates, not per-document certificates.
+* **`signing_events`** is an append-only event stream with a server-assigned per-Signing sequence and server UTC time. It uses a project-conventional sequence identifier, carries readable literal event and actor types, actor identity snapshot, visibility, relevant optional references (revision, participant, document version, field, or placement), summary/structured details, and an idempotency identity. Event and actor values are controlled by the eventual table definition rather than an editable lookup catalog; later values are additive, forward-only migrations and existing meanings are never repurposed.
+
+The model intentionally keeps access credentials, temporary browser sessions, participant-presence leases, delivery instructions and attempts, and agent-association history separate from these core tables. Their table-level design remains a subsequent decision.
+
+**Reason:**
+The Signing needs one authoritative workflow root, while its documents, frozen package composition, participant snapshots, requested locations, accepted marks, outputs, and historical actions answer different questions and change on different schedules. Explicit foreign-key relationships prevent a later Packet edit, document rename, participant edit, or artifact generation step from silently rewriting the evidence presented during the Signing.
+
+**Consequences:**
+
+* A many-document Signing is modeled through child rows, not a document foreign key on `signings`.
+* One activated package revision can be reproduced from its document and participant snapshot rows; only an atomically promoted revision becomes actionable.
+* The source Packet Form label and the Signing display name are distinct; the revision snapshot controls what participants and completed deliveries see.
+* Prepared versions, completed artifacts, current workflow state, and immutable events have separate storage responsibilities.
+* The next table-design decisions cover credentials/sessions, deliveries, agent associations, exact foreign-key actions, indexes, constraints, append-only enforcement, RLS, storage layout, and migration sequencing.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Core Signing records separate workflow, documents, versions, participants, fields, and placements** (2026-09-08); **Signing events, credentials, deliveries, agents, locks, and package revisions have separate responsibilities** (2026-09-08)
+* No SQL migration; no schema change
+
+---
+
+## Core Signing records separate workflow, documents, versions, participants, fields, and placements
+
+**Date:** 2026-09-08
+
+**Decision:**
+The core Signing model uses distinct durable concepts rather than collapsing the workflow into one record.
+
+* A **Signing** is the overall workflow and owns its originating brokerage, agent associations, lifecycle, settings, participants, documents, deliveries, and current package revision.
+* A **Signing Document** is one logical document within that Signing, such as a contract or addendum. It remains the same logical document across permitted pre-signature revisions and remains separately deliverable.
+* A **Document Version** is one exact immutable prepared PDF for one Signing Document. One version is current at a time; superseded versions remain retained. The separately stored completed PDF is a final artifact of the exact prepared version that was signed, not an editable revision.
+* A **Signing Participant** is one person acting across the Signing and may sign or initial several documents. Shared email addresses never merge participants. User and Contact references remain optional associations rather than identity keys.
+* A **Signer Field** is an instruction assigned to exactly one participant at one page/location on one exact Document Version. Its type is Signature or Initials and it is required by default unless deliberately made optional. The automatically generated Date Signed is a linked system field associated with a Signature field and is not participant-editable.
+* An **Adopted Mark** preserves the exact signature or initials appearance adopted for this Signing. A **Placement** is one server-accepted use of that mark in an assigned Signer Field. A reusable User preset is copied into the Signing as an immutable snapshot and is never referenced as mutable source content.
+
+Participant current status is explicit and limited to Pending, Started, Finished, Declined, or Removed at the product/domain level. Current identity-confirmation, consent, required-field completion, Finish Signing, link, completion, and decline state is stored directly while corresponding meaningful changes remain events. Participant identity and associations freeze at the first accepted signature or initial as already approved.
+
+Each placement identifies its participant, Signer Field, adopted mark, exact Document Version, server-accepted UTC time, and current accepted/removed/replaced disposition. Removing or replacing a placement before Finish Signing changes current state without erasing prior events. The preserved Date Signed value uses the sender timezone at signature acceptance and is never recalculated from later settings.
+
+Every Signer Field belongs to exactly one prepared version and cannot silently carry to a replacement PDF. A pre-signature amendment creates the needed fields and assignments for the replacement version while retaining the superseded version's records. Every participant must have at least one assigned Signature or Initials field; someone who only receives materials is a copy recipient. Pre-send validation rejects unassigned fields and provides the approved participant-by-participant summary.
+
+This decision settles conceptual record boundaries, not physical table names, columns, enum types, indexes, storage formats, or RLS policies.
+
+**Reason:**
+Logical documents, immutable files, requested fields, adopted identity marks, and completed placements answer different evidentiary questions. Keeping them distinct preserves exact history across amendments, corrections, shared email addresses, reusable presets, and separately delivered documents.
+
+**Consequences:**
+
+* One Signing contains multiple logical documents, and each document may retain multiple immutable prepared versions.
+* Participants belong to the Signing; fields and placements belong to the exact version on which activity occurs.
+* Requested fields, current placements, and historical events remain separate concepts.
+* Completed PDFs remain artifacts of the signed prepared version and never overwrite it.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing current state is explicit and changes are preserved as immutable events** (2026-09-06); **Each Signing document preserves prepared and completed immutable artifacts** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing events, credentials, deliveries, agents, locks, and package revisions have separate responsibilities
+
+**Date:** 2026-09-08
+
+**Decision:**
+Each Signing Event is append-only and receives a server-assigned sequence within its Signing in addition to a server UTC timestamp. Events preserve an actor type and identity snapshot, event type, related Signing concepts, structured change details, and participant/business/system-administrator visibility. Actors may be the primary agent, co-agent, brokerage administrator, participant, system administrator, or Harbaugh Forms process. Sequence—not timestamp alone—defines authoritative order. Current-state changes and their events commit together atomically.
+
+Event and actor types are stored on each event as stable, human-readable literal values, rather than only as references to editable lookup rows. The eventual database definition may constrain those values to an approved vocabulary. New values are added only through a forward-only, version-controlled schema migration before a feature emits them; an existing value's meaning is never repurposed. A material behavioral change receives a new event type instead. This makes each historical event understandable without joining to a mutable catalog while allowing the vocabulary to grow when a real later need is identified.
+
+Neither a constraint nor a lookup table alone proves that its definition was never changed. Evidence for vocabulary changes instead comes from immutable migration history, source-control and release history, and restricted production schema-write access. Event sequence and any later tamper-evident event-chain design protect the event records themselves; they do not by themselves prove that the surrounding schema definition was never modified.
+
+Initial implementation prioritizes append-only enforcement, strict access, server sequencing, atomic state changes, and prepared/completed document fingerprints. The model should permit per-Signing event-chain hashes, but a basic database hash chain must not be described as independently tamper-proof. Protected signing keys or external anchoring may be added after security/legal review demonstrates sufficient value to justify their operational complexity.
+
+Long-lived access and temporary runtime state remain separate:
+
+* A **participant access credential** belongs to one participant, permits only that Signing ceremony while eligible, and is independently revocable and replaceable.
+* A **completed-package credential** belongs to one participant or copy recipient, permits only read access to that recipient's completed materials, does not expire automatically, and is independently revocable and replaceable.
+* A **browser session** is temporary state created after valid entry and identity affirmation, ends after the approved inactivity period, and never replaces the underlying emailed credential.
+
+Only token hashes are stored; raw bearer tokens exist in recipient links. Every meaningful request revalidates the credential, participant, Signing status, package revision, and amendment state. Signing and completed-package credentials are never interchangeable.
+
+Copy recipients, delivery instructions, and delivery attempts remain distinct. A copy recipient requires only email and never affects Signing completion. An instruction records the entitled recipient, artifacts, delivery method, initiator, and purpose. Every provider attempt records its result and retry relationship; retries append attempts rather than overwriting failures. Signing participants use the same delivery machinery for mandatory completed copies without being duplicated as copy-recipient records.
+
+Agent history and current authority also remain distinct. Every Signing preserves immutable originating brokerage and original sender identity plus a current primary agent and explicit co-agent associations. Agent associations retain identity snapshots, effective periods, authority-ending reasons, and add/remove/reassignment actors. Brokerage-administrator authority derives from current administrator membership in the originating brokerage rather than copying every administrator onto each Signing. Reassignment changes current authority without rewriting origin or historical actions.
+
+Concurrency uses short renewable **participant-presence leases** and an exclusive **amendment lock**. No lease or lock is permanent or depends on a browser releasing it. Server time controls expiration; browsers can renew but cannot create unlimited duration. Crashes, sleeping devices, lost networks, and abandoned tabs naturally expire. A stale agent editor cannot save after losing its lock. Administrative clearing is limited to demonstrably stale locks and is audited. Heartbeat renewals are disposable operational data rather than immutable legal history.
+
+Each activated Signing has a monotonically increasing **package revision** representing the complete canonical combination of document versions, participants, identity snapshots, signer fields, assignments, and relevant preparation settings. Initial Draft configuration is privately prepared and atomically promoted as Revision 1 when sent or when an in-person ceremony begins. Each successfully saved eligible amendment creates the next revision. Participant links target the Signing and resolve its one authoritative current revision. The first accepted signature or initial permanently pins that revision. Older revisions remain preserved but not actionable.
+
+Amendment promotion atomically validates the lock and prior revision, creates replacement artifacts and assignments, creates the new package revision, advances the current pointer, appends events, and releases the lock. Failure leaves the prior revision fully current; participants never observe a partially promoted package.
+
+This decision settles responsibilities and invariants, not exact token entropy, lease intervals, event payload schemas, provider fields, database names, RLS expressions, hashing implementation, or transaction primitives.
+
+**Reason:**
+Credentials, sessions, delivery work, agent authority, locks, and package revisions have different lifetimes and security properties. Separating them prevents bearer links from becoming sessions, failed email attempts from rewriting history, stale editors from changing canonical files, and partial amendments from exposing mixed versions.
+
+**Consequences:**
+
+* Signing-specific sequence numbers establish definitive event order.
+* Event and actor vocabularies remain controlled but extensible through additive, reviewable migrations; historical literal values and their meanings are never rewritten or repurposed.
+* Raw access tokens are not stored and credential scopes cannot cross between signing and completed delivery.
+* Delivery retries and authority changes remain fully historical.
+* All locks expire safely, and only one whole package revision can be promoted atomically.
+* The basic model can support stronger tamper evidence later without overstating initial guarantees.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing access belongs to the originating brokerage and full-authority agents** (2026-09-06); **Remote participants use emailed links with explicit identity confirmation** (2026-09-06); **Pre-signature amendments use an exclusive agent lock and retain participant links** (2026-09-05)
+* No SQL migration; no schema change
+
+---
+
+## Finish Signing and finalization are idempotent, recoverable, and server-authoritative
+
+**Date:** 2026-09-08
+
+**Decision:**
+A participant-facing field appears completed only after the server confirms the placement. During connectivity uncertainty it displays Saving or Not saved rather than false success. Finish Signing is unavailable while any placement remains unconfirmed. The server always validates authoritative required-field state regardless of browser state.
+
+Every meaningful mutation—including placement, Finish Signing, reminder, link replacement, amendment promotion, finalization step, and delivery attempt—uses an idempotency identity appropriate to that operation. Repeated clicks, reconnect retries, browser retries, and infrastructure retries return or continue the original result rather than creating duplicate placements, events, dates, artifacts, jobs, or emails. A participant may have only one effective Finish Signing result.
+
+After an unexpected disconnect, the browser reloads authoritative server progress before allowing completion. Pending placement requests may safely retry with their original identities. If a request was accepted but its response was lost, the accepted result reappears without duplication. If it never reached the server, the field remains incomplete. On later entry, the participant is explicitly told that the previous session ended before all activity was confirmed, that confirmed work remains preserved, and how many required signatures or initials remain; the experience resumes at the first incomplete field. If Finish Signing already succeeded, re-entry shows the read-only finished state.
+
+When the last required participant finishes, participant work locks immediately, but the Signing becomes Complete only after all required individual completed PDFs and the Signing-wide certificate are rendered, stored, fingerprinted, verified, and connected to the frozen package revision. Finalization has internal Pending and Failed conditions without adding new user-facing lifecycle outcomes. Participants cannot resume signing or agents amend the frozen package while finalization is pending or failed.
+
+Finalization is stepwise, deterministic, and resumable. Automatic retries handle recoverable failures. Verified successful artifacts and steps are reused rather than discarded or regenerated inconsistently. The primary agent, co-agents, and brokerage administrators see a delayed-finalization condition; authorized system administrators receive technical diagnostics. A brokerage administrator may request Retry Finalization, and a system administrator may resume from the failed step. Recovery cannot edit documents or signatures, skip required artifacts, manufacture events, or override the Signing directly to Complete.
+
+Only verified artifact finalization changes the Signing to Complete. Email delivery follows completion, so delivery failure never reverses or blocks the completed outcome.
+
+This decision settles failure semantics and integrity requirements, not queue technology, retry schedule, job names, idempotency-key format, administrative screens, monitoring provider, or finalization implementation.
+
+**Reason:**
+Networks and browsers fail at ambiguous moments. Server confirmation, idempotency, authoritative resynchronization, and resumable finalization prevent duplicate legal events, false completion, discarded Signings, and permanent failure after participants have irreversibly submitted their work.
+
+**Consequences:**
+
+* A local click never substitutes for server-accepted Signing state.
+* Duplicate requests are safe, and reconnecting participants receive accurate remaining-work guidance.
+* Participant completion is preserved even when artifact generation temporarily fails.
+* Administrators can move the existing finalization process forward but cannot bypass evidentiary requirements.
+* Delivery remains operationally separate from legal-artifact completion.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Finish Signing is the participant's irreversible completion boundary** (2026-09-06); **Each Signing document preserves prepared and completed immutable artifacts** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing current state is explicit and changes are preserved as immutable events
+
+**Date:** 2026-09-06
+
+**Decision:**
+A Signing maintains explicit current-state records for what is true now and a separate append-only event history explaining how it reached that state. The event stream is not the sole source from which the application must reconstruct current state.
+
+Signing-owned current state includes the lifecycle outcome, originating brokerage, primary agent and co-agents, participants and frozen identity snapshots, active immutable document versions, signer-field assignments and completion, participant Finish Signing status, current participant and completed-package links and revocation state, reminder settings, requested completion date and derived Overdue condition, copy recipients and current delivery state, and temporary amendment/session-presence state where needed for concurrency. Explicit current state supports reliable authorization, validation, status display, and efficient application loading.
+
+Every meaningful change also creates an immutable historical event. Events include Signing creation and amendment, document-version replacement, participant and assignment changes, invitations and reminders, delivery results, document opening/review, identity affirmation, electronic-signature consent, signature and initials placement/removal/replacement, participant completion, decline, cancellation, reassignment, link revocation/replacement, completed-copy delivery, and relevant administrative access. Ordinary application use cannot edit or delete historical events. Technical security events may use the same chronological model while retaining the stricter system-administrator visibility already approved.
+
+The Signing's own records are authoritative for its workflow state and frozen history. Existing Users, profiles, brokerage memberships and roles, Contacts, Packets, editable packet documents, reusable User signature/initials presets, and any license/sponsorship eligibility source may initialize values or establish present authority, but later changes to those external records do not rewrite frozen Signing identity, document, placement, or event history. Current external eligibility may still remove authority to manage an unfinished Signing under the separate ownership decision.
+
+Audit certificates are generated from preserved Signing events and immutable artifacts, not browser logs or later reconstruction from mutable documents. Current-state values and event insertion must remain consistent at every accepted action; the exact transactional enforcement is technical design.
+
+**Reason:**
+Current-state records answer what is true now without replaying an entire history, while immutable events answer how and when it changed. Treating either alone as sufficient would make ordinary operation unnecessarily complex or leave evidentiary gaps.
+
+**Consequences:**
+
+* Signing records—not Contacts, editable documents, or the event stream alone—are authoritative for active Signing state.
+* Meaningful actions update authorized current state and append permanent history together.
+* External records may initialize or validate a Signing but cannot retroactively rewrite its frozen evidence.
+* The audit certificate has durable source evidence rather than inferred activity.
+* No table names, columns, enum values, triggers, RLS policies, or transaction primitives are selected by this decision.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Native e-signature uses one working packet form, many immutable versions, and a dedicated signing experience** (2026-08-19); **Completed Signings preserve separate documents and provide one Signing-wide audit certificate** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Each Signing document preserves prepared and completed immutable artifacts
+
+**Date:** 2026-09-06
+
+**Decision:**
+Each document in a Signing preserves three distinct evidentiary components:
+
+1. The **prepared document version** is the exact immutable PDF presented to participants, with agent-entered contractual content and elections already rendered.
+2. **Signing activity** preserves the assigned signature/initial locations, accepted placements, corrections, automatic dates, participant actions, and related events associated with that prepared version.
+3. The **completed document** is a separately stored immutable PDF with accepted signatures, initials, and automatic dates rendered into it.
+
+The prepared PDF and completed PDF each receive a reliable cryptographic fingerprint. The completed artifact never overwrites the prepared artifact. Harbaugh Forms stores the exact bytes required for both and does not depend on later reconstruction from mutable packet data, current annotations, fonts, rendering code, or external records.
+
+A permitted pre-signature amendment creates a new prepared immutable version and retains every superseded prepared version and its relevant history. The current prepared version becomes permanently fixed when the first signature or initial is accepted. Completion renders and stores the final document from that fixed version and its accepted Signing activity. Every document remains an individual completed PDF under the separate delivery decision.
+
+This decision settles the artifact chain and preservation requirement, not table names, storage paths, object keys, hash algorithm, rendering pipeline, deduplication, encryption, retention machinery, or final database constraints.
+
+**Reason:**
+Harbaugh Forms must be able to demonstrate both the exact document presented for signature and the separate final document produced from accepted signing activity. Preserving exact immutable bytes avoids trying to reproduce historical evidence later with code, fonts, data, or document state that may have changed.
+
+**Consequences:**
+
+* Prepared and completed PDFs are separate immutable artifacts with separate fingerprints.
+* Signing activity remains associated with the exact prepared version against which it occurred.
+* Superseded pre-signature versions remain retained and auditable.
+* Completion never destroys or replaces the participant-presented source artifact.
+* Storage optimization may be considered later only if it preserves every Signing-specific identity and evidentiary relationship.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Creating a Signing snapshots persisted document state without requiring Final** (2026-09-05); **Completed Signings preserve separate documents and provide one Signing-wide audit certificate** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing access belongs to the originating brokerage and full-authority agents
+
+**Date:** 2026-09-06
+
+**Decision:**
+Every Signing is permanently associated with the brokerage under which it was created. The primary agent is identified as the original sender. Brokerage administrators always have access to every Signing created under their brokerage because the agents act on behalf of that broker. Their access includes documents, participants, progress, complete business-level history, retained and completed artifacts, reminders and deliveries, copy recipients, link revocation/replacement, amendment, cancellation, and reassignment. Each administrative action identifies the administrator in append-only Signing history. Technical security metadata remains limited to authorized system administrators under the separate audit-certificate decision.
+
+The primary agent or a brokerage administrator may explicitly add another active agent from the same brokerage as a co-agent. Co-agent access is intentionally all-or-nothing: an added co-agent has the same Signing authority as the primary agent, including preparing and amending documents, managing participants and signer fields, sending invitations and reminders, managing copy recipients, revoking or replacing links, cancelling the Signing, and viewing or distributing retained artifacts and business-level history. Harbaugh Forms will not create a granular co-agent permission matrix. A trainee or assistant who should not have full Signing authority is not added as a co-agent. Ordinary brokerage agents who are neither the primary agent nor an explicit co-agent do not receive Signing access merely from shared brokerage membership.
+
+The original primary agent and co-agents retain permanent read access to Signings they handled, including documents, completed artifacts, and business-level history, even if they later leave the originating brokerage, change brokerages, lose sponsorship, or cease holding the required active license. The originating brokerage and its administrators also retain permanent access and control. A later brokerage never gains access to the earlier brokerage's Signings merely because an agent joins it. Historical records continue to identify the brokerage and agents involved when each action occurred, and reassignment never rewrites that history.
+
+Historical access is distinct from authority to conduct an unfinished transaction. When a primary agent or co-agent leaves the originating brokerage, loses sponsorship, or no longer holds the required active license, that person immediately loses management authority over Draft and In Progress Signings from that brokerage. The person cannot prepare or amend documents, manage participants, send invitations or reminders, manage recipients, revoke links, cancel, or perform other Signing actions. The originating brokerage administrator may assign another eligible active agent to manage the unfinished Signing. The former agent retains read-only historical visibility, including later events after reassignment, but cannot act. Any exceptional transaction transfer between brokerages would require a separately designed, explicit, audited administrative process and must never occur automatically.
+
+This decision establishes domain ownership and authority. It does not choose role-table names, membership snapshots, license-verification mechanics, reassignment columns, RLS policies, or cross-brokerage transfer implementation.
+
+**Reason:**
+The broker must be able to oversee transactions conducted by sponsored agents, and genuine co-agents ordinarily share full responsibility rather than operating under a complex custom permission scheme. At the same time, agents legitimately retain access to transaction records they handled and could already have downloaded. Preserving historical visibility while ending active management authority after sponsorship or license loss respects both realities and prevents continued transaction activity under a former brokerage.
+
+**Consequences:**
+
+* Brokerage administrators always have complete business-level access and management authority over their brokerage's Signings.
+* Explicit co-agents have the same Signing authority as the primary agent; partial co-agent roles are not supported.
+* Original agents and co-agents retain permanent read access to their Signing records.
+* Departure or license/sponsorship loss removes authority over unfinished Signings but does not erase historical visibility.
+* The originating brokerage retains the Signing; a new brokerage receives no inherited access.
+* Brokerage administrators may reassign unfinished Signings to eligible active agents, with all changes audited.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Organization Data Isolation and Access**; **Signing participants may be linked or ad hoc, and all are eligible in parallel** (2026-09-05)
+* No SQL migration; no schema change
+
+---
+
+## Decline and Cancel Signing are irreversible whole-workflow outcomes
+
+**Date:** 2026-09-06
+
+**Decision:**
+A participant declines the entire Signing, not one document within it. Decline requires a clear confirmation because it immediately changes the Signing to the terminal **Declined** outcome and stops every participant from continuing. A decline reason is optional. The primary agent, co-agents, and brokerage administrators receive an immediate email that includes the participant's stated reason when one was supplied. The participant cannot reverse a decline, and the sender cannot reopen that Signing; continued transaction activity requires a new Signing. If a participant instead has a question or believes a document needs correction, the experience directs the participant to contact the sender rather than using Decline as a document-specific objection mechanism.
+
+The primary agent, any co-agent, or a brokerage administrator may cancel a Draft or In Progress Signing. Cancellation requires explicit confirmation and a short audit-history reason. Cancelling immediately changes the Signing to the terminal **Cancelled** outcome, disables participant signing access, and stops reminders. Every invited participant receives a cancellation email, which may include a participant-safe explanation supplied by the cancelling agent. A Complete or Declined Signing cannot later be changed to Cancelled, cancellation cannot be undone, and continued activity requires a new Signing.
+
+Decline and cancellation preserve immutable documents, prior signatures and initials, identity/consent records, deliveries, and append-only history, but those artifacts are not represented or automatically distributed as a completed package. The separate completed-artifact decision governs retained evidence and participant visibility. An unsent Draft on which no participant has relied may instead be discarded through the normal recoverable deletion process rather than creating a cancellation record.
+
+This decision establishes whole-workflow semantics and authority, not status enum values, reason columns, email copy, deletion implementation, or event-table names.
+
+**Reason:**
+A Signing containing several documents is one coordinated request. Allowing a participant to decline only one document would create an ambiguous package whose completion meaning is unclear. Cancellation must also be explicit and auditable once participants may have relied on an invitation, while an entirely private unsent Draft does not need the same ceremony.
+
+**Consequences:**
+
+* One participant's confirmed decline ends the entire Signing for everyone.
+* Decline reasons are optional; cancellation reasons are required for internal history.
+* Only authorized primary agents, co-agents, or brokerage administrators may cancel.
+* Complete, Declined, and Cancelled remain irreversible terminal outcomes.
+* Sent Signings retain evidence; unsent Drafts may use recoverable discard instead.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing lifecycle distinguishes setup, active signing, completion, decline, and cancellation** (2026-09-05); **Completed Signings preserve separate documents and provide one Signing-wide audit certificate** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing participants use a focused, autosaving signature-and-initials ceremony
+
+**Date:** 2026-09-06
+
+**Decision:**
+Participant links open a dedicated Signing experience rather than the ordinary Harbaugh Forms workspace. The experience may share the same application and services, but it does not expose Forms, Packets, Contacts, administration, or unrelated navigation. This remains true whether the participant continues without an account or optionally logs in.
+
+The account-free path remains primary and requires the approved **I am [Participant Name]** affirmation. A participant who already has a Harbaugh Forms User account may optionally log in from the linked Signing page to use eligible account conveniences. Login is never required to sign. A reusable signature is offered only when the authenticated User is explicitly associated with that Signing participant; neither a matching email address nor a Contact association creates that link. If no explicit User association exists, the person may continue through the account-free path without exposing or silently associating an account signature.
+
+A participant may interact with only assigned **Signature** and **Initials** fields, plus the approved system confirmations and actions such as identity affirmation, electronic-signature consent, decline, and Finish Signing. Date Signed is server-populated automatically through the approved signature/date pairing. Participants cannot complete or alter contractual text, checkboxes, radio choices, dropdowns, or manually entered dates. The agent prepares all contractual content and elections. Before participant access, agent-entered text, choices, dates, strikethroughs, and similar preparation content are rendered into the immutable document version; only assigned signature and initials locations remain interactive. A permitted pre-signature amendment produces a new immutable rendered version and participants review that replacement version from the beginning.
+
+Every signature or initials field must be assigned to exactly one participant before sending. Unassigned signer fields block Send Signing. Signature and initials fields are required by default, although the agent may deliberately mark an individual field optional. Every signing participant must have at least one assigned signature or initials field; someone who only receives completed materials is a copy recipient instead. Before sending, the agent receives a participant-by-participant assignment summary for confirmation.
+
+Signature and initials placements auto-save immediately when accepted by the server; there is no separate Save button. The interface clearly confirms success. A failed save remains visibly incomplete and offers retry rather than appearing saved locally. Only a successfully accepted server save counts as the first-placement freeze event. Saved placements and progress survive browser closure, disconnection, and session timeout. Returning participants resume at the first remaining incomplete assigned field, while retaining freedom to review every page and document.
+
+The participant begins with a Signing and document overview. **Start Signing** goes to the first assigned field. After each successful save, navigation may advance to the next incomplete assigned field in document and page order, with visible completed/remaining progress. Harbaugh Forms does not force scrolling, impose artificial reading delays, or claim that such behavior proves every word was read. When all required fields are complete, the participant proceeds to the approved Finish Signing confirmation.
+
+The emailed signing link remains valid for the active Signing unless revoked or the participant is removed. A browser signing session ends after 60 minutes without meaningful activity and warns the participant before timeout. Re-entry through the same link requires repeating the identity affirmation and preserves accepted work. Closing the page, losing connectivity, or timing out releases active participant presence promptly enough that an abandoned session cannot indefinitely block a permitted agent amendment. Exact heartbeat, lease, and session implementation remains technical design.
+
+**Reason:**
+The participant is agreeing to the final visible document, not editing its contractual terms. A focused ceremony, immutable prepared content, immediate authoritative saves, and clear assignment validation reduce accidental document changes and incomplete Signings while preserving a simple account-free experience.
+
+**Consequences:**
+
+* Participant document actions are limited to signatures and initials; Date Signed is automatic.
+* Agent-prepared contractual content is flattened into each immutable version before participant access.
+* Server-accepted placements survive interruption and resume without a separate save action.
+* Signing links remain reusable during the active Signing; inactive browser sessions require renewed identity affirmation after 60 minutes.
+* Every signer field has one participant, required-by-default behavior, and pre-send validation.
+* The dedicated Signing experience never becomes ordinary application access merely because a participant logs in.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Remote participants use emailed links with explicit identity confirmation** (2026-09-06); **Finish Signing is the participant's irreversible completion boundary** (2026-09-06); **Pre-signature amendments use an exclusive agent lock and retain participant links** (2026-09-05)
+* No SQL migration; no schema change
+
+---
+
+## Authenticated Users may keep one reusable signature and initials preset
+
+**Date:** 2026-09-06
+
+**Decision:**
+An authenticated Harbaugh Forms User may optionally save one current signature and one current set of initials for future Signings. Each may be typed or drawn and may be replaced or deleted by that User. Multiple named signature styles and uploaded signature-image files are not part of the initial design.
+
+A Contact is an address-book record, not an authenticated identity, and does not qualify for reusable-signature access. Account-free participants—including participants associated only with Contacts—adopt a typed or drawn signature and initials for the current Signing and may reuse them throughout that Signing only. Every adopted or placed mark remains preserved with that Signing's evidence, but an account-free adoption is not offered in another Signing.
+
+Once a participant's first signature or initial is successfully accepted in a Signing, that participant's adopted signature and initials are locked for the remainder of that Signing. Before Finish Signing, the participant may remove or replace an individual placement as already approved, but the replacement uses the same adopted mark. The participant cannot switch typed/drawn style, change spelling or appearance, or select another preset midway through the Signing. Changing or deleting an account preset never changes an active or completed Signing. A materially incorrect locked adoption requires the sender to cancel and create a corrected Signing.
+
+This decision establishes reusable-preset eligibility and consistency, not image encoding, encryption, storage location, rendering fonts, drawing format, or table names.
+
+**Reason:**
+Authenticated Users can safely receive the convenience of a reusable preset because Harbaugh Forms can verify the account entitled to retrieve it. Email addresses and Contact records are not unique authentication, so using either to expose a reusable signature could provide another person with an identity mark. Locking adoption after first use keeps one participant's appearance consistent across every document in the Signing.
+
+**Consequences:**
+
+* Saving a reusable preset is optional and limited to authenticated Users explicitly associated with the participant.
+* Account-free and Contact-only participants adopt marks for one Signing only.
+* One current signature and one current initials preset are supported initially; uploaded images and multiple preset styles are deferred.
+* Preset replacement or deletion is prospective and never rewrites Signing evidence.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing participants may be linked or ad hoc, and all are eligible in parallel** (2026-09-05); **Remote participants use emailed links with explicit identity confirmation** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing progress uses email notifications, default daily reminders, and optional non-terminal due dates
+
+**Date:** 2026-09-06
+
+**Decision:**
+The sender may see current Signing progress in Harbaugh Forms, including delivery, opened, signing started, participant finished, declined, failed delivery, and overall completion states. Sender email notifications are used for failed delivery, participant decline, each participant's completion, and overall Signing completion. Harbaugh Forms does not email the sender for every signature or initial. SMS is not part of the current Signing design because the product has no SMS infrastructure and the added provider cost and compliance work are not presently justified.
+
+Automatic participant reminder emails are enabled by default. If a participant has not finished, the first reminder is sent 24 hours after the initial invitation and reminders continue every 24 hours while that participant remains incomplete. Reminders stop when the participant finishes, declines, is removed, or the Signing becomes Complete or Cancelled. The agent may change the schedule or turn automatic reminders off for a Signing.
+
+The agent may send a manual reminder at any time. If a reminder was sent recently, Harbaugh Forms warns the agent but does not prevent the send. Every reminder includes that participant's current Signing link for immediate access. It reuses the existing link and does not create a replacement unless the prior link was revoked. Automatic and manual reminders and their delivery outcomes are append-only Signing history.
+
+The agent may set an optional requested completion date. Without one, the Signing remains active until Complete, Declined, or Cancelled. Passing the requested date marks the Signing **Overdue** but does not cancel the Signing, invalidate links, or prevent continued signing. Reminder language may reference the requested date but must not call it a legal deadline or imply that Harbaugh Forms determines contractual timeliness.
+
+This decision settles product behavior, not email templates, job scheduling, provider implementation, retry intervals, database representation, or notification-table names.
+
+**Reason:**
+Participants often overlook signing emails, so reminders should work without relying on the agent to enable them each time. Important outcomes deserve sender notification, while per-field email would create noise. An optional requested date helps agents communicate urgency without allowing software to terminate a transaction or claim legal authority.
+
+**Consequences:**
+
+* Signing notifications and reminders are email-only for now; SMS remains deferred.
+* Daily reminders begin automatically after 24 hours and remain configurable per Signing.
+* Agents retain an unrestricted manual reminder action after an informational recent-send warning.
+* Every reminder carries the participant's current link and is auditable.
+* Overdue is an informational condition, not a terminal status or automatic expiration.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing lifecycle distinguishes setup, active signing, completion, decline, and cancellation** (2026-09-05); **Remote participants use emailed links with explicit identity confirmation** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Void is rejected as a user-facing product status
+
+**Date:** 2026-09-06
+
+**Decision:**
+Harbaugh Forms will not use **Void** as a user-facing Signing status or introduce it elsewhere as a general product status. Signing uses Draft, In Progress, Complete, Declined, and Cancelled; Overdue is informational rather than terminal. Superseded immutable versions remain historical versions rather than being called void.
+
+Harbaugh Forms must not imply that it has legal authority to declare a contract or document invalid. If parties later terminate, replace, or amend an executed agreement, they do so through the appropriate transaction documents; Harbaugh Forms preserves the original Signing history. The existing unused `VOID` packet-form lifecycle value is a future dependency-audit and implementation-cleanup matter. Documentation approval alone does not authorize its schema removal or migration.
+
+**Reason:**
+Void is ambiguous to ordinary users and can carry a legal conclusion beyond the product's role. Cancelled, Declined, Complete, and superseded describe observable workflow facts more clearly without claiming legal validity or invalidity.
+
+**Consequences:**
+
+* No Signing action, label, or status uses Void.
+* Existing approved Signing statuses remain sufficient.
+* Any eventual removal of the unused underlying value requires a separate technical audit and forward migration.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing lifecycle distinguishes setup, active signing, completion, decline, and cancellation** (2026-09-05); **Packet Form Document Lifecycle** (2026-07-17)
+* No SQL migration; no schema change
+
+---
+
+## Completed Signings preserve separate documents and provide one Signing-wide audit certificate
+
+**Date:** 2026-09-06
+
+**Decision:**
+When a Signing becomes Complete, each included document is preserved and delivered as its own completed signed PDF. A combined package may also be offered for convenience, but it must never replace the separate completed documents. For example, a contract and its two addenda remain three separately downloadable signed PDFs.
+
+Each completed Signing has one Signing-wide audit certificate, not a separate certificate for every document. The certificate identifies the Signing, sender, participants, and every included document, including a reliable fingerprint such as a cryptographic hash. It provides a durable, human-readable chronology of meaningful activity: delivery, document review, identity affirmation, electronic-signature consent, signature and initial placement with the affected document, participant completion, overall completion, and any relevant amendment, decline, cancellation, or later delivery activity. The durable certificate contains this history directly and does not depend solely on an online history link that may later be unavailable.
+
+Recipient visibility is limited appropriately. The common Signing-level information may show the participant roster and high-level outcomes or milestones, while each recipient's delivered certificate may include a personalized **Your Activity** section with that recipient's detailed activity. A participant does not receive every other participant's detailed viewing or signing history. The sending agent may review the complete business-level Signing history. IP addresses, browser/device information, access tokens, internal identifiers, and similar technical security details do not appear in participant, copy-recipient, or ordinary agent certificate views; if collected, they remain protected system records available only to authorized system administrators.
+
+Completed delivery uses email without requiring an account or login. The individual signed PDFs and audit certificate are attached directly when total message size permits. When reliable attachment delivery is not practical, the email provides an account-free download link to the same separate files. A combined PDF may be an additional convenience artifact only. Delivery failure does not undo Signing completion and may be retried.
+
+Completed-package download links do not expire automatically. Each link is recipient-specific, strong and unguessable, access-logged, revocable, and replaceable. The completion email warns that possession of the link grants document access and that the recipient should protect it. An agent may revoke and replace a link believed to be exposed without changing the completed Signing or its immutable artifacts. Lawful deletion of the retained Signing records disables their links.
+
+Completed documents and the Signing-wide certificate are retained indefinitely unless a later authorized legal or records-retention policy requires deletion. Email attachments remain recipients' independent copies. Agents may resend completed materials or add copy recipients later, and every later delivery is appended to history without reopening or modifying the Signing.
+
+If a Signing is Declined or Cancelled before completion, Harbaugh Forms preserves its frozen documents and activity history but does not label or distribute them as completed documents. The agent receives the retained audit record. Participants receive notice that the Signing ended and may see their own activity history. Partially signed documents are not automatically distributed to all participants; an agent may deliberately export or share retained records when appropriate.
+
+This decision establishes product behavior and evidence visibility. It does not choose storage paths, table or column names, token format, hash algorithm beyond the requirement for a reliable document fingerprint, email-provider implementation, attachment-size thresholds, or detailed retention/deletion machinery.
+
+**Reason:**
+Transaction documents must remain usable as individual records rather than being available only inside one merged PDF. A single Signing-wide certificate accurately describes one workflow spanning several documents, while personalized activity visibility gives each participant useful evidence without exposing other participants' detailed behavior. Durable recipient access reduces long-term retrieval friction; recipient-specific revocation provides an emergency off switch if a link is exposed.
+
+**Consequences:**
+
+* Separate completed signed PDFs are the primary artifacts; a combined PDF is optional and supplemental.
+* One Signing-wide certificate covers all documents and includes a durable meaningful-event chronology.
+* Participants see their own detailed activity, agents see complete business history, and technical security metadata remains system-administrator-only.
+* Attachments are preferred when practical; otherwise recipients use account-free, non-expiring, revocable download links.
+* Completed artifacts remain available for later resend and copy-recipient delivery, subject only to a later authorized retention policy.
+* Declined or Cancelled Signings retain evidence but do not produce or automatically distribute a completed package.
+* The existing rule remains unchanged that each Signing owns immutable versions of its documents; pre-signature amendments create replacement immutable versions while retaining superseded versions in history, and the first accepted signature or initial permanently freezes the current versions.
+* No application code, schema, migration, storage, route, configuration, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Completed copies are emailed without login and copy recipients remain addable** (2026-09-06); **Remote participants use emailed links with explicit identity confirmation** (2026-09-06); **Pre-signature amendments use an exclusive agent lock and retain participant links** (2026-09-05)
+* No SQL migration; no schema change
+
+---
+
+## Finish Signing is the participant's irreversible completion boundary
+
+**Date:** 2026-09-06
+
+**Decision:**
+Before selecting **Finish Signing**, a participant may replace or undo that participant's own signatures or initials. Every placement, replacement, and removal remains represented in append-only signing history; a later action does not erase the earlier event.
+
+A participant cannot finish until every required field assigned to that participant is complete. Optional fields may remain blank. **Finish Signing** requires a final affirmative confirmation that the participant intends to complete and submit their portion of the Signing. Once confirmed, that participant's work is locked. Returning through the participant's link shows a read-only completion experience and does not permit changes to completed signatures or other submitted actions.
+
+A participant cannot independently withdraw or revise completed participation. If a correction is required after submission, the agent must cancel or otherwise terminate the Signing and create another one. Finishing one participant's portion does not prevent other participants from continuing. The overall Signing becomes Complete only when every required participant has finished. A participant may decline before finishing but cannot later convert completed participation into a decline.
+
+This decision establishes participant-facing completion semantics, not event-table names, field-state columns, confirmation copy, or enforcement mechanisms.
+
+**Reason:**
+Participants need room to correct their own work before submission, while the system needs an unmistakable point after which their completed actions are evidentially stable. A separate Finish Signing confirmation provides that boundary without treating the first field placement as the participant's final approval of their entire portion.
+
+**Consequences:**
+
+* Pre-finish corrections are permitted only for the acting participant's own fields and remain auditable.
+* Required-field validation gates Finish Signing; optional fields do not.
+* Participant completion is irreversible within that Signing.
+* The Signing completes only after all required participants finish.
+* No application code, schema, migration, storage, route, or configuration change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing lifecycle distinguishes setup, active signing, completion, decline, and cancellation** (2026-09-05); **Pre-signature amendments use an exclusive agent lock and retain participant links** (2026-09-05)
+* No SQL migration; no schema change
+
+---
+
+## Signature fields create optional paired dates; initials do not
+
+**Date:** 2026-09-06
+
+**Decision:**
+During Signing preparation, placing a **Signature** field for a participant automatically creates a paired **Date Signed** field beside it. Before the Signing freezes, the agent may move, resize, or delete the paired date without affecting the signature field. Placing an **Initials** field creates only the initials field; it does not automatically create a date. The agent may separately add a Date Signed field where a form requires one near initials.
+
+Participants may adopt typed or drawn signatures and initials. A retained paired date is populated automatically when the participant completes its associated signature field; the participant does not type or choose that date. Each signature, initial, and automatic date placement is associated with its signing activity and recorded individually. The first successfully accepted signature or initial remains the permanent Signing-freeze boundary established by the 2026-09-05 locking decision.
+
+The authoritative event timestamp is recorded in UTC. The calendar date visibly rendered into the document uses the Signing sender's configured local timezone and is preserved as the rendered value associated with that event. It is the date of the corresponding signature action, not merely the later overall Signing-completion date.
+
+This decision does not settle signature-image storage, font choices, drawing format, or event-table columns. Completed-document and Signing-wide audit-certificate behavior is settled separately by the later 2026-09-06 decision.
+
+**Reason:**
+Real-estate signature blocks ordinarily require a signing date, and automatically pairing the date with a signature reduces repetitive setup and participant mistakes. Initials commonly appear many times throughout a document and ordinarily should not produce a date beside every placement. Server-authoritative timestamps plus a preserved sender-local rendered date provide stable evidence across participant timezones.
+
+**Consequences:**
+
+* Signature placement defaults to a linked Signature plus Date Signed pair.
+* Agents may remove the automatic date during preparation.
+* Initials remain initials-only unless the agent deliberately adds a date.
+* Automatic dates cannot be manually chosen by participants.
+* Typed and drawn signature/initial adoption are in scope. A later 2026-09-06 decision permits one optional reusable signature and initials preset for authenticated Users; uploaded signature images remain deferred.
+* No application code, schema, migration, storage, route, or configuration change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Pre-signature amendments use an exclusive agent lock and retain participant links** (2026-09-05); **Fill Form text layout, placement masks, and typed signature annotations** (2026-08-05)
+* No SQL migration; no schema change
+
+---
+
+## Remote participants use emailed links with explicit identity confirmation
+
+**Date:** 2026-09-06
+
+**Decision:**
+A remote signing participant accesses the signing experience through a strong, participant-specific emailed link. Harbaugh Forms does not require the participant to create an account, log in, enter an emailed or SMS one-time passcode, or complete multi-factor authentication. Possession of the participant-specific link is the access mechanism.
+
+Before reviewing or signing documents, the participant must affirm **I am [Participant Name]** for the identity shown by that link. This is an explicit identity attestation and signing event; it is not represented as independent identity proof. The participant must separately consent to electronic records/signatures and adopt a signature or initials before placing them. A participant cannot switch identities through the signing UI. If the displayed identity is wrong, the participant must stop and contact the sender.
+
+The same participant-specific link remains reusable while that participant retains access and the Signing remains In Progress. A timed-out browser session requires the participant to return through the link and repeat the identity confirmation, but does not require a new email. A retained participant may also reuse the same link after a permitted pre-signature amendment. Access is invalidated when the participant is removed or the Signing becomes Complete, Declined, or Cancelled. The sender may revoke and replace a link believed to be exposed.
+
+An email address remains a delivery destination rather than a unique identity key. Participants sharing an inbox receive distinct participant-specific links, and authenticating or completing one link never authenticates or completes another participant.
+
+This decision settles the baseline remote access experience and intentionally accepts the usability/security tradeoff of email-link-only access. A later 2026-09-06 decision keeps active-Signing links valid unless revoked and sets a 60-minute inactive browser-session timeout. Token format, entropy, storage, browser-session terminology, rate limits, heartbeat/lease mechanics, and revocation implementation remain technical design.
+
+**Reason:**
+Requiring accounts, OTP entry, SMS, or multi-factor authentication would create disproportionate friction for ordinary real-estate participants. Participant-specific links, explicit identity attestation, consent, signature adoption, immutable document versions, and detailed audit events provide a usable baseline while accurately avoiding a claim that email-link possession independently proves legal identity.
+
+**Consequences:**
+
+* Remote signing is account-free and does not use OTP or 2FA.
+* Every remote signing entry requires an explicit I am confirmation before document access.
+* Identity confirmation, electronic consent, and signature adoption are distinct affirmative actions.
+* Links are participant-specific, reusable while valid, revocable, and replaceable.
+* Exact temporary session and token design remains open under question D.
+* In-person signing continues to use its supervised participant-handoff rules rather than remote email authentication.
+* No application code, schema, migration, storage, route, or configuration change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Pre-signature amendments use an exclusive agent lock and retain participant links** (2026-09-05); **Signing participants may be linked or ad hoc, and all are eligible in parallel** (2026-09-05); **A Signing may be completed remotely or in person on a shared device** (2026-08-24)
+* No SQL migration; no schema change
+
+---
+
+## Completed copies are emailed without login and copy recipients remain addable
+
+**Date:** 2026-09-06
+
+**Decision:**
+When a Signing becomes Complete, every signing participant and every designated copy recipient receives the completed package by email. Recipients are not required to create an account or log in to retrieve the final copy. The later 2026-09-06 completed-artifact decision settles the delivery mechanism as direct attachments when practical and recipient-specific account-free download links otherwise.
+
+A copy recipient is not a signing participant. A copy recipient has no signer fields or signing access and does not affect Signing eligibility, progress, or completion. Only the recipient's email address is mandatory. Name, descriptive role, User reference, and Contact reference are optional. Contact or User creation is never required, associations are never inferred from email, and shared email addresses do not merge recipients.
+
+Copy recipients may be added without a time cutoff, including after the Signing is Complete. Adding a later recipient creates a new delivery instruction against the existing completed package; it does not modify the completed documents, reopen the Signing, or alter what anyone signed. Copy-recipient changes do not require the pre-signature amendment lock because they cannot alter the signing package. A prior delivery remains in immutable history even if its recipient entry is later corrected or removed.
+
+Delivery attempts and results are append-only audit activity. A failed email does not prevent the Signing from becoming Complete and may be retried. Declined and Cancelled Signings do not automatically send a completed package; the agent may separately export or share retained records when appropriate.
+
+This decision settles the copy-recipient domain behavior and delivery entitlement. The later 2026-09-06 completed-artifact decision also settles the product-level artifact, certificate, retention, and download-link behavior; table names, email-provider implementation, attachment thresholds, token implementation, and deletion machinery remain technical design.
+
+**Reason:**
+Signing participants are entitled to an accessible completed copy, and agents frequently need to distribute the same final package to attorneys, brokers, coordinators, or compliance recipients who should not be forced into the Contacts system or signing workflow. Later distribution must remain possible without mutating a terminal Signing or its immutable documents.
+
+**Consequences:**
+
+* Every signer and designated copy recipient receives the completed package by email without login.
+* Email is the only required copy-recipient value; all other identity/context fields are optional.
+* Copy recipients may be added and deliveries may be initiated indefinitely while the retained completed package remains available.
+* Delivery status is separate from Signing completion and can be retried.
+* Exact copy-recipient storage and delivery mechanics remain technical design, but open question E is resolved at the domain level.
+* No application code, schema, migration, storage, route, or configuration change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing participants may be linked or ad hoc, and all are eligible in parallel** (2026-09-05); **Signing lifecycle distinguishes setup, active signing, completion, decline, and cancellation** (2026-09-05)
+* No SQL migration; no schema change
+
+---
+
 ## Pre-signature amendments use an exclusive agent lock and retain participant links
 
 **Date:** 2026-09-05
@@ -27,7 +655,7 @@ The first successfully accepted signature or initial permanently freezes the Sig
 
 Concurrent agent and participant actions must be serialized without partial success. Whichever side first acquires the applicable server-side lock blocks the other. An accepted signature or initial is never discarded to allow a later amendment. If the agent acquires the amendment lock first, a participant action is rejected with the temporary-update message; if a participant is already active or the first signature/initial has been accepted, the agent cannot begin or save an amendment.
 
-If a pre-signature amendment supersedes participant-entered dates, text, checkbox selections, or other unsigned work from an earlier package revision, that work does not carry into the revised package. Relevant historical events may remain in the audit trail, but the participant resumes cleanly against the current package. Removing a participant revokes that participant's existing access; re-adding the person as a new participant requires new participant-specific access. Retained participants keep their existing links unless those links independently expire or are revoked.
+If a pre-signature amendment supersedes participant review, identity affirmation, consent, or other unsigned ceremony progress from an earlier package revision, that progress does not carry into the revised package. Relevant historical events may remain in the audit trail, but the participant resumes cleanly against the current package. Participants cannot enter dates, text, checkbox selections, or other contractual content in the Signing experience. Removing a participant revokes that participant's existing access; re-adding the person as a new participant requires new participant-specific access. Retained participants keep their existing links unless those links are revoked.
 
 All participants may review every document in the Signing. Harbaugh Forms will not implement participant-specific document hiding.
 
@@ -104,10 +732,10 @@ A durable **Signing** has five user-facing/domain lifecycle states:
 * **Draft** — the Signing and its immutable document version or versions exist, but the agent is still configuring participants and assigned signer fields. No participant may sign yet.
 * **In Progress** — the Signing has been activated. Remote invitations may have been sent, or an in-person signing ceremony may have started. All required participants are eligible to sign. Until the first signature or initial is accepted, the agent may amend the Signing only under the exclusive-lock rules in the later 2026-09-05 decision. The first accepted signature or initial freezes the document set, participant roster, participant identity snapshots, and assigned signer fields.
 * **Complete** — every required participant has completed every required signing action.
-* **Declined** — a participant affirmatively refused to sign. The participant may provide an optional reason. No further signing is allowed within that Signing.
-* **Cancelled** — the agent ended the Signing before completion.
+* **Declined** — a participant affirmatively refused the whole Signing. The participant may provide an optional reason. No further signing is allowed within that Signing.
+* **Cancelled** — an authorized primary agent, co-agent, or brokerage administrator ended the Signing before completion with a required audit-history reason.
 
-The ordinary lifecycle is **Draft → In Progress → Complete**. The agent may move a Draft or In Progress Signing to Cancelled. A participant decline moves an In Progress Signing to Declined. Complete, Declined, and Cancelled are terminal outcomes for that Signing.
+The ordinary lifecycle is **Draft → In Progress → Complete**. An authorized agent may move a Draft or In Progress Signing to Cancelled. A participant decline moves an In Progress Signing to Declined. Complete, Declined, and Cancelled are irreversible terminal outcomes for that Signing. The later 2026-09-06 terminal-outcomes decision specifies whole-Signing decline, cancellation authority and reasons, notifications, and recoverable discard of an unsent Draft.
 
 All events and evidence already collected remain preserved when a Signing is Declined or Cancelled, including partial signatures or initials, consent records, participant actions, timestamps, and immutable document versions. Before the first signature or initial, an agent may amend an In Progress Signing under the exclusive-lock rules recorded later on 2026-09-05. After the first signature or initial, a material correction requires a new Signing rather than changing the activated Signing.
 
@@ -116,9 +744,9 @@ All events and evidence already collected remain preserved when a Signing is Dec
 * Ready is validation derived from whether a Draft has all required setup.
 * Sent is a remote-delivery event or presentation status and does not apply universally to in-person signing.
 * Partially Signed is derived from participant/action progress while the Signing remains In Progress.
-* Expired ordinarily describes an invitation or access credential. An expired link may be replaced without changing the Signing's durable lifecycle state.
+* Expired is not a Signing lifecycle state. Active-Signing and completed-package links do not automatically expire under the later 2026-09-06 decisions, although revoked links are disabled and may be replaced.
 
-**Void** is not the Signing's cancellation term. The user-facing workflow action is **Cancel Signing**, producing a Cancelled Signing. This does not resolve whether the existing working-document `VOID` value has a separate future purpose.
+**Void** is rejected as a user-facing status throughout Harbaugh Forms by the later 2026-09-06 decision. The user-facing workflow action is **Cancel Signing**, producing a Cancelled Signing. The unused underlying `VOID` value requires a separate dependency audit before any technical removal.
 
 This decision establishes domain and user-facing lifecycle semantics. It does not prescribe database enum names, tables, columns, transition implementation, invitation-expiration policy, or exact participant-status schema.
 
@@ -296,15 +924,15 @@ A 2026-08-18 read-only audit of packet forms, generated PDFs, document states, a
 
 * **C. Resolved 2026-09-05 — participant identity and eligibility.** Participants may reference a User, Contact, both, or neither; ad hoc participants require name and email; roles are optional; email is non-unique and never silently links identities; historical values freeze at the first accepted signature or initial; and all participants are eligible in parallel without configurable signing order. Exact schema and authentication mechanics remain technical design.
 
+* **E. Resolved 2026-09-06 — copy recipients and completed-copy delivery.** Every signer and designated copy recipient receives the completed package by email without login. Copy recipients are not participants, require only email, never affect completion, and may be added indefinitely, including after completion. Delivery failures and later deliveries are tracked separately from Signing lifecycle. Exact storage and delivery mechanics remain technical design.
+
 **Remaining open questions:**
 
 The following remain unresolved except where a later decision has narrowed them. They must not be treated as decided by this 2026-08-19 checkpoint.
 
-* **A. Final immutable-version schema.** The exact table name, columns, constraints, storage-path scheme, parent-version implementation, and RLS rules remain to be designed.
+* **A. Narrowed 2026-09-06 — final immutable-version and event schema.** Product behavior is settled: explicit Signing current state is paired with append-only events, and each document preserves a fingerprinted prepared PDF, associated Signing activity, and a separately fingerprinted completed PDF; superseded prepared versions remain retained. The exact table names, columns, constraints, storage-path scheme, parent-version implementation, transactional enforcement, and RLS rules remain to be designed.
 
-* **D. Temporary authentication/session terminology and final schema names.** The durable overall object is now named **Signing** / **Signings** (see the 2026-08-21 decision). **Envelope** is explicitly rejected. The exact terminology for temporary authentication/browser-session objects remains open; that runtime state is not necessarily a durable domain object named “Signing Session.” Final schema/table names remain open until technical design is completed.
-
-* **E. Copy-recipient storage.** The principle that copy-only recipients need not become Contacts is settled. The exact model for storing those recipients remains open.
+* **D. Temporary authentication/session terminology and final schema names.** The durable overall object is **Signing** / **Signings**, and envelope is rejected. The remote access baseline is settled as participant-specific emailed links, explicit I am confirmation, no required account/OTP/2FA, reusable active-Signing links unless revoked, a 60-minute inactive browser-session timeout with preserved progress, and revocation on participant removal or terminal Signing status. Exact terminology and technical implementation for browser sessions, tokens, heartbeats/leases, storage, rate limits, and revocation remain open; runtime state is not necessarily a durable domain object named “Signing Session.” Final schema/table names remain open until technical design is completed.
 
 **Reason:**
 Native e-signature cannot be implemented on today’s on-demand filled PDF, because that output is disposable and is not a historical artifact. Real Texas transactions also produce more than one signed or partially signed artifact for the same logical document (corrections, new initials, abandoned attempts, post-signature effective dates). Harbaugh Forms should keep an accurate provenance trail rather than collapsing that history into a single current file or choosing which version is legally controlling. Signer identity is a workflow role, not a User-or-Contact exclusive category, and the signing ceremony must stay distinct from ordinary agent application editing.
@@ -317,7 +945,7 @@ Native e-signature cannot be implemented on today’s on-demand filled PDF, beca
 * Do not invent a final version/participant/event/copy-recipient schema in later documentation until those open questions are resolved.
 * Product terminology for the durable overall object is **Signing** / **Signings** (2026-08-21). Envelope is rejected. Temporary authentication/session terminology and exact table names remain open (question D).
 * Current packet-form lifecycle behavior remains unchanged during this documentation phase: the UI does not enter `SIGNED` / `VOID`. At the domain level, question B is resolved by the 2026-09-05 snapshot-boundary decision; no schema or lifecycle implementation change has yet been made. See **Packet Form Document Lifecycle**.
-* Vendor choice, certificate/crypto design beyond storing a document hash such as SHA-256, remote-signer authentication/session rules, and exact annotation-type names remain open, as in the 2026-08-16 native e-signature decision.
+* Vendor choice, cryptographic implementation beyond retaining a reliable document fingerprint, remote-signer session mechanics, and exact annotation-type names remain open, as in the 2026-08-16 native e-signature decision. The product-level completed-document and Signing-wide certificate behavior is resolved by the later 2026-09-06 decision.
 * Authentisign remains prior research and the current inventory-exclusion policy, not a committed vendor and not a separate product to recreate.
 
 **Related files or migrations:**
@@ -449,7 +1077,7 @@ Agents need to collect signatures and initials on both generated forms and recei
 * Do not implement signature locations as reusable `fields` / `field_instances` solely so they can be signed.
 * Preserve Authentisign-exclusion behavior for standard form inventory/extraction until a signing design replaces or supplements it.
 * Packet-form lifecycle `SIGNED` / `VOID` remain unused by UI. The 2026-09-05 snapshot-boundary decision resolves that future signing status does not belong in `packet_forms.document_state`; no schema or implementation change has yet been made, and the separate future of `VOID` remains open.
-* Vendor choice, certificate/crypto design, remote signer authentication/session rules, and exact annotation-type names remain open. Dedicated signing-experience principles are recorded in the 2026-08-19 architecture decision.
+* Vendor choice, cryptographic implementation, temporary remote-session mechanics, and exact annotation-type names remain open. Product-level completed-document and Signing-wide certificate behavior is resolved by the later 2026-09-06 decision. Dedicated signing-experience principles are recorded in the 2026-08-19 architecture decision.
 
 **Related files or migrations:**
 
@@ -540,7 +1168,7 @@ Single-line `drawText` / CSS `truncate` clipped narrative blanks. Fixed `10px` o
 * Creator attribution: DB trigger overwrites INSERT `created_by_user_id` with `auth.uid()`; UPDATE always restores OLD.
 * Preferred production order (executed 2026-08-06): migrate (`20260805220000` → `20260805230000` → **`20260806150000`**) → validate → deploy app / unique-URL smoke → apply Map Fields flags on form 15 Non-Real Estate Items as configuration data → **manually** promote custom domain.
 * Static Caveat/OFL files under `public/fonts/` must bypass the auth proxy matcher; filled PDF saves use `useObjectStreams: false`; Caveat keep `customName: "HarbaughCaveat"`.
-* **Deferred in this tranche (PR #31):** general free text, strikethrough, highlight, drawing, uploaded images, checkmarks, initials, reusable saved presets, automatic signature/date pairing. Those remain unimplemented. Product direction as of 2026-08-16: extend `packet_form_annotations` for document-specific markup and future signer fields (see decisions above); do not route those tools through the reusable field catalog. First-iteration markup intent is Add Text, Strikethrough, Initial field/box, and Signature field/box. Checkmark/X/underline/highlight, drawn/uploaded signatures, and saved presets remain later/optional.
+* **Deferred in this tranche (PR #31):** general free text, strikethrough, highlight, drawing, uploaded images, checkmarks, initials, reusable saved presets, automatic signature/date pairing. Those remain unimplemented. Product direction as of 2026-08-16: extend `packet_form_annotations` for document-specific markup and future signer fields (see decisions above); do not route those tools through the reusable field catalog. First-iteration markup intent is Add Text, Strikethrough, Initial field/box, and Signature field/box. Checkmark/X/underline/highlight, uploaded signature images, and reusable saved presets remain later/optional. A later 2026-09-06 decision places typed and drawn signature/initial adoption plus automatic removable signature/date pairing in scope for native Signing design; none was implemented by PR #31.
 
 **Related files or migrations:**
 
@@ -1397,7 +2025,7 @@ Refresh Values and open-time initialization can rewrite packet snapshots. Agents
 * `DRAFT`: editable; Refresh Values requires confirmation; Mark Final is available.
 * `FINAL`: read-only values; Refresh blocked; ordinary open loads existing instances only (no inserts/updates); Reopen to Draft is available and does not recalculate.
 * Mark Final may insert genuinely missing mapped instances using the packet owner’s resolution context, then sets `document_state = FINAL` without updating existing instances.
-* `SIGNED` / `VOID`: currently read-only, with no UI transition into either state. Native in-app e-signature is the planned product capability (2026-08-16); Authentisign remains prior research, not a committed vendor. **Resolved for future signing architecture on 2026-09-05:** Creating a Signing captures an immutable version without requiring `FINAL`; signing status belongs to the Signing domain, not the working `packet_form`. `SIGNED` is an unused pre-existing schema value, not legacy signing behavior. If implementation-time dependency and data checks confirm it is unused, remove it through a forward migration and update lifecycle definitions. No schema change is authorized by this documentation decision. The separate meaning and future of `VOID` remain open.
+* `SIGNED` / `VOID`: currently read-only, with no UI transition into either state. Native in-app e-signature is the planned product capability (2026-08-16); Authentisign remains prior research, not a committed vendor. **Resolved for future signing architecture on 2026-09-05:** Creating a Signing captures an immutable version without requiring `FINAL`; signing status belongs to the Signing domain, not the working `packet_form`. `SIGNED` is an unused pre-existing schema value, not legacy signing behavior. **Resolved for product terminology on 2026-09-06:** Void is rejected as a user-facing status throughout Harbaugh Forms because it is ambiguous and could imply legal authority. If implementation-time dependency and data checks confirm either underlying value is unused, removal requires a forward migration and updated lifecycle definitions. No schema change is authorized by these documentation decisions.
 * Authenticated field-instance and field-instance-mapping INSERT/UPDATE require an ACTIVE DRAFT parent form.
 * Privileged sessions (`auth.uid()` null) may still perform migration/admin SQL.
 * Future enhancement: before/after field-diff preview prior to Refresh Values.
@@ -2100,3 +2728,38 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 * `scripts/sync-condo-txr-1605-to-production.ts`
 * `scripts/rollback-condo-txr-1605-production.ts`
 * `lib/condo-txr-1605-production-sync.ts`
+
+---
+
+## Defense in depth for Global Admin readers
+
+**Date:** 2026-09-11
+
+**Decision:** Authorization belongs both at the administrator page request boundary and inside every exported service-role data reader. An administrator layout guard alone is not sufficient.
+
+**Reason:** React Suspense can begin page content concurrently with a parent layout. A page-level privileged query can therefore run before a layout-only authorization decision is rendered. The data reader must enforce its own authorization before constructing a service-role client.
+
+**Consequences:** Administrator pages call `requireAppAdminPage()` before any privileged load. The readers for users, organizations, memberships, membership-picker directory data, audit settings, and audit events call `requireAppAdmin()` before `createAdminClient()`. The ordinary audit-writing path reads settings through a private helper, preserving normal event logging without exposing the administrator settings reader.
+
+**Related files:**
+
+* `app/admin/users/page.tsx`
+* `app/admin/users/[id]/page.tsx`
+* `app/admin/organizations/page.tsx`
+* `app/admin/organizations/[id]/page.tsx`
+* `app/admin/audit/page.tsx`
+* `lib/admin/list-users.ts`
+* `lib/admin/manage-organizations.ts`
+* `lib/admin/manage-memberships.ts`
+* `lib/admin/manage-user-detail.ts`
+* `lib/audit/record.ts`
+
+---
+
+## Workstream boundary — security remediation and Native Signing
+
+**Date:** 2026-09-12
+
+**Decision:** Security remediation and Native Signing remain separate workstreams. F6 changes only authorization around existing administrator data access; they do not change the approved Signing architecture or authorize Signing implementation.
+
+**Consequences:** Resume Native Signing from the dedicated Signing decisions near the beginning of this document. Record future vulnerability fixes in clearly labeled Security sections and do not use security work to implicitly revise Signing workflow, participant, artifact, or identity decisions.

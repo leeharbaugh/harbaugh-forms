@@ -1,6 +1,6 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-05 (Signing snapshot boundary, lifecycle, participant identity, and pre-signature amendment locking settled; native e-signature architecture design continues; packet property-picker search + assignment-mode fixes remain live in production)
+**As of:** 2026-09-10 (Working Signing table model, controlled append-only event vocabulary, package revisions, credentials, locking, idempotency, and recoverable finalization decisions added; schema implementation remains; packet property-picker fixes remain live in production)
 
 ## Current State
 
@@ -10,7 +10,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Status:** Design in progress. **No signing implementation, migration, or schema change.**
 
-A read-only immutable-document audit is complete. Durable architecture decisions are recorded in `decisions.md` (working `packet_form`, future one-to-many immutable rendered versions, signing participants, dedicated signing experience). The durable signing-workflow object is named **Signing** / **Signings**, and Signings may be remote or in person on a shared device. **Create Signing** is the immutable snapshot boundary: `FINAL` is not required, the working document may remain editable, and signing status belongs to the Signing domain rather than `packet_forms.document_state`. The Signing lifecycle is **Draft → In Progress → Complete**, with distinct terminal **Declined** and **Cancelled** outcomes. Participants may link to a User, Contact, both, or neither; ad hoc participants require name and email; roles are optional; email is non-unique; and all participants are eligible in parallel without configurable signing order. Before the first signature or initial, an In Progress Signing may be amended only through an exclusive agent lock when no participant has the signing experience open; retained participants reuse their links afterward. The first accepted signature or initial freezes documents, participants, identity snapshots, and signer fields. Terminal outcomes preserve partial evidence. The unused pre-existing `SIGNED` value is a later implementation/migration concern after dependency checks; no schema change has been made. Open questions remain, including the final version schema, temporary authentication/session terminology, copy-recipient storage, exact table names, and the separate future meaning of `VOID`. Next work is continued technical/domain design before implementation.
+A read-only immutable-document audit is complete. Durable architecture decisions are recorded in `decisions.md`; no signing implementation or schema exists yet. The approved working table model separates `signings`, logical Signing Documents, immutable document versions, package revisions and their frozen document/participant snapshots, participants, signer fields, adopted marks, placements, generated artifacts, and append-only events. Access credentials, browser sessions, presence leases, deliveries, and agent associations remain separate table-design work. Signing-owned current state remains authoritative and meaningful changes append server-sequenced immutable events. Event and actor values are human-readable, controlled, and extended only through additive, version-controlled migrations; historical meanings are never repurposed. Each activated package revision atomically binds documents, participants, identity snapshots, and assignments; amendments promote a complete replacement revision, and the first accepted signature or initial pins it. Prepared and completed PDFs remain separate fingerprinted artifacts. Raw bearer tokens are not stored; signing and completed-package credentials have separate scopes. Locks and leases always expire under server control and stale editors cannot save. Field saves and Finish Signing are server-authoritative and idempotent; reconnecting participants recover confirmed progress and see an accurate remaining-field count. Finalization is deterministic, resumable, and administratively retryable without permitting evidence edits or a manual Complete override; Complete occurs only after every individual completed PDF and the Signing-wide certificate are stored and verified, while email delivery remains separate. Existing product decisions remain: brokerage oversight and co-agent authority, permanent historical agent access, dedicated signature/initial-only ceremony, automatic dates, reusable User presets, daily reminders, optional non-terminal Overdue, separate completed PDFs, non-expiring revocable recipient links, and no user-facing Void. Remaining work is detailed technical design: exact column types/constraints/indexes, access policies, storage layout, encoding and cryptographic details, job/provider choices, retention/deletion mechanics, legacy `SIGNED`/`VOID` audit, and implementation sequencing.
 
 ### Packet property picker production rollout (2026-08-18)
 
@@ -187,7 +187,7 @@ Automatic sources: property legal description, property county, seller 1/2 names
 | Caveat PDF embed | Requires `@pdf-lib/fontkit` + `PDFDocument.registerFontkit`; embed with `subset: true` + `customName: "HarbaughCaveat"` when Helvetica is also present |
 | Tests | `test:pdf-text-layout`; `test:fill-form-pdf-download`; annotation contract tests; `validate:packet-form-annotation-auth-dev`; `smoke:fill-form-presentation-dev`; field-instance-sync; packet-form-lifecycle; storage-paths; `tsc --noEmit`; `build:validate` |
 | Font license | `public/fonts/Caveat-Regular.ttf` + `public/fonts/OFL.txt` (SIL OFL 1.1, Caveat Project Authors) |
-| Deferred | Drawn/uploaded signatures and reusable saved signatures remain out of this tranche. Native e-signature is a major planned product area (see Future Product Roadmap); Authentisign remains prior documented research, not a committed vendor architecture |
+| Deferred | Drawn signatures, uploaded signature images, and reusable saved signatures were all outside this completed tranche. Later native Signing design includes typed/drawn adoption and one optional reusable signature/initials preset for authenticated Users; uploaded images remain deferred. Authentisign remains prior research, not a committed vendor architecture. |
 
 **Root causes addressed:** (1) Multiline clipped because preview used `truncate`/`input` and PDF used a single `drawText` with no wrap. (2) Undersized preview text because display used fixed CSS `10px` while boxes scaled with zoom; clamp was also incorrectly applied after zoom scale (fixed: clamp in PDF space, then multiply by scale). (3) Creator spoof residual: UPDATE could rewrite `created_by_user_id` without DB enforcement (fixed by forward migration trigger). (4) Caveat custom-font embed failed without fontkit and fell back to Helvetica silently. (5) 2026-08-06: narrative downloads without Map Fields multiline flag stay single-line; Caveat+Helvetica default-name embed corrupted advances (fixed via `HarbaughCaveat` customName). (6) Preprinted lines through wrapped Non-Real Estate text: mapping lacked `mask_background` (enabled and retained).
 
@@ -1181,7 +1181,7 @@ Smaller / optional items (not the two major roadmap areas above):
 - Optional cross-form defaults dashboard
 - Refresh Values before/after field-diff preview
 - Optional Unknown legacy provenance wording improvement
-- Drawn/uploaded (image) signatures and reusable saved signature presets (out of the first annotation/e-sign iterations unless separately designed)
+- Uploaded signature images remain deferred; native Signing design now includes typed/drawn adoption and one optional reusable signature/initials preset for authenticated Users (2026-09-06)
 
 ## Known Issues (non-blocking)
 
@@ -1237,7 +1237,7 @@ See `decisions.md` for architectural decisions. Highlights:
 - Invitation-only access; invite confirmation uses token-hash `verifyOtp` (PKCE preserved separately); HostPapa DNS changes limited to intended subdomain records
 - Packet-form annotations (`typed_signature`, `date_signed`) are packet-document-specific, not catalog fields; future markup and e-signature should extend that model
 - Native e-signature is planned in-app; Authentisign remains prior research / current inventory-exclusion policy, not a committed vendor
-- Native e-signature architecture decisions are in `decisions.md`: working `packet_form`, future immutable rendered versions, dedicated signing experience; durable workflow object named Signing / Signings (2026-08-21); remote and in-person modes (2026-08-24); Create Signing as the immutable snapshot boundary with no `FINAL` prerequisite; Draft / In Progress / Complete / Declined / Cancelled lifecycle; linked or ad hoc participants with non-unique email and parallel eligibility; exclusive pre-signature amendment locking with reusable participant links and first-signature freeze (2026-09-05); schema and implementation have not begun
+- Native e-signature architecture decisions are in `decisions.md`: Signing / Signings terminology; remote and in-person modes; immutable snapshot creation without a `FINAL` prerequisite; Signing lifecycle; linked or ad hoc participants; parallel eligibility; exclusive pre-signature amendment locking; first-signature freeze; emailed-link access with explicit I am confirmation and no OTP/2FA; automatic removable date pairing for signatures but not initials; irreversible participant Finish Signing; and account-free completed-copy email delivery to signers and indefinitely addable copy recipients. Schema and implementation have not begun.
 - One-off imported packet PDFs should not require the reusable form-library workflow; quick PDF annotations are not reusable fields
 - Packet existing-property search shows matches only after the user types; a blank query does not list all properties, and the selected property stays independent of the search box
 - Packet assigned property is independent of the property-entry UI mode; toggling Select existing / Create new does not clear or replace the assignment
@@ -1253,3 +1253,27 @@ See `decisions.md` for architectural decisions. Highlights:
 ## Historical Session Log
 
 Detailed day-by-day session notes from June–July 2026 development (defaults UI, containment repairs, Listing/Contract cleanup, etc.) remain in Git history prior to the 2026-07-24 production-status documentation update. Statements in those historical entries about “no production environment” reflected the state **at the time of that session**, not the current live deployment.
+
+---
+
+## Security remediation — F6 admin reader authorization (2026-09-11)
+
+Completed the F6 repair from the security report. Each affected administrator page now verifies Global Admin authorization before loading page data, and every exposed service-role reader independently verifies authorization before creating its privileged client. The affected readers cover administrator users, organizations, memberships, directory users, audit settings, and audit events.
+
+`getAuditSettings` is administrator-only. Ordinary audit-event recording uses a private settings loader so routine audit logging remains available to non-administrator application flows.
+
+Validation passed: targeted ESLint, `npx tsc --noEmit`, admin-audit (14), admin-organization (4), and admin-user-lifecycle (23) tests. In a local development role-matrix check, ordinary HTML and RSC requests emitted a Next redirect instruction before protected data and did not contain a synthetic administrator marker; an administrator response contained that marker. Repository-wide lint remains unsuitable as a gate because it scans existing generated `.next` output and unrelated debug scripts.
+
+Next: review and deploy the focused repair, then repeat the role-matrix check in the deployed environment without using production data fixtures.
+
+---
+
+## Workstream boundary — security and Native Signing (2026-09-12)
+
+### Security remediation — active
+
+F6 is implemented locally and awaits deployment plus a manual administrator smoke test. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
+
+### Native Signing — planning paused
+
+The Native Signing decisions in `decisions.md` remain the source of truth for the future feature. No Signing schema or product implementation is authorized by the F6 repair. When Signing work resumes, begin with those dedicated Signing sections rather than this security status entry.

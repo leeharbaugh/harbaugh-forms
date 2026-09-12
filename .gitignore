@@ -25,6 +25,11 @@
 .DS_Store
 *.pem
 
+# Private local audit notes and disposable workstation artifacts
+/security.md
+/tmp/
+/app/favicon.ICOLD
+
 # selective production export artifacts (may contain business data)
 /exports/
 /_import_tmp/
