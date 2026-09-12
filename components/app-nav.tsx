@@ -73,7 +73,16 @@ export function AppNav({ active }: AppNavProps) {
             >
               Settings
             </Link>
-            <Suspense fallback={null}>
+            <Suspense
+              fallback={
+                <span
+                  aria-hidden="true"
+                  className={navLinkClass(active === "admin")}
+                >
+                  Admin
+                </span>
+              }
+            >
               <AdminNavLink
                 className={navLinkClass(active === "admin")}
                 active={active === "admin"}
