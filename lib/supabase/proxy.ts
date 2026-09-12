@@ -69,10 +69,21 @@ export async function updateSession(request: NextRequest) {
       if (userId) {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("must_change_password")
+          .select("status, onboarding_status, must_change_password")
           .eq("id", userId)
           .maybeSingle();
-        if (profile?.must_change_password === true) {
+        const eligible = profile?.status === "ACTIVE" &&
+          (profile.onboarding_status === "ACTIVE" || profile.onboarding_status === "INVITED");
+        if (!eligible) {
+          await supabase.auth.signOut();
+          const url = request.nextUrl.clone();
+          url.pathname = "/auth/login";
+          url.search = "error=inactive_account";
+          const response = NextResponse.redirect(url);
+          supabaseResponse.cookies.getAll().forEach((cookie) => response.cookies.set(cookie));
+          return response;
+        }
+        if (!allowedWhileForced && profile.must_change_password === true) {
           const url = request.nextUrl.clone();
           url.pathname = "/auth/change-password";
           url.search = "";

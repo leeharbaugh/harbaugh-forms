@@ -351,13 +351,19 @@ export async function setUserAccountStatusAction(options: {
     }
 
     if (options.status === "INACTIVE") {
-      await admin.auth.admin.updateUserById(options.userId, {
+      const { error: authUpdateError } = await admin.auth.admin.updateUserById(options.userId, {
         ban_duration: "876600h",
       });
+      if (authUpdateError) {
+        return { ok: false as const, error: `Account access is blocked in the application, but Supabase could not ban future sessions: ${authUpdateError.message}` };
+      }
     } else {
-      await admin.auth.admin.updateUserById(options.userId, {
+      const { error: authUpdateError } = await admin.auth.admin.updateUserById(options.userId, {
         ban_duration: "none",
       });
+      if (authUpdateError) {
+        return { ok: false as const, error: `Supabase could not restore sign-in access: ${authUpdateError.message}` };
+      }
     }
 
     revalidateAdminPaths([`/admin/users/${options.userId}`]);

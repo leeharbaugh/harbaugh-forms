@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/email-otp";
 import { validateNewPassword } from "@/lib/auth/password-policy";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { assertSupabaseEnv, formatAuthNetworkError } from "@/lib/supabase/env";
 import type { Profile } from "@/lib/types/profile";
 import { redirect } from "next/navigation";
@@ -130,11 +131,15 @@ export async function updatePasswordAction(formData: FormData) {
 
     // Clear forced-password flag after a successful Auth password update.
     // Never log or return the password value.
-    await supabase
+    const admin = createAdminClient();
+    const { error: clearFlagError } = await admin
       .from("profiles")
       .update({ must_change_password: false })
       .eq("id", user.id)
       .eq("must_change_password", true);
+    if (clearFlagError) {
+      return { error: "Your password was changed, but account access could not be restored. Contact an administrator." };
+    }
 
     const { data: profile } = await supabase
       .from("profiles")

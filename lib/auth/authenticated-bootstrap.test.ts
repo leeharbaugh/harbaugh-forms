@@ -61,6 +61,16 @@ describe("authenticated application bootstrap", () => {
     assert.match(serverClient, /cookieStore\.set\(name, value, options\)/);
     assert.match(proxyClient, /supabaseResponse\.cookies\.set\(name, value, options\)/);
     assert.match(proxyClient, /supabase\.auth\.getClaims\(\)/);
+    assert.match(proxyClient, /status, onboarding_status, must_change_password/);
+    assert.match(proxyClient, /auth\.signOut\(\)/);
+    assert.match(proxyClient, /inactive_account/);
+  });
+
+  it("clears a forced-password flag only through the trusted server client", () => {
+    const action = readRepo("app/auth/actions.ts");
+    assert.match(action, /createAdminClient/);
+    assert.match(action, /clearFlagError/);
+    assert.doesNotMatch(action, /supabase\s*\.from\("profiles"\)\s*\.update\(\{ must_change_password: false \}\)/s);
   });
 
   it("resolves active Global Admin access from the authenticated profile", () => {
