@@ -6,6 +6,7 @@ export type BrokerageSettings = {
   create_date: string;
   update_date: string;
   status: string;
+  organization_id: string;
 
   agent_first_name: string | null;
   agent_middle_name: string | null;
@@ -364,11 +365,17 @@ export function resolveBrokerageSettingsField(
 
 export async function fetchActiveBrokerageSettings(
   supabase: SupabaseClient,
+  organizationId: string | null | undefined,
 ): Promise<BrokerageSettings | null> {
+  if (!organizationId) {
+    return null;
+  }
+
   const { data, error } = await supabase
     .from("brokerage_settings")
     .select("*")
     .eq("status", "ACTIVE")
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   if (error) {

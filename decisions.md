@@ -2853,3 +2853,23 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 * `supabase/migrations/20260913190000_block_browser_audit_setting_access.sql`
 * `lib/audit/record.ts`
 * `scripts/validate-audit-logging-atomic-dev.ts`
+
+---
+
+## Security remediation — brokerage profiles belong to organizations
+
+**Date:** 2026-09-13
+
+**Decision:** Brokerage settings are organization-scoped. The existing active profile belongs to **Davey Goosmann Realty**. An authenticated user may read a profile only through active membership in that profile’s organization; Global Admins retain administrative access. An active organization has at most one active brokerage profile. Packet field resolution uses the packet owner’s active primary organization, never the viewer’s organization.
+
+**Reason:** The legacy singleton profile was visible to every authenticated user. In a multi-organization application, that exposed brokerage contact and license details across organization boundaries and could populate a packet with the viewer’s or an unrelated organization’s brokerage information.
+
+**Consequences:** A user whose active primary organization has no brokerage profile sees blank brokerage-sourced fields until its authorized administrator creates one. The Settings page saves only the signed-in user’s primary organization profile. This security repair does not revise Native Signing architecture or authorize its implementation.
+
+**Related files:**
+
+* `supabase/migrations/20260913200000_scope_brokerage_settings_to_organization.sql`
+* `components/settings/settings-page.tsx`
+* `lib/field-resolver.ts`
+* `lib/types/brokerage-settings.ts`
+* `scripts/validate-brokerage-settings-organization-dev.ts`

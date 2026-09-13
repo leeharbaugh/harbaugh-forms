@@ -1272,7 +1272,7 @@ Deployment: commit `39ca2f4` passed its Vercel deployment checks and was manuall
 
 ### Security remediation — active
 
-F1, F2/F8, F3/F4, F5, F6, and F7 are deployed and passed their respective validation. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
+F1, F2/F8, F3/F4, F5, F6, F7, and F9 are deployed and passed their respective validation. F10 brokerage-settings isolation is complete in development and awaiting its separate production preflight and rollout. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
 
 ### Native Signing — planning paused
 
@@ -1374,3 +1374,23 @@ A database-level capability guard and restrictive browser policy provide defense
 * `supabase/migrations/20260913190000_block_browser_audit_setting_access.sql`
 * `lib/audit/record.ts`
 * `scripts/validate-audit-logging-atomic-dev.ts`
+
+---
+
+## Security remediation — F10 organization-scoped brokerage settings (2026-09-13)
+
+**Status:** Complete in development; production rollout pending.
+
+The active brokerage profile is now assigned to **Davey Goosmann Realty**. The database permits a browser user to read brokerage settings only when they hold an active membership in that organization; Global Admin access remains available for administration. Each active organization can have only one active brokerage profile.
+
+The Settings page resolves the signed-in user’s primary organization before loading or saving its profile. Packet field resolution resolves brokerage values from the packet owner’s active primary organization, rather than from the administrator or other viewer opening the packet. A packet owned by an organization with no brokerage profile receives blank brokerage values.
+
+**Development validation:** `npm run validate:brokerage-settings-organization-dev` created and removed a temporary ordinary user and packet. It verified that a New Test Org member could not read Davey Goosmann Realty’s profile, that the same user could read it only after becoming a Davey member, and that packet resolution followed the packet owner’s organization. `npx tsc --noEmit --incremental false`, ESLint, the organization-admin tests, and migration diff checks passed.
+
+**Related files:**
+
+* `supabase/migrations/20260913200000_scope_brokerage_settings_to_organization.sql`
+* `components/settings/settings-page.tsx`
+* `lib/field-resolver.ts`
+* `lib/types/brokerage-settings.ts`
+* `scripts/validate-brokerage-settings-organization-dev.ts`

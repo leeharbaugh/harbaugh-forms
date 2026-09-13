@@ -28,6 +28,7 @@ import { useCallback, useEffect, useState } from "react";
 
 export function SettingsPage() {
   const [settingsId, setSettingsId] = useState<number | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [agentValue, setAgentValue] = useState(emptyAgentProfileInput());
   const [brokerageValue, setBrokerageValue] = useState(emptyBrokerageProfileInput());
   const [isLoading, setIsLoading] = useState(true);
@@ -50,7 +51,38 @@ export function SettingsPage() {
 
     try {
       const supabase = createClient();
-      const settings = await fetchActiveBrokerageSettings(supabase);
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) {
+        throw userError;
+      }
+      if (!user) {
+        throw new Error("You must be signed in to manage settings.");
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("primary_organization_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (profileError) {
+        throw profileError;
+      }
+
+      const activeOrganizationId = profile?.primary_organization_id ?? null;
+      setOrganizationId(activeOrganizationId);
+      if (!activeOrganizationId) {
+        throw new Error(
+          "Your account needs an active primary organization before you can manage brokerage settings.",
+        );
+      }
+
+      const settings = await fetchActiveBrokerageSettings(
+        supabase,
+        activeOrganizationId,
+      );
 
       if (settings) {
         applySettings(settings);
@@ -84,10 +116,18 @@ export function SettingsPage() {
 
     const supabase = createClient();
 
+    if (!organizationId) {
+      setError(
+        "Your account needs an active primary organization before you can save brokerage settings.",
+      );
+      setSaving(false);
+      return;
+    }
+
     if (settingsId === null) {
       const { data, error } = await supabase
         .from("brokerage_settings")
-        .insert(row)
+        .insert({ ...row, organization_id: organizationId })
         .select("*")
         .single();
 
@@ -108,6 +148,7 @@ export function SettingsPage() {
       .update(row)
       .eq("id", settingsId)
       .eq("status", "ACTIVE")
+      .eq("organization_id", organizationId)
       .select("*")
       .single();
 

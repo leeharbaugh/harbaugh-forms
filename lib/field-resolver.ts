@@ -1563,15 +1563,12 @@ export async function loadFieldResolverContext(
   packetId: number,
   packetFormId?: number,
 ): Promise<FieldResolverContext> {
-  const [packetResult, settings] = await Promise.all([
-    supabase
-      .from("packets")
-      .select(PACKET_RESOLVER_SELECT)
-      .eq("id", packetId)
-      .eq("status", "ACTIVE")
-      .single(),
-    fetchActiveBrokerageSettings(supabase),
-  ]);
+  const packetResult = await supabase
+    .from("packets")
+    .select(PACKET_RESOLVER_SELECT)
+    .eq("id", packetId)
+    .eq("status", "ACTIVE")
+    .single();
 
   if (packetResult.error || !packetResult.data) {
     throw new Error(packetResult.error?.message ?? "Packet not found.");
@@ -1697,6 +1694,13 @@ export async function loadFieldResolverContext(
       scopedDefaults = buildScopedDefaultLookup([]);
     }
   }
+
+  // Brokerage details must belong to the packet owner's active organization,
+  // never to the person currently viewing the packet.
+  const settings = await fetchActiveBrokerageSettings(
+    supabase,
+    actingOrganizationId,
+  );
 
   return {
     packetId,
