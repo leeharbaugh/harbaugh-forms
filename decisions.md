@@ -2811,3 +2811,5 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 
 * `supabase/migrations/20260913120000_enforce_final_document_immutability.sql`
 * `scripts/validate-final-document-immutability-dev.ts`
+
+**Production rollout:** The migration was applied after a clean preflight on 2026-09-13. Vercel deployment `CwPBQ82NsD8bgafXpQfZAcz7Evxv` for commit `4ee764f` was verified at its isolated URL and manually promoted to the production domains.
