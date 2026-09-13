@@ -1,6 +1,6 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-10 (Working Signing table model, controlled append-only event vocabulary, package revisions, credentials, locking, idempotency, and recoverable finalization decisions added; schema implementation remains; packet property-picker fixes remain live in production)
+**As of:** 2026-09-13 (Working Signing table model, controlled append-only event vocabulary, package revisions, credentials, locking, idempotency, and recoverable finalization decisions added; schema implementation remains; packet property-picker fixes remain live in production)
 
 ## Current State
 
@@ -1272,7 +1272,7 @@ Deployment: commit `39ca2f4` passed its Vercel deployment checks and was manuall
 
 ### Security remediation — active
 
-F6 is deployed and has passed a manual administrator smoke test. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
+F1, F2/F8, F3/F4, and F6 are deployed and passed their respective validation. F5 final-document immutability is complete and validated in development; it is awaiting production preflight and promotion. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
 
 ### Native Signing — planning paused
 
@@ -1307,3 +1307,22 @@ Development validation used disposable records and a normal authenticated browse
 * `supabase/migrations/20260912150000_secure_form_lifecycle_writes.sql`
 * `lib/forms/secure-publish.test.ts`
 * `scripts/validate-secure-publish-dev.ts`
+
+---
+
+## Security remediation — F5 finalized document and published template immutability (2026-09-13)
+
+**Status:** Complete in development; awaiting production preflight and promotion.
+
+The database and Storage policies now enforce the packet-form lifecycle independently of the browser. Authenticated users can create, edit, replace, or remove an annotation or generated PDF only for their active DRAFT packet form. FINAL, SIGNED, and VOID forms block those mutations. Reopening a FINAL form through the existing owner-authorized lifecycle restores normal DRAFT editing.
+
+Published form-template source PDFs are also immutable to authenticated clients, including Global Admin browser sessions. An active DRAFT form remains editable. Privileged maintenance continues to use service-role operations rather than a browser session.
+
+Development validation created disposable records with an authenticated browser session. It confirmed that DRAFT template and packet-document edits succeed; published-template replacement/removal, FINAL annotation changes, and FINAL generated-PDF replacement/removal leave protected content unchanged; and an intentional reopen restores DRAFT edits. Disposable records and objects are cleaned up by the validator.
+
+**Validation:** `npm run validate:final-document-immutability-dev`; `npm run test:packet-form-lifecycle` (7); ESLint; migration diff check.
+
+**Related files:**
+
+* `supabase/migrations/20260913120000_enforce_final_document_immutability.sql`
+* `scripts/validate-final-document-immutability-dev.ts`

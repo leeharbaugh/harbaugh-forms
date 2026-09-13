@@ -2794,3 +2794,20 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 * `lib/forms/form-lifecycle-actions.ts`
 * `lib/forms/secure-publish.test.ts`
 * `scripts/validate-secure-publish-dev.ts`
+
+---
+
+## Security remediation — finalized document and published template immutability
+
+**Date:** 2026-09-13
+
+**Decision:** Packet-form annotations and generated PDFs are mutable only while the associated packet form is ACTIVE and DRAFT. The current owner may intentionally reopen a FINAL packet form through the established lifecycle, which returns it to the DRAFT editing state. A form-template source object is mutable only while its associated form is ACTIVE and DRAFT. These restrictions apply to every authenticated browser session, including Global Admin; service-role maintenance remains privileged and is not browser-accessible.
+
+**Reason:** Browser UI guards did not prevent a caller from writing directly to Supabase. A packet owner could alter annotations or overwrite the generated PDF after finalization, and a browser administrator could overwrite a published template object. Both outcomes undermine the historical record represented by FINAL documents and published templates.
+
+**Consequences:** Storage mutations require an exact active DRAFT record. The packet-upload policy has a narrow provisional path allowance for the existing insert-upload-finalize flow, requiring the precise owner, packet, and packet-form identifiers. FINAL, SIGNED, and VOID packet documents remain immutable until an authorized FINAL-to-DRAFT reopen. This security repair does not revise Native Signing architecture or authorize its implementation.
+
+**Related files:**
+
+* `supabase/migrations/20260913120000_enforce_final_document_immutability.sql`
+* `scripts/validate-final-document-immutability-dev.ts`
