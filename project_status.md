@@ -1350,3 +1350,27 @@ Development validation created a disposable foreign-owned property and agreement
 * `supabase/migrations/20260913130000_enforce_packet_reference_ownership.sql`
 * `lib/field-resolver.ts`
 * `scripts/validate-packet-reference-ownership-dev.ts`
+
+---
+
+## Security remediation — F9 mandatory audit evidence (2026-09-13)
+
+**Status:** Complete in development and production.
+
+The ordinary audit-logging setting is no longer writable by a browser session. The administrator server action now calls a service-role-only database operation that updates the setting and inserts its mandatory `audit_logging_enabled` or `audit_logging_disabled` event in the same transaction. If the evidence insert fails, the setting change rolls back.
+
+A database-level capability guard and restrictive browser policy provide defense in depth. The audit-settings table is server-only; authenticated browser clients cannot read or mutate it directly. The trusted operation verifies that its named actor is an active Global Admin, records the old and new values in the event metadata, and remains the only supported write path.
+
+**Validation:** `npm run validate:audit-logging-atomic-dev` confirmed that an authenticated Lee browser session is denied a direct update, the trusted operation changes the setting and creates the matching mandatory event, and cleanup restores the original setting through that same operation. `npm run test:admin-audit` (20); `npx tsc --noEmit`; migration diff check.
+
+**Production rollout:** Migrations `20260913140000` through `20260913190000` applied to `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`). Vercel deployment `CwLA3RgxSaqDs5uPZj6yDZ3uubH2` for commit `8d35dbc` was Ready, passed its isolated login-page check, and was manually promoted to both production domains on 2026-09-13. The live domain loaded the expected login page after promotion.
+
+**Operational note:** The local Supabase CLI was still linked to production when the initial migration command was run. The database migrations were therefore applied there before the intended development validation. The compatible server implementation was pushed and promoted immediately; no customer data was changed. The CLI was then relinked to development, where the complete live validation passed. Future preflights must explicitly confirm the linked project reference before any database push.
+
+**Related files:**
+
+* `supabase/migrations/20260913140000_make_audit_logging_changes_atomic.sql`
+* `supabase/migrations/20260913180000_capability_guard_audit_setting_writes.sql`
+* `supabase/migrations/20260913190000_block_browser_audit_setting_access.sql`
+* `lib/audit/record.ts`
+* `scripts/validate-audit-logging-atomic-dev.ts`

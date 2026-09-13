@@ -2833,3 +2833,23 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 * `scripts/validate-packet-reference-ownership-dev.ts`
 
 **Production rollout:** After a clean preflight, migration `20260913130000_enforce_packet_reference_ownership.sql` was applied to `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`). Vercel deployment `AVBgf1WhfGBWj7mQiS1nn637GAa1` for commit `d34ab99` passed an isolated login-page smoke test, was manually promoted to both production domains on 2026-09-13, and the live login page loaded successfully.
+
+---
+
+## Security remediation — mandatory audit evidence
+
+**Date:** 2026-09-13
+
+**Decision:** The ordinary audit-logging setting is server-only. Its change and the corresponding mandatory audit event occur in one service-role-only database operation and one transaction. Authenticated browser sessions have no table access. The trusted operation verifies the active Global Admin actor and records the old and new setting values as sanitized audit metadata.
+
+**Reason:** A Global Admin could previously update `audit_settings.ordinary_logging_enabled` directly through the browser database client. That bypassed the separate application audit write, allowing ordinary logging to be disabled without the required evidence.
+
+**Consequences:** A failed mandatory audit insert prevents the setting change. The administrator console remains functional through its existing server action and service-role client; direct browser reads and writes are intentionally denied. This security repair does not revise Native Signing architecture or authorize its implementation.
+
+**Related files:**
+
+* `supabase/migrations/20260913140000_make_audit_logging_changes_atomic.sql`
+* `supabase/migrations/20260913180000_capability_guard_audit_setting_writes.sql`
+* `supabase/migrations/20260913190000_block_browser_audit_setting_access.sql`
+* `lib/audit/record.ts`
+* `scripts/validate-audit-logging-atomic-dev.ts`
