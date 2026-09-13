@@ -2831,3 +2831,5 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 * `supabase/migrations/20260913130000_enforce_packet_reference_ownership.sql`
 * `lib/field-resolver.ts`
 * `scripts/validate-packet-reference-ownership-dev.ts`
+
+**Production rollout:** After a clean preflight, migration `20260913130000_enforce_packet_reference_ownership.sql` was applied to `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`). Vercel deployment `AVBgf1WhfGBWj7mQiS1nn637GAa1` for commit `d34ab99` passed an isolated login-page smoke test, was manually promoted to both production domains on 2026-09-13, and the live login page loaded successfully.

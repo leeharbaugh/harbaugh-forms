@@ -1272,7 +1272,7 @@ Deployment: commit `39ca2f4` passed its Vercel deployment checks and was manuall
 
 ### Security remediation — active
 
-F1, F2/F8, F3/F4, F5, and F6 are deployed and passed their respective validation. F7 cross-owner packet references is complete and validated in development; it is awaiting production preflight and promotion. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
+F1, F2/F8, F3/F4, F5, F6, and F7 are deployed and passed their respective validation. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
 
 ### Native Signing — planning paused
 
@@ -1333,7 +1333,7 @@ Development validation created disposable records with an authenticated browser 
 
 ## Security remediation — F7 packet reference ownership (2026-09-13)
 
-**Status:** Complete in development; awaiting production preflight and promotion.
+**Status:** Complete in development and production.
 
 Packets now validate property, representation-agreement, and collection references against the packet owner at the database boundary. A property or agreement must be active and owned by the packet owner. A collection must be active and either Global, owned by that user, or organization-scoped for an active membership in an active organization.
 
@@ -1342,6 +1342,8 @@ The privileged field resolver independently applies the same owner boundary to p
 Development validation created a disposable foreign-owned property and agreement. Authenticated attempts to attach either to Lee’s packet were rejected, and a deliberately injected legacy mismatch was ignored by the privileged resolver. The validator cleans up its packet, source rows, and temporary Auth user.
 
 **Validation:** `npm run validate:packet-reference-ownership-dev`; `npm run test:field-instance-sync` (17); `npx tsc --noEmit`; ESLint; migration diff check.
+
+**Production rollout:** Preflight confirmed that `20260913130000` was the only pending migration and that the required packet columns, policies, and authorization helpers were present. The migration then applied successfully to `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`). Vercel deployment `AVBgf1WhfGBWj7mQiS1nn637GAa1` for commit `d34ab99` was Ready, its isolated URL loaded the login page, and it was manually promoted to `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` on 2026-09-13. The live domain loaded the expected login page after promotion.
 
 **Related files:**
 
