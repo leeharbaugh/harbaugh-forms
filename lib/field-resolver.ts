@@ -222,6 +222,7 @@ const PACKET_RESOLVER_SELECT = `
     effective_date,
     expiration_date,
     property_id,
+    owner_user_id,
     buyer_rep_details(*)
   ),
   packet_contacts(
@@ -1343,11 +1344,17 @@ function normalizePropertyJoin(
 async function loadActivePropertyById(
   supabase: SupabaseClient,
   propertyId: number,
+  ownerUserId: string | null | undefined,
 ): Promise<Property | null> {
+  if (!ownerUserId) {
+    return null;
+  }
+
   const { data, error } = await supabase
     .from("properties")
     .select("*")
     .eq("id", propertyId)
+    .eq("owner_user_id", ownerUserId)
     .eq("status", "ACTIVE")
     .maybeSingle();
 
@@ -1361,17 +1368,18 @@ async function loadActivePropertyById(
 async function resolvePacketPropertyForContext(
   supabase: SupabaseClient,
   packetRow: {
+    owner_user_id: string | null;
     property_id: number | null;
     representation_agreement_id: number | null;
     properties?: Property | Property[] | null;
     representation_agreements?:
-      | { property_id?: number | null }
-      | Array<{ property_id?: number | null }>
+      | { property_id?: number | null; owner_user_id?: string | null }
+      | Array<{ property_id?: number | null; owner_user_id?: string | null }>
       | null;
   },
 ): Promise<Property | null> {
   const joinedProperty = normalizePropertyJoin(packetRow.properties);
-  if (joinedProperty) {
+  if (joinedProperty?.owner_user_id === packetRow.owner_user_id) {
     return joinedProperty;
   }
 
@@ -1379,6 +1387,7 @@ async function resolvePacketPropertyForContext(
     const property = await loadActivePropertyById(
       supabase,
       packetRow.property_id,
+      packetRow.owner_user_id,
     );
     if (property) {
       logPropertyResolutionDebug("loaded property by packet.property_id", {
@@ -1391,10 +1400,14 @@ async function resolvePacketPropertyForContext(
   const agreement = normalizeRepresentationAgreementPropertyJoin(
     packetRow.representation_agreements,
   );
-  if (agreement?.property_id != null) {
+  if (
+    agreement?.owner_user_id === packetRow.owner_user_id &&
+    agreement.property_id != null
+  ) {
     const property = await loadActivePropertyById(
       supabase,
       agreement.property_id,
+      packetRow.owner_user_id,
     );
     if (property) {
       logPropertyResolutionDebug(
@@ -1413,11 +1426,11 @@ async function resolvePacketPropertyForContext(
 
 function normalizeRepresentationAgreementPropertyJoin(
   raw:
-    | { property_id?: number | null }
-    | Array<{ property_id?: number | null }>
+    | { property_id?: number | null; owner_user_id?: string | null }
+    | Array<{ property_id?: number | null; owner_user_id?: string | null }>
     | null
     | undefined,
-): { property_id: number | null } | null {
+): { property_id: number | null; owner_user_id: string | null } | null {
   if (!raw) {
     return null;
   }
@@ -1429,6 +1442,7 @@ function normalizeRepresentationAgreementPropertyJoin(
 
   return {
     property_id: agreement.property_id ?? null,
+    owner_user_id: agreement.owner_user_id ?? null,
   };
 }
 
@@ -1522,6 +1536,17 @@ function normalizeRepresentationAgreementJoin(
   };
 }
 
+function retainPacketOwnerRepresentationAgreement<T extends { owner_user_id?: string | null }>(
+  raw: T | T[] | null | undefined,
+  packetOwnerUserId: string | null | undefined,
+): T | T[] | null {
+  const agreement = Array.isArray(raw) ? (raw[0] ?? null) : raw;
+  if (!agreement || !packetOwnerUserId || agreement.owner_user_id !== packetOwnerUserId) {
+    return null;
+  }
+  return raw ?? null;
+}
+
 async function loadActivePropertyHoasForProperty(
   supabase: SupabaseClient,
   propertyId: number | null | undefined,
@@ -1582,6 +1607,7 @@ export async function loadFieldResolverContext(
           effective_date: string | null;
           expiration_date: string | null;
           property_id?: number | null;
+          owner_user_id?: string | null;
           buyer_rep_details?:
             | BuyerRepDetails
             | BuyerRepDetails[]
@@ -1591,6 +1617,7 @@ export async function loadFieldResolverContext(
           effective_date: string | null;
           expiration_date: string | null;
           property_id?: number | null;
+          owner_user_id?: string | null;
           buyer_rep_details?:
             | BuyerRepDetails
             | BuyerRepDetails[]
@@ -1629,6 +1656,11 @@ export async function loadFieldResolverContext(
     collectionName: collectionJoin?.collection_name,
     packetForms: packetRow.packet_forms,
   });
+
+  const ownedRepresentationAgreement = retainPacketOwnerRepresentationAgreement(
+    packetRow.representation_agreements,
+    packetRow.owner_user_id,
+  );
 
   let formId: number | null = null;
   if (packetFormId != null) {
@@ -1687,9 +1719,9 @@ export async function loadFieldResolverContext(
     fallbackSellersAsLandlords,
     settings,
     representationAgreement: normalizeRepresentationAgreementJoin(
-      packetRow.representation_agreements,
+      ownedRepresentationAgreement,
     ),
-    buyerRepDetails: normalizeBuyerRepDetailsJoin(packetRow.representation_agreements),
+    buyerRepDetails: normalizeBuyerRepDetailsJoin(ownedRepresentationAgreement),
     propertyHoas,
   };
 }

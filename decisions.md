@@ -2813,3 +2813,21 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 * `scripts/validate-final-document-immutability-dev.ts`
 
 **Production rollout:** The migration was applied after a clean preflight on 2026-09-13. Vercel deployment `CwPBQ82NsD8bgafXpQfZAcz7Evxv` for commit `4ee764f` was verified at its isolated URL and manually promoted to the production domains.
+
+---
+
+## Security remediation — packet reference ownership
+
+**Date:** 2026-09-13
+
+**Decision:** Packet references must be valid for the packet owner at write time. An active property or representation agreement must be owned by that user. An active collection may be Global, that user’s Private collection, or an Organization collection for which the packet owner has active membership in an active organization. The field resolver independently rejects mismatched property and agreement rows, including legacy data accessed through privileged administration paths.
+
+**Reason:** A user could attach another user’s property to their packet even though direct RLS prevented reading it. When an administrator opened the packet, privileged resolution could copy the hidden address into the attacker’s packet field instance, creating a cross-user disclosure.
+
+**Consequences:** Browser clients receive a database rejection when they submit a foreign reference. Service-role maintenance remains explicit and privileged, while the resolver protects against legacy mismatches it encounters. This security repair does not revise Native Signing architecture or authorize its implementation.
+
+**Related files:**
+
+* `supabase/migrations/20260913130000_enforce_packet_reference_ownership.sql`
+* `lib/field-resolver.ts`
+* `scripts/validate-packet-reference-ownership-dev.ts`

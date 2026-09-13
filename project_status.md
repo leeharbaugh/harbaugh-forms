@@ -1272,7 +1272,7 @@ Deployment: commit `39ca2f4` passed its Vercel deployment checks and was manuall
 
 ### Security remediation — active
 
-F1, F2/F8, F3/F4, F5, and F6 are deployed and passed their respective validation. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
+F1, F2/F8, F3/F4, F5, and F6 are deployed and passed their respective validation. F7 cross-owner packet references is complete and validated in development; it is awaiting production preflight and promotion. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
 
 ### Native Signing — planning paused
 
@@ -1328,3 +1328,23 @@ Development validation created disposable records with an authenticated browser 
 
 * `supabase/migrations/20260913120000_enforce_final_document_immutability.sql`
 * `scripts/validate-final-document-immutability-dev.ts`
+
+---
+
+## Security remediation — F7 packet reference ownership (2026-09-13)
+
+**Status:** Complete in development; awaiting production preflight and promotion.
+
+Packets now validate property, representation-agreement, and collection references against the packet owner at the database boundary. A property or agreement must be active and owned by the packet owner. A collection must be active and either Global, owned by that user, or organization-scoped for an active membership in an active organization.
+
+The privileged field resolver independently applies the same owner boundary to properties and representation agreements. This prevents a legacy or maintenance-created mismatched reference from being materialized into packet field instances when an administrator processes the packet.
+
+Development validation created a disposable foreign-owned property and agreement. Authenticated attempts to attach either to Lee’s packet were rejected, and a deliberately injected legacy mismatch was ignored by the privileged resolver. The validator cleans up its packet, source rows, and temporary Auth user.
+
+**Validation:** `npm run validate:packet-reference-ownership-dev`; `npm run test:field-instance-sync` (17); `npx tsc --noEmit`; ESLint; migration diff check.
+
+**Related files:**
+
+* `supabase/migrations/20260913130000_enforce_packet_reference_ownership.sql`
+* `lib/field-resolver.ts`
+* `scripts/validate-packet-reference-ownership-dev.ts`
