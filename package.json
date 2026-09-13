@@ -54,6 +54,7 @@
     "validate:secure-publish-dev": "node --experimental-strip-types --env-file=.env.local scripts/validate-secure-publish-dev.ts",
     "validate:final-document-immutability-dev": "node --experimental-strip-types --env-file=.env.local scripts/validate-final-document-immutability-dev.ts",
     "validate:packet-reference-ownership-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-packet-reference-ownership-dev.ts",
+    "validate:audit-logging-atomic-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-audit-logging-atomic-dev.ts",
     "test:packet-form-lifecycle": "node --experimental-strip-types --test lib/types/packet-form-lifecycle.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",
     "test:ui-lists": "node --experimental-strip-types --test lib/ui/list-badges.test.ts lib/ui/nav-styles.test.ts lib/types/profile.test.ts lib/ui/dialogs-polish.test.ts",

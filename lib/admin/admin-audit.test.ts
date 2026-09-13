@@ -190,3 +190,66 @@ describe("abandoned brokerage office and TREC features removed", () => {
     assert.equal(migration.includes("drop table if exists public.audit_settings"), false);
   });
 });
+
+describe("atomic audit logging changes", () => {
+  it("uses the trusted database operation instead of separate writes", () => {
+    const source = readRepo("lib/audit/record.ts");
+    const migration = readRepo(
+      "supabase/migrations/20260913140000_make_audit_logging_changes_atomic.sql",
+    );
+    assert.match(source, /rpc\("set_ordinary_audit_logging_enabled"/);
+    assert.doesNotMatch(source, /setOrdinaryAuditLoggingEnabled[\s\S]*?\.from\("audit_settings"\)/);
+    assert.match(migration, /revoke insert, update, delete on table public\.audit_settings from authenticated/);
+    assert.match(migration, /insert into public\.audit_events/);
+    assert.match(migration, /grant execute on function public\.set_ordinary_audit_logging_enabled[\s\S]*?to service_role/);
+  });
+});
+
+describe("trusted audit-setting database guard", () => {
+  it("rejects authenticated writes at the table boundary", () => {
+    const migration = readRepo(
+      "supabase/migrations/20260913150000_enforce_trusted_audit_setting_writes.sql",
+    );
+    assert.match(migration, /audit_settings_trusted_write_guard/);
+    assert.match(migration, /if auth\.uid\(\) is not null then/);
+  });
+});
+
+describe("audit-setting caller-role guard", () => {
+  it("distinguishes trusted database roles from browser roles", () => {
+    const migration = readRepo(
+      "supabase/migrations/20260913160000_fix_audit_setting_guard_role.sql",
+    );
+    assert.match(migration, /security invoker/);
+    assert.match(migration, /current_user not in \('service_role', 'postgres', 'supabase_admin'\)/);
+  });
+});
+
+describe("audit-setting request-role guard", () => {
+  it("uses Supabase's request role inside the trigger", () => {
+    const migration = readRepo(
+      "supabase/migrations/20260913170000_use_request_role_for_audit_setting_guard.sql",
+    );
+    assert.match(migration, /coalesce\(auth\.role\(\), ''\) <> 'service_role'/);
+  });
+});
+
+describe("audit-setting transaction capability", () => {
+  it("requires a capability set only inside the trusted operation", () => {
+    const migration = readRepo(
+      "supabase/migrations/20260913180000_capability_guard_audit_setting_writes.sql",
+    );
+    assert.match(migration, /current_setting\('app\.audit_settings_trusted_write', true\)/);
+    assert.match(migration, /set_config\('app\.audit_settings_trusted_write', 'enabled', true\)/);
+  });
+});
+
+describe("audit-setting browser RLS boundary", () => {
+  it("denies every authenticated table operation", () => {
+    const migration = readRepo(
+      "supabase/migrations/20260913190000_block_browser_audit_setting_access.sql",
+    );
+    assert.match(migration, /as restrictive/);
+    assert.match(migration, /for all[\s\S]*?to authenticated[\s\S]*?using \(false\)[\s\S]*?with check \(false\)/);
+  });
+});

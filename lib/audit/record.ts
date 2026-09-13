@@ -151,55 +151,16 @@ export async function setOrdinaryAuditLoggingEnabled(options: {
   actorRoleSnapshot?: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const admin = createAdminClient();
-  const nowIso = new Date().toISOString();
-  const { data: current, error: readError } = await admin
-    .from("audit_settings")
-    .select("*")
-    .eq("status", "ACTIVE")
-    .maybeSingle();
-
-  if (readError) {
-    return { ok: false, error: readError.message };
-  }
-  if (!current) {
-    return { ok: false, error: "Audit settings row is missing." };
-  }
-
-  const { error: updateError } = await admin
-    .from("audit_settings")
-    .update({
-      ordinary_logging_enabled: options.enabled,
-      last_changed_by_user_id: options.actorUserId,
-      last_changed_at: nowIso,
-    })
-    .eq("id", current.id);
-
-  if (updateError) {
-    return { ok: false, error: updateError.message };
-  }
-
-  await recordAuditEvent({
-    actorUserId: options.actorUserId,
-    actorDisplayName: options.actorDisplayName,
-    actorRoleSnapshot: options.actorRoleSnapshot ?? "ADMIN",
-    eventCategory: "audit_config",
-    action: options.enabled
-      ? "audit_logging_enabled"
-      : "audit_logging_disabled",
-    targetEntityType: "audit_settings",
-    targetEntityId: String(current.id),
-    summary: options.enabled
-      ? "Ordinary business audit logging was enabled."
-      : "Ordinary business audit logging was disabled.",
-    metadata: {
-      changedFields: ["ordinary_logging_enabled"],
-      safeOldValues: {
-        ordinary_logging_enabled: current.ordinary_logging_enabled,
-      },
-      safeNewValues: { ordinary_logging_enabled: options.enabled },
-    },
-    mandatory: true,
+  const { error } = await admin.rpc("set_ordinary_audit_logging_enabled", {
+    p_enabled: options.enabled,
+    p_actor_user_id: options.actorUserId,
+    p_actor_display_name: options.actorDisplayName ?? null,
+    p_actor_role_snapshot: options.actorRoleSnapshot ?? "ADMIN",
   });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
 
   return { ok: true };
 }
