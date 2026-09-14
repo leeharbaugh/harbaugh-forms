@@ -124,6 +124,27 @@ describe("auth next path sanitization", () => {
     assert.equal(sanitizeAuthNextPath(null), "/");
   });
 
+  it("rejects controls and encoded URL normalization tricks", () => {
+    for (const next of [
+      "/\texample.invalid",
+      "/%09example.invalid",
+      "/\u0000example.invalid",
+      "/%00example.invalid",
+      "/%2f%2fevil.example",
+      "/\\evil.example",
+      "/%5Cevil.example",
+    ]) {
+      assert.equal(sanitizeAuthNextPath(next), "/", next);
+    }
+  });
+
+  it("returns only normalized same-origin path components", () => {
+    assert.equal(
+      sanitizeAuthNextPath("/packets/../forms?from=confirm#details"),
+      "/forms?from=confirm#details",
+    );
+  });
+
   it("defaults invite and recovery to update-password", () => {
     assert.equal(defaultNextForOtpType("invite", null), AUTH_UPDATE_PASSWORD_PATH);
     assert.equal(
@@ -255,6 +276,37 @@ describe("processAuthConfirm token-hash invite flow", () => {
     ]);
     assert.deepEqual(state.exchangeCalls, []);
     assert.equal(logs.length, 0);
+  });
+
+  it("falls back after a valid confirmation when next contains a tab redirect trick", async () => {
+    const state: MockAuth = {
+      verifyOtpCalls: [],
+      exchangeCalls: [],
+      verifyError: null,
+      exchangeError: null,
+      user: { id: "user-redirect-test" },
+      profile: { id: "user-redirect-test" },
+      membershipCount: 1,
+      membershipError: null,
+      profileError: null,
+    };
+    const result = await processAuthConfirm({
+      supabase: createMockSupabase(state),
+      log: () => {},
+      params: {
+        tokenHash: "valid-token",
+        type: "magiclink",
+        code: null,
+        next: "/\texample.invalid",
+      },
+    });
+
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.redirectTo, "/");
+    assert.deepEqual(state.verifyOtpCalls, [
+      { type: "magiclink", token_hash: "valid-token" },
+    ]);
   });
 
   it("rejects missing token_hash", async () => {

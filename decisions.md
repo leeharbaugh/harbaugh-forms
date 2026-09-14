@@ -2875,3 +2875,20 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 * `lib/field-resolver.ts`
 * `lib/types/brokerage-settings.ts`
 * `scripts/validate-brokerage-settings-organization-dev.ts`
+
+---
+
+## Security remediation — authentication confirmation stays on the application origin
+
+**Date:** 2026-09-14
+
+**Decision:** Authentication confirmation accepts a `next` destination only when it is a control-character-free internal path. The value is decoded for validation, parsed against a fixed internal origin, required to retain that origin, and normalized to pathname, query, and fragment before it reaches the framework redirect.
+
+**Reason:** A value beginning with a slash and a tab passed the prior string checks. URL normalization then treated the following host as an external destination after successful magic-link, invite, or recovery confirmation.
+
+**Consequences:** Malformed, absolute, protocol-relative, backslash-based, and control-character destinations now fall back to the application home page. Normal internal destinations, including the password-update route used by invitations and recovery emails, continue to work. This security repair does not revise Native Signing architecture or authorize its implementation.
+
+**Related files:**
+
+* `lib/auth/email-otp.ts`
+* `lib/auth/auth-confirm.test.ts`

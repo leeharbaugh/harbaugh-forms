@@ -37,6 +37,11 @@ export const AUTH_ERROR_PATH = "/auth/error";
 
 const INVITE_DEFAULT_NEXT = AUTH_UPDATE_PASSWORD_PATH;
 const RECOVERY_DEFAULT_NEXT = AUTH_UPDATE_PASSWORD_PATH;
+const AUTH_REDIRECT_BASE = "https://auth-redirect.invalid";
+
+function containsControlCharacter(value: string): boolean {
+  return /[\u0000-\u001F\u007F]/.test(value);
+}
 
 export function isSupportedEmailOtpType(
   value: string | null | undefined,
@@ -56,9 +61,7 @@ export function parseEmailOtpType(
   return isSupportedEmailOtpType(value) ? value : null;
 }
 
-/**
- * Only allow same-origin relative paths. Reject protocol-relative and absolute URLs.
- */
+/** Only allow a normalized path, query, and fragment on this application. */
 export function sanitizeAuthNextPath(
   next: string | null | undefined,
   fallback = "/",
@@ -66,14 +69,36 @@ export function sanitizeAuthNextPath(
   if (!next || typeof next !== "string") {
     return fallback;
   }
-  const trimmed = next.trim();
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) {
+  if (containsControlCharacter(next)) {
     return fallback;
   }
-  if (trimmed.includes("://") || trimmed.includes("\\")) {
+
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(next);
+  } catch {
     return fallback;
   }
-  return trimmed;
+
+  if (
+    containsControlCharacter(decoded) ||
+    !decoded.startsWith("/") ||
+    decoded.startsWith("//") ||
+    decoded.includes("\\")
+  ) {
+    return fallback;
+  }
+
+  try {
+    const base = new URL(AUTH_REDIRECT_BASE);
+    const destination = new URL(next, base);
+    if (destination.origin !== base.origin) {
+      return fallback;
+    }
+    return `${destination.pathname}${destination.search}${destination.hash}`;
+  } catch {
+    return fallback;
+  }
 }
 
 export function defaultNextForOtpType(
