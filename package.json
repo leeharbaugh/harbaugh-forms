@@ -56,6 +56,7 @@
     "validate:packet-reference-ownership-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-packet-reference-ownership-dev.ts",
     "validate:audit-logging-atomic-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-audit-logging-atomic-dev.ts",
     "validate:brokerage-settings-organization-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-brokerage-settings-organization-dev.ts",
+    "validate:account-state-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-account-state-dev.ts",
     "test:packet-form-lifecycle": "node --experimental-strip-types --test lib/types/packet-form-lifecycle.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",
     "test:ui-lists": "node --experimental-strip-types --test lib/ui/list-badges.test.ts lib/ui/nav-styles.test.ts lib/types/profile.test.ts lib/ui/dialogs-polish.test.ts",

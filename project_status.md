@@ -1413,3 +1413,21 @@ Authentication confirmation now rejects control characters and their encoded for
 
 * `lib/auth/email-otp.ts`
 * `lib/auth/auth-confirm.test.ts`
+
+---
+
+## Security verification — Phase 2 development regression pass (2026-09-14)
+
+**Status:** Complete for the targeted remediation boundaries. No application behavior or production database state changed in this verification pass.
+
+Development-only runtime validators confirmed the trusted publication and lifecycle boundary (F2/F8), account-state enforcement (F3/F4), finalized-document and published-template immutability (F5), packet-reference isolation (F7), mandatory audit evidence (F9), and brokerage organization isolation (F10). Auth-confirmation regression tests confirmed F11. Each remote validator targets only `harbaugh-forms-dev` and removes its disposable records.
+
+The account-state validator now verifies that an active account has its intended access, while forced-password and disabled sessions cannot read or alter their own packet. It also verifies that an inactive organization loses its membership authorization predicate.
+
+**Validation:** `npm run validate:secure-publish-dev`; `npm run validate:account-state-dev`; `npm run validate:final-document-immutability-dev`; `npm run validate:packet-reference-ownership-dev`; `npm run validate:audit-logging-atomic-dev`; `npm run validate:brokerage-settings-organization-dev`; `npm run test:auth-confirm` (30); `npm run test:auth-bootstrap` (7); `npm run test:admin-invite` (37); `npm run test:admin-orgs` (4); `npm run test:admin-audit` (20); `npx tsc --noEmit --incremental false`; and ESLint all passed.
+
+**Next verification:** Run a safe authenticated DAST pass against development with ordinary, disabled, inactive-organization, administrator, and Global Admin sessions. Keep security verification separate from the paused Native Signing planning work.
+
+**Related files:**
+
+* `scripts/validate-account-state-dev.ts`
