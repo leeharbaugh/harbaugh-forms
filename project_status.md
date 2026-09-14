@@ -1272,7 +1272,7 @@ Deployment: commit `39ca2f4` passed its Vercel deployment checks and was manuall
 
 ### Security remediation — active
 
-F1, F2/F8, F3/F4, F5, F6, F7, and F9 are deployed and passed their respective validation. F10 brokerage-settings isolation is complete in development and awaiting its separate production preflight and rollout. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
+F1, F2/F8, F3/F4, F5, F6, F7, F9, and F10 are deployed and passed their respective validation. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
 
 ### Native Signing — planning paused
 
@@ -1379,13 +1379,15 @@ A database-level capability guard and restrictive browser policy provide defense
 
 ## Security remediation — F10 organization-scoped brokerage settings (2026-09-13)
 
-**Status:** Complete in development; production rollout pending.
+**Status:** Complete in development and production.
 
 The active brokerage profile is now assigned to **Davey Goosmann Realty**. The database permits a browser user to read brokerage settings only when they hold an active membership in that organization; Global Admin access remains available for administration. Each active organization can have only one active brokerage profile.
 
 The Settings page resolves the signed-in user’s primary organization before loading or saving its profile. Packet field resolution resolves brokerage values from the packet owner’s active primary organization, rather than from the administrator or other viewer opening the packet. A packet owned by an organization with no brokerage profile receives blank brokerage values.
 
 **Development validation:** `npm run validate:brokerage-settings-organization-dev` created and removed a temporary ordinary user and packet. It verified that a New Test Org member could not read Davey Goosmann Realty’s profile, that the same user could read it only after becoming a Davey member, and that packet resolution followed the packet owner’s organization. `npx tsc --noEmit --incremental false`, ESLint, the organization-admin tests, and migration diff checks passed.
+
+**Production rollout:** Preflight confirmed the single active Davey Goosmann Realty organization and one active legacy brokerage profile. Migration `20260913200000_scope_brokerage_settings_to_organization.sql` then applied successfully to `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`), assigning that profile to Davey Goosmann Realty. Vercel deployment `Buf16cJ567deHtzvuiEZ1kan4NqJ` for commit `eb98228` was Ready, its isolated login page loaded, and it was manually promoted to both production domains on 2026-09-13. The live primary domain loaded the expected login page after promotion.
 
 **Related files:**
 

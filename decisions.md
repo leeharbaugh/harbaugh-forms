@@ -2866,6 +2866,8 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 
 **Consequences:** A user whose active primary organization has no brokerage profile sees blank brokerage-sourced fields until its authorized administrator creates one. The Settings page saves only the signed-in user’s primary organization profile. This security repair does not revise Native Signing architecture or authorize its implementation.
 
+**Production rollout:** Migration `20260913200000_scope_brokerage_settings_to_organization.sql` was preflighted and applied to `harbaugh-forms-prod` on 2026-09-13. Deployment `Buf16cJ567deHtzvuiEZ1kan4NqJ` for commit `eb98228` passed its isolated login-page check and was manually promoted to both production domains.
+
 **Related files:**
 
 * `supabase/migrations/20260913200000_scope_brokerage_settings_to_organization.sql`
