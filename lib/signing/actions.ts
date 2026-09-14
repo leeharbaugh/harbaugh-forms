@@ -26,10 +26,16 @@ function toActionError(error: unknown): SigningActionResult {
   if (error instanceof SigningError) {
     return { ok: false, code: error.code, error: error.message };
   }
+  // Never return raw Supabase / Error.message to the browser.
+  if (error instanceof Error && error.message) {
+    console.error("[native-signing] unexpected error:", error.message);
+  } else {
+    console.error("[native-signing] unexpected error");
+  }
   return {
     ok: false,
     code: "INTERNAL",
-    error: error instanceof Error ? error.message : "Unexpected Signing error.",
+    error: "Unexpected Signing error.",
   };
 }
 

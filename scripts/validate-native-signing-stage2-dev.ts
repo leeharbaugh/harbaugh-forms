@@ -64,6 +64,10 @@ function buildActor(options: {
   displayName: string;
   organizationId: string;
   membershipRole?: "MEMBER" | "ORG_ADMIN";
+  extraMemberships?: Array<{
+    organizationId: string;
+    membershipRole?: "MEMBER" | "ORG_ADMIN";
+  }>;
   profileOverrides?: Partial<Profile>;
 }): SigningActor {
   const profile = {
@@ -103,8 +107,13 @@ function buildActor(options: {
         membershipStatus: "ACTIVE",
         organizationStatus: "ACTIVE",
       },
+      ...(options.extraMemberships ?? []).map((membership) => ({
+        organizationId: membership.organizationId,
+        membershipRole: membership.membershipRole ?? "MEMBER",
+        membershipStatus: "ACTIVE",
+        organizationStatus: "ACTIVE",
+      })),
     ],
-    originatingOrganizationId: options.organizationId,
   };
 }
 
@@ -296,6 +305,46 @@ async function main() {
         ),
     );
 
+    // Multi-org: primary/sole membership is the only create derivation rule.
+    // Ambiguous multi-membership without a valid primary must fail closed.
+    const ambiguousAgent = buildActor({
+      userId: agentUserId,
+      email: agentEmail,
+      displayName: "Stage Two Agent",
+      organizationId,
+      extraMemberships: [{ organizationId: otherOrganizationId }],
+      profileOverrides: { primary_organization_id: null },
+    });
+    await expectSigningError(
+      "ambiguous multi-org create without primary",
+      "INELIGIBLE_ORGANIZATION",
+      () =>
+        createDraftSigningWithActor(
+          ambiguousAgent,
+          { title: "Ambiguous org" },
+          admin,
+        ),
+    );
+
+    const primaryResolved = buildActor({
+      userId: agentUserId,
+      email: agentEmail,
+      displayName: "Stage Two Agent",
+      organizationId,
+      extraMemberships: [{ organizationId: otherOrganizationId }],
+      profileOverrides: { primary_organization_id: organizationId },
+    });
+    const multiOrgCreated = await createDraftSigningWithActor(
+      primaryResolved,
+      { title: `Multi-org Draft ${stamp}` },
+      admin,
+    );
+    createdSigningIds.push(multiOrgCreated.id);
+    if (multiOrgCreated.originatingOrganizationId !== organizationId) {
+      fail("multi-org create did not use primary_organization_id");
+    }
+    ok("multi-org create uses primary organization and rejects ambiguity");
+
     const readBack = await getSigningForActor(agent, created.id, admin);
     if (readBack.id !== created.id || !readBack.canManage) {
       fail("primary agent could not read/manage own Signing");
@@ -324,6 +373,16 @@ async function main() {
       "other-organization UUID possession read",
       "NOT_FOUND",
       () => getSigningForActor(otherOrgActor, created.id, admin),
+    );
+    await expectSigningError(
+      "other-organization UUID possession title update",
+      "NOT_FOUND",
+      () =>
+        updateDraftSigningTitleForActor(
+          otherOrgActor,
+          { signingId: created.id, title: "Leak?" },
+          admin,
+        ),
     );
 
     // Former manager loses current management when brokerage eligibility ends,

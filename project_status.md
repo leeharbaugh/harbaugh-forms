@@ -18,8 +18,10 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Operations | `createDraftSigningAction` / `createDraftSigningWithActor`; `getSigningAction` / `getSigningForActor`; `updateDraftSigningTitleAction` / `updateDraftSigningTitleForActor` (Draft title only) |
 | Feature gate | Every operation calls `assertNativeSigningEnabled()`; production remains unset/off |
 | Authority | Current management = eligible primary/co-agent association or originating `ORG_ADMIN`; historical read retained for former associated agents; UUID possession alone is insufficient |
+| Originating org (create) | `profiles.primary_organization_id` when among ACTIVE memberships; else sole ACTIVE membership; else fail closed — never browser-chosen, never arbitrary multi-org pick. Read/update do not re-derive create-time org. |
 | Browser/RLS | Stage 1 deny-by-default unchanged; service-role used only after `requireSigningActor` |
-| Tests | `test:native-signing-stage2` (21); `validate:native-signing-stage2-dev` passed; Stage 1 R12 re-validated; R3/R5/R6/R8/R9 + annotation-auth + R1 audit 0 + `tsc` + Stage 2 ESLint + `git diff --check` + `build:validate` passed |
+| Final review | Architecture/security review fixed create-only org derivation, title-update existence leakage, INTERNAL error sanitization, title max length, and explicit multi-org tests |
+| Tests | `test:native-signing-stage2`; `validate:native-signing-stage2-dev`; Stage 1 R12 re-validated; R3/R5/R6/R8/R9 + annotation-auth + R1 audit + `tsc` + Stage 2 ESLint + `git diff --check` + `build:validate` |
 
 **Explicitly still unavailable:** participant credentials/sessions, `/sign` routes, Send/In Progress ceremony, package revisions/PDF snapshots, artifacts, email/reminders, work queues/idempotency, co-agent management UI, production enablement.
 

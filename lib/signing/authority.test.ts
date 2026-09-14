@@ -7,6 +7,7 @@ import {
   isOriginatingBrokerageAdministrator,
 } from "./eligibility";
 import { evaluateSigningAuthority } from "./authority";
+import { normalizeSigningTitle, SIGNING_TITLE_MAX_LENGTH } from "./types";
 
 describe("Signing eligibility", () => {
   it("requires active account without forced password", () => {
@@ -57,6 +58,71 @@ describe("Signing eligibility", () => {
         memberships,
       }),
       "org-b",
+    );
+  });
+
+  it("uses the sole active membership when primary is unset", () => {
+    assert.equal(
+      deriveOriginatingOrganizationId({
+        primaryOrganizationId: null,
+        memberships: [
+          {
+            organizationId: "org-only",
+            membershipRole: "MEMBER",
+            membershipStatus: "ACTIVE",
+            organizationStatus: "ACTIVE",
+          },
+        ],
+      }),
+      "org-only",
+    );
+  });
+
+  it("fails closed when multiple active memberships lack a valid primary", () => {
+    assert.throws(
+      () =>
+        deriveOriginatingOrganizationId({
+          primaryOrganizationId: null,
+          memberships: [
+            {
+              organizationId: "org-a",
+              membershipRole: "MEMBER",
+              membershipStatus: "ACTIVE",
+              organizationStatus: "ACTIVE",
+            },
+            {
+              organizationId: "org-b",
+              membershipRole: "MEMBER",
+              membershipStatus: "ACTIVE",
+              organizationStatus: "ACTIVE",
+            },
+          ],
+        }),
+      /AMBIGUOUS_ORGANIZATION/,
+    );
+  });
+
+  it("ignores primary when it is not among active memberships and fails if ambiguous", () => {
+    assert.throws(
+      () =>
+        deriveOriginatingOrganizationId({
+          primaryOrganizationId: "org-stale",
+          memberships: [
+            {
+              organizationId: "org-a",
+              membershipRole: "MEMBER",
+              membershipStatus: "ACTIVE",
+              organizationStatus: "ACTIVE",
+            },
+            {
+              organizationId: "org-b",
+              membershipRole: "MEMBER",
+              membershipStatus: "ACTIVE",
+              organizationStatus: "ACTIVE",
+            },
+          ],
+        }),
+      /AMBIGUOUS_ORGANIZATION/,
     );
   });
 
@@ -228,5 +294,16 @@ describe("Signing authority evaluation", () => {
     });
     assert.equal(result.canManage, true);
     assert.equal(result.canRead, true);
+  });
+});
+
+describe("Signing title normalization", () => {
+  it("trims and bounds Draft titles", () => {
+    assert.equal(normalizeSigningTitle("  Hello  "), "Hello");
+    assert.throws(() => normalizeSigningTitle("   "), /TITLE_REQUIRED/);
+    assert.throws(
+      () => normalizeSigningTitle("x".repeat(SIGNING_TITLE_MAX_LENGTH + 1)),
+      /TITLE_TOO_LONG/,
+    );
   });
 });

@@ -19,22 +19,30 @@ Each decision should include:
 **Decision:**
 Native Signing agent-side Draft operations execute only through a trusted server boundary. The server resolves the authenticated User, application-account eligibility, originating brokerage membership, and Signing association authority before any service-role read or write. Browser clients never supply authoritative `user_id`, organization id, app role, or primary-agent identity. Current management authority requires an active primary/co-agent association **and** current eligibility in the originating brokerage, or originating-brokerage `ORG_ADMIN` membership. Former associated agents retain historical read without management when eligibility ends. Possession of a Signing UUID alone never grants access.
 
+**Originating organization on Draft create** uses the settled Harbaugh Forms primary-organization convention already used for Organization defaults (`profiles.primary_organization_id`):
+1. If `primary_organization_id` is set and the User has an ACTIVE membership in that ACTIVE organization, that organization is the originating brokerage.
+2. Else if the User has exactly one ACTIVE membership in an ACTIVE organization, that sole membership is used.
+3. Else create fails closed (`AMBIGUOUS_ORGANIZATION` / ineligible). The server never silently picks an arbitrary organization among multiple memberships, and the browser never supplies the organization id.
+
+Organization derivation applies to **create only**. Read and title-update evaluate authority against the Signing’s stored originating organization and associations; they do not require re-deriving a create-time primary organization.
+
 Stage 2 exposes only Draft create, authorized read, and Draft title update. It does not add authenticated browser RLS policies for Signing evidence tables.
 
 **Reason:**
-Stage 1 established deny-by-default evidence storage. Stage 2 must introduce the earliest agent operations without recreating F6-style ungated service-role readers or weakening Stage 1 R12 denial.
+Stage 1 established deny-by-default evidence storage. Stage 2 must introduce the earliest agent operations without recreating F6-style ungated service-role readers or weakening Stage 1 R12 denial. Using `primary_organization_id` avoids inventing a parallel org-selection mechanism while remaining fail-closed for ambiguous multi-org Users.
 
 **Consequences:**
 
 * Future Signing UI must call server actions/helpers rather than querying `signings` directly.
+* Multi-org Users must set a valid primary organization before creating a Signing.
 * Brokerage administrators are not modeled as fake agent-association rows.
 * Participant/ceremony credentials remain deferred.
 
 **Related files or migrations:**
 
-* `lib/signing/actor.ts`, `lib/signing/authority.ts`, `lib/signing/operations.ts`, `lib/signing/actions.ts`
+* `lib/signing/actor.ts`, `lib/signing/authority.ts`, `lib/signing/eligibility.ts`, `lib/signing/operations.ts`, `lib/signing/actions.ts`
 * `scripts/validate-native-signing-stage2-dev.ts`
-* This file: **Signing access belongs to the originating brokerage and full-authority agents** (2026-09-06); **Signing writes are server-authoritative…** (2026-09-14)
+* This file: **Signing access belongs to the originating brokerage and full-authority agents** (2026-09-06); **Signing writes are server-authoritative…** (2026-09-14); Organization defaults / `primary_organization_id` convention
 
 ---
 

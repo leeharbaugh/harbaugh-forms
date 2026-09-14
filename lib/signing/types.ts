@@ -7,7 +7,6 @@ export type SigningActor = {
   displayName: string;
   profile: Profile;
   memberships: SigningOrganizationMembership[];
-  originatingOrganizationId: string;
 };
 
 /**
@@ -16,6 +15,9 @@ export type SigningActor = {
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Matches practical UI title limits; schema is unbounded text with non-blank check. */
+export const SIGNING_TITLE_MAX_LENGTH = 200;
 
 export function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_RE.test(value);
@@ -28,6 +30,9 @@ export function normalizeSigningTitle(title: unknown): string {
   const trimmed = title.trim();
   if (!trimmed) {
     throw new Error("TITLE_REQUIRED");
+  }
+  if (trimmed.length > SIGNING_TITLE_MAX_LENGTH) {
+    throw new Error("TITLE_TOO_LONG");
   }
   return trimmed;
 }

@@ -1,5 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { evaluateSigningAuthority } from "./authority";
+import {
+  deriveOriginatingOrganizationId,
+} from "./eligibility";
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { SigningError } from "./errors";
 import {
@@ -21,6 +24,41 @@ export type UpdateDraftSigningTitleInput = {
   signingId: unknown;
   title: unknown;
 };
+
+function mapTitleError(error: unknown): never {
+  const code = error instanceof Error ? error.message : "TITLE_REQUIRED";
+  if (code === "TITLE_TOO_LONG") {
+    throw new SigningError(
+      "INVALID_INPUT",
+      "Signing title must be 200 characters or fewer.",
+    );
+  }
+  throw new SigningError("INVALID_INPUT", "A Signing title is required.");
+}
+
+function resolveOriginatingOrganizationId(actor: SigningActor): string {
+  try {
+    return deriveOriginatingOrganizationId({
+      primaryOrganizationId: actor.profile.primary_organization_id,
+      memberships: actor.memberships,
+    });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "UNKNOWN";
+    if (code === "NO_ACTIVE_ORGANIZATION") {
+      throw new SigningError(
+        "INELIGIBLE_ORGANIZATION",
+        "An active brokerage membership is required for Native Signing.",
+      );
+    }
+    if (code === "AMBIGUOUS_ORGANIZATION") {
+      throw new SigningError(
+        "INELIGIBLE_ORGANIZATION",
+        "Set a primary organization before creating a Signing.",
+      );
+    }
+    throw error;
+  }
+}
 
 function toSummary(
   signing: SigningRow,
@@ -113,9 +151,11 @@ export async function createDraftSigningWithActor(
   let title: string;
   try {
     title = normalizeSigningTitle(input.title);
-  } catch {
-    throw new SigningError("INVALID_INPUT", "A Signing title is required.");
+  } catch (error) {
+    mapTitleError(error);
   }
+
+  const originatingOrganizationId = resolveOriginatingOrganizationId(actor);
 
   let sourcePacketId: number | null = null;
   if (input.sourcePacketId !== undefined && input.sourcePacketId !== null) {
@@ -159,7 +199,7 @@ export async function createDraftSigningWithActor(
   const { data: signingInsert, error: signingInsertError } = await admin
     .from("signings")
     .insert({
-      originating_organization_id: actor.originatingOrganizationId,
+      originating_organization_id: originatingOrganizationId,
       source_packet_id: sourcePacketId,
       original_sender_user_id: actor.userId,
       original_sender_display_name: actor.displayName,
@@ -322,8 +362,8 @@ export async function updateDraftSigningTitleForActor(
   let title: string;
   try {
     title = normalizeSigningTitle(input.title);
-  } catch {
-    throw new SigningError("INVALID_INPUT", "A Signing title is required.");
+  } catch (error) {
+    mapTitleError(error);
   }
 
   const bundle = await loadSigningBundle(admin, input.signingId);
@@ -349,6 +389,12 @@ export async function updateDraftSigningTitleForActor(
     memberships: actor.memberships,
   });
 
+  // Cross-tenant callers get NOT_FOUND (same as get) so update does not
+  // disclose Signing existence. FORBIDDEN is reserved for authorized readers
+  // who lack current management authority (e.g. historical association).
+  if (!authority.canRead) {
+    throw new SigningError("NOT_FOUND", "Signing not found.");
+  }
   if (!authority.canManage) {
     throw new SigningError("FORBIDDEN", "You cannot update this Signing.");
   }

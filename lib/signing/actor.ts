@@ -3,7 +3,6 @@ import "server-only";
 import { assertNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import { SigningError } from "@/lib/signing/errors";
 import {
-  deriveOriginatingOrganizationId,
   hasSigningAccountAccess,
   type SigningOrganizationMembership,
 } from "@/lib/signing/eligibility";
@@ -28,6 +27,11 @@ type MembershipJoinRow = {
  * Resolve the authenticated Signing actor from the server session.
  * Never trusts browser-supplied user, role, or organization identity.
  * Feature gate is enforced before any privileged work.
+ *
+ * Originating-organization derivation is intentionally NOT required here so
+ * multi-org Users can still read/manage Signings they already authority for
+ * even when primary organization is unset. Create derives originating org
+ * separately from primary/sole active membership.
  */
 export async function requireSigningActor(): Promise<SigningActor> {
   assertNativeSigningEnabled();
@@ -97,35 +101,11 @@ export async function requireSigningActor(): Promise<SigningActor> {
     ];
   });
 
-  let originatingOrganizationId: string;
-  try {
-    originatingOrganizationId = deriveOriginatingOrganizationId({
-      primaryOrganizationId: typed.primary_organization_id,
-      memberships,
-    });
-  } catch (error) {
-    const code = error instanceof Error ? error.message : "UNKNOWN";
-    if (code === "NO_ACTIVE_ORGANIZATION") {
-      throw new SigningError(
-        "INELIGIBLE_ORGANIZATION",
-        "An active brokerage membership is required for Native Signing.",
-      );
-    }
-    if (code === "AMBIGUOUS_ORGANIZATION") {
-      throw new SigningError(
-        "INELIGIBLE_ORGANIZATION",
-        "Set a primary organization before creating a Signing.",
-      );
-    }
-    throw error;
-  }
-
   return {
     userId: user.id,
     email: user.email ?? typed.email,
     displayName: formatProfileDisplayName(typed),
     profile: typed,
     memberships,
-    originatingOrganizationId,
   };
 }
