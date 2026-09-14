@@ -1,6 +1,6 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-14 (Native Signing Stage 2 trusted server authority implemented on `feat/native-signing-stage-2`; Stage 1 remains merged on `main` / development DB; production Signing schema still absent)
+**As of:** 2026-09-14 (Native Signing Stage 2 trusted server authority squash-merged to `main`; Stage 1 remains on development DB only; production Signing schema still absent)
 
 ## Current State
 
@@ -8,21 +8,22 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 ### Native Signing Stage 2 trusted server authority (2026-09-14)
 
-**Status:** Implemented on feature branch `feat/native-signing-stage-2` — PR [#34](https://github.com/leeharbaugh/harbaugh-forms/pull/34) open targeting `main` (not merged). **Default-off feature gate still required.** **No ceremony UI, credentials, PDF preparation, email, or production rollout.**
+**Status:** **Code merged to `main`.** **Default-off feature gate still required.** **No ceremony UI, credentials, PDF preparation, email, or production rollout.** Production Native Signing remains unavailable (no Stage 1 schema there).
 
 | Item | Result |
 |------|--------|
-| Branch | `feat/native-signing-stage-2` from `main` `@4ecf217` |
-| Commits | Stage 2 implementation `fe73ee3`; final review harden `8c6416c` |
-| Migration | **None** — Stage 1 schema sufficient |
+| PR | [#34](https://github.com/leeharbaugh/harbaugh-forms/pull/34) squash-merged `2026-09-14T23:27:50Z` → `main` `18adfb7` (from reviewed `4729d19`) |
+| Feature branch | `feat/native-signing-stage-2` deleted after merge |
+| Migration | **None** — Stage 1 schema sufficient; no Stage 2 migration |
 | Server layer | `lib/signing/actor.ts`, `eligibility.ts`, `authority.ts`, `operations.ts`, `actions.ts` |
 | Operations | `createDraftSigningAction` / `createDraftSigningWithActor`; `getSigningAction` / `getSigningForActor`; `updateDraftSigningTitleAction` / `updateDraftSigningTitleForActor` (Draft title only) |
 | Feature gate | Every operation calls `assertNativeSigningEnabled()`; production remains unset/off |
 | Authority | Current management = eligible primary/co-agent association or originating `ORG_ADMIN`; historical read retained for former associated agents; UUID possession alone is insufficient |
 | Originating org (create) | `profiles.primary_organization_id` when among ACTIVE memberships; else sole ACTIVE membership; else fail closed — never browser-chosen, never arbitrary multi-org pick. Read/update do not re-derive create-time org. |
 | Browser/RLS | Stage 1 deny-by-default unchanged; service-role used only after `requireSigningActor` |
-| Final review | Architecture/security review fixed create-only org derivation, title-update existence leakage, INTERNAL error sanitization, title max length, and explicit multi-org tests |
-| Tests | `test:native-signing-stage2`; `validate:native-signing-stage2-dev`; Stage 1 R12 re-validated; R3/R5/R6/R8/R9 + annotation-auth + R1 audit + `tsc` + Stage 2 ESLint + `git diff --check` + `build:validate` |
+| Production Vercel | Merge created Ready deployment `dpl_6AM37WRqM7h6Mwh7bRpw6Vf6ArB3` / `766sx3lox` — **not promoted** to custom domains |
+| Live custom domain | Remains prior approved deployment `dpl_2CMdac6EViudwyp6TgoQbHf8htiM` (`oh3z3x7r5`); Auto-assign Custom Production Domains remains disabled |
+| Tests | Pre-merge review: `test:native-signing-stage2`; `validate:native-signing-stage2-dev`; Stage 1 R12; R3/R5/R6/R8/R9 + annotation-auth + R1 audit + `tsc` + Stage 2 ESLint + `git diff --check` + `build:validate` |
 
 **Explicitly still unavailable:** participant credentials/sessions, `/sign` routes, Send/In Progress ceremony, package revisions/PDF snapshots, artifacts, email/reminders, work queues/idempotency, co-agent management UI, production enablement.
 
@@ -30,7 +31,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 ### Native Signing Stage 1 foundation (2026-09-14)
 
-**Status:** **Code merged to `main`.** Development database has Stage 1 migrations. **Production database does not.** **Native Signing is not feature-enabled in production.** **No ceremony UI.** Stage 2 implementation is in progress on a feature branch (see above).
+**Status:** **Code merged to `main`.** Development database has Stage 1 migrations. **Production database does not.** **Native Signing is not feature-enabled in production.** **No ceremony UI.** Stage 2 trusted server authority is also merged (see above); ceremony/package preparation has not started.
 
 | Item | Result |
 |------|--------|
@@ -61,7 +62,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 ### Native Signing Stage 2 note
 
-Stage 2 implementation now supersedes the “recommended Stage 2” line above while remaining unmerged; see **Native Signing Stage 2 trusted server authority** at the top of this file.
+Stage 2 trusted server authority is merged to `main` (PR #34 → `18adfb7`). See **Native Signing Stage 2 trusted server authority** at the top of this file. Stage 3 (package preparation) has not started.
 
 ### Signatures orientation and repository audit (2026-09-14)
 
