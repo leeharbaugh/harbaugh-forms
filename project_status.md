@@ -1,6 +1,6 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-14 (Native Signing Stage 1 foundation applied to development: schema skeleton, private `signing-artifacts` bucket, deny-by-default browser access, feature gate default-off; no ceremony/UI; production untouched)
+**As of:** 2026-09-14 (Native Signing Stage 1 foundation squash-merged to `main`; development DB applied; production DB and feature rollout not started)
 
 ## Current State
 
@@ -8,16 +8,19 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 ### Native Signing Stage 1 foundation (2026-09-14)
 
-**Status:** Complete in **development** only. **Not applied to production. Not feature-enabled. No ceremony UI.**
+**Status:** **Code merged to `main`.** Development database has Stage 1 migrations. **Production database does not.** **Native Signing is not feature-enabled in production.** **No ceremony UI.** Stage 2 has not started.
 
 | Item | Result |
 |------|--------|
-| Branch | `feat/native-signing-stage-1` |
-| Migration | `20260914200000_native_signing_stage1_foundation.sql` + corrective `20260914210000_native_signing_stage1_same_signing_pointers.sql` + `20260914211000_native_signing_stage1_shorten_constraint_names.sql` applied to `harbaugh-forms-dev` (`ewxsxwzezhkeawnjvigx`) |
-| Production | Untouched (CLI linked to dev; prod remains `linked:false`) |
-| Feature gate | Server env `NATIVE_SIGNING_ENABLED` — enabled only when exactly `true`; default off (`lib/signing/feature-gate.ts`) |
-| Storage | Private bucket `signing-artifacts`; no authenticated-browser Storage policies; restrictive deny policies for anon/authenticated |
+| PR | [#32](https://github.com/leeharbaugh/harbaugh-forms/pull/32) squash-merged `2026-09-14T21:33:35Z` → `main` `6730534` (from reviewed `8c3dfa0`) |
+| Feature branch | `feat/native-signing-stage-1` deleted after merge |
+| Development migrations | `20260914200000` + `20260914210000` + `20260914211000` applied to `harbaugh-forms-dev` (`ewxsxwzezhkeawnjvigx`) |
+| Production migrations | **Not applied** to `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`); no production `signing_*` tables; no production `signing-artifacts` bucket |
+| Feature gate | Server env `NATIVE_SIGNING_ENABLED` — enabled only when exactly `true`; default off; **not configured in production** |
+| Storage (dev) | Private bucket `signing-artifacts`; no authenticated-browser Storage policies; restrictive deny policies for anon/authenticated |
 | Browser access | All Stage 1 Signing tables: RLS enabled + FORCE RLS; restrictive deny for `anon`/`authenticated`; grants revoked from browser roles |
+| Production Vercel | Merge created Ready deployment `dpl_78nXhcLTLd6d24nEXcxmjLtqGAWX` / `od5w4a7mo` — **not promoted** to custom domains |
+| Live custom domain | Remains prior approved deployment `dpl_2CMdac6EViudwyp6TgoQbHf8htiM` (`oh3z3x7r5`); Auto-assign Custom Production Domains remains disabled |
 | Fill Form | Unchanged — `typed_signature` / `date_signed` remain agent markup |
 
 **Tables introduced (13):** `signings`, `signing_agent_associations`, `signing_documents`, `signing_document_versions`, `signing_package_revisions`, `signing_package_revision_documents`, `signing_participants`, `signing_package_revision_participants`, `signing_fields`, `signing_adopted_marks`, `signing_field_placements`, `signing_artifacts`, `signing_events`.
