@@ -12,6 +12,88 @@ Each decision should include:
 
 ---
 
+## Native Signing Stage 1 uses env feature gate and private signing-artifacts bucket
+
+**Date:** 2026-09-14
+
+**Decision:**
+Native Signing availability is controlled by the server-only environment variable `NATIVE_SIGNING_ENABLED`. The feature is enabled only when that value is exactly `true`. It is not exposed as a `NEXT_PUBLIC_*` flag. Helpers live in `lib/signing/feature-gate.ts` (`isNativeSigningEnabled`, `assertNativeSigningEnabled`). Later Signing stages must call these helpers before exposing Signing behavior.
+
+Immutable Signing artifacts use the private Supabase Storage bucket id `signing-artifacts`. Authenticated and anonymous browser clients receive no direct Storage access to that bucket. Stage 1 does not implement short-lived download URLs or upload APIs.
+
+**Reason:**
+Stage 1 needs the smallest gate consistent with existing env-based configuration and a stable bucket identifier matching the approved dedicated-artifact-store decision, without inventing a large feature-flag framework or participant download machinery.
+
+**Consequences:**
+
+* Incomplete Signing surfaces stay off until explicitly enabled in an environment.
+* Artifact bytes never live in `generated-documents` or `form-templates` as Signing evidence.
+* Bucket object-key format and mediated download behavior remain later-stage design.
+
+**Related files or migrations:**
+
+* `lib/signing/feature-gate.ts`
+* `supabase/migrations/20260914200000_native_signing_stage1_foundation.sql`
+* This file: **Signing artifacts use a dedicated private Supabase bucket at initial release** (2026-09-14); **Native Signing implementation is additive, staged, and feature-gated** (2026-09-14)
+
+---
+
+## Native Signing Stage 1 evidence tables are browser-inaccessible by default
+
+**Date:** 2026-09-14
+
+**Decision:**
+The Stage 1 Signing evidence tables (`signings` and the approved core child tables introduced in migration `20260914200000`, tightened by `20260914210000`) enable and force RLS, apply restrictive deny policies for `anon` and `authenticated`, and revoke browser-role grants. Service-role/trusted server access remains the only intended write path. Composite `(signing_id, id)` uniqueness plus same-Signing foreign keys enforce cross-Signing rejection where the schema can express it. Root current/frozen package-revision and primary-agent pointers use composite `(signings.id, pointer)` foreign keys so they cannot reference another Signing. Package-revision document snapshots require the cited version to belong to that logical document, and signer fields require revision document/participant snapshots from the same package revision. `signing_events.sequence_number` is server-assigned; updates to `signing_events` are blocked. Foreign keys use `ON DELETE RESTRICT` or `SET NULL` only—never `CASCADE` into Signing evidence.
+
+Credential, session, delivery, lease, lock, work-item, and idempotency tables remain deferred to later stages.
+
+**Reason:**
+Server-authoritative Signing writes require deny-by-default browser posture before any ceremony exists. Introducing credential/session tables before their access model would create unused attack surface. Single-column root pointer FKs would allow a foreign Signing UUID to satisfy a superficially valid reference.
+
+**Consequences:**
+
+* Ordinary authenticated Users and anonymous clients cannot SELECT/INSERT/UPDATE/DELETE Signing evidence through PostgREST.
+* Later stages must add narrow, explicit server-mediated or credential-scoped access rather than relaxing Stage 1 into broad authenticated policies.
+* SHA-256 fingerprint columns and reserved event-integrity columns may exist without claiming verification is implemented.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260914200000_native_signing_stage1_foundation.sql`
+* `supabase/migrations/20260914210000_native_signing_stage1_same_signing_pointers.sql`
+* `supabase/migrations/20260914211000_native_signing_stage1_shorten_constraint_names.sql`
+* `scripts/validate-native-signing-stage1-dev.ts`
+* This file: **Signing writes are server-authoritative and link/session access is narrowly scoped** (2026-09-14); **Every Signing child relationship remains within its one parent Signing** (2026-09-14)
+
+---
+
+## Native Signing development preserves the verified security baseline
+
+**Date:** 2026-09-14
+
+**Decision:**
+Every Native Signing implementation stage must preserve the post-remediation security baseline established by findings F1–F11 and recorded in the private local `security.md` regression matrix. Signing work is additive and feature-gated; it must not weaken, bypass, inconsistently duplicate, or replace those controls. Before any Signing stage is declared complete, the applicable existing security regression tests must pass, relevant application regressions must pass, and new automated tests must cover any new Signing security boundary introduced by that stage.
+
+Fill Form `packet_form_annotations` (`typed_signature`, `date_signed`) remain agent markup on the working packet document. Ceremony signer fields, adopted marks, placements, credentials, artifacts, and append-only events belong to the approved Signing-owned tables. Do not treat an agent-placed typed signature annotation as a legally completed Signing placement, and do not implement Signing evidence by mutating ordinary packet-form annotation rows into Signing state.
+
+**Reason:**
+The 2026-09-14 Signatures orientation verified that F1–F11 remediations are present in migrations and application code. Signing introduces new trust boundaries (external participants, bearer credentials, private artifacts, server-only evidence writes) that sit beside—not instead of—the existing packet, account-state, Storage, admin, and publication controls. Collapsing Signing evidence into Fill Form annotations would confuse agent markup with participant ceremony evidence and would undermine the approved immutable Signing model.
+
+**Consequences:**
+
+* Security validation is a required completion criterion for every Signing stage, not a final cleanup step.
+* If a Signing feature appears to require weakening an existing invariant, stop and obtain explicit approval rather than shipping the weaker behavior.
+* Sensitive security reproduction details remain only in the private local `security.md` file, which stays gitignored and out of deployment.
+* Stage 1 may introduce Signing tables and a private artifacts bucket under deny-by-default browser access without enabling ceremony UI.
+
+**Related files or migrations:**
+
+* Private local `security.md` (not tracked in Git)
+* `project_status.md` (Signatures orientation section)
+* This file: **Native Signing implementation is additive, staged, and feature-gated** (2026-09-14); **Signing writes are server-authoritative and link/session access is narrowly scoped** (2026-09-14); **Working Signing data model…** (2026-09-10)
+* No SQL migration; no schema change by this decision
+
+---
+
 ## Packet Forms have editable packet-specific display names
 
 **Date:** 2026-09-14
