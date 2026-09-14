@@ -1158,7 +1158,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signatures Stage 2 (awaiting approval):** trusted server-side Signing authorization helpers and operational foundations on top of the Stage 1 schema; keep `NATIVE_SIGNING_ENABLED` off; no participant credentials or ceremony UI yet. Preserve F1–F11 + R12 Stage 1 deny-by-default tests.
+1. **Native Signatures Stage 3 (awaiting approval):** package preparation / initial package revision + prepared document snapshots behind `NATIVE_SIGNING_ENABLED`; still no participant credentials or ceremony UI. Preserve F1–F11 + R12 Stage 1–2 deny-by-default / authorize-then-elevate tests. Do not enable in production.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically
