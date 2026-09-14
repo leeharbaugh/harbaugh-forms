@@ -27,6 +27,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import { loadCurrentUserDataVisibility } from "@/lib/user-preferences";
 import {
   type PacketListItem,
   deletePacket,
@@ -127,10 +128,16 @@ function PacketsPageContent() {
     setIsLoading(true);
     setListError(null);
 
+    const visibility = await loadCurrentUserDataVisibility(supabase);
+
     let query = supabase
       .from("packets")
       .select(GENERATED_PACKET_LIST_SELECT)
       .order("create_date", { ascending: false });
+
+    if (visibility?.onlyMyData) {
+      query = query.eq("owner_user_id", visibility.userId);
+    }
 
     if (showDeleted) {
       query = query.in("status", ["ACTIVE", "DELETED"]);

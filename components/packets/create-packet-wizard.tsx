@@ -15,6 +15,7 @@ import { FormActions } from "@/components/ui/form-actions";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { createClient } from "@/lib/supabase/client";
+import { loadCurrentUserDataVisibility } from "@/lib/user-preferences";
 import {
   formatAgreementReference,
   formatAgreementStatus,
@@ -99,12 +100,20 @@ export function CreatePacketWizard({
 
     const supabase = createClient();
 
-    const { data, error } = await supabase
+    const visibility = await loadCurrentUserDataVisibility(supabase);
+
+    let query = supabase
       .from("representation_agreements")
       .select(BUYER_REP_AGREEMENT_SELECT)
       .eq("status", "ACTIVE")
       .eq("agreement_type", agreementType)
       .order("effective_date", { ascending: false });
+
+    if (visibility?.onlyMyData) {
+      query = query.eq("owner_user_id", visibility.userId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       setLoadError(error.message);

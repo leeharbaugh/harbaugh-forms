@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import { loadCurrentUserDataVisibility } from "@/lib/user-preferences";
 import {
   type Contact,
   formatContactDisplayName,
@@ -79,8 +80,9 @@ export function ContactPicker({
     setIsSearching(true);
     const supabase = createClient();
     const term = `%${trimmedSearch}%`;
+    const visibility = await loadCurrentUserDataVisibility(supabase);
 
-    const { data, error: fetchError } = await supabase
+    let query = supabase
       .from("contacts")
       .select("*")
       .eq("status", "ACTIVE")
@@ -96,6 +98,12 @@ export function ContactPicker({
       .order("last_name", { ascending: true, nullsFirst: false })
       .order("entity_name", { ascending: true, nullsFirst: false })
       .limit(10);
+
+    if (visibility?.onlyMyData) {
+      query = query.eq("owner_user_id", visibility.userId);
+    }
+
+    const { data, error: fetchError } = await query;
 
     if (fetchError) {
       setSearchResults([]);

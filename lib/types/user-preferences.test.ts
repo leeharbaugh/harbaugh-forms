@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   clampColumnWidth,
+  getOnlyMyDataFromPreferences,
   mergeColumnWidthsWithDefaults,
+  withOnlyMyDataPreference,
 } from "./user-preferences.ts";
 
 const COLLECTION_LIKE_COLUMNS = [
@@ -75,5 +77,23 @@ describe("mergeColumnWidthsWithDefaults", () => {
       ),
       { actions: 220 },
     );
+  });
+});
+
+describe("only-my-data preference", () => {
+  it("defaults to showing all accessible data", () => {
+    assert.equal(getOnlyMyDataFromPreferences({}), false);
+  });
+
+  it("preserves unrelated preferences when saving the visibility choice", () => {
+    const next = withOnlyMyDataPreference(
+      { table_column_widths: { packets_list: { label: 220 } } },
+      true,
+    );
+
+    assert.equal(getOnlyMyDataFromPreferences(next), true);
+    assert.deepEqual(next.table_column_widths, {
+      packets_list: { label: 220 },
+    });
   });
 });

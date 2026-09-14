@@ -109,6 +109,46 @@ export function warnDuplicateExternalDocumentName(
   return null;
 }
 
+export function validatePacketFormDocumentName(
+  documentName: string,
+): string | null {
+  const trimmed = documentName.trim();
+  if (!trimmed) {
+    return "Document name is required.";
+  }
+  if (trimmed.length > 255) {
+    return "Document name must be 255 characters or fewer.";
+  }
+  return null;
+}
+
+export async function renamePacketFormDocument(
+  supabase: SupabaseClient,
+  packetFormId: number,
+  documentName: string,
+): Promise<void> {
+  const validationError = validatePacketFormDocumentName(documentName);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const { data, error } = await supabase
+    .from("packet_forms")
+    .update({ document_name: documentName.trim() })
+    .eq("id", packetFormId)
+    .eq("status", "ACTIVE")
+    .in("document_state", ["DRAFT", "FINAL"])
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data) {
+    throw new Error("Only active Draft or Final packet forms can be renamed.");
+  }
+}
+
 export function getActiveCollectionFormLinks(
   links: CollectionFormLink[] | undefined,
 ): CollectionFormLink[] {

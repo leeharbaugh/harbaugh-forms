@@ -14,6 +14,7 @@ import {
   formatPacketFormOrigin,
   getNextPacketFormSortOrder,
   reorderPacketForm,
+  renamePacketFormDocument,
   softDeletePacketForm,
   sortPacketForms,
   validateAdditionalInternalFormId,
@@ -76,6 +77,10 @@ export function PacketFormsLiveEditor({
   const [formPendingRemove, setFormPendingRemove] =
     useState<PacketForm | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [formPendingRename, setFormPendingRename] =
+    useState<PacketForm | null>(null);
+  const [renameDocumentName, setRenameDocumentName] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
 
   const searchForms = useCallback(async () => {
     const trimmed = formSearch.trim();
@@ -264,6 +269,49 @@ export function PacketFormsLiveEditor({
     }
   };
 
+  const openRenameForm = (document: PacketForm) => {
+    setFormPendingRename(document);
+    setRenameDocumentName(document.document_name);
+    setActionError(null);
+    setActionWarning(null);
+  };
+
+  const closeRenameForm = () => {
+    if (isRenaming) {
+      return;
+    }
+    setFormPendingRename(null);
+    setRenameDocumentName("");
+  };
+
+  const handleRenameForm = async () => {
+    if (!formPendingRename) {
+      return;
+    }
+
+    setIsRenaming(true);
+    setIsSubmitting(true);
+    setActionError(null);
+
+    try {
+      await renamePacketFormDocument(
+        createClient(),
+        formPendingRename.id,
+        renameDocumentName,
+      );
+      setFormPendingRename(null);
+      setRenameDocumentName("");
+      onFormsChange();
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Failed to rename document.",
+      );
+    } finally {
+      setIsRenaming(false);
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <ConfirmDeleteDialog
@@ -427,6 +475,9 @@ export function PacketFormsLiveEditor({
               document.status,
               document.availability_state,
             );
+            const canRename =
+              document.document_state === "DRAFT" ||
+              document.document_state === "FINAL";
 
             return (
               <div
@@ -435,9 +486,46 @@ export function PacketFormsLiveEditor({
               >
                 <div className="space-y-1 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">
-                      {index + 1}. {document.document_name}
-                    </p>
+                    {formPendingRename?.id === document.id ? (
+                      <div className="flex w-full flex-wrap items-center gap-2">
+                        <Label
+                          htmlFor={`packet-form-name-${document.id}`}
+                          className="sr-only"
+                        >
+                          Document name
+                        </Label>
+                        <Input
+                          id={`packet-form-name-${document.id}`}
+                          value={renameDocumentName}
+                          onChange={(event) =>
+                            setRenameDocumentName(event.target.value)
+                          }
+                          disabled={isRenaming}
+                          className="max-w-md"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => void handleRenameForm()}
+                          disabled={isRenaming}
+                        >
+                          {isRenaming ? "Saving..." : "Save"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={closeRenameForm}
+                          disabled={isRenaming}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="font-medium">
+                        {index + 1}. {document.document_name}
+                      </p>
+                    )}
                     <Badge
                       variant={packetFormDocumentStateVariant(
                         document.document_state,
@@ -478,6 +566,15 @@ export function PacketFormsLiveEditor({
                 <div className="flex flex-wrap gap-2">
                   {!disabled && (
                     <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openRenameForm(document)}
+                        disabled={isSubmitting || !canRename}
+                      >
+                        Rename
+                      </Button>
                       <Button
                         type="button"
                         variant="outline"

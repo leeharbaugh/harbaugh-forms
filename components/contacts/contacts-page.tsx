@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { InfoDialog } from "@/components/ui/info-dialog";
 import { createClient } from "@/lib/supabase/client";
+import { loadCurrentUserDataVisibility } from "@/lib/user-preferences";
 import { saveContactWithOptionalProperty } from "@/lib/contact-save";
 import {
   PROPERTY_DUPLICATE_TITLE,
@@ -61,12 +62,18 @@ export function ContactsPage() {
     setIsLoading(true);
     setListError(null);
 
+    const visibility = await loadCurrentUserDataVisibility(supabase);
+
     let query = supabase
       .from("contacts")
       .select("*")
       .eq("status", "ACTIVE")
       .order("last_name", { ascending: true, nullsFirst: false })
       .order("entity_name", { ascending: true, nullsFirst: false });
+
+    if (visibility?.onlyMyData) {
+      query = query.eq("owner_user_id", visibility.userId);
+    }
 
     const trimmedSearch = searchQuery.trim();
     if (trimmedSearch) {

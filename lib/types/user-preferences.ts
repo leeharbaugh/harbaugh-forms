@@ -4,6 +4,9 @@ export type TableColumnWidths = Record<string, number>;
 
 export type UserPreferencesDocument = {
   table_column_widths?: Record<string, TableColumnWidths>;
+  workspace_view?: {
+    only_my_data?: boolean;
+  };
 };
 
 export type UserPreferencesRow = {
@@ -101,6 +104,25 @@ export function withTableColumnWidths(
     table_column_widths: {
       ...(preferences.table_column_widths ?? {}),
       [tableKey]: widths,
+    },
+  };
+}
+
+export function getOnlyMyDataFromPreferences(
+  preferences: UserPreferencesDocument | null | undefined,
+): boolean {
+  return preferences?.workspace_view?.only_my_data === true;
+}
+
+export function withOnlyMyDataPreference(
+  preferences: UserPreferencesDocument,
+  onlyMyData: boolean,
+): UserPreferencesDocument {
+  return {
+    ...preferences,
+    workspace_view: {
+      ...(preferences.workspace_view ?? {}),
+      only_my_data: onlyMyData,
     },
   };
 }

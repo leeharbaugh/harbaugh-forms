@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { RecordStatusBadge } from "@/components/ui/list-badges";
 import { createClient } from "@/lib/supabase/client";
+import { loadCurrentUserDataVisibility } from "@/lib/user-preferences";
 import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
 import {
   extractPropertyHoaFormFields,
@@ -98,11 +99,17 @@ export function PropertiesPage() {
     setIsLoading(true);
     setListError(null);
 
+    const visibility = await loadCurrentUserDataVisibility(supabase);
+
     let query = supabase
       .from("properties")
       .select("*")
       .order("street_address", { ascending: true })
       .order("city", { ascending: true });
+
+    if (visibility?.onlyMyData) {
+      query = query.eq("owner_user_id", visibility.userId);
+    }
 
     if (showDeleted) {
       query = query.in("status", ["ACTIVE", "DELETED"]);

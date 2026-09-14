@@ -12,6 +12,1036 @@ Each decision should include:
 
 ---
 
+## Packet Forms have editable packet-specific display names
+
+**Date:** 2026-09-14
+
+**Decision:**
+`packet_forms.document_name` is the editable display name for that one form instance in a Packet. Renaming it never changes the canonical `forms.form_name`, the source form template, field mappings, or the stored PDF bytes. An active Draft or Final Packet Form may be renamed; Signed and Void Packet Forms remain read-only. Duplicate Packet Form names are permitted, but agents can give repeated forms such as multiple amendments clear, distinct labels.
+
+The packet-specific display name is used in packet UI and human-readable download filenames. A Signing captures the packet display name into its immutable package-revision document snapshot, so a later Packet Form rename never rewrites a sent or completed Signing's participant view, completed documents, filenames, or evidence.
+
+**Reason:**
+One transaction frequently includes more than one instance of a standard form. The agent needs to distinguish those instances without corrupting the canonical form library or historical Signing evidence.
+
+**Consequences:**
+
+* Agents can name a Packet Form, for example, “Listing Addendum — price change to $400k.”
+* The canonical Forms library keeps its original title.
+* No new schema field or migration is needed because the packet-specific name already exists.
+* Renaming does not alter document contents, source storage, or field values.
+* Signed and Void working-document records remain read-only.
+
+**Related files or migrations:**
+
+* `lib/types/packet-form.ts`
+* `components/packets/packet-forms-live-editor.tsx`
+* This file: **Working Signing data model records workflow, revisions, documents, participants, placements, artifacts, and events separately** (2026-09-14); **Packet Form Document Lifecycle** (2026-07-17)
+* No SQL migration
+
+---
+
+## “Show only my data” is a personal workspace filter, not an authority change
+
+**Date:** 2026-09-14
+
+**Decision:**
+Harbaugh Forms stores a per-user “Show only my data” workspace preference. When enabled, it filters the regular Contacts, Properties, Packets, and representation-agreement lists, as well as their normal selection searches, to records owned by the current user. Existing selected or linked records remain available where necessary to preserve the context of the work already open.
+
+The preference does not change database access, administrative authority, ownership, RLS policies, or what the user may manage after deliberately turning the filter off. It is a reversible personal display choice and defaults to showing all records already available to the user.
+
+**Reason:**
+An application administrator needs day-to-day focus on their own business records without losing broker or administrator oversight of the larger workspace.
+
+**Consequences:**
+
+* The preference is saved in the existing user-preferences record and survives a new browser session.
+* It is available from Settings as “My Workspace View,” where users naturally manage a personal display choice.
+* The setting is not a security boundary and must never be described as one.
+* Direct work already open or explicitly selected is not silently broken by a view preference.
+
+**Related files or migrations:**
+
+* `lib/types/user-preferences.ts`
+* `lib/user-preferences.ts`
+* `components/settings/settings-page.tsx`
+* Affected workspace lists and pickers
+* No SQL migration
+
+---
+
+## The Signing ceremony has an accessible, non-coercive interaction baseline
+
+**Date:** 2026-09-14
+
+**Decision:**
+The native Signing experience supports keyboard-only operation; clear visible focus and error feedback; meaningful screen-reader labels, instructions, and status announcements; typed signatures and initials as an alternative to drawing; and instructions that do not depend on color alone. It does not impose a short forced interaction timeout. The approved inactivity session timeout warns the participant, preserves server-confirmed work, and allows them to resume through the approved re-entry flow.
+
+The Signing ceremony must not claim that every source PDF or underlying transaction document is accessible merely because the application controls are accessible. If a source document needs an accommodation, the agent uses an appropriate accessible source or other accommodation rather than Harbaugh Forms silently altering the frozen transaction document. An agent may assist with navigation or explanation but may not place a participant's marks; representative signing remains the separate approved capacity workflow.
+
+**Reason:**
+Participants should be able to complete the electronic ceremony without being excluded by a mouse-only, drawing-only, color-dependent, or rushed interface. The product must also avoid overstating what it can guarantee about source documents it did not author.
+
+**Consequences:**
+
+* Accessibility requirements apply to the focused Signing experience from its first release.
+* Typed adoption remains an equal alternative to a drawn signature or initials.
+* Session expiry does not discard confirmed work or force a participant to begin again.
+* Source-document accessibility and transaction-specific accommodation remain the agent's responsibility, supported by appropriate workflow choices rather than evidence-altering automatic edits.
+* Exact accessibility standard, testing method, PDF-viewer capabilities, language support, and accommodation UI remain implementation and compliance design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing participants use a focused, autosaving signature-and-initials ceremony** (2026-09-06); **In-person signing uses the same evidence model through an explicit shared-device handoff** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Signing email starts on Resend with a provider-neutral delivery boundary
+
+**Date:** 2026-09-14
+
+**Decision:**
+Native Signing uses Resend's free transactional-email tier for the initial release. Harbaugh Forms records its own delivery instructions, attempts, outcomes, recipient links, and immutable artifacts; no provider-specific record is the authoritative Signing evidence. The delivery implementation uses a narrow provider-neutral boundary so that Resend can later be upgraded or replaced without changing the Signing workflow, credentials, artifacts, or evidence history.
+
+The system treats Resend's current free-tier daily sending allowance as a real operational limit. It records provider rejection or failure accurately, applies the approved retry and sender-notification behavior, and never represents an unsent message as delivered. Sending-domain authentication and webhook handling are configured before production Signing use.
+
+**Reason:**
+Resend's free tier is appropriate for Harbaugh Forms' current small user base. A provider-neutral boundary preserves an easy path to a paid Resend plan, Postmark, or another transactional provider when volume, deliverability operations, or support needs change.
+
+**Consequences:**
+
+* Initial Signing email costs no additional provider subscription while volume remains within Resend's free allowance.
+* The daily allowance is monitored as a delivery constraint, especially because invitations, reminders, and completed-document delivery can create multiple recipient messages.
+* Delivery evidence is retained by Harbaugh Forms rather than delegated to a provider's limited activity-retention period.
+* A later provider change does not invalidate historical delivery evidence or require reissuing recipient links.
+* Exact sending domain, Resend account ownership, credentials, webhook verification, quota monitoring thresholds, retry timing, and provider-adapter interface remain implementation design.
+* No application code, schema, migration, storage configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing delivery instructions and attempts preserve every email outcome separately from workflow state** (2026-09-14); **Signing artifacts use a dedicated private Supabase bucket at initial release** (2026-09-14)
+* No SQL migration; no email-provider configuration change
+
+---
+
+## Signing artifacts use a dedicated private Supabase bucket at initial release
+
+**Date:** 2026-09-14
+
+**Decision:**
+Native Signing artifacts use a dedicated private Signing-artifacts bucket in Harbaugh Forms' existing Supabase environment for the initial release. The application server remains the sole authority that mediates artifact access; neither browser clients nor email recipients receive direct bucket access. The bucket follows the previously approved immutable-object, opaque-key, and short-lived artifact-download authorization design.
+
+**Reason:**
+Using the existing managed environment keeps the first release operationally focused while preserving the separate protected storage boundary required for Signing evidence.
+
+**Consequences:**
+
+* Signing artifacts are separated from ordinary packet/form storage even though both use the existing Supabase environment.
+* No new object-storage provider is required for the initial release.
+* A later storage-provider migration remains possible without changing the Signing evidence or access principles.
+* Bucket configuration, retention settings, service credentials, backup/export operations, and migration procedures remain implementation design.
+* No application code, schema, migration, storage configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing artifacts use private immutable storage and server-mediated downloads** (2026-09-14); **Signing recovery preserves evidence and begins in a non-delivering safe mode** (2026-09-14)
+* No SQL migration; no storage configuration change
+
+---
+
+## Agents sign through the same evidence-bearing ceremony as other participants
+
+**Date:** 2026-09-14
+
+**Decision:**
+When a primary agent or co-agent is also assigned a signature or initials field, they complete those fields through the same participant Signing ceremony, placement rules, identity affirmation, consent record, adopted-mark rules, autosave, and immutable evidence model as any other participant. Their authenticated workspace provides the entry path and may offer their approved reusable User signature and initials preset; it does not permit a special direct-write or agent-only signing shortcut.
+
+The server attributes the action to both the authenticated User and the explicitly assigned Signing participant. The agent's normal workspace authority remains separate from their participant act of signing and cannot be used to alter frozen evidence or bypass field assignment.
+
+**Reason:**
+An agent's own signature must be as clear, durable, and auditable as every other signature. Reusing the same ceremony avoids an unexplainable second standard for evidence.
+
+**Consequences:**
+
+* Agents may enter their assigned Signing fields from their authenticated workspace rather than through an emailed invitation.
+* Agent signatures, initials, paired automatic dates, and completion events have the same evidence structure as participant actions.
+* Workspace authority never substitutes for a participant-field assignment or the affirmative signing ceremony.
+* Exact workspace entry UI, association rules, and re-authentication details remain implementation design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing participants use a focused, autosaving signature-and-initials ceremony** (2026-09-06); **Authenticated Users may keep one reusable signature and initials preset** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Representative authority is stated by users, not validated by Harbaugh Forms
+
+**Date:** 2026-09-14
+
+**Decision:**
+Harbaugh Forms enables a person to sign in an agent-prepared representative capacity, such as under a power of attorney or as a guardian, but makes no claim to determine legal authority, legal validity, or the adequacy of the execution wording. The agent and signatory are responsible for selecting the capacity, represented person, and document wording. The product records the stated relationship as Signing evidence without application-level fact-checking or validation.
+
+An authority document, such as a power of attorney or guardianship record, is not required to create or complete a representative Signing. An authorized agent may optionally associate a supporting authority document as a separate protected artifact. It is not automatically included with participant or completed-copy delivery; the agent deliberately chooses whether to include it for a particular delivery.
+
+**Reason:**
+Representative signing is a practical workflow feature, not a legal-adjudication service. Requiring or purporting to validate authority would create an inaccurate expectation that Harbaugh Forms has decided a legal fact.
+
+**Consequences:**
+
+* The product records what users state, rather than certifying the authority behind it.
+* Representative Signing remains usable when the authority document is handled outside Harbaugh Forms.
+* Optional supporting documents receive the same protected handling as other Signing artifacts, but are delivered only through an explicit agent choice.
+* Participant-facing language must not imply that Harbaugh Forms approved, verified, or endorsed an authority claim.
+* Exact attachment controls, access rules, audit details, and compliance review remain implementation design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Representative signing is a first-class ceremony with a stated capacity** (2026-09-14); **Signing artifacts use private immutable storage and server-mediated downloads** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## A personal participant's signing name must match the document and Signing identity
+
+**Date:** 2026-09-14
+
+**Decision:**
+For a participant signing personally, the name used in the Signing, the name presented for their signing ceremony, and the name appearing on the document for that signer must match. A personal participant cannot choose a fuller, shorter, customary, or otherwise different name as their adopted typed signature. If the intended name is wrong or incomplete, an authorized agent corrects the participant identity and document before the first accepted signature or initials placement under the approved amendment process. Representative signing uses the distinct execution-capacity decision below.
+
+For a typed signature, the product only permits the exact displayed signing name. A drawn signature may naturally be stylized, but the participant expressly affirms that they are signing as that exact displayed/document name. The system records the participant identity, any typed representation or drawn mark, and the affirmation; the mark does not silently alter the participant's identity.
+
+**Reason:**
+Completed transaction documents need a clear, consistent signer name. Allowing a participant to sign "Kenneth Lee Harbaugh" where the document identifies "Lee Harbaugh," or the reverse, can create needless title-company and transaction-review problems.
+
+**Consequences:**
+
+* A personal Signing does not treat a customary or alternate name as an acceptable substitution for the document name.
+* Name correction is a pre-first-mark preparation action, not participant self-service during the ceremony.
+* Drawn signatures remain usable without pretending that their stylized appearance can be mechanically name-matched.
+* Once the first accepted signature or initials is placed, the existing identity snapshot stays frozen; a material correction requires a new Signing.
+* Exact document-name detection, validation UI, and exception/escalation handling remain implementation design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Participant identity is agent-correctable only before the first signing mark** (2026-09-14); **Electronic-signing consent is affirmative and records the exact disclosure accepted** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Representative signing is a first-class ceremony with a stated capacity
+
+**Date:** 2026-09-14
+
+**Decision:**
+Harbaugh Forms supports representative signing from the initial native Signing release through one generic stated-capacity model. The agent may select common labels such as attorney-in-fact / POA, guardian, trustee, or authorized entity signer, and supplies the exact capacity wording together with the represented person or entity. The person who completes the ceremony is the signatory; the Signing separately records the party represented and the stated signing capacity. The document execution wording must match that prepared relationship, for example, "Kenneth Lee Harbaugh as Attorney-in-Fact for Richard Harbaugh."
+
+The invitation or in-person handoff, identity affirmation, electronic consent, adopted signature or initials, placements, and activity history belong to the actual signatory. The represented person's identity and capacity are immutable Signing evidence associated with that act. A drawn signature may be the signatory's ordinary mark with the execution-capacity wording rendered alongside it; a typed signature follows the exact approved execution wording.
+
+An agent prepares the representative capacity before the first accepted signature or initials placement. The participant cannot convert an ordinary personal ceremony into representative signing, change the represented person, or change capacity during the ceremony. Harbaugh Forms records the claimed authority and does not determine the legal validity of a power of attorney, guardianship, or other authority document.
+
+**Reason:**
+Power-of-attorney and guardianship signings occur regularly in real-estate transactions. They must be represented as the actual person's authorized act rather than be forced into an inaccurate personal-signature model.
+
+**Consequences:**
+
+* POA, guardian, trustee, and authorized-entity signing fit one out-of-the-box representative model rather than separate legal workflows.
+* The actual signatory remains clearly distinguished from the person represented.
+* Document execution wording, the electronic ceremony, and evidence describe the same relationship.
+* The product records a stated capacity; it does not make a legal determination about authority validity.
+* Exact common-label list and UI/data modeling remain implementation design; supplied capacity wording is not interpreted by the application.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **A personal participant's signing name must match the document and Signing identity** (2026-09-14); **Representative authority is stated by users, not validated by Harbaugh Forms** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Electronic-signing consent is a single per-Signing disclosure and affirmative access confirmation
+
+**Date:** 2026-09-14
+
+**Decision:**
+After the participant completes the approved identity affirmation and before they may place the first signature or initials in a Signing, Harbaugh Forms presents one plain-language electronic-records and electronic-signature disclosure for that Signing. The participant can view, download, print, and retain the full disclosure. They affirm that they can access and retain the electronic records and agree to sign electronically; no OTP, test email, forced scrolling, or repeated consent step is required.
+
+The disclosure explains the scope of consent, availability of electronic completed copies, the participant's ability to obtain paper records or decline electronic signing through the agent, the absence of an application fee for doing so, and the basic technical ability needed to access, retain, and print the records. Consent is limited to that one Signing, not an indefinite blanket consent. The system records the exact disclosure version and content fingerprint, the participant, the Signing, the consent action, and the accepted-at time as Signing evidence.
+
+A later disclosure revision applies to future, unstarted participant ceremonies. It does not rewrite, invalidate, or silently re-prompt consent already accepted for an active Signing. A participant who does not consent cannot sign electronically through that ceremony and may decline or use an appropriate alternative workflow outside it. The final disclosure text and operational instructions require Texas legal review before production release; Harbaugh Forms must not claim that its disclosure independently establishes legal compliance.
+
+**Reason:**
+The Signing evidence must show both that the participant affirmatively consented and which disclosure they actually accepted, while keeping the ceremony clear and low-friction for ordinary real-estate participants.
+
+**Consequences:**
+
+* One affirmative access-and-consent action is a clear precondition to the first electronic signing mark.
+* The participant receives a retainable disclosure and later completed electronic copies without a login requirement.
+* Evidence retains the applicable disclosure rather than relying on later, mutable wording.
+* Updating general product wording does not alter historical consent records.
+* Exact counsel-approved disclosure copy, presentation layout, version-publication process, paper-record request handling, and jurisdiction-specific review remain implementation and compliance work.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing participants use a focused, autosaving signature-and-initials ceremony** (2026-09-06); **Completed copies are emailed without login and copy recipients remain addable** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Participant identity is agent-correctable only before the first signing mark
+
+**Date:** 2026-09-14
+
+**Decision:**
+Participants cannot edit their displayed name, email address, or optional role from the Signing experience. Before any accepted signature or initials placement exists anywhere in the Signing, an authorized primary agent or co-agent may correct those details through the approved amendment lock and a new package revision.
+
+If the participant email address changes, the existing participant credential is revoked and a new credential is issued to the corrected address. A name or role correction that does not change the authorized recipient may retain the existing credential. Once the first accepted signature or initials placement freezes the Signing, the participant identity snapshot is immutable; a material correction requires cancelling the Signing and issuing a new one.
+
+**Reason:**
+The displayed participant identity is evidence about who the system invited and who performed the ceremony. Letting a participant rewrite it during signing, or silently changing it after a mark exists, would weaken that evidence.
+
+**Consequences:**
+
+* An agent can fix a pre-signing typo without recreating the Signing.
+* An email correction never leaves the old address with usable Signing access.
+* Participant self-service editing does not create an ambiguous identity history.
+* The first accepted signature or initials freezes both the package and identity snapshot already approved for the Signing.
+* Exact materiality criteria, correction UI, and delivery wording remain implementation design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **A Signing freezes on its first signature or initial** (2026-08-24); **In-person signing uses the same evidence model through an explicit shared-device handoff** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## In-person signing uses the same evidence model through an explicit shared-device handoff
+
+**Date:** 2026-09-14
+
+**Decision:**
+In-person signing uses the same durable Signing, participant, package revision, fields, placements, artifacts, events, and completion model as remote signing. It is not a separate kind of Signing or a shortcut around the approved ceremony. The agent starts a participant-specific shared-device handoff from the normal workspace; the regular agent workspace is then unavailable while the participant acts in the focused Signing experience.
+
+The participant affirms the displayed identity, consents to electronic signing, adopts/uses the approved signature or initials, and completes only that participant's assigned fields. The server attributes actions to the Signing participant and in-person session, never to the agent merely because the agent was previously logged into the shared device. Returning to the normal agent workspace requires the agent to re-authenticate or otherwise complete a secure workspace unlock.
+
+No invitation email, OTP, or participant account is required for the in-person ceremony. The participant's approved email remains available for required completed-copy delivery and later contact. If an in-person participant does not finish, the Signing may continue through the same approved participant workflow, including a later remote link when appropriate, without reclassifying or recreating the durable Signing.
+
+**Reason:**
+Handing a laptop across the table should eliminate printing, scanning, and needless email friction without confusing the agent's application identity with the participant's act of signing or weakening the evidence model.
+
+**Consequences:**
+
+* Remote and in-person participants produce the same immutable evidence structure.
+* A shared device never gives a participant access to the agent workspace.
+* In-person activity remains participant-attributed, server-authorized, and auditable.
+* Unfinished in-person work can transition to approved remote participation without losing the Signing's history.
+* Exact handoff UI, workspace-unlock method, session mechanics, in-person participant setup, and optional remote follow-up behavior remain implementation design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **In-person signing is a first-class native Signing mode** (2026-08-24); **Signing writes are server-authoritative and link/session access is narrowly scoped** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Signing email identifies Harbaugh Forms while routing transaction replies to active agents
+
+**Date:** 2026-09-14
+
+**Decision:**
+Signing invitations, reminders, completion delivery, and other participant-facing messages are sent by Harbaugh Forms on behalf of the originating brokerage and primary agent to preserve consistent, authenticated delivery. Transaction replies route to the current primary agent and every active co-agent on the Signing. This allows the participant to ask a transaction question through ordinary email while ensuring the agents with current full authority receive it.
+
+Standard email reply routing addresses all configured reply recipients rather than forcing a literal CC on a participant's later reply. Harbaugh Forms therefore configures the primary agent and active co-agents as the reply recipients, which gives the primary agent the intended direct reply and copies active co-agents without requiring an inbound-mail relay or storing participant correspondence in the Signing system.
+
+Participant-facing emails clearly distinguish transaction questions, which go to the agent reply recipients, from Harbaugh Forms support or security issues, which go to the appropriate product-support channel. Historical read-only agents and brokerage administrators are not automatically included in reply routing. The email itself does not expose protected technical metadata or raw access credentials beyond the deliberately provided Signing link.
+
+**Reason:**
+Participants need a simple human path for transaction questions, while the product needs consistent deliverability and should not turn general email correspondence into uncontrolled Signing evidence or a new mailbox feature.
+
+**Consequences:**
+
+* Primary agents and active co-agents receive participant transaction replies.
+* Outbound delivery remains branded and authenticated through Harbaugh Forms.
+* Harbaugh Forms does not build or retain a general inbound participant-email mailbox for Signings.
+* Exact sender display format, authenticated sending domain, reply-recipient header behavior, support channel, email templates, and provider configuration remain implementation design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing reminders, sender notifications, and requested completion dates use email only** (2026-09-06); **Signing access belongs to the originating brokerage and full-authority agents** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing monitoring separates technical escalation from business notifications
+
+**Date:** 2026-09-14
+
+**Decision:**
+System-administrator monitoring and escalation cover integrity-check failures, repeated finalization or delivery failures, stuck work, abnormal credential activity, and recovery-safe-mode activation. These alerts contain only the operational context needed for diagnosis and remain restricted to authorized system administrators.
+
+Primary agents and active co-agents receive business-level email notification when an automatic participant reminder is actually sent: it identifies the Signing and recipient but does not expose document contents or protected security metadata. The reminder is still recorded in Signing history and delivery records. If that reminder's delivery fails, the existing sender-delivery-failure notice applies. Former agents with read-only historical access and brokerage administrators do not receive duplicate reminder emails by default, but authorized brokerage administrators may review the business history and current status.
+
+Agents, co-agents, and brokerage administrators see understandable business impact such as delayed finalization or delivery failure; raw technical diagnostics, credential-abuse signals, and security metadata remain system-administrator-only.
+
+**Reason:**
+The agent needs confirmation that the approved reminder workflow is actively helping move the transaction forward. Technical responders need earlier, richer signals without exposing security details or creating unnecessary recurring email for every historical viewer.
+
+**Consequences:**
+
+* Automatic reminder sends create an email notice to the active primary agent and co-agents.
+* Business notifications remain email-only; SMS is not introduced.
+* System monitoring remains distinct from participant and business-facing notification content.
+* Exact alert thresholds, anomaly rules, monitoring provider, email copy, suppression/deduplication, and escalation schedule remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing operations expose approved recovery controls without direct evidence editing** (2026-09-14); **Signing reminders, sender notifications, and requested completion dates use email only** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing operations expose approved recovery controls without direct evidence editing
+
+**Date:** 2026-09-14
+
+**Decision:**
+The Signing operations experience is role-scoped and limited to approved actions. Primary agents, co-agents, and brokerage administrators see business-level status, documents, participant progress, deliveries, and history permitted by their existing authority. They may use approved business controls such as reminders/resends, credential revocation and replacement, reassignment, copy-recipient management, cancellation, and requesting a finalization retry.
+
+Authorized system administrators additionally see protected technical diagnostics, work-item failure state, integrity-check results, and security metadata already restricted to that role. They may resume a failed finalization step or initiate the narrowly approved defect-remediation procedure. System-administrator tools remain server-authorized, attributable, and audited.
+
+No operations screen permits direct editing of frozen documents, placements, events, artifacts, fingerprints, package revisions, or finalization results. It contains no manual **Complete** override. Operational actions request validated server processes that either satisfy the normal lifecycle/evidence requirements or fail visibly without changing the Signing.
+
+**Reason:**
+People need practical recovery and support controls without creating a backdoor that can alter evidence or let an administrative role substitute judgment for the completed Signing workflow.
+
+**Consequences:**
+
+* Business users receive only the controls already authorized by the Signing model.
+* System administrators can diagnose and advance validated recovery work, but cannot rewrite or fabricate evidence.
+* Every operational action remains attributable in Signing history or protected system audit as appropriate.
+* Exact screen layout, role-query implementation, diagnostics, action confirmations, notification behavior, and RLS remain implementation design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing access belongs to the originating brokerage and full-authority agents** (2026-09-06); **Finish Signing and finalization are idempotent, recoverable, and server-authoritative** (2026-09-08)
+* No SQL migration; no schema change
+
+---
+
+## Native Signing requires security, integrity, recovery, and regression acceptance coverage before rollout
+
+**Date:** 2026-09-14
+
+**Decision:**
+Native Signing cannot be enabled for real use until its staged implementation passes targeted acceptance coverage in addition to ordinary unit and integration tests. Required coverage includes authorization-bypass attempts; cross-Signing reference rejection; participant-link and completed-package-link scope, revocation, and replacement behavior; session expiry and invalidation; duplicate/retried request idempotency; participant/agent amendment races and stale locks; immutable artifact and event-chain verification; recoverable finalization failure; delivery retry behavior; backup/restore recovery-safe mode; and regression proof that existing packet forms, annotations, documents, and legacy lifecycle behavior remain unchanged.
+
+Acceptance tests must use disposable data and isolated storage/communications where possible. No test may send a real participant communication, expose raw credentials, or mutate production evidence without an explicitly approved, narrowly scoped production validation plan. Production enablement follows successful development validation and confirms the live schema, storage policies, server-side authority boundaries, background work configuration, and feature-gate state.
+
+**Reason:**
+The Signing feature depends on coordinated database, storage, authentication, rendering, background work, and delivery behavior. A normal happy-path test cannot establish that evidence survives failures or that direct/browser access cannot bypass the ceremony.
+
+**Consequences:**
+
+* Security, race, integrity, recovery, and regression checks are release requirements—not optional later hardening.
+* Development and production validation remain deliberately separated.
+* Existing packet behavior is a protected regression target during Signing rollout.
+* Exact test commands, fixtures, mocks, production-smoke scope, and CI configuration remain implementation planning.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Native Signing implementation is additive, staged, and feature-gated** (2026-09-14); **Signing recovery preserves evidence and begins in a non-delivering safe mode** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Native Signing implementation is additive, staged, and feature-gated
+
+**Date:** 2026-09-14
+
+**Decision:**
+Native Signing is implemented through additive, forward-only migrations and a feature-gated rollout rather than a single replacement of existing packet-document behavior. The initial technical sequence is: isolated Signing tables and private artifact storage; trusted server-side authorization, integrity, and operational foundations; agent preparation and package-revision workflow; participant ceremony; finalization and artifact verification; then completion delivery, reminders, and administrative recovery controls.
+
+Each stage is independently testable in development before controlled production enablement. The feature remains gated until its required database constraints, storage policies, server operations, integrity checks, and recovery behavior are validated. Existing packet forms, annotations, generated-document behavior, and the unused `SIGNED`/`VOID` packet-form lifecycle values remain unchanged during this implementation sequence. Any later change to those legacy values requires the separately approved dependency/data audit and its own forward migration.
+
+No migration rewrites existing packet documents or attempts to convert historical packet state into Signing evidence. Native Signings begin as new records with their own immutable versions, artifacts, events, credentials, and access model.
+
+**Reason:**
+Signing is a new evidentiary workflow, not a cosmetic extension of the existing editable packet-document model. Staging limits blast radius, makes each security boundary testable, and avoids retroactively assigning signing meaning to historical records that never followed the new ceremony.
+
+**Consequences:**
+
+* Signing launches behind a controlled feature gate after isolated development validation.
+* Schema, storage, server authority, ceremony, finalization, and delivery are introduced in a deliberate dependency order.
+* Existing packet behavior and legacy lifecycle values are not silently repurposed.
+* No historical packet record is converted into a native Signing.
+* Exact migration files, rollout audiences, feature-flag mechanism, test plans, production checks, and deployment order remain implementation planning.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Native e-signature is a planned in-app packet workflow** (2026-08-16); **Packet Form Document Lifecycle** (2026-07-17); **Signing writes are server-authoritative and link/session access is narrowly scoped** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Signing evidence is retained indefinitely unless an authorized disposition policy requires removal
+
+**Date:** 2026-09-14
+
+**Decision:**
+Signing evidence has no automatic deletion or expiration policy at launch. Completed and retained non-completed Signings, immutable artifacts, events, identity snapshots, delivery history, and associated evidence remain available indefinitely under the approved access rules unless a later authorized legal or records-retention policy requires disposition.
+
+Any future disposition process first disables recipient access, browser access, and pending delivery/work; checks applicable legal holds; and operates on the complete Signing evidence set rather than orphaning child records. It preserves a minimal, non-document disposition audit identifying the authority, policy basis, scope, timing, and outcome. Agents and ordinary brokerage administrators do not receive a general Signing-evidence deletion capability.
+
+This decision does not choose a legal retention period, jurisdictional rule, legal-hold provider, or actual disposal mechanism. It establishes that later legal requirements must be implemented as an explicit, auditable policy rather than as ordinary product cleanup.
+
+**Reason:**
+Signing evidence is long-lived transaction history. Automatic cleanup or routine user deletion could undermine access, auditability, and recoverability; a future legal obligation to remove records must nevertheless be handled deliberately and cohesively.
+
+**Consequences:**
+
+* The default is indefinite evidence retention with no automatic purge.
+* Any later removal disables access first and respects legal holds.
+* Future disposition addresses a whole coherent evidence set and records a minimal audit without retaining the removed documents themselves.
+* Ordinary agents and brokerage administrators cannot delete Signing evidence.
+* Exact policy authority, legal-hold model, disposition scope, backup treatment, storage erasure, audit retention, and jurisdictional requirements remain legal/technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing evidence survives source-record changes and requires audited defect remediation** (2026-09-14); **Signing recovery preserves evidence and begins in a non-delivering safe mode** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Signing recovery preserves evidence and begins in a non-delivering safe mode
+
+**Date:** 2026-09-14
+
+**Decision:**
+Signing evidence is backed up as a coherent database-and-artifact set. Recovery validation checks that restored artifacts match their stored SHA-256 fingerprints and that restored event histories verify through their protected-key chain. Restore testing is a required operational capability; a backup that has not been restored and verified is not treated as sufficient evidence protection.
+
+Any restored environment begins in a recovery-safe mode. Browser sessions, participant credentials, completed-package credentials, and background delivery/finalization work are disabled until an authorized administrator has completed the recovery review and deliberately re-enabled safe operation. A restored environment must not silently send email, resume reminders, process finalization, or reactivate a link that had been revoked after the backup point.
+
+Recovery procedures preserve the distinction between the authoritative production environment and isolated restore testing. A test restore never sends participant communications or becomes a source of Signing evidence. Any production recovery follows a documented, auditable procedure that reconciles restored state, credential revocation state, pending work, and artifact integrity before normal operation resumes.
+
+**Reason:**
+Immutable evidence is only useful if it can be recovered and verified. A naïve rollback could otherwise resurrect revoked links, stale sessions, queued emails, or partial work—creating a security incident while attempting to recover from another incident.
+
+**Consequences:**
+
+* Database and artifact backup/restore planning is one Signing-evidence responsibility.
+* Fingerprint and event-chain verification are required recovery checks.
+* Restored systems are non-delivering and non-authorizing until explicit recovery activation.
+* Restore testing remains isolated from live participant communications and evidence.
+* Exact backup provider, frequency, recovery objectives, replicated-storage design, credential-reconciliation mechanism, recovery runbook, and monitoring remain operational/technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing artifacts and events receive verifiable cryptographic integrity evidence** (2026-09-14); **Signing background work is durable, scoped, and revalidated on every retry** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Signing background work is durable, scoped, and revalidated on every retry
+
+**Date:** 2026-09-14
+
+**Decision:**
+**`signing_work_items`** is the durable Signing-scoped outbox for work that cannot safely depend on one web request: artifact rendering, finalization, integrity verification, email delivery, automatic reminders, credential/session cleanup, and other approved retryable operations. Each item identifies its Signing, work type, idempotency record, required record references, processing/lease state, retry schedule, safe diagnostic information, and server-managed timestamps. It never stores raw credentials, secrets, or document content.
+
+A worker may claim and retry eligible work, but every attempt revalidates current Signing state, authority, revision, artifact, and idempotency conditions. A work item is an operational instruction, not authority to mutate evidence or force a lifecycle outcome. Finalization work cannot mark a Signing Complete until the already approved artifact and integrity requirements are actually met. Delivery work cannot alter the Signing outcome. Meaningful result events and delivery attempts remain in their dedicated evidence/history records rather than relying on mutable work-item state.
+
+Expired worker claims become eligible for safe retry under server control; a crashed worker cannot leave work permanently locked. Retries reuse the associated idempotency result where applicable and must not generate duplicate artifacts, events, or emails.
+
+**Reason:**
+Email providers, rendering, storage, and integrity checks can fail or outlast an interactive request. A durable outbox permits recovery without treating a transient worker as the source of truth or allowing it to bypass evidence requirements.
+
+**Consequences:**
+
+* Finalization and delivery can resume after restart, timeout, or provider failure.
+* Workers receive narrowly scoped record references, not broad Signing authority or bearer secrets.
+* Expired worker claims do not create permanent operational locks.
+* Durable evidence remains in Signing artifacts, events, and delivery attempts—not mutable queue state.
+* Exact work-type vocabulary, worker provider, payload schema, lease duration, retry/backoff policy, failure escalation, observability, and retention remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing operations use scoped idempotency records for safe retries** (2026-09-14); **Finish Signing and finalization are idempotent, recoverable, and server-authoritative** (2026-09-08)
+* No SQL migration; no schema change
+
+---
+
+## Signing operations use scoped idempotency records for safe retries
+
+**Date:** 2026-09-14
+
+**Decision:**
+**`signing_operation_idempotency`** records a client or worker operation that may be retried. Each record binds one Signing, operation type, authenticated actor or participant scope, client-generated request identity, and canonical request fingerprint to its processing state and accepted result references. It applies to placements, Finish Signing, reminders, credential replacement, amendment promotion, finalization steps, and delivery attempts.
+
+When the server receives the same operation identity with the same authenticated scope and request fingerprint, it returns or continues the original outcome instead of performing the action again. Reuse of that identity with a different actor/participant scope or different request content is rejected. Idempotency records are server-validated; a browser cannot use an arbitrary request identifier to access another actor's previous result.
+
+Idempotency is operational support for durable actions, not a substitute for evidence. The accepted placement, event, artifact, delivery attempt, or other resulting record remains the authoritative historical fact. The idempotency record links retries to that result and may retain processing/failure state long enough to safely recover interrupted work under later retention rules.
+
+**Reason:**
+Networks, browsers, workers, and email providers can retry after an ambiguous timeout. Binding a request identity to both actor scope and canonical content prevents duplicate legal actions while also preventing a reused identifier from becoming an authorization shortcut.
+
+**Consequences:**
+
+* Repeated clicks and reconnect retries return the same result instead of creating duplicate placements, events, artifacts, jobs, or emails.
+* A reused request ID with altered content is a safe rejection, not a new mutation.
+* Idempotency records support recoverable in-progress and failed operations without becoming the Signing's evidence source.
+* Exact request-ID format, fingerprint canonicalization, processing-state vocabulary, result-reference columns, retention, cleanup, and transaction mechanics remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Finish Signing and finalization are idempotent, recoverable, and server-authoritative** (2026-09-08); **Signing writes are server-authoritative and link/session access is narrowly scoped** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Signing uniqueness constraints enforce one current fact where the workflow requires it
+
+**Date:** 2026-09-14
+
+**Decision:**
+The database and trusted transactions enforce the approved one-of-a-kind workflow facts, rather than relying on browser timing or application convention alone. These include one event sequence number per Signing; one package-revision number per Signing; one occurrence of a logical document and one display position within a package revision; one effective accepted placement per signer field; one valid amendment lock per Signing; one current participant Signing credential per participant; one current completed-package credential per recipient; and one current-primary-agent association pointer per Signing.
+
+Revoked, replaced, removed, superseded, or historical rows remain retained where required by the evidence model. “One current” therefore means that a partial/conditional uniqueness rule distinguishes the active fact from its retained history; it does not mean old evidence rows are deleted. Concurrent requests must either produce the same already-established result through idempotency or cause one conflicting request to be rejected cleanly.
+
+**Reason:**
+The model has several facts for which ambiguity would create incorrect access, conflicting documents, duplicate evidence, or an unclear authority holder. Database-backed uniqueness is the last line of defense when requests race.
+
+**Consequences:**
+
+* The system cannot create two current revisions, placements, credentials, locks, or primary-agent assignments where the workflow allows only one.
+* Historical replacement and revocation evidence remains visible without competing with the current row.
+* A concurrency conflict becomes an explicit, recoverable outcome rather than a silently inconsistent Signing.
+* Exact partial-index predicates, pointer constraints, deferred validation, error codes, and transaction details remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Every Signing child relationship remains within its one parent Signing** (2026-09-14); **Finish Signing and finalization are idempotent, recoverable, and server-authoritative** (2026-09-08)
+* No SQL migration; no schema change
+
+---
+
+## Every Signing child relationship remains within its one parent Signing
+
+**Date:** 2026-09-14
+
+**Decision:**
+Every document, version, package revision, revision snapshot, participant, field, adopted mark, placement, artifact, credential, delivery instruction, agent association, lease, lock, and event must resolve to one and the same parent Signing. No child relationship may mix records from different Signings.
+
+In particular, a package-revision document must pair a logical document and immutable document version from the revision's Signing; a revision-participant snapshot must originate from that Signing's participant; a signer field must join a document and assigned participant from the same package revision; a placement must match its field and participant; and a completed artifact must identify the frozen revision and, when document-specific, the exact document version from that Signing. Credentials, browser sessions, deliveries, leases, locks, and events likewise cannot cross into another Signing through a referenced participant, artifact, or agent association.
+
+The database enforces same-Signing relationships through composite keys/foreign keys wherever practical. A trusted server transaction performs an equivalent verification for relationships that cannot be represented directly by a database constraint. No browser request may choose a cross-Signing reference merely by supplying an identifier.
+
+**Reason:**
+A superficially valid foreign key is not enough if two child rows can belong to different transactions. Same-Signing integrity prevents accidental data mixing and blocks a class of authorization and evidence-corruption defects.
+
+**Consequences:**
+
+* Every participant-facing package, placement, artifact, credential, and event has one unambiguous Signing scope.
+* Cross-Signing IDs supplied by a client or stale worker are rejected before any state or evidence changes.
+* Foreign keys and transaction-time validation share responsibility for the invariant.
+* Exact composite-key shapes, constraint declarations, deferrability, error handling, and index definitions remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Promoted package revisions are complete, immutable, and atomically actionable** (2026-09-14); **Signing writes are server-authoritative and link/session access is narrowly scoped** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Promoted package revisions are complete, immutable, and atomically actionable
+
+**Date:** 2026-09-14
+
+**Decision:**
+Each `signing_package_revision` is a complete immutable snapshot of the Signing configuration that participants may act upon: every included document version and display name, every revision-participant snapshot, every signer-field assignment and geometry, and every relevant preparation setting. A revision is never a partial patch layered on top of a prior revision.
+
+The first promoted revision is the initial package. Each permitted amendment creates the next monotonically numbered revision for that Signing, identifies its predecessor, and carries the approved amendment reason/note. Promotion atomically creates the complete child snapshot set, validates it, advances `signings.current_package_revision_id`, appends the corresponding event, and releases the amendment lock. If any part fails, the prior revision remains wholly current and actionable.
+
+Once promoted, a revision and its snapshot rows are read-only. The root `signings` pointers alone identify the current actionable revision and, after the first accepted signature or initial, the permanently frozen revision. A freeze prevents any later package-revision promotion. Superseded revisions remain retained for history but cannot be acted upon by participants or silently reactivated.
+
+**Reason:**
+Participants must never receive a mixed package assembled from documents, participants, or fields that were saved at different times. Complete atomic revisions establish one canonical version for review and signing while preserving all prior permitted preparation history.
+
+**Consequences:**
+
+* Every participant-facing package can be reproduced from one revision and its child rows.
+* Failed amendments leave the preceding package intact rather than partially updated.
+* A later revision cannot modify an earlier revision's documents, assignments, or labels.
+* The first accepted signature or initial freezes one complete package, not a collection of separately current records.
+* Exact validation queries, unique constraints, pointer-cycle implementation, transaction mechanics, and indexes remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **The `signings` row holds only workflow-wide current state** (2026-09-14); **Pre-signature amendments use an exclusive agent lock and retain participant links** (2026-09-05)
+* No SQL migration; no schema change
+
+---
+
+## The `signings` row holds only workflow-wide current state
+
+**Date:** 2026-09-14
+
+**Decision:**
+The root `signings` row holds only the current state and durable provenance of the overall workflow: originating brokerage, optional source Packet, immutable original-sender snapshot, current-primary-agent association pointer, user-facing title, lifecycle outcome, internal finalization condition, current and frozen package-revision pointers, sender timezone, optional requested completion date, reminder settings, and relevant server-managed timestamps.
+
+The requested completion value is a sender-local calendar date for communication and Overdue display, not a legal deadline or a stored lifecycle outcome. Overdue remains derived from current Signing state and that requested date. Internal finalization conditions remain distinct from participant-facing lifecycle labels and cannot directly override a Signing to Complete.
+
+`signings` does not contain document lists, participant identity/fields, completed placements, generated artifacts, access credentials, delivery records, agent history, or event history. Those facts stay in their dedicated child tables. The root row's pointers identify current actionable package state efficiently; they do not replace the immutable revision history.
+
+**Reason:**
+Keeping the root row focused makes current workflow state fast to authorize and display without duplicating detailed or historical data. It also prevents one wide, mutable row from becoming the accidental source of truth for document evidence, participants, or audit history.
+
+**Consequences:**
+
+* Workflow-wide current state is explicit and efficient to read.
+* The public lifecycle and internal finalization condition remain separate.
+* Overdue is derived and non-terminal.
+* Child tables remain authoritative for their respective detailed and historical facts.
+* Exact column names, defaults, nullability, pointer-constraint implementation, timestamp details, and indexes remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Working Signing data model records workflow, revisions, documents, participants, placements, artifacts, and events separately** (2026-09-10); **Signing lifecycle distinguishes setup, active signing, completion, decline, and cancellation** (2026-09-05)
+* No SQL migration; no schema change
+
+---
+
+## Signing tables use stable identifiers, controlled vocabularies, and relational core data
+
+**Date:** 2026-09-14
+
+**Decision:**
+Durable Signing-domain rows use UUID primary keys and UUID foreign keys, consistent with the application's existing externally meaningful records. The one exception is `signing_events`, which uses a server-assigned bigint sequence for efficient, definitive ordering within a Signing; that sequence is never inferred from client time or client input. Every durable row carries the project's standard server-managed creation and update timestamps where it has mutable current state; immutable evidence rows retain the relevant creation/acceptance time without being routinely updated.
+
+Lifecycle, role, field-type, artifact-category, credential-scope, delivery-purpose, and other controlled vocabulary values are stored as readable text and restricted by database `CHECK` constraints. Their permitted values expand only through additive, version-controlled migrations; an existing value's meaning is never repurposed. Lookup tables are not used merely to hold fixed historical vocabulary.
+
+Core relationships, identity snapshots, timestamps, lifecycle state, authority, document lineage, package composition, credentials, and access scope are expressed as ordinary typed columns and foreign keys. JSONB is limited to sanitized, supplemental structured details such as safe provider diagnostics or event metadata; it must not be the authoritative location for a relationship, permission decision, lifecycle state, or data required to validate Signing integrity. Browser-controlled JSON is sanitized before persistence and never contains secrets or raw tokens.
+
+**Reason:**
+The model needs stable, non-guessable durable references; a reliable event order; readable historical values; and database-enforceable relationships. Keeping core facts out of flexible metadata makes later authorization, auditing, and integrity checks dependable.
+
+**Consequences:**
+
+* UUIDs identify durable Signing records; event sequence establishes authoritative order.
+* Controlled values are readable in evidence rows and expand through reviewed migrations rather than mutable catalogs.
+* Required domain facts remain relational and constraint-ready instead of being hidden in JSON.
+* JSONB remains supplementary, sanitized, and non-authoritative.
+* Exact individual column names, lengths, defaults, `CHECK` expressions, index definitions, timestamp trigger strategy, and migration order remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Working Signing data model records workflow, revisions, documents, participants, placements, artifacts, and events separately** (2026-09-10); **Signing events, credentials, deliveries, agents, locks, and package revisions have separate responsibilities** (2026-09-08)
+* No SQL migration; no schema change
+
+---
+
+## Signing artifacts use private immutable storage and server-mediated downloads
+
+**Date:** 2026-09-14
+
+**Decision:**
+Prepared PDFs, completed PDFs, audit certificates, and optional combined-package PDFs use a dedicated private Signing-artifact store rather than the ordinary editable/generated-document storage path. Each artifact receives an opaque object key independent of document title, participant name, email address, or other personally meaningful values. Once verified, an artifact object is never overwritten in place; a changed artifact is a different artifact with a different key and fingerprint.
+
+Browser clients do not receive direct general access to the Signing-artifact store. The server validates the caller's current authority or recipient credential, then grants only a short-lived, artifact-specific download authorization. The recipient's long-lived completed-package link remains non-expiring unless deliberately revoked; it is an application-level credential, not a permanent storage URL. Each use can therefore be rechecked and link revocation immediately blocks future downloads while retaining the immutable artifact.
+
+Only trusted server-side operations may create, verify, or access Signing artifact objects. Object keys, artifact fingerprints, and the database artifact row remain linked, and verified objects are protected against ordinary browser update or deletion. Storage access, replacement, remediation, and later lawful deletion must preserve the approved evidence and no-cascade rules.
+
+**Reason:**
+Signing artifacts have materially different immutability, access, and long-term evidence requirements from working packet documents. A private store with server-mediated, short-lived file authorization protects recipient documents without shortening the recipient's approved long-lived access link.
+
+**Consequences:**
+
+* Non-expiring recipient links remain usable until explicitly revoked; only the internal file authorization is short-lived.
+* Completed-material revocation stops future access without rewriting or deleting the completed files.
+* Artifact object names do not disclose transaction or recipient information.
+* Browser clients cannot directly overwrite, list broadly, or delete Signing artifacts.
+* Exact bucket name, object-key format, storage provider controls, short-link duration, download headers, encryption/key-management configuration, storage relocation, and lawful deletion procedure remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing artifacts and events receive verifiable cryptographic integrity evidence** (2026-09-14); **Signing writes are server-authoritative and link/session access is narrowly scoped** (2026-09-14); **Completed Signings preserve separate documents and provide one Signing-wide audit certificate** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing artifacts and events receive verifiable cryptographic integrity evidence
+
+**Date:** 2026-09-14
+
+**Decision:**
+Every immutable prepared PDF, completed PDF, audit certificate, and optional combined-package PDF receives a SHA-256 fingerprint of its exact stored bytes. The fingerprint is retained with the corresponding `signing_document_versions` or `signing_artifacts` row and verified during finalization. An authorized administrator may later request an integrity verification that recomputes the fingerprint from stored bytes and reports the result without changing the artifact.
+
+Each Signing event participates in a server-generated, per-Signing chain. The event's canonical immutable content, its sequence, and the prior event digest determine a current event digest; a protected server-held signing key produces a keyed authentication value for that digest. The event retains the prior digest, current digest, key identifier, and authentication value needed for later verification. Events are ordered by their server-assigned Signing sequence, not timestamp alone. Key material never resides in ordinary database rows, browser code, event metadata, or audit certificates.
+
+Finalization verifies the frozen package's artifact fingerprints and the event chain through the finalization boundary before the Signing can become Complete. Later integrity checks may verify the complete retained artifact set and event chain. A basic database-only hash chain is not represented as independently tamper-proof; protected-key verification gives stronger evidence against an ordinary privileged database rewrite. External timestamp anchoring, third-party notarization, and public ledger anchoring are deferred unless later legal or business requirements justify their operational complexity.
+
+**Reason:**
+Exact document fingerprints identify the bytes presented and completed. A protected-key event chain makes a later alteration of event history materially more detectable than timestamps and database constraints alone, while retaining a practical implementation footprint.
+
+**Consequences:**
+
+* SHA-256 is the approved document-fingerprint algorithm for Signing artifacts.
+* Event history is chained and authenticated by protected server-held key material rather than by a database-only digest alone.
+* Integrity verification is a read-only check and finalization prerequisite, never a means of repairing or rewriting evidence.
+* The product does not overstate its integrity evidence as absolute proof against a fully compromised system or as legal notarization.
+* Exact canonical encoding, protected-key service, key rotation/retention, authentication-tag format, verification-job design, external anchoring, and operational monitoring remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing events, credentials, deliveries, agents, locks, and package revisions have separate responsibilities** (2026-09-08); **Each Signing document preserves prepared and completed immutable artifacts** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing writes are server-authoritative and link/session access is narrowly scoped
+
+**Date:** 2026-09-14
+
+**Decision:**
+The server is the final authority for every Signing write. Browser clients—including ordinary agents, brokerage administrators, and participants—must not directly create, alter, or delete evidence-bearing Signing records. Trusted server-side operations validate current authority, lifecycle, credential/session eligibility, package revision, and required lock/lease conditions before atomically updating current state and appending history.
+
+Participant access remains scoped to one participant and one Signing. The raw emailed link token is used only to establish or resume eligible ceremony access; it is stored only as a hash and is never treated as a User identity. After entry, the service establishes a new server-controlled session with a secure, HttpOnly browser credential and redirects to a clean Signing route so the bearer token does not remain in the displayed URL, browser navigation, or referrer. Tokens and session secrets must be excluded from application logs, analytics, error reports, and event metadata.
+
+Every participant request derives its participant and Signing scope from the validated credential/session, never from client-supplied participant, user, or Signing identifiers. The server rechecks revocation, participant status, Signing state, current package revision, session expiry, and any amendment lock before accepting a placement, identity affirmation, consent, Finish Signing, or other action. Sessions expire after approved inactivity and are invalidated when their originating credential, participant, or Signing becomes ineligible. Browser state-changing requests require the applicable origin and anti-forgery protections; rate limiting and anomaly logging apply without exposing technical metadata to ordinary users.
+
+Email-only access intentionally retains one irreducible risk: a person who obtains an active bearer link may be able to use it as its participant. The approved design mitigates that risk with strong unguessable tokens, token-hash storage, clean-route exchange, secret handling controls, short-lived sessions, scope checks, use logging, revocation, and replacement. It does not falsely represent the **I am [Name]** affirmation as independent identity proof or claim that email-link-only access can make stolen-link use impossible.
+
+Agents, co-agents, brokerage administrators, and system administrators are also authorized by trusted server-side operations rather than browser-supplied role assertions. Brokerage authority is re-evaluated from the originating brokerage's current authorized membership; historical Signing access rules remain as already approved. Only authorized system administrators may access protected technical security metadata or initiate the limited defect-remediation process.
+
+**Reason:**
+Signing evidence cannot rely on a browser honestly reporting who is acting or what state it observed. Server-derived scope, secret hygiene, session invalidation, and transaction-time validation protect against direct database writes, session fixation, confused-deputy requests, stale sessions, and routine bearer-token leakage while preserving the deliberately low-friction email-only ceremony.
+
+**Consequences:**
+
+* The browser is never the authority for actor identity, participant identity, Signing scope, package revision, or mutable evidence state.
+* A valid login or administrator role does not by itself grant access to a participant ceremony or its saved signature; explicit Signing scope remains required.
+* Link revocation immediately invalidates derived sessions and blocks later requests.
+* The product documents email-link-only access accurately as a usability/security tradeoff, with a clear recovery path through revocation and replacement.
+* Exact token construction, cookie/session protocol, anti-forgery mechanism, rate limits, anomaly thresholds, RLS expressions, security-monitoring provider, and implementation details remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing credentials, copy recipients, and browser sessions use separate scoped tables** (2026-09-14); **Signing evidence survives source-record changes and requires audited defect remediation** (2026-09-14); **Remote participants use emailed links with explicit identity confirmation** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing evidence survives source-record changes and requires audited defect remediation
+
+**Date:** 2026-09-14
+
+**Decision:**
+No evidence-bearing Signing record may be removed through an ordinary application action or a database cascade. This includes the Signing, its document and package-revision snapshots, participants and identity snapshots, agent associations, signer fields, adopted marks, placements, generated artifacts, credentials, delivery records, and immutable events. Foreign-key actions from a User, Contact, Packet, Packet Form, membership, or similar mutable source must never cascade into Signing evidence.
+
+When a live source record is later deleted, deactivated, or changed, the Signing preserves its own snapshots and historical references. Where a live association can no longer remain valid, the reference may be cleared or marked unavailable without removing the historical Signing evidence. Removing a participant revokes future access but retains their prior actions and history. Normal application deletion remains recoverable/status-based rather than hard deletion; an unsent Draft may follow its separately approved recoverable-discard behavior.
+
+A genuine system defect may require correction of erroneously created Signing records. That is a narrow system-administrator remediation path, never ordinary agent or brokerage administration. It must identify the defect and affected records, preserve a durable remediation event and before/after evidence, and quarantine or mark the faulty record as erroneous rather than silently erasing it. Temporary browser sessions, expired presence leases, and expired amendment locks are operational state—not signing evidence—and may be automatically cleaned up under later retention rules.
+
+**Reason:**
+Historical Signing evidence must not disappear because a source record is cleaned up, an association changes, or a user action reaches a related parent row. At the same time, the system needs a controlled response if a defect creates records that never represented a valid Signing action.
+
+**Consequences:**
+
+* Signing foreign keys must use restrictive, nullifying, or equivalent preservation behavior—not cascading deletion—for evidence-bearing relationships.
+* Snapshot data remains readable even when its originating live record no longer exists.
+* Participant removal, credential revocation, and recoverable discard alter future availability without rewriting evidence.
+* Defect remediation is privileged, attributable, and auditable; it never becomes a general-purpose evidence-delete feature.
+* Exact foreign-key actions, remediation authority, quarantine representation, temporary-row retention, lawful deletion policy, and RLS remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing current state is explicit and changes are preserved as immutable events** (2026-09-06); **Signing agent associations preserve permanent history while separating current authority** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Signing presence leases and amendment locks are temporary, server-expiring concurrency records
+
+**Date:** 2026-09-14
+
+**Decision:**
+Participant activity and agent amendment exclusion use separate temporary tables under server-time control.
+
+* **`signing_participant_presence_leases`** records a short renewable presence lease for an active participant browser session. It identifies the Signing, participant, browser session, acquisition, most recent renewal, and server-calculated expiry. Any valid lease blocks acquisition of an amendment lock. A browser close, sleep, network failure, or missed renewal cannot leave a permanent block because only the server-calculated expiry determines validity.
+* **`signing_amendment_locks`** records the one exclusive amendment lock for a Signing. It identifies the Signing, eligible primary-agent or co-agent association holding it, the expected current package revision, acquisition, expiry, and release facts. It may be acquired only when the Signing is In Progress, no accepted signature or initial exists, no valid participant presence lease exists, and no valid amendment lock already exists.
+
+Every amendment write must establish that the amendment lock is still valid, belongs to the acting agent association, and names the expected current package revision. An expired or stale editor cannot save. Participants cannot enter or act while a valid amendment lock exists. Administrative clearing is allowed only for a demonstrably stale lock and appends an event; ordinary lease renewals, releases, and expirations are disposable operational records rather than immutable legal events.
+
+**Reason:**
+The product must maintain one canonical immutable package while allowing participants to resume after disconnection. Server-expiring leases prevent concurrent amendment and signing without relying on a browser's cooperation to relinquish a lock.
+
+**Consequences:**
+
+* A participant actively signing prevents pre-signature amendment; a valid amendment lock temporarily prevents participant activity.
+* No orphaned browser session or agent editor can permanently block the Signing.
+* An amendment promotion remains conditional on the same package revision for which the lock was granted.
+* Operational heartbeat data stays out of the permanent legal-event history except for meaningful administrative intervention.
+* Exact lease duration, renewal interval, cleanup retention, lock-secret design, database exclusion mechanism, transaction primitives, indexes, and RLS remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Pre-signature amendments use an exclusive agent lock and retain participant links** (2026-09-05); **Signing agent associations preserve permanent history while separating current authority** (2026-09-14)
+* No SQL migration; no schema change
+
+---
+
+## Signing agent associations preserve permanent history while separating current authority
+
+**Date:** 2026-09-14
+
+**Decision:**
+**`signing_agent_associations`** records each primary-agent or co-agent relationship to a Signing. Each row identifies the Signing and agent, preserves the agent identity snapshot, records whether the person acts as the primary agent or co-agent, records its effective period, and retains the actor and reason for its addition, removal, or reassignment. Association rows are never deleted merely because the agent leaves the brokerage, changes brokerages, loses eligibility, or stops managing an unfinished Signing.
+
+`signings.current_primary_agent_association_id` identifies the one association with current primary-agent authority. The original sender remains immutable on `signings`; reassignment changes the current-primary pointer and records the resulting association history without rewriting who originally sent the Signing. Ending management authority records when and why it ended, but does not remove the original or co-agent's permanent read access to the Signing's documents and business-level history.
+
+An active co-agent association grants the same management authority as the current primary agent; no granular role or permission matrix exists. Current management authority additionally requires the person's current eligibility under the originating brokerage's applicable membership/sponsorship/license rules. Brokerage administrators are deliberately not copied into `signing_agent_associations`: their authority remains dynamically derived from current administrator membership in the originating brokerage.
+
+**Reason:**
+The people who originated or handled a transaction must remain historically identifiable and retain approved read access, while authority to amend, send, cancel, or manage an unfinished Signing must stop promptly when current brokerage eligibility ends. One association history allows both without treating a live membership record as the sole historical evidence.
+
+**Consequences:**
+
+* Every primary or co-agent relationship is attributable, dated, and retained.
+* Primary-agent reassignment is an explicit, auditable change of current authority, not a rewrite of sender history.
+* Co-agents remain all-or-nothing peers of the primary agent while eligible and active.
+* Brokerage-administrator access continues to be derived, avoiding copied rows that could become stale.
+* Exact association-state vocabulary, membership/license validation, foreign-key actions, indexes, RLS, and reassignment workflow remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing access belongs to the originating brokerage and full-authority agents** (2026-09-06); **Working Signing data model records workflow, revisions, documents, participants, placements, artifacts, and events separately** (2026-09-10)
+* No SQL migration; no schema change
+
+---
+
+## Signing delivery instructions and attempts preserve every email outcome separately from workflow state
+
+**Date:** 2026-09-14
+
+**Decision:**
+Email delivery uses one durable request table and one append-only attempt table.
+
+* **`signing_delivery_instructions`** records one request to send a particular purpose of message to exactly one Signing participant or copy recipient. It preserves the recipient's delivery snapshot, purpose (such as invitation, automatic or manual reminder, completed package, cancellation, or decline notice), current applicable credential, frozen package revision and artifacts when applicable, initiator, and current delivery state. An invitation or reminder uses the participant's current Signing credential; a completed-package instruction uses the separate completed-package credential. A later resend or reminder is a new instruction, not an overwrite of an earlier one.
+* **`signing_delivery_attempts`** records each provider submission or outcome for one instruction: ordered attempt number, provider reference, attempt time, accepted/delivered/failed/bounced outcome where known, safe provider failure details, and retry relationship. Attempts append forever; a retry never replaces an earlier failure.
+
+Delivery instructions and attempts do not determine Signing lifecycle or change frozen evidence. A failed invitation, reminder, or completed-package email is operationally visible and retryable, but cannot decline, cancel, reopen, or reverse a Signing. A completed-package instruction identifies the frozen revision and its individual completed PDFs plus Signing-wide certificate; the optional combined package remains supplemental.
+
+**Reason:**
+The intent to notify a recipient and the provider's individual delivery attempts are different facts. Separating them provides a durable audit trail for automatic reminders, agent-initiated reminders, resends, bounces, and later copy recipients without making the email provider the authority on whether a Signing is complete.
+
+**Consequences:**
+
+* Every invitation, reminder, final delivery, cancellation notice, and resend has a clear initiating record.
+* Reminders reuse the approved current participant link; they do not silently create replacement links.
+* Failed or bounced attempts remain historical and may be retried without duplicating the underlying Signing action.
+* Delivery state remains operational state, distinct from the Signing's lifecycle and immutable artifacts.
+* Exact purpose vocabulary, provider fields, attachment-size policy, retry scheduling, suppression rules, recipient-artifact selection, indexes, constraints, and RLS remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Signing credentials, copy recipients, and browser sessions use separate scoped tables** (2026-09-14); **Completed Signings preserve separate documents and provide one Signing-wide audit certificate** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
+## Signing credentials, copy recipients, and browser sessions use separate scoped tables
+
+**Date:** 2026-09-14
+
+**Decision:**
+Remote ceremony access, completed-material access, and temporary browser state use distinct physical records with non-overlapping authority.
+
+* **`signing_participant_credentials`** stores one or more participant-specific Signing-link records for a `signing_participant`. It stores only a strong token hash—not the raw emailed token—plus issuance, first-use, last-use, revocation, replacement, and issuer facts. A current link remains usable until the participant is removed, the credential is revoked or replaced, or the Signing becomes terminal. A permitted pre-signature amendment does not replace a retained participant's current link.
+* **`signing_copy_recipients`** stores a recipient who receives completed materials but has no Signing access or signer fields. Email is required; name, role, User association, and Contact association remain optional. The row preserves who added it and when and may be created after completion without reopening or changing the Signing.
+* **`signing_completed_package_credentials`** stores a separate strong token hash for read-only completed-material access. Each record belongs to exactly one `signing_participant` or one `signing_copy_recipient`, never both, and retains issuance, access, revocation, replacement, and issuer facts. It does not automatically expire but may be revoked and replaced. It cannot grant access to an active Signing ceremony.
+* **`signing_browser_sessions`** stores only temporary, server-controlled ceremony state created after a valid participant credential and the required **I am [Name]** affirmation. It identifies the participant and originating participant credential and retains affirmation, creation, last-activity, expiry, and termination facts. It never stores a raw browser secret, never substitutes for the participant credential, and becomes ineligible when that credential, participant, or Signing becomes ineligible.
+
+The database must enforce scope separation: a participant credential cannot be used as a completed-package credential, a completed-package credential cannot enter the Signing ceremony, and a browser session cannot outlive or bypass its originating participant credential. Shared email addresses remain distinct because credentials and sessions attach to recipient rows, not to email as an identity key. The later 2026-09-14 delivery-table decision keeps sending work separate from access authority.
+
+**Reason:**
+An emailed invitation, a long-lived completed-package link, and a short-lived browser session have different purposes, expiry rules, and security consequences. Separate tables and foreign keys make those boundaries visible and enforceable instead of relying on a generic token row and application convention.
+
+**Consequences:**
+
+* Only hashes of bearer and browser secrets are retained.
+* Link replacement and revocation preserve prior access history without reusing or changing credentials.
+* Adding a copy recipient later affects delivery entitlement only, never Signing eligibility or frozen evidence.
+* Browser sessions are disposable runtime state; the durable credential and the Signing's authoritative progress remain intact after inactivity or disconnection.
+* Exact token algorithm/entropy, session-secret transport, session-retention period, rate limits, indexes, foreign-key actions, RLS, and delivery-provider details remain technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (status note only)
+* This file: **Working Signing data model records workflow, revisions, documents, participants, placements, artifacts, and events separately** (2026-09-10); **Remote participants use emailed links with explicit identity confirmation** (2026-09-06); **Completed copies are emailed without login and copy recipients remain addable** (2026-09-06)
+* No SQL migration; no schema change
+
+---
+
 ## Working Signing data model records workflow, revisions, documents, participants, placements, artifacts, and events separately
 
 **Date:** 2026-09-10
@@ -19,7 +1049,7 @@ Each decision should include:
 **Decision:**
 The following is the approved working relational model for native Signings. It records the table boundaries and relationships needed for later implementation; it does not authorize a migration or settle every column type, index, constraint, trigger, or access policy.
 
-* **`signings`** is the central workflow row. It owns the originating brokerage, source Packet when applicable, immutable original-sender snapshot, current primary agent, lifecycle and finalization state, sender timezone, requested completion date, reminder settings, and references to both the current and frozen package revisions. A Signing does not carry a single document foreign key because one Signing may contain many documents.
+* **`signings`** is the central workflow row. Its approved workflow-wide responsibility is refined by the later 2026-09-14 root-row decision. A Signing does not carry a single document foreign key because one Signing may contain many documents.
 * **`signing_documents`** is the Signing-owned logical-document row. It links to `signings`, optionally retains its source Packet Form/provenance, and remains the same logical contract or addendum across permitted revisions.
 * **`signing_document_versions`** contains the immutable prepared PDF versions of one `signing_document`, including ordered version lineage, supersession relationship, the package revision that introduced it, creation reason, source snapshot, prepared-artifact storage reference, and fingerprint. A completed signed PDF is not a replacement version in this table.
 * **`signing_package_revisions`** records each successfully promoted, whole-package configuration. It has a monotonic revision number per Signing, predecessor reference, initial/amendment reason, immutable amendment note where applicable, promoter snapshot, and promotion time. Private, incomplete preparation is not itself a package revision. `signings.current_package_revision_id` names the one actionable revision; after the first accepted signature or initial, `signings.frozen_package_revision_id` pins it and must identify that same revision.
@@ -30,7 +1060,7 @@ The following is the approved working relational model for native Signings. It r
 * **`signing_artifacts`** stores immutable generated outputs rather than placing completed PDFs on document versions. Artifact categories are separate completed-document PDFs, the one Signing-wide audit certificate, and an optional combined-package PDF. Every artifact identifies its Signing and frozen package revision; a completed document additionally identifies its document version. It retains storage reference, fingerprint, size/page facts, frozen filename, generation/verification times, audit-history sequence boundary where relevant, and idempotency reference. Recipient-specific certificate variants remain Signing-wide certificates, not per-document certificates.
 * **`signing_events`** is an append-only event stream with a server-assigned per-Signing sequence and server UTC time. It uses a project-conventional sequence identifier, carries readable literal event and actor types, actor identity snapshot, visibility, relevant optional references (revision, participant, document version, field, or placement), summary/structured details, and an idempotency identity. Event and actor values are controlled by the eventual table definition rather than an editable lookup catalog; later values are additive, forward-only migrations and existing meanings are never repurposed.
 
-The model intentionally keeps access credentials, temporary browser sessions, participant-presence leases, delivery instructions and attempts, and agent-association history separate from these core tables. Their table-level design remains a subsequent decision.
+Access credentials, copy recipients, temporary browser sessions, delivery instructions/attempts, agent-association history, participant-presence leases, and amendment locks are defined by later 2026-09-14 decisions.
 
 **Reason:**
 The Signing needs one authoritative workflow root, while its documents, frozen package composition, participant snapshots, requested locations, accepted marks, outputs, and historical actions answer different questions and change on different schedules. Explicit foreign-key relationships prevent a later Packet edit, document rename, participant edit, or artifact generation step from silently rewriting the evidence presented during the Signing.
@@ -41,7 +1071,7 @@ The Signing needs one authoritative workflow root, while its documents, frozen p
 * One activated package revision can be reproduced from its document and participant snapshot rows; only an atomically promoted revision becomes actionable.
 * The source Packet Form label and the Signing display name are distinct; the revision snapshot controls what participants and completed deliveries see.
 * Prepared versions, completed artifacts, current workflow state, and immutable events have separate storage responsibilities.
-* The next table-design decisions cover credentials/sessions, deliveries, agent associations, exact foreign-key actions, indexes, constraints, append-only enforcement, RLS, storage layout, and migration sequencing.
+* Remaining table-design decisions cover exact foreign-key actions, indexes, constraints, append-only enforcement, RLS, storage layout, and migration sequencing.
 * No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
 
 **Related files or migrations:**
@@ -104,7 +1134,7 @@ Event and actor types are stored on each event as stable, human-readable literal
 
 Neither a constraint nor a lookup table alone proves that its definition was never changed. Evidence for vocabulary changes instead comes from immutable migration history, source-control and release history, and restricted production schema-write access. Event sequence and any later tamper-evident event-chain design protect the event records themselves; they do not by themselves prove that the surrounding schema definition was never modified.
 
-Initial implementation prioritizes append-only enforcement, strict access, server sequencing, atomic state changes, and prepared/completed document fingerprints. The model should permit per-Signing event-chain hashes, but a basic database hash chain must not be described as independently tamper-proof. Protected signing keys or external anchoring may be added after security/legal review demonstrates sufficient value to justify their operational complexity.
+Initial implementation prioritizes append-only enforcement, strict access, server sequencing, atomic state changes, and prepared/completed document fingerprints. The later 2026-09-14 integrity decision selects SHA-256 artifact fingerprints and a protected-key-authenticated per-Signing event chain; external anchoring remains deferred. The resulting evidence must not be described as independently tamper-proof against a fully compromised system.
 
 Long-lived access and temporary runtime state remain separate:
 
@@ -404,7 +1434,7 @@ Authenticated Users can safely receive the convenience of a reusable preset beca
 **Date:** 2026-09-06
 
 **Decision:**
-The sender may see current Signing progress in Harbaugh Forms, including delivery, opened, signing started, participant finished, declined, failed delivery, and overall completion states. Sender email notifications are used for failed delivery, participant decline, each participant's completion, and overall Signing completion. Harbaugh Forms does not email the sender for every signature or initial. SMS is not part of the current Signing design because the product has no SMS infrastructure and the added provider cost and compliance work are not presently justified.
+The sender may see current Signing progress in Harbaugh Forms, including delivery, opened, signing started, participant finished, declined, failed delivery, and overall completion states. Sender email notifications are used for failed delivery, participant decline, each participant's completion, and overall Signing completion. The later 2026-09-14 monitoring decision adds an email notice to the active primary agent and co-agents when an automatic participant reminder is sent. Harbaugh Forms does not email the sender for every signature or initial. SMS is not part of the current Signing design because the product has no SMS infrastructure and the added provider cost and compliance work are not presently justified.
 
 Automatic participant reminder emails are enabled by default. If a participant has not finished, the first reminder is sent 24 hours after the initial invitation and reminders continue every 24 hours while that participant remains incomplete. Reminders stop when the participant finishes, declines, is removed, or the Signing becomes Complete or Cancelled. The agent may change the schedule or turn automatic reminders off for a Signing.
 
@@ -831,7 +1861,7 @@ An agent may be physically present with a buyer, seller, tenant, landlord, or ot
 * In-person signing must include an explicit participant handoff; the logged-in agent's application identity must not silently stand in for another participant.
 * In-person mode does not require email delivery or remote OTP solely for shared-device access, but later technical design must still establish appropriate identity confirmation, consent, access isolation, and session-safety controls.
 * All signing modes continue to consume immutable document versions, preserve append-only signing events, and keep the signing experience separate from normal packet editing.
-* Existing open questions about exact authentication/browser-session terminology and final schema/table names remain open.
+* The later 2026-09-14 decisions select working credential, browser-session, and broader Signing table names. Exact implementation, constraints, storage, and access-policy details remain technical design.
 * No implementation, schema, migration, route, storage, or configuration design is authorized by this decision.
 
 **Related files or migrations:**
@@ -858,7 +1888,7 @@ Do **not** collapse all signing-related concepts into this one term. The followi
 * **Signer browser/authentication session** — temporary runtime/authentication state and **not necessarily a durable domain object named “Signing Session.”**
 * **Immutable document version** — the exact rendered document artifact associated with signing activity.
 
-The exact database table names remain open unless existing naming conventions make an obvious later choice. Do not create schema names merely because the product noun is now settled. This decision does **not** authorize implementation, schema, migrations, or storage-path design.
+This terminology decision did not itself select database names. Later 2026-09-10 and 2026-09-14 decisions select the working Signing table names and relationships; they still do **not** authorize implementation, schema migrations, or storage-path design.
 
 **Reason:**
 The governing usability principle is: an agent who has never used Harbaugh Forms should be able to see the object name and quickly understand what it represents. “Signing” passes that test better than the alternatives and uses ordinary, generic real-estate/e-signature language.
@@ -872,7 +1902,7 @@ The fact that other real-estate/e-signature products may also use the generic wo
 * Use **Signing** / **Signings** in future product, UI, and domain documentation for the durable overall signing-workflow object.
 * Do not use envelope, signing request, signing package, dispatch, folio, signet, or other coined terms as the name of that object.
 * Do not treat a signer browser/authentication session as a durable domain object named “Signing Session” merely because the overall object is named Signing.
-* Exact schema/table names remain open until technical design is completed. Do not invent table names from this product noun.
+* The durable product noun does not by itself dictate schema names. Working Signing table names and relationships were selected in the later 2026-09-10 and 2026-09-14 data-model decisions; implementation details remain open.
 * Narrows open question D in the 2026-08-19 native e-signature architecture decision. This terminology decision did not itself resolve A, B, C, or E; later 2026-09-05 decisions resolve B and C at the domain level.
 
 **Related files or migrations:**
@@ -924,15 +1954,15 @@ A 2026-08-18 read-only audit of packet forms, generated PDFs, document states, a
 
 * **C. Resolved 2026-09-05 — participant identity and eligibility.** Participants may reference a User, Contact, both, or neither; ad hoc participants require name and email; roles are optional; email is non-unique and never silently links identities; historical values freeze at the first accepted signature or initial; and all participants are eligible in parallel without configurable signing order. Exact schema and authentication mechanics remain technical design.
 
-* **E. Resolved 2026-09-06 — copy recipients and completed-copy delivery.** Every signer and designated copy recipient receives the completed package by email without login. Copy recipients are not participants, require only email, never affect completion, and may be added indefinitely, including after completion. Delivery failures and later deliveries are tracked separately from Signing lifecycle. Exact storage and delivery mechanics remain technical design.
+* **E. Resolved 2026-09-06; storage narrowed 2026-09-14 — copy recipients and completed-copy delivery.** Every signer and designated copy recipient receives the completed package by email without login. Copy recipients are not participants, require only email, never affect completion, and may be added indefinitely, including after completion. `signing_copy_recipients` and separate completed-package credentials record entitlement; delivery failures and later deliveries are tracked separately from Signing lifecycle. Delivery-attempt storage and provider mechanics remain technical design.
 
 **Remaining open questions:**
 
 The following remain unresolved except where a later decision has narrowed them. They must not be treated as decided by this 2026-08-19 checkpoint.
 
-* **A. Narrowed 2026-09-06 — final immutable-version and event schema.** Product behavior is settled: explicit Signing current state is paired with append-only events, and each document preserves a fingerprinted prepared PDF, associated Signing activity, and a separately fingerprinted completed PDF; superseded prepared versions remain retained. The exact table names, columns, constraints, storage-path scheme, parent-version implementation, transactional enforcement, and RLS rules remain to be designed.
+* **A. Narrowed 2026-09-06; working model selected 2026-09-10 and 2026-09-14 — final immutable-version and event schema.** Product behavior is settled: explicit Signing current state is paired with append-only events, and each document preserves a SHA-256 fingerprinted prepared PDF, associated Signing activity, and a separately SHA-256 fingerprinted completed PDF; superseded prepared versions remain retained. The working core, credential, copy-recipient, browser-session, delivery, agent-association, presence-lease, and amendment-lock table names and relationships are now recorded above. UUID/sequence, controlled-vocabulary, and relational-metadata conventions; evidence-preservation; no-cascade; and protected-key event-chain rules are also settled. Storage-path scheme, particular foreign-key actions, canonical encoding, protected-key operations, transactional enforcement, RLS rules, exact column definitions, and migration details still require technical design.
 
-* **D. Temporary authentication/session terminology and final schema names.** The durable overall object is **Signing** / **Signings**, and envelope is rejected. The remote access baseline is settled as participant-specific emailed links, explicit I am confirmation, no required account/OTP/2FA, reusable active-Signing links unless revoked, a 60-minute inactive browser-session timeout with preserved progress, and revocation on participant removal or terminal Signing status. Exact terminology and technical implementation for browser sessions, tokens, heartbeats/leases, storage, rate limits, and revocation remain open; runtime state is not necessarily a durable domain object named “Signing Session.” Final schema/table names remain open until technical design is completed.
+* **D. Temporary authentication/session terminology and technical details.** The durable overall object is **Signing** / **Signings**, and envelope is rejected. The remote access baseline is settled as participant-specific emailed links, explicit I am confirmation, no required account/OTP/2FA, reusable active-Signing links unless revoked, a 60-minute inactive browser-session timeout with preserved progress, and revocation on participant removal or terminal Signing status. The working credential and runtime table names are now `signing_participant_credentials`, `signing_completed_package_credentials`, `signing_browser_sessions`, and `signing_participant_presence_leases`; runtime state remains distinct from the durable domain noun “Signing Session.” Server-authoritative scope validation, secret hygiene, clean-route exchange, and session invalidation are required. Exact token/session protocol, heartbeat timing, storage, rate limits, revocation constraints, and RLS remain technical design.
 
 **Reason:**
 Native e-signature cannot be implemented on today’s on-demand filled PDF, because that output is disposable and is not a historical artifact. Real Texas transactions also produce more than one signed or partially signed artifact for the same logical document (corrections, new initials, abandoned attempts, post-signature effective dates). Harbaugh Forms should keep an accurate provenance trail rather than collapsing that history into a single current file or choosing which version is legally controlling. Signer identity is a workflow role, not a User-or-Contact exclusive category, and the signing ceremony must stay distinct from ordinary agent application editing.
@@ -942,10 +1972,10 @@ Native e-signature cannot be implemented on today’s on-demand filled PDF, beca
 * Continue technical and domain design from this checkpoint before any signing implementation.
 * Do not begin signing migrations, tables, RLS, storage-path schemes, or application routes on the strength of this decision.
 * Do not treat `packet_form` as the immutable signed PDF. Do not model historical versions as additional ACTIVE `packet_forms` of the same form.
-* Do not invent a final version/participant/event/copy-recipient schema in later documentation until those open questions are resolved.
-* Product terminology for the durable overall object is **Signing** / **Signings** (2026-08-21). Envelope is rejected. Temporary authentication/session terminology and exact table names remain open (question D).
+* The later 2026-09-10 and 2026-09-14 decisions select the working version/participant/event/copy-recipient and related table model. Do not extend or implement it beyond those approved decisions without further design.
+* Product terminology for the durable overall object is **Signing** / **Signings** (2026-08-21). Envelope is rejected. The later data-model decisions select working table names; temporary runtime state remains distinct from the durable domain object and exact implementation details remain open (question D).
 * Current packet-form lifecycle behavior remains unchanged during this documentation phase: the UI does not enter `SIGNED` / `VOID`. At the domain level, question B is resolved by the 2026-09-05 snapshot-boundary decision; no schema or lifecycle implementation change has yet been made. See **Packet Form Document Lifecycle**.
-* Vendor choice, cryptographic implementation beyond retaining a reliable document fingerprint, remote-signer session mechanics, and exact annotation-type names remain open, as in the 2026-08-16 native e-signature decision. The product-level completed-document and Signing-wide certificate behavior is resolved by the later 2026-09-06 decision.
+* Vendor choice, protected-key operations/external anchoring, remote-signer session mechanics, and exact annotation-type names remain open, as in the 2026-08-16 native e-signature decision. The later 2026-09-14 integrity decision selects SHA-256 artifact fingerprints and a protected-key-authenticated event chain. The product-level completed-document and Signing-wide certificate behavior is resolved by the later 2026-09-06 decision.
 * Authentisign remains prior research and the current inventory-exclusion policy, not a committed vendor and not a separate product to recreate.
 
 **Related files or migrations:**
@@ -1077,7 +2107,7 @@ Agents need to collect signatures and initials on both generated forms and recei
 * Do not implement signature locations as reusable `fields` / `field_instances` solely so they can be signed.
 * Preserve Authentisign-exclusion behavior for standard form inventory/extraction until a signing design replaces or supplements it.
 * Packet-form lifecycle `SIGNED` / `VOID` remain unused by UI. The 2026-09-05 snapshot-boundary decision resolves that future signing status does not belong in `packet_forms.document_state`; no schema or implementation change has yet been made, and the separate future of `VOID` remains open.
-* Vendor choice, cryptographic implementation, temporary remote-session mechanics, and exact annotation-type names remain open. Product-level completed-document and Signing-wide certificate behavior is resolved by the later 2026-09-06 decision. Dedicated signing-experience principles are recorded in the 2026-08-19 architecture decision.
+* Vendor choice, protected-key operations/external anchoring, temporary remote-session mechanics, and exact annotation-type names remain open. The later 2026-09-14 integrity decision selects SHA-256 artifact fingerprints and a protected-key-authenticated event chain. Product-level completed-document and Signing-wide certificate behavior is resolved by the later 2026-09-06 decision. Dedicated signing-experience principles are recorded in the 2026-08-19 architecture decision.
 
 **Related files or migrations:**
 

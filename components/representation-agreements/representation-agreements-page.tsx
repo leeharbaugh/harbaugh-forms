@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/client";
+import { loadCurrentUserDataVisibility } from "@/lib/user-preferences";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   type BuyerRepAgreementListItem,
@@ -67,12 +68,20 @@ export function RepresentationAgreementsPage() {
     setIsLoading(true);
     setListError(null);
 
-    const { data, error } = await supabase
+    const visibility = await loadCurrentUserDataVisibility(supabase);
+
+    let query = supabase
       .from("representation_agreements")
       .select(AGREEMENT_SELECT)
       .eq("status", "ACTIVE")
       .eq("agreement_type", "BUYER_REP")
       .order("effective_date", { ascending: false });
+
+    if (visibility?.onlyMyData) {
+      query = query.eq("owner_user_id", visibility.userId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       setListError(error.message);

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+import { loadCurrentUserDataVisibility } from "@/lib/user-preferences";
 import { saveNewPropertyWithDuplicateHandling } from "@/lib/property-duplicate";
 import { loadPrimaryActivePropertyHoa } from "@/lib/property-hoa-storage";
 import {
@@ -104,8 +105,9 @@ export function PropertyPicker({
 
     const supabase = createClient();
     const term = `%${trimmedSearch}%`;
+    const visibility = await loadCurrentUserDataVisibility(supabase);
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("properties")
       .select("*")
       .eq("status", "ACTIVE")
@@ -122,6 +124,12 @@ export function PropertyPicker({
       .order("street_address", { ascending: true })
       .order("city", { ascending: true })
       .limit(20);
+
+    if (visibility?.onlyMyData) {
+      query = query.eq("owner_user_id", visibility.userId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       setListError(error.message);
