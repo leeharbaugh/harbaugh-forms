@@ -1,16 +1,48 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-14 (Working Signing table model and root-state boundary, database conventions, private immutable artifact storage, server-authoritative access controls, protected-key integrity evidence, controlled append-only event vocabulary, package revisions, credentials, locking, idempotency, and recoverable finalization decisions added; schema implementation remains; packet property-picker fixes remain live in production)
+**As of:** 2026-09-14 (Native Signing Stage 1 foundation applied to development: schema skeleton, private `signing-artifacts` bucket, deny-by-default browser access, feature gate default-off; no ceremony/UI; production untouched)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
+### Native Signing Stage 1 foundation (2026-09-14)
+
+**Status:** Complete in **development** only. **Not applied to production. Not feature-enabled. No ceremony UI.**
+
+| Item | Result |
+|------|--------|
+| Branch | `feat/native-signing-stage-1` |
+| Migration | `20260914200000_native_signing_stage1_foundation.sql` + corrective `20260914210000_native_signing_stage1_same_signing_pointers.sql` + `20260914211000_native_signing_stage1_shorten_constraint_names.sql` applied to `harbaugh-forms-dev` (`ewxsxwzezhkeawnjvigx`) |
+| Production | Untouched (CLI linked to dev; prod remains `linked:false`) |
+| Feature gate | Server env `NATIVE_SIGNING_ENABLED` — enabled only when exactly `true`; default off (`lib/signing/feature-gate.ts`) |
+| Storage | Private bucket `signing-artifacts`; no authenticated-browser Storage policies; restrictive deny policies for anon/authenticated |
+| Browser access | All Stage 1 Signing tables: RLS enabled + FORCE RLS; restrictive deny for `anon`/`authenticated`; grants revoked from browser roles |
+| Fill Form | Unchanged — `typed_signature` / `date_signed` remain agent markup |
+
+**Tables introduced (13):** `signings`, `signing_agent_associations`, `signing_documents`, `signing_document_versions`, `signing_package_revisions`, `signing_package_revision_documents`, `signing_participants`, `signing_package_revision_participants`, `signing_fields`, `signing_adopted_marks`, `signing_field_placements`, `signing_artifacts`, `signing_events`.
+
+**Intentionally deferred (later stages):** participant/completed-package credentials, browser sessions, copy recipients, delivery instructions/attempts, presence leases, amendment locks, work items, idempotency records, `/sign` routes, Resend, finalization, protected-key event-chain verification behavior.
+
+**Implementation choices recorded for Stage 1:** UUID PKs; readable CHECK vocabularies; composite `(signing_id, id)` FKs for same-Signing integrity; root current/frozen revision and primary-agent pointers use composite `(signings.id, pointer)` FKs so they cannot reference another Signing; package-revision document snapshots require the version to belong to the cited logical document; signer fields require revision document/participant snapshots from the same package revision; `ON DELETE RESTRICT` / `SET NULL` only (no CASCADE); `signing_events` server-assigned `sequence_number` + update-blocked append-only; nullable `content_sha256` / integrity digest columns reserved but **not** claimed as implemented verification; `drawn_path_json` supplemental only.
+
+**Validation (development):**
+
+* `npm run test:native-signing-stage1` — 13/13
+* `npm run validate:native-signing-stage1-dev` — passed (deny-by-default tables/Storage; cross-Signing root pointers rejected; Fill Form DRAFT annotations still work)
+* R1–R10 applicable suite: `npm audit` 0 vulns; secure-publish / account-state / final-immutability / packet-reference / audit-atomic / brokerage-org / annotation-auth validators passed; `test:secure-publish` 12; `test:auth-confirm` 30; `test:auth-bootstrap` 7; `test:admin-audit` 20; `test:admin-orgs` 4; `test:admin-invite` 37; `test:storage-paths` 18; `test:packet-form-lifecycle` 7; `test:date-signed-annotation` placement suite; `tsc --noEmit`; ESLint on Stage 1 files; `git diff --check`; `npm run build:validate` passed
+
+**Recommended Stage 2:** Trusted server-side Signing authorization helpers and operational foundations (create/read Signing rows only through server paths gated by `assertNativeSigningEnabled()`, originating-brokerage / agent-association authority checks, still no participant credentials or ceremony UI).
+
+### Signatures orientation and repository audit (2026-09-14)
+
+**Status:** Complete. Superseded for implementation status by **Native Signing Stage 1 foundation** above. Orientation findings remain valid: Fill Form annotations are not legal Signing evidence; F1–F11 remain non-regression invariants; external participant auth is a later boundary.
+
 ### Native e-signature architecture design (2026-08-19)
 
-**Status:** Design in progress. **No signing implementation, migration, or schema change.**
+**Status:** Domain/architecture design recorded in `decisions.md`. **Stage 1 foundation schema is implemented in development** (see above); ceremony, credentials, delivery, and production enablement have not started.
 
-A read-only immutable-document audit is complete. Durable architecture decisions are recorded in `decisions.md`; no signing implementation or schema exists yet. The approved working table model separates `signings`, logical Signing Documents, immutable document versions, package revisions and their frozen document/participant snapshots, participants, signer fields, adopted marks, placements, generated artifacts, append-only events, scoped participant and completed-package credentials, copy recipients, temporary browser sessions, delivery instructions/attempts, agent associations, participant-presence leases, and amendment locks. Durable rows use UUID relationships; Signing event order uses a server-assigned bigint sequence; controlled values are readable constrained text; and JSON metadata is sanitized, supplemental, and non-authoritative. Evidence-bearing Signing records never cascade-delete or disappear through ordinary application actions; defect remediation is narrowly system-admin-only and auditable. The server is the final authority for every Signing write; browser clients receive only narrowly scoped access and cannot directly mutate Signing evidence. Raw bearer tokens are not stored or logged, sessions are server-controlled and invalidated with their source link, and requests revalidate authority and current state. Email-link-only access remains an intentional usability/security tradeoff, with revocation and replacement if a link is exposed. Signing artifacts use a dedicated private immutable store; long-lived recipient links receive only short-lived, artifact-specific download authorization after server validation. Signing-owned current state remains authoritative and meaningful changes append server-sequenced immutable events. Event and actor values are human-readable, controlled, and extended only through additive, version-controlled migrations; historical meanings are never repurposed. Prepared and completed PDFs receive SHA-256 fingerprints, and a protected-key-authenticated per-Signing event chain is verified during finalization and later read-only integrity checks. Raw bearer tokens are not stored; signing and completed-package credentials have separate scopes. Locks and leases always expire under server control and stale editors cannot save. Field saves and Finish Signing are server-authoritative and idempotent; reconnecting participants recover confirmed progress and see an accurate remaining-field count. Finalization is deterministic, resumable, and administratively retryable without permitting evidence edits or a manual Complete override; Complete occurs only after every individual completed PDF and the Signing-wide certificate are stored and verified, while email delivery remains separate. Existing product decisions remain: brokerage oversight and co-agent authority, permanent historical agent access, dedicated signature/initial-only ceremony, automatic dates, reusable User presets, daily reminders, optional non-terminal Overdue, separate completed PDFs, non-expiring revocable recipient links, and no user-facing Void. Remaining work is detailed technical design: exact column definitions/constraints/indexes, access policies, protected-key operations, job/provider choices, retention/deletion mechanics, legacy `SIGNED`/`VOID` audit, and implementation sequencing.
+A read-only immutable-document audit is complete. Durable architecture decisions are recorded in `decisions.md`; no signing implementation or schema exists yet. The approved working table model separates `signings`, logical Signing Documents, immutable document versions, package revisions and their frozen document/participant snapshots, participants, signer fields, adopted marks, placements, generated artifacts, append-only events, scoped participant and completed-package credentials, copy recipients, temporary browser sessions, delivery instructions/attempts, agent associations, participant-presence leases, and amendment locks. Durable rows use UUID relationships; Signing event order uses a server-assigned bigint sequence; controlled values are readable constrained text; and JSON metadata is sanitized, supplemental, and non-authoritative. Evidence-bearing Signing records never cascade-delete or disappear through ordinary application actions; defect remediation is narrowly system-admin-only and auditable. The server is the final authority for every Signing write; browser clients receive only narrowly scoped access and cannot directly mutate Signing evidence. Raw bearer tokens are not stored or logged, sessions are server-controlled and invalidated with their source link, and requests revalidate authority and current state. Email-link-only access remains an intentional usability/security tradeoff, with revocation and replacement if a link is exposed. Signing artifacts use a dedicated private immutable store; long-lived recipient links receive only short-lived, artifact-specific download authorization after server validation. Signing-owned current state remains authoritative and meaningful changes append server-sequenced immutable events. Event and actor values are human-readable, controlled, and extended only through additive, version-controlled migrations; historical meanings are never repurposed. Prepared and completed PDFs receive SHA-256 fingerprints, and a protected-key-authenticated per-Signing event chain is verified during finalization and later read-only integrity checks. Raw bearer tokens are not stored; signing and completed-package credentials have separate scopes. Locks and leases always expire under server control and stale editors cannot save. Field saves and Finish Signing are server-authoritative and idempotent; reconnecting participants recover confirmed progress and see an accurate remaining-field count. Finalization is deterministic, resumable, and administratively retryable without permitting evidence edits or a manual Complete override; Complete occurs only after every individual completed PDF and the Signing-wide certificate are stored and verified, while email delivery remains separate. Existing product decisions remain: brokerage oversight and co-agent authority, permanent historical agent access, dedicated signature/initial-only ceremony, automatic dates, reusable User presets, daily reminders, optional non-terminal Overdue, separate completed PDFs, non-expiring revocable recipient links, and no user-facing Void. Remaining work after the 2026-09-14 orientation is staged implementation beginning with the approved Stage 1 foundation (see above), not further open-ended redesign of settled decisions.
 
 Initial Signing infrastructure choices are now settled: immutable Signing artifacts use a dedicated private Supabase bucket, and transactional Signing email starts on Resend's free tier behind a provider-neutral delivery boundary. Remaining provider work is configuration, monitoring, and implementation—not selection of the initial vendors.
 
@@ -1096,7 +1128,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native e-signature:** continue technical/domain design from the 2026-08-19 architecture checkpoint in `decisions.md`. Do not begin signing implementation, migrations, or schema changes yet.
+1. **Native Signatures Stage 2 (awaiting approval):** trusted server-side Signing authorization helpers and operational foundations on top of the Stage 1 schema; keep `NATIVE_SIGNING_ENABLED` off; no participant credentials or ceremony UI yet. Preserve F1–F11 + R12 Stage 1 deny-by-default tests.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically
@@ -1109,7 +1141,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Future Product Roadmap
 
-Two **major** planned feature areas. They are related through the packet/document model and the existing `packet_form_annotations` infrastructure, but they are **distinct product efforts**. Neither is implemented today. Native e-signature architecture design is in progress; durable decisions and remaining open questions are in `decisions.md`.
+Two **major** planned feature areas. They are related through the packet/document model, but they are **distinct product efforts**. Native Signing architecture is recorded in `decisions.md`; the 2026-09-14 orientation confirmed implementation has not started. Imported-document markup remains separate.
 
 ### Native E-Signature Workflow
 
@@ -1126,11 +1158,11 @@ A native e-signature capability is one of the larger planned product areas. High
 - E-signature design should integrate with the **packet/document model**, not force signature locations through the reusable form-field catalog.
 - Auditability will matter in a future implementation: signer identity, document version, timestamps, completed-signature state, and a reliable record of what was signed.
 
-**Current related state (not the full feature):** Fill Form already supports packet-form **typed signature** and **Date Signed** annotations (`typed_signature` | `date_signed`) with persisted position/size, PDF embedding, and soft deletion. Packet forms already have `document_state` values `DRAFT` / `FINAL` / `SIGNED` / `VOID`; the UI still does not transition into `SIGNED` because a real signing workflow does not exist yet.
+**Current related state (not the full feature):** Fill Form already supports packet-form **typed signature** and **Date Signed** annotations (`typed_signature` | `date_signed`) with persisted position/size, PDF embedding, and soft deletion. Packet forms already have `document_state` values `DRAFT` / `FINAL` / `SIGNED` / `VOID`; the UI still does not transition into `SIGNED` because a real signing workflow does not exist yet. Native Signing evidence will live in dedicated Signing tables and private artifacts, not by promoting Fill Form annotations into legal Signing state.
 
-**Vendor / architecture:** Do **not** treat a specific external e-signature vendor as committed. Prior documentation assumed **Authentisign** for signature/initial handling (catalog extraction skips those lines; deferred “Authentisign integration (may set `SIGNED`)”). That research and the current inventory-exclusion policy are preserved. Native in-app e-signature is now the planned product capability; whether Authentisign or another vendor is used later remains an open implementation choice.
+**Vendor / architecture:** Do **not** treat a specific external e-signature vendor as committed. Prior documentation assumed **Authentisign** for signature/initial handling (catalog extraction skips those lines; deferred “Authentisign integration (may set `SIGNED`)”). That research and the current inventory-exclusion policy are preserved. Native in-app e-signature is the planned product capability.
 
-**Relationship to markup/import:** Signer fields and completed signatures will likely reuse/extend packet-document annotations. Imported Packet Documents + PDF Annotation / Markup Tools is **not** a minor bullet under e-signature; it is a separate feature area that e-signature should be able to consume.
+**Relationship to markup/import:** Agent markup continues to extend `packet_form_annotations` where appropriate. Ceremony **signer fields**, placements, and completed marks belong to the approved Signing data model (`signing_fields`, adopted marks, placements, artifacts, events). Imported Packet Documents + PDF Annotation / Markup Tools is **not** a minor bullet under e-signature; it is a separate feature area that Signings should later be able to consume.
 
 ### Imported Packet Documents + PDF Annotation / Markup Tools
 
@@ -1243,9 +1275,10 @@ See `decisions.md` for architectural decisions. Highlights:
 - Listing packets are collection-based; Buyer Rep remains; `property_hoas` authoritative
 - TypeScript custom resolvers remain accepted
 - Invitation-only access; invite confirmation uses token-hash `verifyOtp` (PKCE preserved separately); HostPapa DNS changes limited to intended subdomain records
-- Packet-form annotations (`typed_signature`, `date_signed`) are packet-document-specific, not catalog fields; future markup and e-signature should extend that model
+- Packet-form annotations (`typed_signature`, `date_signed`) are packet-document-specific agent markup, not catalog fields and not Native Signing evidence; future Fill Form markup should extend that annotation model, while ceremony signer fields belong to Signing-owned tables
 - Native e-signature is planned in-app; Authentisign remains prior research / current inventory-exclusion policy, not a committed vendor
-- Native e-signature architecture decisions are in `decisions.md`: Signing / Signings terminology; remote and in-person modes; immutable snapshot creation without a `FINAL` prerequisite; Signing lifecycle; linked or ad hoc participants; parallel eligibility; exclusive pre-signature amendment locking; first-signature freeze; emailed-link access with explicit I am confirmation and no OTP/2FA; automatic removable date pairing for signatures but not initials; irreversible participant Finish Signing; and account-free completed-copy email delivery to signers and indefinitely addable copy recipients. Schema and implementation have not begun.
+- Native e-signature architecture decisions are in `decisions.md`. Stage 1 foundation schema + private `signing-artifacts` bucket exist in development only behind `NATIVE_SIGNING_ENABLED` (default off); ceremony/credentials/delivery not started
+- Signing development must preserve the verified F1–F11 security baseline and R12 Stage 1 deny-by-default tests before each stage is complete
 - One-off imported packet PDFs should not require the reusable form-library workflow; quick PDF annotations are not reusable fields
 - Packet existing-property search shows matches only after the user types; a blank query does not list all properties, and the selected property stays independent of the search box
 - Packet assigned property is independent of the property-entry UI mode; toggling Select existing / Create new does not clear or replace the assignment
@@ -1282,9 +1315,9 @@ Deployment: commit `39ca2f4` passed its Vercel deployment checks and was manuall
 
 F1, F2/F8, F3/F4, F5, F6, F7, F9, F10, and F11 are deployed and passed their respective validation. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
 
-### Native Signing — planning paused
+### Native Signing — Stage 1 foundation in development
 
-The Native Signing decisions in `decisions.md` remain the source of truth for the future feature. No Signing schema or product implementation is authorized by the F6 repair. When Signing work resumes, begin with those dedicated Signing sections rather than this security status entry.
+Stage 1 schema + private `signing-artifacts` bucket + deny-by-default browser access landed on `feat/native-signing-stage-1` and was applied only to `harbaugh-forms-dev`. Feature gate remains off. Security remediation and Signing remain separate workstreams: Signing must not weaken F1–F11 controls. Production Signing migration is not authorized by Stage 1 alone.
 
 ---
 
@@ -1436,7 +1469,7 @@ The account-state validator now verifies that an active account has its intended
 
 **Validation:** `npm run validate:secure-publish-dev`; `npm run validate:account-state-dev`; `npm run validate:final-document-immutability-dev`; `npm run validate:packet-reference-ownership-dev`; `npm run validate:audit-logging-atomic-dev`; `npm run validate:brokerage-settings-organization-dev`; `npm run test:auth-confirm` (30); `npm run test:auth-bootstrap` (7); `npm run test:admin-invite` (37); `npm run test:admin-orgs` (4); `npm run test:admin-audit` (20); `npx tsc --noEmit --incremental false`; and ESLint all passed.
 
-**Next verification:** Run a safe authenticated DAST pass against development with ordinary, disabled, inactive-organization, administrator, and Global Admin sessions. Keep security verification separate from the paused Native Signing planning work.
+**Next verification:** Run a safe authenticated DAST pass against development with ordinary, disabled, inactive-organization, administrator, and Global Admin sessions after Native Signing implementation begins and before its production rollout (see private `security.md` R11). Until then, every Signatures implementation stage must re-run the applicable F1–F11 regression matrix and add tests for any new Signing security boundary it introduces.
 
 **Related files:**
 
