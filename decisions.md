@@ -2888,6 +2888,8 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 
 **Consequences:** Malformed, absolute, protocol-relative, backslash-based, and control-character destinations now fall back to the application home page. Normal internal destinations, including the password-update route used by invitations and recovery emails, continue to work. This security repair does not revise Native Signing architecture or authorize its implementation.
 
+**Production rollout:** Deployment `13qMk1swTYk1zipwj4x1ujsH79EL` for commit `4e7fb74` passed its isolated login-page check and was manually promoted to both production domains on 2026-09-14.
+
 **Related files:**
 
 * `lib/auth/email-otp.ts`

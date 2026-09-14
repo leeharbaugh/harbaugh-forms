@@ -1272,7 +1272,7 @@ Deployment: commit `39ca2f4` passed its Vercel deployment checks and was manuall
 
 ### Security remediation — active
 
-F1, F2/F8, F3/F4, F5, F6, F7, F9, and F10 are deployed and passed their respective validation. F11 authentication redirect validation is complete in development and awaiting its separate production rollout. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
+F1, F2/F8, F3/F4, F5, F6, F7, F9, F10, and F11 are deployed and passed their respective validation. The remaining security findings are tracked outside this repository in the private audit record; security work must remain a separate remediation stream.
 
 ### Native Signing — planning paused
 
@@ -1401,11 +1401,13 @@ The Settings page resolves the signed-in user’s primary organization before lo
 
 ## Security remediation — F11 authentication redirect validation (2026-09-14)
 
-**Status:** Complete in development; production rollout pending.
+**Status:** Complete in development and production.
 
 Authentication confirmation now rejects control characters and their encoded forms before handling a caller-supplied `next` destination. It parses accepted values against a fixed internal origin, requires that exact origin, and returns only the normalized internal pathname, query, and fragment. This closes the tab-character normalization path that could otherwise turn a relative-looking destination into an external redirect after a valid magic-link, invite, or recovery flow.
 
 **Validation:** `npm run test:auth-confirm` (30), including a completed valid magic-link flow containing the reproduced tab payload; `npx tsc --noEmit --incremental false`; ESLint; and diff checks all passed.
+
+**Production rollout:** Vercel deployment `13qMk1swTYk1zipwj4x1ujsH79EL` for commit `4e7fb74` was Ready, its isolated login page loaded, and it was manually promoted to both production domains on 2026-09-14. The live primary domain loaded the expected login page after promotion.
 
 **Related files:**
 
