@@ -1,14 +1,36 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-14 (Native Signing Stage 1 foundation squash-merged to `main`; development DB applied; production DB and feature rollout not started)
+**As of:** 2026-09-14 (Native Signing Stage 2 trusted server authority implemented on `feat/native-signing-stage-2`; Stage 1 remains merged on `main` / development DB; production Signing schema still absent)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
+### Native Signing Stage 2 trusted server authority (2026-09-14)
+
+**Status:** Implemented on feature branch `feat/native-signing-stage-2` — PR [#34](https://github.com/leeharbaugh/harbaugh-forms/pull/34) open targeting `main` (not merged). **Default-off feature gate still required.** **No ceremony UI, credentials, PDF preparation, email, or production rollout.**
+
+| Item | Result |
+|------|--------|
+| Branch | `feat/native-signing-stage-2` from `main` `@4ecf217` |
+| Commits | Stage 2 implementation `fe73ee3`; final review harden `8c6416c` |
+| Migration | **None** — Stage 1 schema sufficient |
+| Server layer | `lib/signing/actor.ts`, `eligibility.ts`, `authority.ts`, `operations.ts`, `actions.ts` |
+| Operations | `createDraftSigningAction` / `createDraftSigningWithActor`; `getSigningAction` / `getSigningForActor`; `updateDraftSigningTitleAction` / `updateDraftSigningTitleForActor` (Draft title only) |
+| Feature gate | Every operation calls `assertNativeSigningEnabled()`; production remains unset/off |
+| Authority | Current management = eligible primary/co-agent association or originating `ORG_ADMIN`; historical read retained for former associated agents; UUID possession alone is insufficient |
+| Originating org (create) | `profiles.primary_organization_id` when among ACTIVE memberships; else sole ACTIVE membership; else fail closed — never browser-chosen, never arbitrary multi-org pick. Read/update do not re-derive create-time org. |
+| Browser/RLS | Stage 1 deny-by-default unchanged; service-role used only after `requireSigningActor` |
+| Final review | Architecture/security review fixed create-only org derivation, title-update existence leakage, INTERNAL error sanitization, title max length, and explicit multi-org tests |
+| Tests | `test:native-signing-stage2`; `validate:native-signing-stage2-dev`; Stage 1 R12 re-validated; R3/R5/R6/R8/R9 + annotation-auth + R1 audit + `tsc` + Stage 2 ESLint + `git diff --check` + `build:validate` |
+
+**Explicitly still unavailable:** participant credentials/sessions, `/sign` routes, Send/In Progress ceremony, package revisions/PDF snapshots, artifacts, email/reminders, work queues/idempotency, co-agent management UI, production enablement.
+
+**Recommended Stage 3:** Package preparation / initial package revision + prepared document snapshots (still no participant credentials or ceremony UI), remaining behind the feature gate.
+
 ### Native Signing Stage 1 foundation (2026-09-14)
 
-**Status:** **Code merged to `main`.** Development database has Stage 1 migrations. **Production database does not.** **Native Signing is not feature-enabled in production.** **No ceremony UI.** Stage 2 has not started.
+**Status:** **Code merged to `main`.** Development database has Stage 1 migrations. **Production database does not.** **Native Signing is not feature-enabled in production.** **No ceremony UI.** Stage 2 implementation is in progress on a feature branch (see above).
 
 | Item | Result |
 |------|--------|
@@ -36,6 +58,10 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 * R1–R10 applicable suite: `npm audit` 0 vulns; secure-publish / account-state / final-immutability / packet-reference / audit-atomic / brokerage-org / annotation-auth validators passed; `test:secure-publish` 12; `test:auth-confirm` 30; `test:auth-bootstrap` 7; `test:admin-audit` 20; `test:admin-orgs` 4; `test:admin-invite` 37; `test:storage-paths` 18; `test:packet-form-lifecycle` 7; `test:date-signed-annotation` placement suite; `tsc --noEmit`; ESLint on Stage 1 files; `git diff --check`; `npm run build:validate` passed
 
 **Recommended Stage 2:** Trusted server-side Signing authorization helpers and operational foundations (create/read Signing rows only through server paths gated by `assertNativeSigningEnabled()`, originating-brokerage / agent-association authority checks, still no participant credentials or ceremony UI).
+
+### Native Signing Stage 2 note
+
+Stage 2 implementation now supersedes the “recommended Stage 2” line above while remaining unmerged; see **Native Signing Stage 2 trusted server authority** at the top of this file.
 
 ### Signatures orientation and repository audit (2026-09-14)
 
