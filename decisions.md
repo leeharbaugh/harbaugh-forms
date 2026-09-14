@@ -12,6 +12,32 @@ Each decision should include:
 
 ---
 
+## Native Signing Stage 2 uses a trusted server actor/authority boundary
+
+**Date:** 2026-09-14
+
+**Decision:**
+Native Signing agent-side Draft operations execute only through a trusted server boundary. The server resolves the authenticated User, application-account eligibility, originating brokerage membership, and Signing association authority before any service-role read or write. Browser clients never supply authoritative `user_id`, organization id, app role, or primary-agent identity. Current management authority requires an active primary/co-agent association **and** current eligibility in the originating brokerage, or originating-brokerage `ORG_ADMIN` membership. Former associated agents retain historical read without management when eligibility ends. Possession of a Signing UUID alone never grants access.
+
+Stage 2 exposes only Draft create, authorized read, and Draft title update. It does not add authenticated browser RLS policies for Signing evidence tables.
+
+**Reason:**
+Stage 1 established deny-by-default evidence storage. Stage 2 must introduce the earliest agent operations without recreating F6-style ungated service-role readers or weakening Stage 1 R12 denial.
+
+**Consequences:**
+
+* Future Signing UI must call server actions/helpers rather than querying `signings` directly.
+* Brokerage administrators are not modeled as fake agent-association rows.
+* Participant/ceremony credentials remain deferred.
+
+**Related files or migrations:**
+
+* `lib/signing/actor.ts`, `lib/signing/authority.ts`, `lib/signing/operations.ts`, `lib/signing/actions.ts`
+* `scripts/validate-native-signing-stage2-dev.ts`
+* This file: **Signing access belongs to the originating brokerage and full-authority agents** (2026-09-06); **Signing writes are server-authoritative…** (2026-09-14)
+
+---
+
 ## Native Signing Stage 1 uses env feature gate and private signing-artifacts bucket
 
 **Date:** 2026-09-14
