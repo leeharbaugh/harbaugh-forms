@@ -3806,6 +3806,8 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 
 **Consequences:** Framework and dependency updates require the same build and targeted regression checks before deployment. On 2026-09-14, a compatible lockfile refresh moved `brace-expansion` to 1.1.18 and 5.0.9, `browserslist` to 4.28.9, `js-yaml` to 4.3.2, and `baseline-browser-mapping` to 2.11.23. The lockfile-only audit then reported zero vulnerabilities. Do not use a forced audit fix; review compatible parent ranges and validate the regenerated lockfile instead.
 
+**Production rollout:** Deployment `2CMdac6EViudwyp6TgoQbHf8htiM` for commit `348d309` passed its isolated login-page check and was manually promoted to both production domains on 2026-09-14. The live primary domain loaded the expected login page after promotion.
+
 ---
 
 ## Security remediation — trusted form publication and lifecycle evidence

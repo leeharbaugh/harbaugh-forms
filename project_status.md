@@ -1296,7 +1296,7 @@ Validation passed: `npx tsc --noEmit`, the administrator-audit suite (14 tests),
 
 Deployment: commit `adb8f07` passed its isolated Vercel deployment check and was promoted to `forms.harbaughrealestate.com` on 2026-09-12. The production deployment is `2Q4H8jfQV`; the public login page loaded successfully before promotion. Follow up with ordinary-user and administrator smoke checks using normal, non-production test accounts.
 
-**Dependency refresh rollout:** The dependency-only follow-up is pending its isolated Vercel check and separate production promotion.
+**Dependency refresh rollout:** Vercel deployment `2CMdac6EViudwyp6TgoQbHf8htiM` for commit `348d309` was Ready, its isolated login page loaded, and it was manually promoted to both production domains on 2026-09-14. The live primary domain then loaded the expected login page.
 
 ---
 
