@@ -8,11 +8,12 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 ### Native Signing Stage 2 trusted server authority (2026-09-14)
 
-**Status:** Implemented on feature branch `feat/native-signing-stage-2` (not merged). **Default-off feature gate still required.** **No ceremony UI, credentials, PDF preparation, email, or production rollout.**
+**Status:** Implemented on feature branch `feat/native-signing-stage-2` — PR [#34](https://github.com/leeharbaugh/harbaugh-forms/pull/34) open targeting `main` (not merged). **Default-off feature gate still required.** **No ceremony UI, credentials, PDF preparation, email, or production rollout.**
 
 | Item | Result |
 |------|--------|
 | Branch | `feat/native-signing-stage-2` from `main` `@4ecf217` |
+| Commits | Stage 2 implementation `fe73ee3`; final review harden `8c6416c` |
 | Migration | **None** — Stage 1 schema sufficient |
 | Server layer | `lib/signing/actor.ts`, `eligibility.ts`, `authority.ts`, `operations.ts`, `actions.ts` |
 | Operations | `createDraftSigningAction` / `createDraftSigningWithActor`; `getSigningAction` / `getSigningForActor`; `updateDraftSigningTitleAction` / `updateDraftSigningTitleForActor` (Draft title only) |
