@@ -3804,7 +3804,7 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 
 **Reason:** The previous `latest` declaration did not describe the actual locked framework version, which remained Next.js 16.2.10 and carried critical and high security advisories. A tested, explicit semver range keeps future installations on the patched release line while the lockfile makes deployment reproducible.
 
-**Consequences:** Framework updates require the same build and targeted regression checks before deployment. The remaining audit report is a moderate `baseline-browser-mapping` report whose resolved 2.11.22 version is outside the advisory's affected range; do not accept the package manager's unrelated downgrade proposal merely to silence that report. Reassess it when the upstream audit metadata or dependency chain changes.
+**Consequences:** Framework and dependency updates require the same build and targeted regression checks before deployment. On 2026-09-14, a compatible lockfile refresh moved `brace-expansion` to 1.1.18 and 5.0.9, `browserslist` to 4.28.9, `js-yaml` to 4.3.2, and `baseline-browser-mapping` to 2.11.23. The lockfile-only audit then reported zero vulnerabilities. Do not use a forced audit fix; review compatible parent ranges and validate the regenerated lockfile instead.
 
 ---
 

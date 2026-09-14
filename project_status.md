@@ -1292,9 +1292,11 @@ The Native Signing decisions in `decisions.md` remain the source of truth for th
 
 Updated the locked Next.js release from 16.2.10 to 16.3.5 and changed the application dependency from the unpinned `latest` tag to `^16.3.5`. The regenerated lockfile also updates the related Next.js packages and their transitive runtime dependencies.
 
-Validation passed: `npx tsc --noEmit`, the administrator-audit suite (14 tests), the TXR-1957 manifest suite (11 tests), and the production build. A dependency audit no longer reports critical or high production findings. It still reports one moderate `baseline-browser-mapping` advisory even though the resolved package is version 2.11.22, outside the reported affected range; the package manager's automatic fix proposal does not offer a safe applicable lockfile change, so it is recorded for follow-up rather than forcing a downgrade.
+Validation passed: `npx tsc --noEmit`, the administrator-audit suite (14 tests), the TXR-1957 manifest suite (11 tests), and the production build. On 2026-09-14, a compatible lockfile refresh updated `brace-expansion`, `browserslist`, `js-yaml`, and `baseline-browser-mapping`; the current lockfile-only audit reports zero vulnerabilities. The full optimized build, TypeScript, ESLint, focused security suites, and every development security validator passed after that refresh.
 
 Deployment: commit `adb8f07` passed its isolated Vercel deployment check and was promoted to `forms.harbaughrealestate.com` on 2026-09-12. The production deployment is `2Q4H8jfQV`; the public login page loaded successfully before promotion. Follow up with ordinary-user and administrator smoke checks using normal, non-production test accounts.
+
+**Dependency refresh rollout:** The dependency-only follow-up is pending its isolated Vercel check and separate production promotion.
 
 ---
 
