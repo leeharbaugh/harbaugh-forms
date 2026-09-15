@@ -107,6 +107,56 @@ export async function upsertDraftSigningFieldWithActor(
     linkedSignatureDraftFieldId = null;
   }
 
+  const { data: document, error: documentError } = await admin
+    .from("signing_documents")
+    .select("id, included_in_draft")
+    .eq("id", input.signingDocumentId)
+    .eq("signing_id", signing.id)
+    .maybeSingle();
+  if (documentError) throw new Error(documentError.message);
+  if (!document || document.included_in_draft !== true) {
+    throw new SigningError(
+      "INVALID_INPUT",
+      "Signer fields must reference an included Draft document.",
+    );
+  }
+
+  const { data: participant, error: participantError } = await admin
+    .from("signing_participants")
+    .select("id, participant_status")
+    .eq("id", input.signingParticipantId)
+    .eq("signing_id", signing.id)
+    .maybeSingle();
+  if (participantError) throw new Error(participantError.message);
+  if (!participant || participant.participant_status === "REMOVED") {
+    throw new SigningError(
+      "INVALID_INPUT",
+      "Signer fields must reference a current Draft participant.",
+    );
+  }
+
+  if (linkedSignatureDraftFieldId) {
+    const { data: linked, error: linkedError } = await admin
+      .from("signing_draft_fields")
+      .select("id, field_type, signing_participant_id")
+      .eq("id", linkedSignatureDraftFieldId)
+      .eq("signing_id", signing.id)
+      .maybeSingle();
+    if (linkedError) throw new Error(linkedError.message);
+    if (!linked || linked.field_type !== "SIGNATURE") {
+      throw new SigningError(
+        "INVALID_INPUT",
+        "DATE_SIGNED fields require a linked Signature field.",
+      );
+    }
+    if (linked.signing_participant_id !== input.signingParticipantId) {
+      throw new SigningError(
+        "INVALID_INPUT",
+        "DATE_SIGNED fields must link to a Signature field for the same participant.",
+      );
+    }
+  }
+
   const payload = {
     signing_id: signing.id,
     signing_document_id: input.signingDocumentId,

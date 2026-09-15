@@ -17,7 +17,16 @@ export type PromotePackageRevisionResult = {
   createdVersionIds: string[];
 };
 
-async function loadDraftBundle(admin: SupabaseClient, signingId: string) {
+type DraftBundle = {
+  documents: Array<Record<string, unknown>>;
+  participants: Array<Record<string, unknown>>;
+  fields: Array<Record<string, unknown>>;
+};
+
+async function loadDraftBundle(
+  admin: SupabaseClient,
+  signingId: string,
+): Promise<DraftBundle> {
   const [documents, participants, fields] = await Promise.all([
     admin
       .from("signing_documents")
@@ -48,11 +57,43 @@ async function loadDraftBundle(admin: SupabaseClient, signingId: string) {
   };
 }
 
-function validateDraftForPromotion(bundle: {
-  documents: Array<Record<string, unknown>>;
-  participants: Array<Record<string, unknown>>;
-  fields: Array<Record<string, unknown>>;
-}) {
+function draftBundleFingerprint(bundle: DraftBundle): string {
+  const docs = bundle.documents.map((row) => ({
+    id: row.id,
+    order: row.display_order,
+    name: row.display_name,
+    filename: row.filename,
+    label: row.logical_label,
+    source: row.source_packet_form_id,
+  }));
+  const participants = bundle.participants.map((row) => ({
+    id: row.id,
+    order: row.display_order,
+    name: row.full_name,
+    email: row.email,
+    role: row.optional_role,
+    user: row.linked_user_id,
+    contact: row.linked_contact_id,
+  }));
+  const fields = [...bundle.fields]
+    .map((row) => ({
+      id: row.id,
+      doc: row.signing_document_id,
+      participant: row.signing_participant_id,
+      type: row.field_type,
+      required: row.is_required,
+      page: row.page_number,
+      x: row.x,
+      y: row.y,
+      width: row.width,
+      height: row.height,
+      linked: row.linked_signature_draft_field_id,
+    }))
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  return JSON.stringify({ docs, participants, fields });
+}
+
+function validateDraftForPromotion(bundle: DraftBundle) {
   if (bundle.documents.length === 0) {
     throw new SigningError(
       "VALIDATION_FAILED",
@@ -111,6 +152,12 @@ function validateDraftForPromotion(bundle: {
         throw new SigningError(
           "VALIDATION_FAILED",
           "DATE_SIGNED fields require a linked Signature field in this Draft.",
+        );
+      }
+      if (linked.signing_participant_id !== field.signing_participant_id) {
+        throw new SigningError(
+          "VALIDATION_FAILED",
+          "DATE_SIGNED fields must link to a Signature field for the same participant.",
         );
       }
     }
@@ -200,6 +247,7 @@ export async function promotePackageRevisionFromDraftWithActor(
 
   const bundle = await loadDraftBundle(admin, signing.id);
   validateDraftForPromotion(bundle);
+  const expectedFingerprint = draftBundleFingerprint(bundle);
 
   const { data: latestRevision, error: latestError } = await admin
     .from("signing_package_revisions")
@@ -263,8 +311,19 @@ export async function promotePackageRevisionFromDraftWithActor(
     versionByDocumentId.set(document.id as string, ensured.version.id);
   }
 
+  // Reject concurrent Draft edits before relational promotion begins.
+  const refreshedBeforeRevision = await loadDraftBundle(admin, signing.id);
+  validateDraftForPromotion(refreshedBeforeRevision);
+  if (draftBundleFingerprint(refreshedBeforeRevision) !== expectedFingerprint) {
+    throw new SigningError(
+      "CONFLICT",
+      "Draft preparation changed during promotion. Try again.",
+    );
+  }
+
   // Phase 2: relational complete snapshot, then advance current pointer.
   const previousPointer = signing.current_package_revision_id;
+  let pointerAdvanced = false;
 
   const { data: revision, error: revisionError } = await admin
     .from("signing_package_revisions")
@@ -408,6 +467,16 @@ export async function promotePackageRevisionFromDraftWithActor(
       );
     }
 
+    // Final TOCTOU check immediately before advancing the current pointer.
+    const refreshedBeforePointer = await loadDraftBundle(admin, signing.id);
+    validateDraftForPromotion(refreshedBeforePointer);
+    if (draftBundleFingerprint(refreshedBeforePointer) !== expectedFingerprint) {
+      throw new SigningError(
+        "CONFLICT",
+        "Draft preparation changed during promotion. Try again.",
+      );
+    }
+
     let pointerQuery = admin
       .from("signings")
       .update({ current_package_revision_id: revision.id })
@@ -435,6 +504,7 @@ export async function promotePackageRevisionFromDraftWithActor(
         "Signing current package revision changed during promotion.",
       );
     }
+    pointerAdvanced = true;
 
     const { error: eventError } = await admin.from("signing_events").insert({
       signing_id: signing.id,
@@ -450,12 +520,16 @@ export async function promotePackageRevisionFromDraftWithActor(
       throw new Error(eventError.message);
     }
   } catch (error) {
+    // Roll back this invocation's pointer first (RESTRICT FK), and only when we
+    // advanced it — never regress a concurrently promoted current revision.
+    if (pointerAdvanced) {
+      await admin
+        .from("signings")
+        .update({ current_package_revision_id: previousPointer })
+        .eq("id", signing.id)
+        .eq("current_package_revision_id", revision.id as string);
+    }
     await abandonIncompleteRevision(admin, signing.id, revision.id as string);
-    // Ensure pointer remains at the prior current revision.
-    await admin
-      .from("signings")
-      .update({ current_package_revision_id: previousPointer })
-      .eq("id", signing.id);
     throw error;
   }
 

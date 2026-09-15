@@ -43,6 +43,7 @@ describe("Native Signing Stage 3 draft/evidence boundary contracts", () => {
     assert.deepEqual([...NATIVE_SIGNING_STAGE3_MIGRATIONS], [
       "20260915120000_native_signing_stage3_draft_preparation",
       "20260915130000_native_signing_stage3_draft_document_inclusion",
+      "20260915140000_native_signing_stage3_draft_display_order_partial",
     ]);
     assert.match(migration, /force row level security/);
     assert.match(migration, /signing_draft_fields_deny_authenticated/);
@@ -57,6 +58,31 @@ describe("Native Signing Stage 3 draft/evidence boundary contracts", () => {
       "utf8",
     );
     assert.match(inclusionMigration, /included_in_draft boolean not null default true/);
+
+    const orderMigration = readFileSync(
+      join(
+        root,
+        "supabase/migrations/20260915140000_native_signing_stage3_draft_display_order_partial.sql",
+      ),
+      "utf8",
+    );
+    assert.match(
+      orderMigration,
+      /where included_in_draft = true/,
+    );
+  });
+
+  it("keeps promotion concurrency-safe for pointer rollback and draft TOCTOU", () => {
+    assert.match(promotion, /pointerAdvanced/);
+    assert.match(promotion, /draftBundleFingerprint/);
+    assert.match(
+      promotion,
+      /Draft preparation changed during promotion/,
+    );
+    assert.match(
+      promotion,
+      /\.eq\("current_package_revision_id", revision\.id as string\)/,
+    );
   });
 
   it("does not expose Send or Begin In-Person activation actions", () => {

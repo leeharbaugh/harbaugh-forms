@@ -13,13 +13,13 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Item | Result |
 |------|--------|
 | Feature branch | `feat/native-signing-stage-3` from `main` `6a74732` (docs reconciliation PR #35) |
-| Migrations (dev) | `20260915120000_native_signing_stage3_draft_preparation.sql`; `20260915130000_native_signing_stage3_draft_document_inclusion.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| Migrations (dev) | `20260915120000_native_signing_stage3_draft_preparation.sql`; `20260915130000_native_signing_stage3_draft_document_inclusion.sql`; `20260915140000_native_signing_stage3_draft_display_order_partial.sql` applied to `ewxsxwzezhkeawnjvigx` |
 | Production migrations | **Not applied**; prod still has no `signing_*` tables / no `signing-artifacts` / no `NATIVE_SIGNING_ENABLED` |
 | Draft model | Mutable `signing_documents` (+ display metadata + `included_in_draft`), `signing_participants`, and new `signing_draft_fields`; revision-scoped `signing_fields` remain immutable evidence |
 | Draft ops | Trusted server document add/remove/reorder/metadata; participant add/update/remove; Signature/Initials/DATE_SIGNED draft fields; Stage 3 server actions authorize-then-elevate |
 | Prepared PDF | `renderPreparedPacketFormPdf` reuses `getFilledPacketFormPdfBytes` / Fill Form pipeline; stale `update_date` guard; ceremony marks not applied |
 | Document versions | `ensurePreparedDocumentVersion`: render → SHA-256 → opaque Storage key → upload/verify → insert; same-document reuse only; mismatch fails closed |
-| Package promotion | Internal `promotePackageRevisionFromDraftWithActor` only (not browser-exported): prepare versions first, then complete revision snapshot, advance `current_package_revision_id` last; incomplete revision abandoned |
+| Package promotion | Internal `promotePackageRevisionFromDraftWithActor` only (not browser-exported): prepare versions first, draft fingerprint TOCTOU checks, complete revision snapshot, advance `current_package_revision_id` last; incomplete revision abandoned; pointer rollback is CAS-scoped to this promotion only |
 | Browser/RLS | Stage 1 deny-by-default preserved; `signing_draft_fields` deny + FORCE RLS + grants revoked |
 | Tests | `test:native-signing-stage3`; `validate:native-signing-stage3-dev`; Stage 1–2 tests/validators; R3/R5/R7/R8/R9/R10 + annotation-auth + secure-publish + PDF regressions; `npm audit --omit=dev` 0; `tsc`; Stage 3 ESLint; `git diff --check`; `build:validate` |
 
@@ -39,7 +39,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Explicitly still unavailable (Stage 4+):** Send for Signature; Begin In-Person Signing; lifecycle leave-Draft activation; participant credentials/sessions; `/sign`; ceremony UI; email/reminders; integrity admin UI; protected-key event chain; production enablement.
 
-**Recommended next:** Stage 3 review → merge when approved → Stage 4 activation (Send / Begin In-Person) calling the internal promotion primitive.
+**Recommended next:** Open/review Stage 3 PR → merge when approved → Stage 4 activation (Send / Begin In-Person) calling the internal promotion primitive.
 
 ### Native Signing Stage 2 trusted server authority (2026-09-14)
 

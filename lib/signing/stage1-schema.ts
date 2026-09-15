@@ -32,6 +32,7 @@ export const NATIVE_SIGNING_STAGE3_DRAFT_TABLES = [
 export const NATIVE_SIGNING_STAGE3_MIGRATIONS = [
   "20260915120000_native_signing_stage3_draft_preparation",
   "20260915130000_native_signing_stage3_draft_document_inclusion",
+  "20260915140000_native_signing_stage3_draft_display_order_partial",
 ] as const;
 
 

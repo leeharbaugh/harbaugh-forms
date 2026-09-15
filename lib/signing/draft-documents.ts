@@ -28,6 +28,7 @@ async function nextDocumentDisplayOrder(
     .from("signing_documents")
     .select("display_order")
     .eq("signing_id", signingId)
+    .eq("included_in_draft", true)
     .order("display_order", { ascending: false })
     .limit(1);
   if (error) throw new Error(error.message);
@@ -117,10 +118,12 @@ export async function addDraftSigningDocumentWithActor(
         "That Packet Form is already included in this Signing.",
       );
     }
+    const displayOrder = await nextDocumentDisplayOrder(admin, signing.id);
     const { data: reincluded, error: reincludeError } = await admin
       .from("signing_documents")
       .update({
         included_in_draft: true,
+        display_order: displayOrder,
         display_name: displayName,
         filename,
         logical_label: logicalLabel ?? existing.logical_label,
