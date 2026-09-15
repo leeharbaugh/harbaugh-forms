@@ -1,6 +1,6 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-15 (Native Signing Stage 3 implemented on feature branch; Stages 1–2 merged; production Signing schema still absent)
+**As of:** 2026-09-15 (Native Signing Stages 1–3 merged to `main`; Stage 3 DB remains development-only; production Signing schema still absent)
 
 ## Current State
 
@@ -8,11 +8,12 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 ### Native Signing Stage 3 — Draft preparation + activation-snapshot primitives (2026-09-15)
 
-**Status:** **Implemented on feature branch `feat/native-signing-stage-3` (not merged).** Development migrations applied to `harbaugh-forms-dev` only. **Default-off feature gate still required.** **No Send / Begin In-Person Signing / ceremony UI / credentials / email / production enablement.** Production Native Signing remains unavailable (no Stage 1 schema there).
+**Status:** **Code merged to `main`.** Development migrations applied to `harbaugh-forms-dev` only. **Default-off feature gate still required.** **No Send / Begin In-Person Signing / ceremony UI / credentials / email / production enablement.** Production Native Signing remains unavailable (no Stage 1 schema there).
 
 | Item | Result |
 |------|--------|
-| Feature branch | `feat/native-signing-stage-3` from `main` `6a74732` (docs reconciliation PR #35) |
+| PR | [#36](https://github.com/leeharbaugh/harbaugh-forms/pull/36) squash-merged `2026-09-15T19:02:58Z` → `main` `cbc593c` (from reviewed `bf949a1`) |
+| Feature branch | `feat/native-signing-stage-3` deleted after merge |
 | Migrations (dev) | `20260915120000_native_signing_stage3_draft_preparation.sql`; `20260915130000_native_signing_stage3_draft_document_inclusion.sql`; `20260915140000_native_signing_stage3_draft_display_order_partial.sql` applied to `ewxsxwzezhkeawnjvigx` |
 | Production migrations | **Not applied**; prod still has no `signing_*` tables / no `signing-artifacts` / no `NATIVE_SIGNING_ENABLED` |
 | Draft model | Mutable `signing_documents` (+ display metadata + `included_in_draft`), `signing_participants`, and new `signing_draft_fields`; revision-scoped `signing_fields` remain immutable evidence |
@@ -21,7 +22,9 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Document versions | `ensurePreparedDocumentVersion`: render → SHA-256 → opaque Storage key → upload/verify → insert; same-document reuse only; mismatch fails closed |
 | Package promotion | Internal `promotePackageRevisionFromDraftWithActor` only (not browser-exported): prepare versions first, draft fingerprint TOCTOU checks, complete revision snapshot, advance `current_package_revision_id` last; incomplete revision abandoned; pointer rollback is CAS-scoped to this promotion only |
 | Browser/RLS | Stage 1 deny-by-default preserved; `signing_draft_fields` deny + FORCE RLS + grants revoked |
-| Tests | `test:native-signing-stage3`; `validate:native-signing-stage3-dev`; Stage 1–2 tests/validators; R3/R5/R7/R8/R9/R10 + annotation-auth + secure-publish + PDF regressions; `npm audit --omit=dev` 0; `tsc`; Stage 3 ESLint; `git diff --check`; `build:validate` |
+| Production Vercel | Merge created Ready deployment `dpl_7csiAdX8pP61MBR6AyB6vJkw7j4P` / `13rpdi82n` — **not promoted** to custom domains |
+| Live custom domain | Remains prior approved deployment `dpl_2CMdac6EViudwyp6TgoQbHf8htiM` (`oh3z3x7r5`); Auto-assign Custom Production Domains remains disabled |
+| Tests | Pre-merge review on `bf949a1`: `test:native-signing-stage3` 11/11; `validate:native-signing-stage3-dev`; Stage 1–2 tests/validators; R3/R5/R7/R8/R9/R10 + annotation-auth + secure-publish + PDF regressions; `npm audit --omit=dev` 0; `tsc`; Stage 3 ESLint; `git diff --check`; `build:validate` |
 
 **Draft preparation representation:**
 
@@ -39,7 +42,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Explicitly still unavailable (Stage 4+):** Send for Signature; Begin In-Person Signing; lifecycle leave-Draft activation; participant credentials/sessions; `/sign`; ceremony UI; email/reminders; integrity admin UI; protected-key event chain; production enablement.
 
-**Recommended next:** Open/review Stage 3 PR → merge when approved → Stage 4 activation (Send / Begin In-Person) calling the internal promotion primitive.
+**Recommended next:** Await an explicit Stage 4 design/implementation prompt. Do not begin Stage 4.
 
 ### Native Signing Stage 2 trusted server authority (2026-09-14)
 
@@ -63,7 +66,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Explicitly still unavailable:** participant credentials/sessions, `/sign` routes, Send/In Progress ceremony, package revisions/PDF snapshots, artifacts, email/reminders, work queues/idempotency, co-agent management UI, production enablement.
 
-**Recommended Stage 3:** Implemented on `feat/native-signing-stage-3` (see Stage 3 section above); not yet merged.
+**Recommended Stage 3:** Merged to `main` (PR #36 → `cbc593c`). See Stage 3 section above.
 
 ### Native Signing Stage 1 foundation (2026-09-14)
 
@@ -98,7 +101,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 ### Native Signing Stage 2 note
 
-Stage 2 trusted server authority is merged to `main` (PR #34 → `18adfb7`). See **Native Signing Stage 2 trusted server authority** above. Stage 3 Draft preparation + activation-snapshot primitives are implemented on `feat/native-signing-stage-3` (not merged).
+Stage 2 trusted server authority is merged to `main` (PR #34 → `18adfb7`). See **Native Signing Stage 2 trusted server authority** above. Stage 3 Draft preparation + activation-snapshot primitives are merged to `main` (PR #36 → `cbc593c`); Stage 3 database changes remain development-only.
 
 ### Signatures orientation and repository audit (2026-09-14)
 
@@ -1194,17 +1197,16 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signatures Stage 3 review / merge (when approved):** Feature branch `feat/native-signing-stage-3` — Draft preparation backend + internal activation-snapshot primitives. Do not begin Stage 4 until Stage 3 is reviewed. Still no production enablement.
-2. **Native Signatures Stage 4 (not started):** Expose activation via Send for Signature / Begin In-Person Signing by invoking the Stage 3 promotion primitive; advance lifecycle appropriately. Preserve F1–F11 + R12 Stage 1–3 tests.
-3. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
-4. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
-5. Monitor real-world Lee-only production use; review runtime logs periodically
-6. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
-7. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
-8. Add error tracking before broader multi-user exposure
-9. Establish production backup/restore procedures
-10. Consider paid tiers only when recovery, usage, or SLA requirements justify them
-11. Review Mapbox domain restrictions if map behavior fails on the custom domain
+1. **Native Signatures Stage 4 (awaiting explicit approval):** Do not begin until an explicit Stage 4 prompt. Future activation should call Stage 3’s internal promotion primitive for Send / Begin In-Person only. Preserve F1–F11 + R12 Stage 1–3 tests. Still no production enablement.
+2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
+3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
+4. Monitor real-world Lee-only production use; review runtime logs periodically
+5. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
+6. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
+7. Add error tracking before broader multi-user exposure
+8. Establish production backup/restore procedures
+9. Consider paid tiers only when recovery, usage, or SLA requirements justify them
+10. Review Mapbox domain restrictions if map behavior fails on the custom domain
 
 ## Future Product Roadmap
 
