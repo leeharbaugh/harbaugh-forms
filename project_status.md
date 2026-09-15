@@ -1,10 +1,34 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-14 (Native Signing Stage 2 trusted server authority squash-merged to `main`; Stage 1 remains on development DB only; production Signing schema still absent)
+**As of:** 2026-09-15 (Native Signing Stages 1–2 merged; pre-Stage-3 architecture reconciliation recorded in `decisions.md`; Stage 3 not started; production Signing schema still absent)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
+
+### Native Signing Stage 3 — awaiting approval (architecture clarified 2026-09-15)
+
+**Status:** **Not started.** Documentation-only reconciliation completed so Stage 3 cannot be misread as creating Package Revision 1 during ordinary Draft editing.
+
+**Native Signing Stage 3 — Draft preparation backend and immutable activation-snapshot primitives**
+
+Stage 3 establishes the backend machinery needed to:
+
+* manage mutable Signing-owned Draft preparation state;
+* derive/freeze exact prepared document bytes when activation eventually occurs;
+* create/reuse immutable document versions correctly (same logical Signing Document only; no cross-document hash deduplication);
+* SHA-256 fingerprint immutable prepared versions;
+* build/validate a complete package-revision snapshot;
+* prove atomic promotion mechanics internally.
+
+Stage 3 must **not**:
+
+* create Package Revision 1 as a side effect of ordinary Draft preparation/editing;
+* treat Revision 1 as authoritative except as part of future activation through **Send for Signature** or **Begin In-Person Signing**;
+* expose Send / Begin In-Person Signing, participant credentials, `/sign`, ceremony, email, finalization, or production enablement;
+* claim integrity remediation/admin UI beyond recording durable mismatch rules.
+
+Create Signing remains mutable Draft setup. Activation remains the first immutable package freeze. `packet_forms.document_state` stays separate from Signing lifecycle.
 
 ### Native Signing Stage 2 trusted server authority (2026-09-14)
 
@@ -27,7 +51,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Explicitly still unavailable:** participant credentials/sessions, `/sign` routes, Send/In Progress ceremony, package revisions/PDF snapshots, artifacts, email/reminders, work queues/idempotency, co-agent management UI, production enablement.
 
-**Recommended Stage 3:** Package preparation / initial package revision + prepared document snapshots (still no participant credentials or ceremony UI), remaining behind the feature gate.
+**Recommended Stage 3:** See **Native Signing Stage 3 — awaiting approval** above (Draft preparation backend and activation-snapshot primitives; Revision 1 only at future activation).
 
 ### Native Signing Stage 1 foundation (2026-09-14)
 
@@ -62,7 +86,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 ### Native Signing Stage 2 note
 
-Stage 2 trusted server authority is merged to `main` (PR #34 → `18adfb7`). See **Native Signing Stage 2 trusted server authority** at the top of this file. Stage 3 (package preparation) has not started.
+Stage 2 trusted server authority is merged to `main` (PR #34 → `18adfb7`). See **Native Signing Stage 2 trusted server authority** above. Stage 3 has not started; see the Stage 3 awaiting-approval clarification (Draft preparation backend / activation-snapshot primitives; no Revision 1 during ordinary Draft editing).
 
 ### Signatures orientation and repository audit (2026-09-14)
 
@@ -1158,7 +1182,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signatures Stage 3 (awaiting approval):** package preparation / initial package revision + prepared document snapshots behind `NATIVE_SIGNING_ENABLED`; still no participant credentials or ceremony UI. Preserve F1–F11 + R12 Stage 1–2 deny-by-default / authorize-then-elevate tests. Do not enable in production.
+1. **Native Signatures Stage 3 (awaiting approval):** Draft preparation backend and immutable activation-snapshot primitives behind `NATIVE_SIGNING_ENABLED` — mutable Draft state, create/reuse of immutable document versions, SHA-256 fingerprints, and internal atomic package-revision promotion mechanics. Ordinary Draft editing must not create Package Revision 1; Revision 1 becomes authoritative only at future activation (Send / Begin In-Person Signing). Still no participant credentials, ceremony UI, email, or production enablement. Preserve F1–F11 + R12 Stage 1–2 deny-by-default / authorize-then-elevate tests.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically
