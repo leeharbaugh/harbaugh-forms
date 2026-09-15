@@ -57,6 +57,59 @@ Agents need a private Draft workspace before participants ever see a package. Tr
 
 ---
 
+## Mutable Draft signer-field instructions use `signing_draft_fields`, not revision-scoped `signing_fields`
+
+**Date:** 2026-09-15
+
+**Decision:**
+Stage 3 Draft preparation stores Signature / Initials / linked system DATE_SIGNED placement instructions in **`signing_draft_fields`**. Revision-scoped **`signing_fields`** remain immutable package-revision evidence created only during promotion.
+
+`signing_documents` and `signing_participants` are the mutable Signing-level Draft records for logical documents and participants. After a logical document has prepared versions or package-revision history, removing it from Draft soft-excludes it via **`included_in_draft = false`** rather than deleting historical evidence rows. Later revisions may omit that document while earlier revisions retain it.
+
+Ordinary Draft add/edit/reorder/remove of documents, participants, and draft fields must not create `signing_document_versions` or `signing_package_revisions`. Internal promotion may create those only when invoked deliberately (future activation, or Stage 3 tests/validators).
+
+**Reason:**
+`signing_fields` was designed as frozen revision evidence. Reusing it for mutable Draft editing would blur evidence with preparation and risk rewriting promoted placements. Soft exclusion preserves the “complete revision snapshot / omit without rewriting history” rule.
+
+**Consequences:**
+
+* Browser clients remain denied on `signing_draft_fields` under the same server-authoritative Signing-write model as Stage 1 evidence tables.
+* Promotion copies Draft field instructions into revision-scoped `signing_fields` and advances `current_package_revision_id` only after the complete snapshot validates.
+* Send / Begin In-Person Signing remain Stage 4+; Stage 3 does not export activation actions.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260915120000_native_signing_stage3_draft_preparation.sql`
+* `supabase/migrations/20260915130000_native_signing_stage3_draft_document_inclusion.sql`
+* `lib/signing/draft-*.ts`, `package-promotion.ts`, `document-versions.ts`, `prepare-pdf.ts`, `integrity.ts`
+
+---
+
+## Prepared Signing PDFs render working-document Fill Form content; annotations are not ceremony evidence
+
+**Date:** 2026-09-15
+
+**Decision:**
+When promotion prepares an immutable PDF for a Signing Document, the trusted renderer reuses the existing Fill Form pipeline (`getFilledPacketFormPdfBytes` / `fillPacketFormPdfBytes`). That means the prepared PDF includes the working packet form’s field overlays and ACTIVE `typed_signature` / `date_signed` annotations as **working-document visual content**.
+
+Those Fill Form annotations are **not** Native Signing ceremony evidence. Ceremony Signature / Initials / Date Signed placements are Draft instructions (`signing_draft_fields`) that freeze into revision-scoped `signing_fields` and are later fulfilled by participant adopted marks/placements. Prepared-PDF rendering does not apply ceremony marks.
+
+**Reason:**
+Participants must see the same working-document content the agent prepared. Reusing the proven Fill Form render path avoids inventing a second PDF pipeline while preserving the settled separation between agent markup and Signing ceremony evidence.
+
+**Consequences:**
+
+* Changing working-document content or annotations changes the prepared-byte fingerprint and requires a new document version for that logical Signing Document.
+* Integrity verification hashes exact stored prepared bytes; mismatch preserves the recorded fingerprint and fails closed for reuse/promotion.
+* No admin integrity remediation UI is implied by Stage 3.
+
+**Related files or migrations:**
+
+* `lib/signing/prepare-pdf.ts`, `lib/packet-form-download.ts`, `lib/fill-packet-form-pdf.ts`
+* This file: Fill Form annotations vs Signing evidence (orientation); Package revision / SHA-256 decisions (2026-09-14/15)
+
+---
+
 ## Package revisions may reuse unchanged Signing document versions
 
 **Date:** 2026-09-15

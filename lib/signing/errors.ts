@@ -12,7 +12,10 @@ export type SigningErrorCode =
   | "NOT_FOUND"
   | "INVALID_INPUT"
   | "INVALID_PACKET"
-  | "CONFLICT";
+  | "CONFLICT"
+  | "STALE_SOURCE"
+  | "INTEGRITY_MISMATCH"
+  | "VALIDATION_FAILED";
 
 export class SigningError extends Error {
   readonly code: SigningErrorCode;

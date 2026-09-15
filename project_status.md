@@ -1,36 +1,48 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-15 (Native Signing Stages 1–2 merged; pre-Stage-3 architecture reconciliation recorded in `decisions.md`; Stage 3 not started; production Signing schema still absent)
+**As of:** 2026-09-15 (Native Signing Stage 3 implemented on feature branch; Stages 1–2 merged; production Signing schema still absent)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
-### Native Signing Stage 3 — awaiting approval (architecture clarified 2026-09-15)
+### Native Signing Stage 3 — Draft preparation + activation-snapshot primitives (2026-09-15)
 
-**Status:** **Not started.** Documentation-only reconciliation completed so Stage 3 cannot be misread as creating Package Revision 1 during ordinary Draft editing.
+**Status:** **Implemented on feature branch `feat/native-signing-stage-3` (not merged).** Development migrations applied to `harbaugh-forms-dev` only. **Default-off feature gate still required.** **No Send / Begin In-Person Signing / ceremony UI / credentials / email / production enablement.** Production Native Signing remains unavailable (no Stage 1 schema there).
 
-**Native Signing Stage 3 — Draft preparation backend and immutable activation-snapshot primitives**
+| Item | Result |
+|------|--------|
+| Feature branch | `feat/native-signing-stage-3` from `main` `6a74732` (docs reconciliation PR #35) |
+| Migrations (dev) | `20260915120000_native_signing_stage3_draft_preparation.sql`; `20260915130000_native_signing_stage3_draft_document_inclusion.sql`; `20260915140000_native_signing_stage3_draft_display_order_partial.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| Production migrations | **Not applied**; prod still has no `signing_*` tables / no `signing-artifacts` / no `NATIVE_SIGNING_ENABLED` |
+| Draft model | Mutable `signing_documents` (+ display metadata + `included_in_draft`), `signing_participants`, and new `signing_draft_fields`; revision-scoped `signing_fields` remain immutable evidence |
+| Draft ops | Trusted server document add/remove/reorder/metadata; participant add/update/remove; Signature/Initials/DATE_SIGNED draft fields; Stage 3 server actions authorize-then-elevate |
+| Prepared PDF | `renderPreparedPacketFormPdf` reuses `getFilledPacketFormPdfBytes` / Fill Form pipeline; stale `update_date` guard; ceremony marks not applied |
+| Document versions | `ensurePreparedDocumentVersion`: render → SHA-256 → opaque Storage key → upload/verify → insert; same-document reuse only; mismatch fails closed |
+| Package promotion | Internal `promotePackageRevisionFromDraftWithActor` only (not browser-exported): prepare versions first, draft fingerprint TOCTOU checks, complete revision snapshot, advance `current_package_revision_id` last; incomplete revision abandoned; pointer rollback is CAS-scoped to this promotion only |
+| Browser/RLS | Stage 1 deny-by-default preserved; `signing_draft_fields` deny + FORCE RLS + grants revoked |
+| Tests | `test:native-signing-stage3`; `validate:native-signing-stage3-dev`; Stage 1–2 tests/validators; R3/R5/R7/R8/R9/R10 + annotation-auth + secure-publish + PDF regressions; `npm audit --omit=dev` 0; `tsc`; Stage 3 ESLint; `git diff --check`; `build:validate` |
 
-Stage 3 establishes the backend machinery needed to:
+**Draft preparation representation:**
 
-* manage mutable Signing-owned Draft preparation state;
-* derive/freeze exact prepared document bytes when activation eventually occurs;
-* create/reuse immutable document versions correctly (same logical Signing Document only; no cross-document hash deduplication);
-* SHA-256 fingerprint immutable prepared versions;
-* build/validate a complete package-revision snapshot;
-* prove atomic promotion mechanics internally.
+* Logical documents: `signing_documents` (mutable Draft inclusion via `included_in_draft`; soft-exclude after versions/revision history exist).
+* Participants: `signing_participants` (Signing-owned name/email/role; optional User/Contact links).
+* Signer fields: **`signing_draft_fields`** (additive) — not `signing_fields`.
+* Ordinary Draft editing creates **no** `signing_document_versions` and **no** `signing_package_revisions`.
 
-Stage 3 must **not**:
+**Immutable activation-snapshot machinery (internal only):**
 
-* create Package Revision 1 as a side effect of ordinary Draft preparation/editing;
-* treat Revision 1 as authoritative except as part of future activation through **Send for Signature** or **Begin In-Person Signing**;
-* expose Send / Begin In-Person Signing, participant credentials, `/sign`, ceremony, email, finalization, or production enablement;
-* claim integrity remediation/admin UI beyond recording durable mismatch rules.
+* Exact prepared PDF bytes + SHA-256 fingerprint + private `signing-artifacts` objects.
+* Same-logical-document version reuse; no cross-document hash dedupe.
+* Integrity verification preserves expected hash and fails closed for promotion/reuse.
+* Complete package revision freeze (documents/versions, participants, evidence `signing_fields`, pointer advance).
 
-Create Signing remains mutable Draft setup. Activation remains the first immutable package freeze. `packet_forms.document_state` stays separate from Signing lifecycle.
+**Explicitly still unavailable (Stage 4+):** Send for Signature; Begin In-Person Signing; lifecycle leave-Draft activation; participant credentials/sessions; `/sign`; ceremony UI; email/reminders; integrity admin UI; protected-key event chain; production enablement.
+
+**Recommended next:** Open/review Stage 3 PR → merge when approved → Stage 4 activation (Send / Begin In-Person) calling the internal promotion primitive.
 
 ### Native Signing Stage 2 trusted server authority (2026-09-14)
+
 
 **Status:** **Code merged to `main`.** **Default-off feature gate still required.** **No ceremony UI, credentials, PDF preparation, email, or production rollout.** Production Native Signing remains unavailable (no Stage 1 schema there).
 
@@ -51,7 +63,7 @@ Create Signing remains mutable Draft setup. Activation remains the first immutab
 
 **Explicitly still unavailable:** participant credentials/sessions, `/sign` routes, Send/In Progress ceremony, package revisions/PDF snapshots, artifacts, email/reminders, work queues/idempotency, co-agent management UI, production enablement.
 
-**Recommended Stage 3:** See **Native Signing Stage 3 — awaiting approval** above (Draft preparation backend and activation-snapshot primitives; Revision 1 only at future activation).
+**Recommended Stage 3:** Implemented on `feat/native-signing-stage-3` (see Stage 3 section above); not yet merged.
 
 ### Native Signing Stage 1 foundation (2026-09-14)
 
@@ -86,7 +98,7 @@ Create Signing remains mutable Draft setup. Activation remains the first immutab
 
 ### Native Signing Stage 2 note
 
-Stage 2 trusted server authority is merged to `main` (PR #34 → `18adfb7`). See **Native Signing Stage 2 trusted server authority** above. Stage 3 has not started; see the Stage 3 awaiting-approval clarification (Draft preparation backend / activation-snapshot primitives; no Revision 1 during ordinary Draft editing).
+Stage 2 trusted server authority is merged to `main` (PR #34 → `18adfb7`). See **Native Signing Stage 2 trusted server authority** above. Stage 3 Draft preparation + activation-snapshot primitives are implemented on `feat/native-signing-stage-3` (not merged).
 
 ### Signatures orientation and repository audit (2026-09-14)
 
@@ -1182,16 +1194,17 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signatures Stage 3 (awaiting approval):** Draft preparation backend and immutable activation-snapshot primitives behind `NATIVE_SIGNING_ENABLED` — mutable Draft state, create/reuse of immutable document versions, SHA-256 fingerprints, and internal atomic package-revision promotion mechanics. Ordinary Draft editing must not create Package Revision 1; Revision 1 becomes authoritative only at future activation (Send / Begin In-Person Signing). Still no participant credentials, ceremony UI, email, or production enablement. Preserve F1–F11 + R12 Stage 1–2 deny-by-default / authorize-then-elevate tests.
-2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
-3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
-4. Monitor real-world Lee-only production use; review runtime logs periodically
-5. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
-6. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
-7. Add error tracking before broader multi-user exposure
-8. Establish production backup/restore procedures
-9. Consider paid tiers only when recovery, usage, or SLA requirements justify them
-10. Review Mapbox domain restrictions if map behavior fails on the custom domain
+1. **Native Signatures Stage 3 review / merge (when approved):** Feature branch `feat/native-signing-stage-3` — Draft preparation backend + internal activation-snapshot primitives. Do not begin Stage 4 until Stage 3 is reviewed. Still no production enablement.
+2. **Native Signatures Stage 4 (not started):** Expose activation via Send for Signature / Begin In-Person Signing by invoking the Stage 3 promotion primitive; advance lifecycle appropriately. Preserve F1–F11 + R12 Stage 1–3 tests.
+3. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
+4. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
+5. Monitor real-world Lee-only production use; review runtime logs periodically
+6. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
+7. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
+8. Add error tracking before broader multi-user exposure
+9. Establish production backup/restore procedures
+10. Consider paid tiers only when recovery, usage, or SLA requirements justify them
+11. Review Mapbox domain restrictions if map behavior fails on the custom domain
 
 ## Future Product Roadmap
 
