@@ -1,4 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  loadDraftSourceSnapshotById,
+  renderPreparedPdfFromDraftSnapshot,
+} from "./draft-source-snapshots";
 import { SigningError } from "./errors";
 import {
   assertTrustedIntegrity,
@@ -7,7 +11,7 @@ import {
 import {
   buildPreparedVersionObjectKey,
   newOpaqueId,
-  renderPreparedPacketFormPdf,
+  requireSelectedDraftSourceSnapshotId,
   uploadPreparedPdfObject,
 } from "./prepare-pdf";
 import type { SigningActor } from "./types";
@@ -35,6 +39,9 @@ export type EnsurePreparedVersionResult = {
  * Create or reuse an immutable prepared document version for one logical
  * Signing Document. Reuse is scoped to the same signing_document only.
  * Does not advance package-revision pointers.
+ *
+ * Stage 4: prepared bytes are rendered from the document's selected Draft
+ * source snapshot, never from live Packet Form content.
  */
 export async function ensurePreparedDocumentVersion(options: {
   actor: SigningActor;
@@ -67,10 +74,22 @@ export async function ensurePreparedDocumentVersion(options: {
     );
   }
 
-  const prepared = await renderPreparedPacketFormPdf({
+  const snapshotId = requireSelectedDraftSourceSnapshotId(document);
+  const snapshot = await loadDraftSourceSnapshotById(
+    options.admin,
+    options.signingId,
+    snapshotId,
+  );
+  if (!snapshot) {
+    throw new SigningError(
+      "VALIDATION_FAILED",
+      "The selected Draft source snapshot for this document is missing.",
+    );
+  }
+
+  const prepared = await renderPreparedPdfFromDraftSnapshot({
     admin: options.admin,
-    packetFormId: document.source_packet_form_id as number,
-    expectedOwnerUserId: options.actor.userId,
+    snapshot,
   });
 
   const { data: existingVersions, error: existingError } = await options.admin

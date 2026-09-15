@@ -1,10 +1,35 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-15 (Native Signing Stages 1–3 merged to `main`; Stage 3 DB remains development-only; production Signing schema still absent)
+**As of:** 2026-09-15 (Native Signing Stage 4 implemented on feature branch; Stages 1–3 on `main`; Stage 4 DB development-only; production Signing schema still absent)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
+
+### Native Signing Stage 4 — Draft source snapshots + activation foundation (2026-09-15)
+
+**Status:** **Implemented on `feat/native-signing-stage-4` (not merged).** Development migrations applied to `harbaugh-forms-dev` only. **Default-off feature gate still required.** **No participant signature/initials ceremony, Finish Signing, finalization, or production enablement.** Production Native Signing remains unavailable.
+
+| Item | Result |
+|------|--------|
+| Feature branch | `feat/native-signing-stage-4` from `main` `d57e11c` |
+| Migrations (dev) | `20260915160000_native_signing_stage4_draft_snapshots_activation.sql`; `20260915161000_native_signing_stage4_credential_wrap.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| Production migrations | **Not applied** |
+| Draft source snapshots | `signing_draft_source_snapshots`: exact source PDF in `signing-artifacts` + `field_views_json` + `annotations_json` + `content_fingerprint`; selected via `signing_documents.selected_draft_source_snapshot_id` |
+| Drift | Server fingerprint of live render inputs vs selected snapshot; `CURRENT` / `SOURCE_CHANGED` / `SOURCE_UNAVAILABLE`; Keep Current acknowledges one live fingerprint; Update to Latest inserts a **new** snapshot |
+| Re-include | Preserves selected Draft snapshot; surfaces Source Changed if live drifted; no silent refresh |
+| Prepared PDF | Promotion/activation renders from selected Draft snapshot (not live `packet_form`) |
+| Dashboard / readiness | `/signings/[signingId]` + derived preflight (never a Ready lifecycle state) |
+| Activation | Common `activateSigningWithActor` (`REMOTE_SEND` \| `IN_PERSON`); idempotency via `signing_operation_idempotency`; Revision 1 + credentials then Draft → In Progress |
+| Credentials | `signing_participant_credentials`: `token_hash` verifier + server-only `token_wrapped` for invitation retry; unusable until In Progress |
+| Delivery | Outbox `signing_work_items` + instructions/attempts; email failure does not undo activation; IN_PERSON skips invitation emails |
+| Entry shell | `/sign/[token]` validates credential; “I am [Name]” disabled; ceremony pending |
+| Browser/RLS | Stage 4 tables deny-by-default + FORCE RLS; grants revoked |
+| Tests | `npm run test:native-signing-stage4`; `npm run validate:native-signing-stage4-dev` |
+
+**Still absent (next stage / later):** participant Signature/Initials ceremony, Finish Signing, Decline UX, amendment lock UI, reminders, completed PDFs/audit certificate, completion emails, copy recipients, admin integrity UI, protected-key event chain, production enablement.
+
+**Recommended next:** Review Stage 4 on the feature branch; do not merge or begin the ceremony stage until an explicit prompt.
 
 ### Native Signing Stage 3 — Draft preparation + activation-snapshot primitives (2026-09-15)
 
@@ -36,9 +61,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Stage 3 implementation gap vs approved Draft source-snapshot model:**
 
-* Current Stage 3 stores a live `source_packet_form_id` on `signing_documents` and, at internal promotion time, renders prepared PDF bytes from the **current** working `packet_form`.
-* That is **not** yet a sufficient reproducible Signing-owned Draft source snapshot (an `update_date`/fingerprint alone would also be insufficient without reproducible source state).
-* Stage 4 must implement the hybrid Draft-source-snapshot model—and Source Changed / Keep Current / Update to Latest semantics—**before** exposing activation. Do not begin Stage 4 until explicitly prompted.
+* **Closed by Stage 4 on `feat/native-signing-stage-4`.** Stage 3 historically stored only live `source_packet_form_id` and rendered the current `packet_form` at promotion. Stage 4 adds reproducible Draft source snapshots, drift detection, Keep Current / Update to Latest, and snapshot-based promotion/activation. Until Stage 4 merges, `main` still has the Stage 3 gap.
 
 **Immutable activation-snapshot machinery (internal only):**
 
@@ -47,9 +70,9 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 * Integrity verification preserves expected hash and fails closed for promotion/reuse.
 * Complete package revision freeze (documents/versions, participants, evidence `signing_fields`, pointer advance).
 
-**Explicitly still unavailable (Stage 4+), dependency order:** (1) reproducible Draft document source snapshots; (2) source-change detection; (3) Keep Current / Update to Latest; (4) Signing dashboard readiness/preflight; (5) participant access-state preparation/activation boundary; (6) common activation algorithm for Send / Begin In-Person; (7) Package Revision 1 promotion; (8) Draft → In Progress; (9) then remote delivery **or** in-person ceremony launch. Also later: `/sign`; ceremony UI; email/reminders beyond activation boundary; integrity admin UI; protected-key event chain; production enablement.
+**Explicitly still unavailable on `main` (Stage 4+):** reproducible Draft document source snapshots; source-change detection + Keep Current / Update to Latest; Signing dashboard readiness/preflight; common activation; participant credentials; delivery outbox; `/sign` entry shell; ceremony; production enablement. See Stage 4 section above for the feature-branch implementation.
 
-**Recommended next:** Await an explicit Stage 4 design/implementation prompt. Stage 4 must implement reproducible Draft source snapshots (and drift/Keep-Current semantics) **before** exposing activation. Do not begin Stage 4.
+**Recommended next:** Review/merge Stage 4 when ready; do not begin the ceremony stage until an explicit prompt.
 
 ### Native Signing Stage 2 trusted server authority (2026-09-14)
 
@@ -1204,7 +1227,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signatures Stage 4 (awaiting explicit approval):** Do not begin until an explicit Stage 4 prompt. Stage 4 must **not** begin directly with Send while the source-snapshot gap remains. Dependency order: (1) reproducible Draft document source snapshots (Stage 3 only stores live `source_packet_form_id` and renders the current `packet_form` at promotion—insufficient); (2) source-drift detection; (3) explicit Keep Current / Update to Latest; (4) Signing dashboard readiness/preflight; (5) participant access-state preparation/activation boundary; (6) common activation algorithm for Send and Begin In-Person; (7) promote canonical Revision 1; (8) Draft → In Progress only after Revision 1 + required access state; (9) then branch to remote delivery **or** in-person ceremony launch (email failure must not undo activation evidence). Future activation should call Stage 3’s internal promotion primitive once Draft snapshots are reproducible. Preserve F1–F11 + R12 Stage 1–3 tests. Still no production enablement.
+1. **Native Signatures Stage 4 (feature branch ready for review):** Implemented on `feat/native-signing-stage-4`. Do not merge or begin the ceremony/finalization stage until an explicit prompt. Preserve F1–F11 + R12 Stage 1–4 tests. Still no production enablement.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically
@@ -1217,7 +1240,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Future Product Roadmap
 
-Two **major** planned feature areas. They are related through the packet/document model, but they are **distinct product efforts**. Native Signing architecture is recorded in `decisions.md`; Stages 1–3 are merged to `main` (Stage 3 DB development-only). Stage 4 (dashboard, Draft source snapshots, activation) has **not** started. Imported-document markup remains separate.
+Two **major** planned feature areas. They are related through the packet/document model, but they are **distinct product efforts**. Native Signing architecture is recorded in `decisions.md`; Stages 1–3 are merged to `main` (Stage 3 DB development-only). Stage 4 (Draft source snapshots + activation foundation) is implemented on `feat/native-signing-stage-4` and is **not** merged. Ceremony/finalization has **not** started. Imported-document markup remains separate.
 
 ### Native E-Signature Workflow
 

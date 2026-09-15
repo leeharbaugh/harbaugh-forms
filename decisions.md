@@ -195,6 +195,32 @@ Send and in-person launch are different participant experiences over one evident
 
 ---
 
+## Draft source snapshots store exact render inputs; credentials hash with optional server wrap
+
+**Date:** 2026-09-15
+
+**Decision:**
+Stage 4 persists each Draft document selection as a row in **`signing_draft_source_snapshots`**: exact source PDF bytes in the private `signing-artifacts` bucket, JSON render inputs (`field_views_json`, `annotations_json`) sufficient for `fillPacketFormPdfBytes`, and a content fingerprint over those inputs. Logical documents point at the selected snapshot via `selected_draft_source_snapshot_id`. Snapshots are immutable preparation rows; Update to Latest inserts a new snapshot rather than rewriting the prior one.
+
+Participant invitation credentials store a SHA-256 **`token_hash`** for authentication. A server-only AES-GCM **`token_wrapped`** value may exist solely so invitation delivery can retry the **same** link without logging or browser exposure of the raw bearer. Raw tokens never appear in events, work-item `reference_json`, or ordinary logs. Credentials remain unusable until the Signing is **In Progress**.
+
+**Reason:**
+Fingerprints alone cannot reproduce a PDF after the live form changes. Storing prepared Signing PDF evidence at document-add time would violate the Draft/evidence boundary. Invitation retry must reuse the same credential/link unless revoked, which requires a server-recoverable form that is not plaintext and is not the auth verifier.
+
+**Consequences:**
+
+* Prefer `SIGNING_CREDENTIAL_WRAP_KEY`; fall back to hashing `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` only when unset.
+* Promotion and activation must render from the selected Draft snapshot, never live packet-form content.
+* No schema/application change is authorized for production by this decision alone.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260915160000_native_signing_stage4_draft_snapshots_activation.sql`
+* `supabase/migrations/20260915161000_native_signing_stage4_credential_wrap.sql`
+* `lib/signing/draft-source-snapshots.ts`, `credentials.ts`, `activation.ts`, `delivery.ts`
+
+---
+
 ## Mutable Draft signer-field instructions use `signing_draft_fields`, not revision-scoped `signing_fields`
 
 **Date:** 2026-09-15

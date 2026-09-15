@@ -35,6 +35,28 @@ export const NATIVE_SIGNING_STAGE3_MIGRATIONS = [
   "20260915140000_native_signing_stage3_draft_display_order_partial",
 ] as const;
 
+/**
+ * Stage 4 additive tables: Draft source snapshots (preparation state),
+ * participant credentials (hash only), operation idempotency, and the
+ * durable delivery outbox. None of these are signer evidence.
+ */
+export const NATIVE_SIGNING_STAGE4_TABLES = [
+  "signing_draft_source_snapshots",
+  "signing_participant_credentials",
+  "signing_operation_idempotency",
+  "signing_work_items",
+  "signing_delivery_instructions",
+  "signing_delivery_attempts",
+] as const;
+
+export const NATIVE_SIGNING_STAGE4_MIGRATIONS = [
+  "20260915160000_native_signing_stage4_draft_snapshots_activation",
+  "20260915161000_native_signing_stage4_credential_wrap",
+] as const;
+
+export type NativeSigningStage4Table =
+  (typeof NATIVE_SIGNING_STAGE4_TABLES)[number];
+
 
 export type NativeSigningStage1Table =
   (typeof NATIVE_SIGNING_STAGE1_TABLES)[number];
