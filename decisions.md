@@ -25,13 +25,14 @@ During Draft preparation:
 * Draft configuration may continue changing (documents, participants, fields, and related preparation state as later stages allow).
 * Ordinary Draft preparation does **not** continually create immutable prepared PDFs.
 * Ordinary Draft preparation does **not** create Package Revision 1 or any other `signing_package_revision`.
+* Adding a document to a Draft Signing selects a **Signing-owned Draft source snapshot** for that logical document; it does **not** create a `signing_document_version`, an immutable prepared PDF, or a package revision. See **Draft document selections use Signing-owned source snapshots until activation** (2026-09-15).
 
 The first package revision is created only when the Signing is **activated** through:
 
 * **Send for Signature**, or
 * **Begin In-Person Signing**.
 
-At activation, the current Draft configuration is atomically frozen/promoted as **Package Revision 1** under the existing promoted-package-revision rules. Later permitted pre-signature amendments create later monotonically numbered package revisions. The first accepted signature or initial permanently pins/freezes the applicable revision according to the existing amendment/freeze decisions.
+At activation, the **currently selected Draft configuration**—including each document's selected Draft source snapshot—is atomically frozen/promoted as **Package Revision 1** under the existing promoted-package-revision rules. Later permitted pre-signature amendments create later monotonically numbered package revisions. The first accepted signature or initial permanently pins/freezes the applicable revision according to the existing amendment/freeze decisions.
 
 `packet_forms.document_state` remains separate from Signing lifecycle. Creating, activating, or completing a Signing does not require `FINAL` and must not use `SIGNED` to represent Native Signing progress.
 
@@ -46,13 +47,150 @@ Agents need a private Draft workspace before participants ever see a package. Tr
 * Stage 3 and later preparation work must not promote Package Revision 1 merely because Draft state changed.
 * Revision 1 becomes authoritative only as part of activation (Send or Begin In-Person Signing), not as a side effect of Draft editing.
 * Pre-signature amendments after activation continue to use exclusive locks and complete atomic package revisions.
-* Exact Draft-state storage, activation transaction shape, and UI copy remain technical design / later stages.
-* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+* Draft source-snapshot representation, Keep Current / Update to Latest mechanics, common activation transaction shape, and UI copy remain Stage 4+ technical design where not already implemented.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this documentation reconciliation alone.
 
 **Related files or migrations:**
 
-* `project_status.md` (Stage 3 scope clarification)
-* This file: **Promoted package revisions are complete, immutable, and atomically actionable** (2026-09-14); **Working Signing data model…** (2026-09-10); **Creating a Signing snapshots the working document without requiring Final** (2026-09-05, superseded for snapshot timing); **Signing lifecycle distinguishes setup…** (2026-09-05)
+* `project_status.md` (Stage 3/4 planning)
+* This file: **Draft document selections use Signing-owned source snapshots until activation** (2026-09-15); **Send and Begin In-Person Signing share one activation model** (2026-09-15); **Promoted package revisions are complete, immutable, and atomically actionable** (2026-09-14); **Working Signing data model…** (2026-09-10); **Creating a Signing snapshots the working document without requiring Final** (2026-09-05, superseded for snapshot timing); **Signing lifecycle distinguishes setup…** (2026-09-05)
+* No SQL migration; no schema change
+
+---
+
+## Draft document selections use Signing-owned source snapshots until activation
+
+**Date:** 2026-09-15
+
+**Decision:**
+Harbaugh Forms uses a **hybrid Draft-source-snapshot model** for documents included in a Draft Signing.
+
+### Three distinct concepts
+
+1. **Draft source snapshot** — Signing-owned preparation state capturing the persisted working-document source the agent selected when (or after) adding a logical Signing Document. It must preserve enough reproducible source data and provenance to render that selected state later even if the live `packet_form` changes. Merely storing an `update_date`, revision counter, or hash/fingerprint **without** reproducible source state is insufficient.
+2. **Immutable prepared document version** (`signing_document_versions`) — the exact SHA-256-fingerprinted prepared PDF evidence created or reused at package promotion.
+3. **Package Revision** (`signing_package_revisions` and revision-scoped children) — the complete promoted package composition participants may act upon. Package Revision 1 is created only at activation.
+
+These are not interchangeable. A Draft source snapshot is **not** a `signing_document_version`, not an immutable prepared Signing PDF, not a Package Revision, not Revision 1, and not participant-actionable evidence.
+
+### Adding a document to Draft
+
+When an agent adds an eligible working `packet_form` to a Draft Signing:
+
+* Harbaugh Forms records the logical `signing_document`; and
+* Harbaugh Forms captures a Signing-owned Draft source snapshot of the persisted source state selected at that moment.
+
+Ordinary Draft add/edit/reorder/remove of documents, participants, or Draft signer fields still creates neither a permanent immutable prepared PDF nor any `signing_package_revision`. Permanent immutable prepared document versions are created or safely reused only when package promotion occurs.
+
+### Live source changes never silently rewrite the Draft selection
+
+If the working `packet_form` later changes—seconds later, minutes later, in another session, or before the agent returns to the Signing dashboard:
+
+* the selected Draft source snapshot does **not** automatically change;
+* the Signing continues to refer to the source state previously selected by the agent;
+* Harbaugh Forms detects that the live source differs from the Draft-selected source state;
+* the Signing dashboard / readiness preflight surfaces a **Source Changed** (or equivalent) condition;
+* the system must not silently replace the selected Draft state with the current working source.
+
+### Explicit agent choice: Keep Current or Update to Latest
+
+A detected source change requires an explicit agent decision before activation. Exact UI wording is not settled here. The durable choices are:
+
+* **Keep Current Signing Version / keep current Draft source state** — the Draft continues using its previously captured Draft source snapshot; later activation renders that selected state; the newer live `packet_form` is not substituted.
+* **Update to Latest** — a deliberate Draft preparation action that replaces/advances the Draft source snapshot to the then-current persisted source state. It still does **not** create a permanent immutable prepared PDF, package revision, or Revision 1.
+
+Activation must not infer either choice.
+
+### Activation uses the selected Draft source snapshot
+
+When the agent confirms **Send** or **Begin In-Person Signing**, the common activation algorithm uses each document's **currently selected Draft source snapshot**, not whatever happens to be in the mutable live `packet_form` at that instant. Activation then renders that selected state into exact prepared PDF bytes, creates or reuses the appropriate immutable `signing_document_version`, fingerprints exact stored bytes, and freezes Package Revision 1 under the existing promotion rules.
+
+### After promotion, immutability is absolute
+
+Once a `signing_document_version` is included in a promoted package revision:
+
+* later edits to the source `packet_form` never modify it;
+* later Draft-source changes never modify it;
+* later package revisions never rewrite it;
+* historical package revisions continue pointing to the exact versions they originally contained.
+
+If an eligible pre-signature amendment deliberately adopts newer source content, the system selects a new Draft source state and subsequent promotion creates a new immutable version when prepared bytes differ; earlier versions and revisions remain preserved. This is never an automatic update of an old Revision.
+
+**Reason:**
+Agents need Draft selections to remain stable and intentional while still deferring evidentiary PDF freeze until activation. Silently following the live working document would make the Signing package ambiguous and could surprise the agent at Send time. Creating permanent PDF evidence at document-add time would reintroduce the superseded “Create Signing = immutable snapshot” timing and inflate immutable storage during private preparation.
+
+**Consequences:**
+
+* Stage 3's Draft/evidence table separation remains intact: `signing_documents` / `signing_participants` / `signing_draft_fields` are preparation; `signing_document_versions` and package-revision tables are promoted evidence.
+* Ready/preflight must treat unresolved source-change conditions as activation blockers until the agent explicitly keeps or updates the Draft source snapshot.
+* Exact Draft source-snapshot storage/representation remains technical design. Current Stage 3 code stores a live `source_packet_form_id` and renders from the current `packet_form` at internal promotion time; that is **not** yet a sufficient reproducible Draft source snapshot. Stage 4 must implement the approved hybrid model before exposing activation.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this documentation decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (Stage 3 gap + Stage 4 prerequisite)
+* This file: **Draft Signing creation establishes mutable preparation state…** (2026-09-15); **Send and Begin In-Person Signing share one activation model** (2026-09-15); **Package revisions may reuse unchanged Signing document versions** (2026-09-15); **Creating a Signing snapshots the working document without requiring Final** (2026-09-05, superseded for snapshot timing)
+* No SQL migration; no schema change
+
+---
+
+## Send and Begin In-Person Signing share one activation model
+
+**Date:** 2026-09-15
+
+**Decision:**
+The agent dashboard presents two activation choices for a Draft Signing:
+
+* **Send** (remote invitation path after activation); and
+* **Begin In-Person Signing** (supervised in-person ceremony/handoff path after activation).
+
+Both choices:
+
+1. perform/display readiness validation / preflight;
+2. require explicit agent confirmation;
+3. invoke the **same common activation algorithm**;
+4. produce the same canonical immutable package state (Package Revision 1 and required participant-access state);
+5. move the Signing from **Draft → In Progress** only after that durable activation state exists.
+
+They diverge **only after** common activation succeeds:
+
+* Send proceeds to remote invitation/delivery behavior;
+* Begin In-Person Signing proceeds to the supervised in-person ceremony/handoff behavior.
+
+There are not two different definitions of what constitutes an activated package.
+
+### Activation success boundary
+
+A Signing becomes **In Progress** only after the common activation operation has durably established:
+
+* the canonical promoted Package Revision 1 (including exact prepared document versions, participant snapshots, and frozen signer fields); and
+* the required participant access state/credentials for that activated Signing.
+
+Participant identity/contact information is prepared while the Signing is still Draft. Bearer access secrets/tokens do not need to exist merely because a Signing is Draft; they become usable as part of successful activation.
+
+### Email delivery is outside the activation-success boundary
+
+Remote email delivery is a separate retryable operational concern. Therefore:
+
+* email failure does **not** return the Signing to Draft;
+* email failure does **not** undo Revision 1;
+* email retry does **not** create Revision 2;
+* delivery status may be retried/monitored without mutating canonical activation evidence.
+
+**Reason:**
+Send and in-person launch are different participant experiences over one evidentiary package. Binding In Progress to durable package + access state prevents a Signing from appearing activated when participants cannot yet act, while keeping email out of the success boundary avoids turning a delivery outage into an evidence rollback.
+
+**Consequences:**
+
+* Stage 4 must implement one shared activation primitive used by both dashboard actions.
+* Delivery/retry systems must not rewrite package revisions or document versions.
+* Exact credential issuance, email provider wiring, and in-person handoff UI remain Stage 4+ technical design.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this documentation decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (Stage 4 planning)
+* This file: **Draft Signing creation establishes mutable preparation state…** (2026-09-15); **Draft document selections use Signing-owned source snapshots until activation** (2026-09-15); **Promoted package revisions are complete, immutable, and atomically actionable** (2026-09-14); **Signing lifecycle distinguishes setup…** (2026-09-05)
 * No SQL migration; no schema change
 
 ---
@@ -1312,7 +1450,7 @@ An emailed invitation, a long-lived completed-package link, and a short-lived br
 The following is the approved working relational model for native Signings. It records the table boundaries and relationships needed for later implementation; it does not authorize a migration or settle every column type, index, constraint, trigger, or access policy.
 
 * **`signings`** is the central workflow row. Its approved workflow-wide responsibility is refined by the later 2026-09-14 root-row decision. A Signing does not carry a single document foreign key because one Signing may contain many documents.
-* **`signing_documents`** is the Signing-owned logical-document row. It links to `signings`, optionally retains its source Packet Form/provenance, and remains the same logical contract or addendum across permitted revisions.
+* **`signing_documents`** is the Signing-owned logical-document row. It links to `signings`, retains provenance for the selected working Packet Form, and remains the same logical contract or addendum across permitted revisions. Under the 2026-09-15 hybrid Draft-source-snapshot model, Draft inclusion also captures a Signing-owned **Draft source snapshot** of the selected persisted source state; that preparation state is distinct from later immutable `signing_document_versions`. Exact Draft-snapshot representation remains technical design / Stage 4 where not yet implemented.
 * **`signing_document_versions`** contains the immutable prepared PDF versions of one `signing_document`, including ordered version lineage, supersession relationship, the package revision that introduced it, creation reason, source snapshot, prepared-artifact storage reference, and fingerprint. A completed signed PDF is not a replacement version in this table. Later package revisions may reuse an unchanged version of the same logical document; they must not overwrite it or invent cross-document deduplication by hash alone.
 * **`signing_package_revisions`** records each successfully promoted, whole-package configuration. It has a monotonic revision number per Signing, predecessor reference, initial/amendment reason, immutable amendment note where applicable, promoter snapshot, and promotion time. Private, incomplete Draft preparation is not itself a package revision; Package Revision 1 is created only at activation. `signings.current_package_revision_id` names the one actionable revision; after the first accepted signature or initial, `signings.frozen_package_revision_id` pins it and must identify that same revision.
 * **`signing_package_revision_documents`** binds each package revision to its exact `signing_document` and immutable `signing_document_version`. It preserves display order, the frozen document display name used by participants, filenames, and completed delivery, and a source-title snapshot. A later Packet Form rename never rewrites this record.
@@ -1412,7 +1550,7 @@ Agent history and current authority also remain distinct. Every Signing preserve
 
 Concurrency uses short renewable **participant-presence leases** and an exclusive **amendment lock**. No lease or lock is permanent or depends on a browser releasing it. Server time controls expiration; browsers can renew but cannot create unlimited duration. Crashes, sleeping devices, lost networks, and abandoned tabs naturally expire. A stale agent editor cannot save after losing its lock. Administrative clearing is limited to demonstrably stale locks and is audited. Heartbeat renewals are disposable operational data rather than immutable legal history.
 
-Each activated Signing has a monotonically increasing **package revision** representing the complete canonical combination of document versions, participants, identity snapshots, signer fields, assignments, and relevant preparation settings. Initial Draft configuration is privately prepared and atomically promoted as Revision 1 when sent or when an in-person ceremony begins. Each successfully saved eligible amendment creates the next revision. Participant links target the Signing and resolve its one authoritative current revision. The first accepted signature or initial permanently pins that revision. Older revisions remain preserved but not actionable.
+Each activated Signing has a monotonically increasing **package revision** representing the complete canonical combination of document versions, participants, identity snapshots, signer fields, assignments, and relevant preparation settings. Initial Draft configuration—including each document's selected Draft source snapshot—is privately prepared and atomically promoted as Revision 1 when Send or Begin In-Person Signing activates the Signing through the common activation algorithm. Each successfully saved eligible amendment creates the next revision. Participant links target the Signing and resolve its one authoritative current revision. The first accepted signature or initial permanently pins that revision. Older revisions remain preserved but not actionable.
 
 Amendment promotion atomically validates the lock and prior revision, creates replacement artifacts and assignments, creates the new package revision, advances the current pointer, appends events, and releases the lock. Failure leaves the prior revision fully current; participants never observe a partially promoted package.
 
@@ -2021,8 +2159,8 @@ Real participants do not fit mutually exclusive application-identity categories.
 **Decision:**
 A durable **Signing** has five user-facing/domain lifecycle states:
 
-* **Draft** — the Signing exists as mutable preparation state. The agent is still configuring documents, participants, and assigned signer fields. No participant may sign yet. Ordinary Draft preparation does not create Package Revision 1 or continually create immutable prepared PDFs; those freeze at activation under the 2026-09-15 / package-revision decisions.
-* **In Progress** — the Signing has been activated. Remote invitations may have been sent, or an in-person signing ceremony may have started. All required participants are eligible to sign. Until the first signature or initial is accepted, the agent may amend the Signing only under the exclusive-lock rules in the later 2026-09-05 decision. The first accepted signature or initial freezes the document set, participant roster, participant identity snapshots, and assigned signer fields.
+* **Draft** — the Signing exists and the agent is preparing its selected document source states, participants, and signer-field assignments. No participant may sign. Draft document selections are stable Signing-owned **Draft source snapshots**, but permanent immutable prepared document versions and Package Revision 1 do not yet exist. Ordinary Draft preparation does not create `signing_document_versions` or package revisions; those freeze at activation under the 2026-09-15 Draft-source-snapshot / package-revision decisions.
+* **In Progress** — the Signing has been activated through the common Send / Begin In-Person activation model (durable Package Revision 1 plus required participant access state). Remote invitations may then be attempted, or an in-person signing ceremony may start. All required participants are eligible to sign. Until the first signature or initial is accepted, the agent may amend the Signing only under the exclusive-lock rules in the later 2026-09-05 decision. The first accepted signature or initial freezes the document set, participant roster, participant identity snapshots, and assigned signer fields.
 * **Complete** — every required participant has completed every required signing action.
 * **Declined** — a participant affirmatively refused the whole Signing. The participant may provide an optional reason. No further signing is allowed within that Signing.
 * **Cancelled** — an authorized primary agent, co-agent, or brokerage administrator ended the Signing before completion with a required audit-history reason.
@@ -2033,8 +2171,8 @@ All events and evidence already collected remain preserved when a Signing is Dec
 
 **Ready**, **Sent**, **Partially Signed**, and **Expired** are not primary durable Signing states:
 
-* Ready is validation derived from whether a Draft has all required setup.
-* Sent is a remote-delivery event or presentation status and does not apply universally to in-person signing.
+* **Ready** remains derived state, not a durable Signing lifecycle status. A Draft may be considered ready only if activation preflight succeeds. The future Signing dashboard may surface blockers such as missing required participant information, unassigned signer fields, invalid participant assignments, integrity problems, source documents changed since their Draft snapshots were selected, and other already approved activation blockers. A detected source change requires an explicit agent decision (**Keep Current** or **Update to Latest**) before activation; activation must not infer the choice, and that resolution is part of readiness. See **Draft document selections use Signing-owned source snapshots until activation** (2026-09-15).
+* Sent is a remote-delivery event or presentation status and does not apply universally to in-person signing. Email delivery is outside the Draft → In Progress success boundary.
 * Partially Signed is derived from participant/action progress while the Signing remains In Progress.
 * Expired is not a Signing lifecycle state. Active-Signing and completed-package links do not automatically expire under the later 2026-09-06 decisions, although revoked links are disabled and may be replaced.
 
@@ -2048,7 +2186,8 @@ The lifecycle must work consistently for remote and in-person Signings while cle
 **Consequences:**
 
 * Participants cannot sign while a Signing is Draft.
-* Activating a Signing makes all required participants eligible. The first accepted signature or initial freezes its documents and signing configuration; changes after that boundary require cancelling or otherwise terminating that Signing and creating another one.
+* Activating a Signing (common Send / Begin In-Person algorithm) makes all required participants eligible only after durable Package Revision 1 and required participant access state exist. Email delivery is outside that success boundary. The first accepted signature or initial freezes its documents and signing configuration; changes after that boundary require cancelling or otherwise terminating that Signing and creating another one.
+* A Draft is Ready only when activation preflight succeeds, including explicit resolution of any Source Changed condition.
 * A participant decline terminates further signing in that Signing and is distinguishable from agent cancellation.
 * Terminal outcomes never erase partial signing evidence or append-only events.
 * UI may display derived readiness, delivery, partial-progress, and access-expiration information without turning those into primary Signing lifecycle states.
@@ -2058,7 +2197,7 @@ The lifecycle must work consistently for remote and in-person Signings while cle
 **Related files or migrations:**
 
 * `project_status.md` (status note only)
-* This file: **Draft Signing creation establishes mutable preparation state; package revisions freeze at activation** (2026-09-15); **Creating a Signing snapshots the working document without requiring Final** (2026-09-05, superseded for snapshot timing); **A Signing may be completed remotely or in person on a shared device** (2026-08-24)
+* This file: **Draft Signing creation establishes mutable preparation state; package revisions freeze at activation** (2026-09-15); **Draft document selections use Signing-owned source snapshots until activation** (2026-09-15); **Send and Begin In-Person Signing share one activation model** (2026-09-15); **Creating a Signing snapshots the working document without requiring Final** (2026-09-05, superseded for snapshot timing); **A Signing may be completed remotely or in person on a shared device** (2026-08-24)
 * No SQL migration; no schema change
 
 ---
@@ -2067,7 +2206,15 @@ The lifecycle must work consistently for remote and in-person Signings while cle
 
 **Date:** 2026-09-05
 
-**Status:** Superseded / refined for snapshot **timing**. The durable rules that Create Signing does **not** require `FINAL`, and that Signing progress must **not** be stored as `packet_forms.document_state = SIGNED`, remain in force. The claim that Creating a Signing itself is the immutable rendered-document / package snapshot boundary is superseded by **Draft Signing creation establishes mutable preparation state; package revisions freeze at activation** (2026-09-15) and **Promoted package revisions are complete, immutable, and atomically actionable** (2026-09-14). Historical decision text is retained below for provenance.
+**Status:** Superseded / refined for snapshot **timing** and Draft document selection semantics. The durable rules that Create Signing does **not** require `FINAL`, and that Signing progress must **not** be stored as `packet_forms.document_state = SIGNED`, remain in force.
+
+The historical claim that **“Creating a Signing is the immutable snapshot boundary”**—and any related implication that Create Signing immediately renders immutable `signing_document_version` rows / permanent prepared PDFs—is superseded by:
+
+* **Draft Signing creation establishes mutable preparation state; package revisions freeze at activation** (2026-09-15);
+* **Draft document selections use Signing-owned source snapshots until activation** (2026-09-15);
+* **Promoted package revisions are complete, immutable, and atomically actionable** (2026-09-14).
+
+Under the current architecture: Create Signing itself does **not** create a `signing_document_version`; adding a document to Draft creates a Signing-owned **Draft source snapshot**, not permanent immutable PDF evidence; Draft does **not** automatically follow live `packet_form` changes; activation renders the selected Draft source snapshot, not whatever the live working form happens to contain. Historical decision text is retained below for provenance.
 
 **Decision (historical):**
 Creating a **Signing** is the immutable snapshot boundary. The action captures the exact current state of each included working `packet_form` as an immutable rendered document version for that Signing. A `packet_form` does **not** need to be in `FINAL` document state before this action, and creating or completing a Signing does not change the working `packet_form` to `SIGNED`.
@@ -2075,6 +2222,8 @@ Creating a **Signing** is the immutable snapshot boundary. The action captures t
 The working document remains independent from the captured version. It may remain open and editable after the Signing is created. Later edits do not change the Signing's immutable version. If the revised document is sent for signatures later, the system creates another immutable version and ordinarily another Signing. Existing signed, partially signed, cancelled, or abandoned versions remain unchanged.
 
 If the editor contains unsaved changes when the user chooses **Create Signing**, that action must establish one clean persisted snapshot point before rendering. From the user's perspective, the current edits are secured and the immutable version is created as one action. Technical design must prevent the rendered version from mixing values from different saves or revisions. The exact concurrency mechanism is not defined here.
+
+**(Current refinement of the “later edits” idea):** After a document is added to a Draft Signing, later live `packet_form` edits do not silently change the Draft-selected source snapshot. The agent must explicitly Keep Current or Update to Latest. Permanent immutable prepared PDF versions are created only at package promotion / activation, not merely because a Draft Signing exists or a document was added.
 
 `packet_forms.document_state` describes the working document, not signing progress. `FINAL` remains an optional working-document lock that an agent may use to prevent ordinary editing; it is not a signing prerequisite. Signing progress and completion belong to the Signing domain and its participants and immutable document versions.
 
@@ -2085,16 +2234,16 @@ Requiring an agent to mark a working document Final immediately before creating 
 
 **Consequences:**
 
-* **Current rule:** Create Signing opens mutable Draft preparation; Package Revision 1 and immutable prepared document versions are created at activation (Send / Begin In-Person Signing), not as a continual Draft side effect. See the 2026-09-15 activation-boundary decision.
+* **Current rule:** Create Signing opens mutable Draft preparation. Adding documents selects Signing-owned Draft source snapshots. Package Revision 1 and immutable prepared document versions are created only at activation (common Send / Begin In-Person algorithm), not as a continual Draft side effect and not merely by adding a document. See the 2026-09-15 Draft-source-snapshot and activation-model decisions.
 * `DRAFT` and `FINAL` remain working-document concepts. `FINAL` is optional relative to Native Signing.
 * Signing status must not be inferred from or stored as `packet_forms.document_state = SIGNED` in the Native Signing architecture.
-* Open question B from the 2026-08-19 native e-signature architecture decision remains resolved for packet-form lifecycle separation; its earlier “Create Signing = immutable snapshot” wording is refined by the 2026-09-15 decision.
+* Open question B from the 2026-08-19 native e-signature architecture decision remains resolved for packet-form lifecycle separation; its earlier “Create Signing = immutable snapshot” wording is refined by the 2026-09-15 decisions above.
 * No application code, schema, migration, storage, route, or configuration change is made by this documentation reconciliation.
 
 **Related files or migrations:**
 
 * `project_status.md` (status note only)
-* This file: **Draft Signing creation establishes mutable preparation state; package revisions freeze at activation** (2026-09-15); **Native e-signature uses one working packet form, many immutable versions, and a dedicated signing experience** (2026-08-19); **Packet Form Document Lifecycle** (2026-07-17)
+* This file: **Draft Signing creation establishes mutable preparation state; package revisions freeze at activation** (2026-09-15); **Draft document selections use Signing-owned source snapshots until activation** (2026-09-15); **Send and Begin In-Person Signing share one activation model** (2026-09-15); **Native e-signature uses one working packet form, many immutable versions, and a dedicated signing experience** (2026-08-19); **Packet Form Document Lifecycle** (2026-07-17)
 * No SQL migration; no schema change
 
 ---
@@ -2213,7 +2362,7 @@ A 2026-08-18 read-only audit of packet forms, generated PDFs, document states, a
 
 **Resolved since this checkpoint:**
 
-* **B. Resolved 2026-09-05; snapshot timing refined 2026-09-15 — `packet_forms.document_state`.** Creating a Signing does not require `FINAL`, and signing status does not belong on the working `packet_form`. The earlier 2026-09-05 wording that treated Create Signing itself as the immutable snapshot boundary is superseded: Create Signing opens mutable Draft preparation, and Package Revision 1 / immutable prepared versions freeze at activation (Send / Begin In-Person Signing). The existing `SIGNED` value is unused rather than legacy behavior and should be removed during implementation if dependency and data checks confirm that it is unused. Exact migration mechanics remain technical design, and `VOID` is not resolved by this decision.
+* **B. Resolved 2026-09-05; snapshot timing refined 2026-09-15 — `packet_forms.document_state`.** Creating a Signing does not require `FINAL`, and signing status does not belong on the working `packet_form`. The earlier 2026-09-05 wording that treated Create Signing itself as the immutable snapshot boundary is superseded: Create Signing opens mutable Draft preparation; document add selects a Signing-owned Draft source snapshot (not a permanent prepared PDF); Package Revision 1 / immutable prepared versions freeze only at activation via the common Send / Begin In-Person algorithm. Live `packet_form` changes do not silently rewrite Draft selections. The existing `SIGNED` value is unused rather than legacy behavior and should be removed during implementation if dependency and data checks confirm that it is unused. Exact migration mechanics remain technical design, and `VOID` is not resolved by this decision.
 
 * **C. Resolved 2026-09-05 — participant identity and eligibility.** Participants may reference a User, Contact, both, or neither; ad hoc participants require name and email; roles are optional; email is non-unique and never silently links identities; historical values freeze at the first accepted signature or initial; and all participants are eligible in parallel without configurable signing order. Exact schema and authentication mechanics remain technical design.
 
