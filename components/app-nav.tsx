@@ -15,6 +15,8 @@ type AppNavProps = {
     | "forms"
     | "collections"
     | "packets"
+    // Native Signing is feature-gated server-side and has no nav link yet.
+    | "signings"
     | "settings"
     | "admin";
 };

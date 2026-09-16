@@ -15,7 +15,11 @@ export type SigningErrorCode =
   | "CONFLICT"
   | "STALE_SOURCE"
   | "INTEGRITY_MISMATCH"
-  | "VALIDATION_FAILED";
+  | "VALIDATION_FAILED"
+  | "SOURCE_CHANGED"
+  | "NOT_READY"
+  | "IDEMPOTENCY_CONFLICT"
+  | "ACTIVATION_FAILED";
 
 export class SigningError extends Error {
   readonly code: SigningErrorCode;

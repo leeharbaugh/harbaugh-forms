@@ -63,6 +63,8 @@
     "test:native-signing-stage2": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/authority.test.ts && node --experimental-strip-types --test lib/signing/stage2-boundary.test.ts lib/signing/feature-gate.test.ts",
     "test:native-signing-stage3": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/stage3-draft-boundary.test.ts lib/signing/integrity.test.ts lib/signing/document-version-reuse.test.ts",
     "validate:native-signing-stage3-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-stage3-dev.ts",
+    "test:native-signing-stage4": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/draft-source-fingerprint.test.ts lib/signing/stage4-draft-snapshot.test.ts lib/signing/stage4-activation-boundary.test.ts lib/signing/stage4-credential-wrap.test.ts lib/signing/stage4-entry-exchange.test.ts",
+    "validate:native-signing-stage4-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-stage4-dev.ts",
     "test:packet-form-lifecycle": "node --experimental-strip-types --test lib/types/packet-form-lifecycle.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",
     "test:ui-lists": "node --experimental-strip-types --test lib/ui/list-badges.test.ts lib/ui/nav-styles.test.ts lib/types/profile.test.ts lib/ui/dialogs-polish.test.ts",

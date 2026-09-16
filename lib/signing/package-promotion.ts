@@ -17,13 +17,21 @@ export type PromotePackageRevisionResult = {
   createdVersionIds: string[];
 };
 
-type DraftBundle = {
+export type DraftBundle = {
   documents: Array<Record<string, unknown>>;
   participants: Array<Record<string, unknown>>;
   fields: Array<Record<string, unknown>>;
 };
 
-async function loadDraftBundle(
+/** One reason a Draft cannot be promoted (and therefore is not Ready). */
+export type DraftPromotionBlocker = {
+  code: string;
+  message: string;
+  documentId?: string;
+  participantId?: string;
+};
+
+export async function loadDraftBundle(
   admin: SupabaseClient,
   signingId: string,
 ): Promise<DraftBundle> {
@@ -93,18 +101,26 @@ function draftBundleFingerprint(bundle: DraftBundle): string {
   return JSON.stringify({ docs, participants, fields });
 }
 
-function validateDraftForPromotion(bundle: DraftBundle) {
+/**
+ * Single source of truth for Draft promotion validity.
+ * Derived readiness (Stage 4) reports these; promotion throws the first one.
+ */
+export function collectDraftPromotionBlockers(
+  bundle: DraftBundle,
+): DraftPromotionBlocker[] {
+  const blockers: DraftPromotionBlocker[] = [];
+
   if (bundle.documents.length === 0) {
-    throw new SigningError(
-      "VALIDATION_FAILED",
-      "At least one document is required before promotion.",
-    );
+    blockers.push({
+      code: "NO_DOCUMENTS",
+      message: "At least one document is required before promotion.",
+    });
   }
   if (bundle.participants.length === 0) {
-    throw new SigningError(
-      "VALIDATION_FAILED",
-      "At least one participant is required before promotion.",
-    );
+    blockers.push({
+      code: "NO_PARTICIPANTS",
+      message: "At least one participant is required before promotion.",
+    });
   }
 
   const documentIds = new Set(bundle.documents.map((row) => row.id as string));
@@ -114,16 +130,18 @@ function validateDraftForPromotion(bundle: DraftBundle) {
 
   for (const field of bundle.fields) {
     if (!documentIds.has(field.signing_document_id as string)) {
-      throw new SigningError(
-        "VALIDATION_FAILED",
-        "Signer field references a document not included in this Draft.",
-      );
+      blockers.push({
+        code: "FIELD_DOCUMENT_NOT_INCLUDED",
+        message: "Signer field references a document not included in this Draft.",
+        documentId: field.signing_document_id as string,
+      });
     }
     if (!participantIds.has(field.signing_participant_id as string)) {
-      throw new SigningError(
-        "VALIDATION_FAILED",
-        "Signer field references a participant not in this Signing.",
-      );
+      blockers.push({
+        code: "FIELD_PARTICIPANT_UNKNOWN",
+        message: "Signer field references a participant not in this Signing.",
+        participantId: field.signing_participant_id as string,
+      });
     }
   }
 
@@ -134,10 +152,12 @@ function validateDraftForPromotion(bundle: DraftBundle) {
         (field.field_type === "SIGNATURE" || field.field_type === "INITIALS"),
     );
     if (!hasSignatureOrInitials) {
-      throw new SigningError(
-        "VALIDATION_FAILED",
-        "Every participant must have at least one Signature or Initials field.",
-      );
+      blockers.push({
+        code: "PARTICIPANT_MISSING_SIGNATURE_OR_INITIALS",
+        message:
+          "Every participant must have at least one Signature or Initials field.",
+        participantId: participant.id as string,
+      });
     }
   }
 
@@ -149,26 +169,42 @@ function validateDraftForPromotion(bundle: DraftBundle) {
           candidate.field_type === "SIGNATURE",
       );
       if (!linked) {
-        throw new SigningError(
-          "VALIDATION_FAILED",
-          "DATE_SIGNED fields require a linked Signature field in this Draft.",
-        );
+        blockers.push({
+          code: "DATE_SIGNED_NOT_LINKED",
+          message:
+            "DATE_SIGNED fields require a linked Signature field in this Draft.",
+          documentId: field.signing_document_id as string,
+          participantId: field.signing_participant_id as string,
+        });
+        continue;
       }
       if (linked.signing_participant_id !== field.signing_participant_id) {
-        throw new SigningError(
-          "VALIDATION_FAILED",
-          "DATE_SIGNED fields must link to a Signature field for the same participant.",
-        );
+        blockers.push({
+          code: "DATE_SIGNED_PARTICIPANT_MISMATCH",
+          message:
+            "DATE_SIGNED fields must link to a Signature field for the same participant.",
+          documentId: field.signing_document_id as string,
+          participantId: field.signing_participant_id as string,
+        });
       }
     }
   }
 
   const orders = bundle.documents.map((row) => row.display_order as number);
   if (new Set(orders).size !== orders.length) {
-    throw new SigningError(
-      "VALIDATION_FAILED",
-      "Document display order must be unique.",
-    );
+    blockers.push({
+      code: "DUPLICATE_DISPLAY_ORDER",
+      message: "Document display order must be unique.",
+    });
+  }
+
+  return blockers;
+}
+
+function validateDraftForPromotion(bundle: DraftBundle) {
+  const [blocker] = collectDraftPromotionBlockers(bundle);
+  if (blocker) {
+    throw new SigningError("VALIDATION_FAILED", blocker.message);
   }
 }
 
@@ -176,7 +212,7 @@ function validateDraftForPromotion(bundle: DraftBundle) {
  * Discard a never-current incomplete revision snapshot after relational failure.
  * Prepared document versions may remain; they are not package-actionable alone.
  */
-async function abandonIncompleteRevision(
+export async function abandonIncompleteRevision(
   admin: SupabaseClient,
   signingId: string,
   revisionId: string,
@@ -540,6 +576,32 @@ export async function promotePackageRevisionFromDraftWithActor(
     reusedVersionIds,
     createdVersionIds,
   };
+}
+
+/**
+ * Undo a promotion that succeeded while a later activation step failed.
+ * Regresses this invocation's current-revision pointer, then discards the
+ * revision snapshot so the Signing remains a clean Draft.
+ */
+export async function abandonPromotedRevisionAfterFailedActivation(options: {
+  admin: SupabaseClient;
+  signingId: string;
+  packageRevisionId: string;
+  previousPackageRevisionId: string | null;
+}): Promise<void> {
+  await options.admin
+    .from("signings")
+    .update({
+      current_package_revision_id: options.previousPackageRevisionId,
+    })
+    .eq("id", options.signingId)
+    .eq("current_package_revision_id", options.packageRevisionId);
+
+  await abandonIncompleteRevision(
+    options.admin,
+    options.signingId,
+    options.packageRevisionId,
+  );
 }
 
 /** Convenience guard for callers/tests. */

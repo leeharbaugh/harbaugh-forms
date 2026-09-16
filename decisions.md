@@ -195,6 +195,134 @@ Send and in-person launch are different participant experiences over one evident
 
 ---
 
+## Draft source snapshots store exact render inputs; credentials hash with optional server wrap
+
+**Date:** 2026-09-15
+
+**Decision:**
+Stage 4 persists each Draft document selection as a row in **`signing_draft_source_snapshots`**: exact source PDF bytes in the private `signing-artifacts` bucket, JSON render inputs (`field_views_json`, `annotations_json`) sufficient for `fillPacketFormPdfBytes`, and a content fingerprint over those inputs. Logical documents point at the selected snapshot via `selected_draft_source_snapshot_id`. Snapshots are immutable preparation rows; Update to Latest inserts a new snapshot rather than rewriting the prior one.
+
+Participant invitation credentials store a SHA-256 **`token_hash`** for authentication. A server-only AES-GCM **`token_wrapped`** value may exist solely so invitation delivery can retry the **same** link without logging or browser exposure of the raw bearer. Raw tokens never appear in events, work-item `reference_json`, or ordinary logs. Credentials remain unusable until the Signing is **In Progress**.
+
+**Reason:**
+Fingerprints alone cannot reproduce a PDF after the live form changes. Storing prepared Signing PDF evidence at document-add time would violate the Draft/evidence boundary. Invitation retry must reuse the same credential/link unless revoked, which requires a server-recoverable form that is not plaintext and is not the auth verifier.
+
+**Consequences:**
+
+* ~~Prefer `SIGNING_CREDENTIAL_WRAP_KEY`; fall back to hashing `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` only when unset.~~ **Superseded 2026-09-15** by **Credential wrapping requires a dedicated versioned key bound to its credential row**: the wrap key is mandatory and purpose-separated, and there is no Supabase-key fallback.
+* Promotion and activation must render from the selected Draft snapshot, never live packet-form content.
+* No schema/application change is authorized for production by this decision alone.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260915160000_native_signing_stage4_draft_snapshots_activation.sql`
+* `supabase/migrations/20260915161000_native_signing_stage4_credential_wrap.sql`
+* `lib/signing/draft-source-snapshots.ts`, `credentials.ts`, `activation.ts`, `delivery.ts`
+
+---
+
+## Immutable Draft snapshot bytes are preparation history, not evidence
+
+**Date:** 2026-09-15
+
+**Decision:**
+A Draft source snapshot's bytes are immutable once captured, and that immutability says nothing about evidentiary status. Two distinct kinds of immutable bytes live in the private `signing-artifacts` bucket and are kept in separate object-key namespaces:
+
+* **Preparation history** — `signings/{signingId}/documents/{documentId}/draft-snapshots/{snapshotId}/source.pdf`. A `signing_draft_source_snapshots` row: how the agent set the package up. Never signer evidence.
+* **Evidence** — `signings/{signingId}/documents/{documentId}/versions/{versionId}.pdf`. A `signing_document_versions` row: what a package revision freezes and what participants sign against.
+
+`isDraftSourceObjectKey()` / `isPreparedVersionObjectKey()` in `lib/signing/stage1-schema.ts` are the canonical predicates for that distinction, so retention, cleanup, and audit code never has to infer intent from a path by eye.
+
+**Retention:** superseded Draft snapshots (every snapshot a document no longer selects, e.g. after Update to Latest) are **retained as preparation history for audit and debugging** of how a package was prepared. They are not evidentiary, they are not referenced by any package revision, and a later explicit retention policy may prune them. Until that policy exists, they are kept.
+
+**Soft-orphan Storage cleanup:** removing a Draft document that has **no** evidence yet (no `signing_document_versions`, no `signing_package_revision_documents`) discards its preparation state completely: the `selected_draft_source_snapshot_id` pointer is cleared first (RESTRICT FK), then its snapshot rows are deleted, then their Storage objects are removed. Removing a document that **does** have evidence soft-excludes it (`included_in_draft = false`) and deletes nothing.
+
+**Reason:**
+"Immutable" was doing two jobs at once and invited treating any stable PDF in the bucket as evidence. Separate namespaces plus explicit predicates make the boundary checkable in code and in review, and make it safe to prune preparation history later without risking evidence.
+
+**Consequences:**
+
+* Snapshot bytes may be pruned by a future retention policy; prepared version bytes may not.
+* Storage cleanup on document removal is bounded by the evidence check and never touches the `versions/` namespace.
+* Ceremony and finalization stages must continue to source evidence from `signing_document_versions`, never from a Draft snapshot.
+
+**Related files or migrations:**
+
+* `lib/signing/stage1-schema.ts` (`isDraftSourceObjectKey`, `isPreparedVersionObjectKey`)
+* `lib/signing/draft-source-snapshots.ts`, `prepare-pdf.ts`, `draft-documents.ts`
+* No SQL migration; no schema change
+
+---
+
+## Credential wrapping requires a dedicated versioned key bound to its credential row
+
+**Date:** 2026-09-15
+
+**Decision:**
+The AES-256-GCM wrap of a participant bearer credential (`signing_participant_credentials.token_wrapped`) uses a **dedicated, purpose-separated wrapping key**. The Supabase secret / service-role key is **never** acceptable wrapping material, and there is no fallback of any kind: missing or malformed configuration fails closed.
+
+Environment model:
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `SIGNING_CREDENTIAL_WRAP_KEY_ID` | yes | Current key version id, e.g. `v1` (short alphanumeric) |
+| `SIGNING_CREDENTIAL_WRAP_KEY` | yes | Current key material: 32 bytes as base64/base64url, or a passphrase of ≥ 32 characters which is SHA-256'd |
+| `SIGNING_CREDENTIAL_WRAP_PREVIOUS_KEYS` | no | Comma-separated `id:material` pairs, **decrypt-only**, for rotation |
+
+`signing_participant_credentials.wrap_key_id` records which version wrapped each row. Encryption always uses the current version; decryption selects by the recorded version. Rotation is therefore: add the old key to `SIGNING_CREDENTIAL_WRAP_PREVIOUS_KEYS`, point `SIGNING_CREDENTIAL_WRAP_KEY(_ID)` at the new one, and later drop the old entry — after which old rows fail closed and must be re-issued.
+
+The credential id is generated **before** wrapping so the ciphertext can be bound by authenticated associated data to `credentialId|signingId|participantId|wrapKeyId`. A ciphertext copied to another credential row, another Signing, or another key version fails the GCM tag check. Envelopes are versioned (`v2.`); pre-review `v1.` envelopes (no AAD, service-key derived) are not accepted and the dead ciphertext was cleared by migration.
+
+**Authentication remains hash-only.** `validateParticipantCredential` reads `token_hash` and never decrypts anything; unwrapping exists solely so invitation retry can resend the *same* link.
+
+**Reason:**
+Reusing the database credential as a long-lived encryption key coupled two independent rotations and widened the blast radius of a leaked service key. Without a key version id, rotation meant re-issuing every credential. Without AAD, a wrapped bearer was a portable blob rather than a row-bound one.
+
+**Consequences:**
+
+* Any environment that activates a Signing must configure both wrap-key variables; activation fails closed otherwise (development, preview, and any future production enablement alike).
+* Wrap/unwrap are exposed as pure keyring functions so rotation, AAD binding, and tamper behaviour are testable without a database.
+* Rotating the Supabase service key no longer invalidates wrapped bearers, and rotating the wrap key no longer touches database access.
+* No production schema or configuration change is authorized by this decision alone.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260915162000_native_signing_stage4_wrap_key_version.sql`
+* `lib/signing/credentials.ts`, `lib/signing/delivery.ts`
+* `scripts/validate-native-signing-stage4-dev.ts`
+* This file: **Draft source snapshots store exact render inputs; credentials hash with optional server wrap** (2026-09-15, fallback consequence superseded)
+
+---
+
+## Opening a Signing invitation exchanges the bearer for a short-lived entry session
+
+**Date:** 2026-09-15
+
+**Decision:**
+The invitation URL stays `{APP_BASE_URL}/sign/{rawCredentialToken}` — a path segment, never a query string. Opening it does **not** render the participant experience. `/sign/{token}` is a server-only redirector that validates the credential, creates a **`signing_entry_sessions`** row, sets the raw session token in an `HttpOnly; Secure; SameSite=Lax; Path=/sign` cookie named `hf_signing_entry`, and issues a 303 redirect to `/sign/continue`. Every later request carries the session in a cookie, so no bearer appears in a URL after the first hop.
+
+`signing_entry_sessions` stores `session_token_hash` (SHA-256 hex) only, plus `expires_at` (30 minutes), `revoked_at`, and same-Signing FKs to the participant and the originating credential, under the same deny-by-default FORCE RLS as every other Stage 4 table. Validation on every read re-checks that the session is unexpired and unrevoked, that the Signing is still **In Progress**, that the originating credential is still `is_current` and unrevoked, and that the participant is not `REMOVED` — so revoking or re-issuing a credential immediately kills its sessions. Every failure mode returns an indistinguishable 404. Neither the credential token nor the session token is ever logged.
+
+`/sign/:path*` responses send `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, and `X-Robots-Tag: noindex, nofollow`.
+
+This is access plumbing only: it is **not** the signing ceremony. `/sign/continue` still shows a disabled "I am [Name]" shell.
+
+**Reason:**
+A bearer credential in a URL persists in browser history, bookmarks, shared links, and any referrer that escapes. Exchanging it once, at open time, for a short-lived HttpOnly cookie removes that exposure without changing the invitation email or forcing participants through a login they do not have.
+
+**Consequences:**
+
+* `app/sign/[token]` is a Route Handler (a Server Component cannot set cookies), and the participant shell lives at `app/sign/continue`.
+* Sessions are additive access state and are deleted, not preserved, when Signing fixtures are cleaned up; they are never signer evidence.
+* The ceremony stage builds on the validated entry session rather than re-reading a bearer from the URL.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260915163000_native_signing_stage4_entry_sessions.sql`
+* `lib/signing/entry-sessions.ts`, `app/sign/[token]/route.ts`, `app/sign/continue/page.tsx`, `app/sign/layout.tsx`, `next.config.ts`
+
+---
+
 ## Mutable Draft signer-field instructions use `signing_draft_fields`, not revision-scoped `signing_fields`
 
 **Date:** 2026-09-15

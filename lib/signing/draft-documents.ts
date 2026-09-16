@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { captureAndSelectDraftSourceSnapshot } from "./draft-source-snapshots";
 import { SigningError } from "./errors";
 import {
   normalizeOptionalText,
@@ -6,6 +7,7 @@ import {
   parsePositiveInt,
   requireManageableDraftSigning,
 } from "./manage";
+import { SIGNING_ARTIFACTS_BUCKET } from "./stage1-schema";
 import type { SigningActor } from "./types";
 import { isUuid } from "./types";
 
@@ -18,7 +20,28 @@ export type SigningDocumentRow = {
   display_name: string | null;
   filename: string | null;
   included_in_draft: boolean;
+  /** Stage 4: reproducible Draft preparation state used for promotion. */
+  selected_draft_source_snapshot_id: string | null;
+  /** Live fingerprint accepted by Keep Current against the selected snapshot. */
+  acknowledged_live_content_fingerprint: string | null;
 };
+
+async function reloadSigningDocument(
+  admin: SupabaseClient,
+  signingId: string,
+  signingDocumentId: string,
+): Promise<SigningDocumentRow> {
+  const { data, error } = await admin
+    .from("signing_documents")
+    .select("*")
+    .eq("id", signingDocumentId)
+    .eq("signing_id", signingId)
+    .single();
+  if (error || !data) {
+    throw new Error(error?.message ?? "Failed to reload Signing document.");
+  }
+  return data as SigningDocumentRow;
+}
 
 async function nextDocumentDisplayOrder(
   admin: SupabaseClient,
@@ -137,6 +160,21 @@ export async function addDraftSigningDocumentWithActor(
         reincludeError?.message ?? "Failed to re-include Signing document.",
       );
     }
+
+    // Re-include preserves the previously selected Draft source snapshot.
+    // It must never silently refresh preparation state from live content.
+    // Legacy rows predating Stage 4 capture once so promotion stays possible.
+    if (!reincluded.selected_draft_source_snapshot_id) {
+      await captureAndSelectDraftSourceSnapshot({
+        admin,
+        signingId: signing.id,
+        signingDocumentId: reincluded.id as string,
+        packetFormId,
+        expectedOwnerUserId: actor.userId,
+      });
+      return reloadSigningDocument(admin, signing.id, reincluded.id as string);
+    }
+
     return reincluded as SigningDocumentRow;
   }
 
@@ -166,7 +204,28 @@ export async function addDraftSigningDocumentWithActor(
     throw new Error(insertError?.message ?? "Failed to add Signing document.");
   }
 
-  return inserted as SigningDocumentRow;
+  // Adding a document captures its Draft source snapshot immediately, so the
+  // Signing owns a reproducible preparation state from the start.
+  try {
+    await captureAndSelectDraftSourceSnapshot({
+      admin,
+      signingId: signing.id,
+      signingDocumentId: inserted.id as string,
+      packetFormId,
+      expectedOwnerUserId: actor.userId,
+    });
+  } catch (error) {
+    // A document without a snapshot cannot be promoted; roll the fresh insert
+    // back so the Draft never holds an unpromotable document.
+    await admin
+      .from("signing_documents")
+      .delete()
+      .eq("id", inserted.id as string)
+      .eq("signing_id", signing.id);
+    throw error;
+  }
+
+  return reloadSigningDocument(admin, signing.id, inserted.id as string);
 }
 
 export async function removeDraftSigningDocumentWithActor(
@@ -232,6 +291,40 @@ export async function removeDraftSigningDocumentWithActor(
       .eq("signing_id", signing.id);
     if (excludeError) throw new Error(excludeError.message);
     return;
+  }
+
+  // No evidence exists yet: drop the Draft preparation state with the document.
+  // Pointer must be cleared first (RESTRICT FK), then snapshot rows/objects.
+  const { error: clearPointerError } = await admin
+    .from("signing_documents")
+    .update({
+      selected_draft_source_snapshot_id: null,
+      acknowledged_live_content_fingerprint: null,
+    })
+    .eq("id", input.signingDocumentId)
+    .eq("signing_id", signing.id);
+  if (clearPointerError) throw new Error(clearPointerError.message);
+
+  const { data: snapshots, error: snapshotError } = await admin
+    .from("signing_draft_source_snapshots")
+    .select("id, source_pdf_storage_bucket, source_pdf_object_key")
+    .eq("signing_id", signing.id)
+    .eq("signing_document_id", input.signingDocumentId);
+  if (snapshotError) throw new Error(snapshotError.message);
+
+  if (snapshots && snapshots.length > 0) {
+    const { error: snapshotDeleteError } = await admin
+      .from("signing_draft_source_snapshots")
+      .delete()
+      .eq("signing_id", signing.id)
+      .eq("signing_document_id", input.signingDocumentId);
+    if (snapshotDeleteError) throw new Error(snapshotDeleteError.message);
+
+    await admin.storage
+      .from(SIGNING_ARTIFACTS_BUCKET)
+      .remove(
+        snapshots.map((row) => row.source_pdf_object_key as string),
+      );
   }
 
   const { error: deleteError } = await admin

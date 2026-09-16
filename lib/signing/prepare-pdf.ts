@@ -19,6 +19,12 @@ export function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+/**
+ * Prepared version bytes live under an evidentiary `versions/` namespace, kept
+ * distinct from the preparation-history `draft-snapshots/` namespace built by
+ * `buildDraftSourceObjectKey`. See `isPreparedVersionObjectKey` in
+ * stage1-schema.ts.
+ */
 export function buildPreparedVersionObjectKey(options: {
   signingId: string;
   documentId: string;
@@ -36,9 +42,14 @@ export function buildPreparedVersionObjectKey(options: {
 }
 
 /**
- * Render exact prepared PDF bytes for a source packet_form using the proven
- * Fill Form pipeline (field overlays + ACTIVE working-document annotations).
- * Ceremony Signature/Initials marks are NOT applied here.
+ * Live render of a source packet_form using the proven Fill Form pipeline
+ * (field overlays + ACTIVE working-document annotations).
+ *
+ * Stage 4: this is NOT the promotion path. Promotion and activation render from
+ * the document's selected Draft source snapshot
+ * (`renderPreparedPdfFromSelectedDraftSnapshot` in draft-source-snapshots.ts)
+ * so live Packet Form edits can never reach a package revision implicitly.
+ * This function remains available for fingerprinting, diagnostics, and tests.
  */
 export async function renderPreparedPacketFormPdf(options: {
   admin: SupabaseClient;
@@ -156,4 +167,22 @@ export async function uploadPreparedPdfObject(options: {
 
 export function newOpaqueId(): string {
   return randomUUID();
+}
+
+/**
+ * Guard for the Stage 4 promotion contract: a Draft document may only be
+ * prepared into an immutable version through its selected Draft source
+ * snapshot. Legacy documents without a snapshot fail closed.
+ */
+export function requireSelectedDraftSourceSnapshotId(document: {
+  selected_draft_source_snapshot_id?: string | null;
+}): string {
+  const snapshotId = document.selected_draft_source_snapshot_id ?? null;
+  if (!snapshotId) {
+    throw new SigningError(
+      "VALIDATION_FAILED",
+      "This document has no selected Draft source snapshot.",
+    );
+  }
+  return snapshotId;
 }

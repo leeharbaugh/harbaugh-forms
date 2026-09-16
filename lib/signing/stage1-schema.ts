@@ -35,6 +35,64 @@ export const NATIVE_SIGNING_STAGE3_MIGRATIONS = [
   "20260915140000_native_signing_stage3_draft_display_order_partial",
 ] as const;
 
+/**
+ * Stage 4 additive tables: Draft source snapshots (preparation state),
+ * participant credentials (hash only), operation idempotency, the durable
+ * delivery outbox, and participant entry sessions (access plumbing).
+ * None of these are signer evidence.
+ */
+export const NATIVE_SIGNING_STAGE4_TABLES = [
+  "signing_draft_source_snapshots",
+  "signing_participant_credentials",
+  "signing_operation_idempotency",
+  "signing_work_items",
+  "signing_delivery_instructions",
+  "signing_delivery_attempts",
+  "signing_entry_sessions",
+] as const;
+
+export const NATIVE_SIGNING_STAGE4_MIGRATIONS = [
+  "20260915160000_native_signing_stage4_draft_snapshots_activation",
+  "20260915161000_native_signing_stage4_credential_wrap",
+  "20260915162000_native_signing_stage4_wrap_key_version",
+  "20260915163000_native_signing_stage4_entry_sessions",
+] as const;
+
+/**
+ * `signing-artifacts` object-key namespaces.
+ *
+ * Two different kinds of immutable bytes live in the same private bucket and
+ * must never be confused:
+ *
+ * - `.../draft-snapshots/{snapshotId}/source.pdf` — a **Draft source snapshot**.
+ *   The bytes are immutable once written, but the row is *preparation history*,
+ *   not evidence. Superseded snapshots stay for audit/debug of how a package was
+ *   prepared, and an evidence-free document's snapshots are deleted with it.
+ * - `.../versions/{versionId}.pdf` — a **prepared `signing_document_version`**.
+ *   This is evidentiary: it is what a package revision freezes and what
+ *   participants sign against. It is never deleted as preparation history.
+ *
+ * Immutable bytes therefore do not imply evidentiary status; the namespace does.
+ */
+export const DRAFT_SOURCE_OBJECT_KEY_RE =
+  /^signings\/[0-9a-fA-F-]{36}\/documents\/[0-9a-fA-F-]{36}\/draft-snapshots\/[0-9a-fA-F-]{36}\/source\.pdf$/;
+
+export const PREPARED_VERSION_OBJECT_KEY_RE =
+  /^signings\/[0-9a-fA-F-]{36}\/documents\/[0-9a-fA-F-]{36}\/versions\/[0-9a-fA-F-]{36}\.pdf$/;
+
+/** True for Draft source snapshot bytes (preparation history, not evidence). */
+export function isDraftSourceObjectKey(key: unknown): key is string {
+  return typeof key === "string" && DRAFT_SOURCE_OBJECT_KEY_RE.test(key);
+}
+
+/** True for prepared document-version bytes (evidentiary, never pruned). */
+export function isPreparedVersionObjectKey(key: unknown): key is string {
+  return typeof key === "string" && PREPARED_VERSION_OBJECT_KEY_RE.test(key);
+}
+
+export type NativeSigningStage4Table =
+  (typeof NATIVE_SIGNING_STAGE4_TABLES)[number];
+
 
 export type NativeSigningStage1Table =
   (typeof NATIVE_SIGNING_STAGE1_TABLES)[number];
