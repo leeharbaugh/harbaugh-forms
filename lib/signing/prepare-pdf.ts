@@ -19,6 +19,12 @@ export function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+/**
+ * Prepared version bytes live under an evidentiary `versions/` namespace, kept
+ * distinct from the preparation-history `draft-snapshots/` namespace built by
+ * `buildDraftSourceObjectKey`. See `isPreparedVersionObjectKey` in
+ * stage1-schema.ts.
+ */
 export function buildPreparedVersionObjectKey(options: {
   signingId: string;
   documentId: string;

@@ -6,10 +6,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { validateParticipantCredential } from "@/lib/signing/credentials";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
+import {
+  SIGNING_ENTRY_COOKIE_NAME,
+  touchSigningEntrySession,
+  validateSigningEntrySession,
+} from "@/lib/signing/entry-sessions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { connection } from "next/server";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -19,30 +24,37 @@ export const metadata: Metadata = {
   description: "Review and sign your documents",
 };
 
-/** Bearer-token entry may block on request-time credential validation. */
+/** Cookie-backed entry may block on request-time session validation. */
 export const instant = false;
 
 /**
  * Participant entry shell.
  *
- * The token is resolved server-side only. There is no workspace navigation and
- * no signing ceremony here: identity confirmation is shown as pending until the
- * ceremony ships in a later stage.
+ * Reached only by redirect from `/sign/{token}`, which exchanged the invitation
+ * bearer for the HttpOnly entry-session cookie read here. The session is
+ * re-validated on every render — Signing still In Progress, credential still
+ * current — and there is no signing ceremony yet: identity confirmation is shown
+ * as pending until the ceremony ships in a later stage.
  */
-async function SignEntryBody({ token }: { token: string }) {
+async function SignContinueBody() {
   await connection();
 
   if (!isNativeSigningEnabled()) {
     notFound();
   }
 
-  const credential = await validateParticipantCredential(
-    createAdminClient(),
-    token,
-  );
-  if (!credential) {
+  const cookieStore = await cookies();
+  const rawSessionToken = cookieStore.get(SIGNING_ENTRY_COOKIE_NAME)?.value;
+  if (!rawSessionToken) {
     notFound();
   }
+
+  const admin = createAdminClient();
+  const session = await validateSigningEntrySession(admin, rawSessionToken);
+  if (!session) {
+    notFound();
+  }
+  await touchSigningEntrySession(admin, session);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-lg flex-col justify-center gap-6 px-5 py-10">
@@ -51,7 +63,7 @@ async function SignEntryBody({ token }: { token: string }) {
           Harbaugh Forms
         </p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-          {credential.signingTitle}
+          {session.signingTitle}
         </h1>
       </div>
 
@@ -66,7 +78,7 @@ async function SignEntryBody({ token }: { token: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">In Progress</Badge>
             <span className="text-sm text-muted-foreground">
-              {credential.participantEmail}
+              {session.participantEmail}
             </span>
           </div>
           <button
@@ -74,7 +86,7 @@ async function SignEntryBody({ token }: { token: string }) {
             disabled
             className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground opacity-60"
           >
-            I am {credential.participantFullName}
+            I am {session.participantFullName}
           </button>
           <p className="text-sm text-muted-foreground">
             The signing ceremony is not available yet. Your access link is
@@ -86,13 +98,7 @@ async function SignEntryBody({ token }: { token: string }) {
   );
 }
 
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ token: string }>;
-}) {
-  const { token } = await params;
-
+export default function Page() {
   return (
     <Suspense
       fallback={
@@ -101,7 +107,7 @@ export default async function Page({
         </main>
       }
     >
-      <SignEntryBody token={token} />
+      <SignContinueBody />
     </Suspense>
   );
 }

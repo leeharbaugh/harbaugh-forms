@@ -28,6 +28,15 @@ export type DocumentSourceStatus =
   | "SOURCE_CHANGED"
   | "SOURCE_UNAVAILABLE";
 
+export type DocumentSourceStatusReason =
+  | "MATCHES_SNAPSHOT"
+  | "ACKNOWLEDGED_LIVE_CHANGE"
+  | "LIVE_CHANGED"
+  | "NO_SELECTED_SNAPSHOT"
+  | "SNAPSHOT_MISSING"
+  | "NO_SOURCE_PACKET_FORM"
+  | "LIVE_UNAVAILABLE";
+
 export type DocumentSourceStatusResult = {
   signingDocumentId: string;
   status: DocumentSourceStatus;
@@ -35,15 +44,33 @@ export type DocumentSourceStatusResult = {
   snapshotFingerprint: string | null;
   liveFingerprint: string | null;
   acknowledgedFingerprint: string | null;
-  reason:
-    | "MATCHES_SNAPSHOT"
-    | "ACKNOWLEDGED_LIVE_CHANGE"
-    | "LIVE_CHANGED"
-    | "NO_SELECTED_SNAPSHOT"
-    | "SNAPSHOT_MISSING"
-    | "NO_SOURCE_PACKET_FORM"
-    | "LIVE_UNAVAILABLE";
+  reason: DocumentSourceStatusReason;
 };
+
+/**
+ * Pure comparison at the heart of drift resolution, extracted so the
+ * acknowledgement rule is testable without Storage or a database.
+ *
+ * Keep Current acknowledges one exact live fingerprint. If the live source then
+ * changes again (Y acknowledged, live now Z), the acknowledgement no longer
+ * applies and drift is raised again.
+ */
+export function compareDraftSourceFingerprints(input: {
+  snapshotFingerprint: string;
+  liveFingerprint: string;
+  acknowledgedFingerprint: string | null;
+}): { status: DocumentSourceStatus; reason: DocumentSourceStatusReason } {
+  if (input.liveFingerprint === input.snapshotFingerprint) {
+    return { status: "CURRENT", reason: "MATCHES_SNAPSHOT" };
+  }
+  if (
+    input.acknowledgedFingerprint !== null &&
+    input.liveFingerprint === input.acknowledgedFingerprint
+  ) {
+    return { status: "CURRENT", reason: "ACKNOWLEDGED_LIVE_CHANGE" };
+  }
+  return { status: "SOURCE_CHANGED", reason: "LIVE_CHANGED" };
+}
 
 export async function getDocumentSourceStatus(
   admin: SupabaseClient,
@@ -109,37 +136,22 @@ export async function getDocumentSourceStatus(
     };
   }
 
-  if (liveFingerprint === snapshot.content_fingerprint) {
-    return {
-      ...base,
-      status: "CURRENT",
-      snapshot,
-      snapshotFingerprint: snapshot.content_fingerprint,
-      liveFingerprint,
-      reason: "MATCHES_SNAPSHOT",
-    };
-  }
-
   // Keep Current stays valid only while the live source still matches the exact
   // fingerprint the agent acknowledged. Any further edit re-raises drift.
-  if (liveFingerprint === document.acknowledged_live_content_fingerprint) {
-    return {
-      ...base,
-      status: "CURRENT",
-      snapshot,
-      snapshotFingerprint: snapshot.content_fingerprint,
-      liveFingerprint,
-      reason: "ACKNOWLEDGED_LIVE_CHANGE",
-    };
-  }
+  const compared = compareDraftSourceFingerprints({
+    snapshotFingerprint: snapshot.content_fingerprint,
+    liveFingerprint,
+    acknowledgedFingerprint:
+      document.acknowledged_live_content_fingerprint ?? null,
+  });
 
   return {
     ...base,
-    status: "SOURCE_CHANGED",
+    status: compared.status,
     snapshot,
     snapshotFingerprint: snapshot.content_fingerprint,
     liveFingerprint,
-    reason: "LIVE_CHANGED",
+    reason: compared.reason,
   };
 }
 

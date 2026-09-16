@@ -7,6 +7,12 @@
  * promotes Revision 1 from snapshots, issues hash-only credentials, moves
  * Draft -> In Progress exactly once per client request, and keeps email
  * delivery failures from undoing activation.
+ *
+ * It also proves the Stage 4 review fixes: credential wrapping requires a
+ * dedicated key with a named version and survives rotation, wrapped bearers are
+ * bound to their own row by AAD, corrupted snapshot bytes fail closed instead of
+ * being promoted, and opening a `/sign` link exchanges the bearer for a
+ * short-lived HttpOnly entry session.
  */
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
@@ -21,9 +27,24 @@ import type { SigningDocumentRow } from "../lib/signing/draft-documents.ts";
 import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
 import { upsertDraftSigningFieldWithActor } from "../lib/signing/draft-fields.ts";
 import {
+  buildCredentialWrapKeyring,
   issueParticipantCredentialsForActivation,
+  loadRawParticipantCredentialToken,
+  resolveCredentialWrapKeyring,
+  SigningCredentialWrapConfigError,
+  unwrapParticipantCredentialTokenWithKeyring,
   validateParticipantCredential,
+  WRAP_KEY_ENV,
+  WRAP_KEY_ID_ENV,
 } from "../lib/signing/credentials.ts";
+import {
+  buildSigningEntryCookieAttributes,
+  createSigningEntrySession,
+  hashSigningEntrySessionToken,
+  revokeSigningEntrySessionsForCredential,
+  SIGNING_ENTRY_COOKIE_NAME,
+  validateSigningEntrySession,
+} from "../lib/signing/entry-sessions.ts";
 import { evaluateSigningReadiness } from "../lib/signing/readiness.ts";
 import {
   getDocumentSourceStatus,
@@ -168,6 +189,24 @@ async function main() {
   if (!anonKey || !serviceKey) {
     fail("Missing Supabase anon/service keys");
   }
+
+  // Credential wrapping requires a dedicated key. Fail before touching the
+  // database so a misconfigured environment is obvious rather than surfacing
+  // later as an activation error.
+  let wrapKeyring: ReturnType<typeof resolveCredentialWrapKeyring>;
+  try {
+    wrapKeyring = resolveCredentialWrapKeyring();
+  } catch (error) {
+    if (error instanceof SigningCredentialWrapConfigError) {
+      fail(
+        `${error.message} Add ${WRAP_KEY_ID_ENV} (for example "v1") and ${WRAP_KEY_ENV} (32 random bytes, base64url) to .env.local.`,
+      );
+    }
+    throw error;
+  }
+  const currentWrapKeyId = wrapKeyring.currentKeyId;
+  const currentWrapKeyMaterial = requireEnv(WRAP_KEY_ENV);
+  ok(`credential wrap key configured (version "${currentWrapKeyId}")`);
 
   const admin = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -674,6 +713,104 @@ async function main() {
     }
     ok("activation issued exactly one hash-only current credential per participant");
 
+    // 6a. Wrapping uses the dedicated key version, and rotation is real.
+    const remoteCredential = (credentialRows ?? [])[0] as Record<
+      string,
+      unknown
+    >;
+    if (remoteCredential.wrap_key_id !== currentWrapKeyId) {
+      fail(
+        `credential did not record the current wrap key version (${String(
+          remoteCredential.wrap_key_id,
+        )} !== ${currentWrapKeyId})`,
+      );
+    }
+    if (typeof remoteCredential.token_wrapped !== "string") {
+      fail("credential did not persist a wrapped bearer for invitation retry");
+    }
+    ok("credential persists wrap_key_id alongside its wrapped bearer");
+
+    const remoteRawToken = await loadRawParticipantCredentialToken({
+      admin,
+      signingId: signing.id,
+      credentialId: remoteCredential.id as string,
+    });
+    if (!remoteRawToken) {
+      fail("invitation retry could not unwrap the current credential");
+    }
+    const resolvedCredential = await validateParticipantCredential(
+      admin,
+      remoteRawToken,
+    );
+    if (resolvedCredential?.credentialId !== remoteCredential.id) {
+      fail("unwrapped bearer did not resolve back to its own credential");
+    }
+    ok("invitation retry recovers the same link through server-only unwrap");
+
+    const wrapContext = {
+      credentialId: remoteCredential.id as string,
+      signingId: signing.id,
+      signingParticipantId: remoteCredential.signing_participant_id as string,
+    };
+    const wrappedBearer = remoteCredential.token_wrapped as string;
+
+    // A rotated keyring keeps the previous version for decrypt only.
+    const rotatedKeyring = buildCredentialWrapKeyring({
+      currentKeyId: "vnext",
+      currentKeyMaterial: randomUUID() + randomUUID(),
+      previousKeys: [
+        { keyId: currentWrapKeyId, keyMaterial: currentWrapKeyMaterial },
+      ],
+    });
+    if (
+      unwrapParticipantCredentialTokenWithKeyring({
+        keyring: rotatedKeyring,
+        wrapped: wrappedBearer,
+        wrapKeyId: currentWrapKeyId,
+        context: wrapContext,
+      }) !== remoteRawToken
+    ) {
+      fail("a rotated keyring could not decrypt with the previous key version");
+    }
+    // Dropping the previous version fails closed rather than guessing.
+    const currentOnlyKeyring = buildCredentialWrapKeyring({
+      currentKeyId: "vnext",
+      currentKeyMaterial: randomUUID() + randomUUID(),
+    });
+    if (
+      unwrapParticipantCredentialTokenWithKeyring({
+        keyring: currentOnlyKeyring,
+        wrapped: wrappedBearer,
+        wrapKeyId: currentWrapKeyId,
+        context: wrapContext,
+      }) !== null
+    ) {
+      fail("unwrap succeeded for a key version that is no longer configured");
+    }
+    ok("wrap key rotation decrypts with previous versions and fails closed without them");
+
+    // 6b. AAD binds ciphertext to one row: replaying it elsewhere fails closed.
+    const { error: tamperKeyIdError } = await admin
+      .from("signing_participant_credentials")
+      .update({ wrap_key_id: "vtamper" })
+      .eq("id", remoteCredential.id as string);
+    if (tamperKeyIdError) fail(tamperKeyIdError.message);
+    if (
+      await loadRawParticipantCredentialToken({
+        admin,
+        signingId: signing.id,
+        credentialId: remoteCredential.id as string,
+      })
+    ) {
+      fail("unwrap succeeded after the recorded wrap key version was altered");
+    }
+    const { error: restoreKeyIdError } = await admin
+      .from("signing_participant_credentials")
+      .update({ wrap_key_id: currentWrapKeyId })
+      .eq("id", remoteCredential.id as string);
+    if (restoreKeyIdError) fail(restoreKeyIdError.message);
+    ok("altering the recorded wrap key version fails closed");
+
     const { data: instructions } = await admin
       .from("signing_delivery_instructions")
       .select("*")
@@ -812,6 +949,39 @@ async function main() {
     }
     ok("IN_PERSON activation issues credentials and skips invitation email");
 
+    // 8a. A wrapped bearer copied onto a different credential row fails closed:
+    // the AAD binds ciphertext to its own credential, Signing, and participant.
+    const { data: inPersonCredential } = await admin
+      .from("signing_participant_credentials")
+      .select("id, token_wrapped")
+      .eq("signing_id", inPerson.id)
+      .eq("is_current", true)
+      .is("revoked_at", null)
+      .single();
+    if (!inPersonCredential) fail("no current in-person credential");
+    const inPersonWrapped = inPersonCredential.token_wrapped as string;
+
+    const { error: crossRowError } = await admin
+      .from("signing_participant_credentials")
+      .update({ token_wrapped: wrappedBearer })
+      .eq("id", inPersonCredential.id as string);
+    if (crossRowError) fail(crossRowError.message);
+    if (
+      await loadRawParticipantCredentialToken({
+        admin,
+        signingId: inPerson.id,
+        credentialId: inPersonCredential.id as string,
+      })
+    ) {
+      fail("a wrapped bearer replayed onto another credential row unwrapped");
+    }
+    const { error: crossRowRestoreError } = await admin
+      .from("signing_participant_credentials")
+      .update({ token_wrapped: inPersonWrapped })
+      .eq("id", inPersonCredential.id as string);
+    if (crossRowRestoreError) fail(crossRowRestoreError.message);
+    ok("a wrapped bearer replayed onto another credential row fails closed");
+
     // 9. Activated credentials resolve; a Draft-era credential does not.
     const { data: currentCredential } = await admin
       .from("signing_participant_credentials")
@@ -825,6 +995,214 @@ async function main() {
       fail("superseded Draft-era credential still validates");
     }
     ok("superseded credentials do not validate");
+
+    // 9a. Opening a /sign link exchanges the bearer for an entry session.
+    // Exercised at the function level: the route handler is a thin wrapper that
+    // validates the credential, creates this session, and sets this cookie.
+    const entryCredential = await validateParticipantCredential(
+      admin,
+      remoteRawToken,
+    );
+    if (!entryCredential) fail("current credential no longer validates");
+    const entrySession = await createSigningEntrySession({
+      admin,
+      credential: entryCredential,
+    });
+    const entryCookie = buildSigningEntryCookieAttributes({
+      rawSessionToken: entrySession.rawSessionToken,
+    });
+    if (
+      entryCookie.name !== SIGNING_ENTRY_COOKIE_NAME ||
+      entryCookie.httpOnly !== true ||
+      entryCookie.secure !== true ||
+      entryCookie.sameSite !== "lax" ||
+      entryCookie.path !== "/sign"
+    ) {
+      fail("entry cookie is not HttpOnly/Secure/SameSite=Lax scoped to /sign");
+    }
+
+    const { data: sessionRow } = await admin
+      .from("signing_entry_sessions")
+      .select("*")
+      .eq("id", entrySession.sessionId)
+      .single();
+    if (!sessionRow) fail("entry session row was not created");
+    if (
+      sessionRow.session_token_hash !==
+      hashSigningEntrySessionToken(entrySession.rawSessionToken)
+    ) {
+      fail("entry session row does not store the session token hash");
+    }
+    if (JSON.stringify(sessionRow).includes(entrySession.rawSessionToken)) {
+      fail("entry session row exposes the raw session token");
+    }
+    if (JSON.stringify(sessionRow).includes(remoteRawToken)) {
+      fail("entry session row exposes the credential bearer");
+    }
+
+    const validatedSession = await validateSigningEntrySession(
+      admin,
+      entrySession.rawSessionToken,
+    );
+    if (
+      validatedSession?.signingParticipantId !==
+        entryCredential.signingParticipantId ||
+      validatedSession.credentialId !== entryCredential.credentialId
+    ) {
+      fail("entry session did not resolve back to its participant");
+    }
+    if (await validateSigningEntrySession(admin, "not-a-session-token")) {
+      fail("a malformed session token validated");
+    }
+    ok("/sign entry exchange mints a hash-only, cookie-scoped entry session");
+
+    // An expired session is refused (backdated row: the raw token is unchanged).
+    const expiredSessionToken = entrySession.rawSessionToken.replace(
+      /.$/,
+      (last) => (last === "A" ? "B" : "A"),
+    );
+    const { data: expiredRow, error: expiredInsertError } = await admin
+      .from("signing_entry_sessions")
+      .insert({
+        signing_id: entryCredential.signingId,
+        signing_participant_id: entryCredential.signingParticipantId,
+        signing_participant_credential_id: entryCredential.credentialId,
+        session_token_hash: hashSigningEntrySessionToken(expiredSessionToken),
+        create_date: new Date(Date.now() - 7_200_000).toISOString(),
+        expires_at: new Date(Date.now() - 3_600_000).toISOString(),
+      })
+      .select("id")
+      .single();
+    if (expiredInsertError || !expiredRow) {
+      fail(expiredInsertError?.message ?? "failed to create expired session");
+    }
+    if (await validateSigningEntrySession(admin, expiredSessionToken)) {
+      fail("an expired entry session validated");
+    }
+    ok("expired entry sessions are refused");
+
+    // Revoking sessions for a credential invalidates them immediately.
+    await revokeSigningEntrySessionsForCredential({
+      admin,
+      signingId: entryCredential.signingId,
+      credentialId: entryCredential.credentialId,
+      reason: "VALIDATOR_REVOKE",
+    });
+    if (await validateSigningEntrySession(admin, entrySession.rawSessionToken)) {
+      fail("a revoked entry session still validated");
+    }
+    ok("revoking a credential's entry sessions invalidates them");
+
+    // 9b. Corrupted snapshot bytes must never reach a package revision.
+    const corrupted = await createDraftSigningWithActor(
+      agent,
+      { title: `Stage 4 Corrupt ${stamp}`, sourcePacketId: packetId },
+      admin,
+    );
+    createdSigningIds.push(corrupted.id);
+    const corruptedDoc = await addDraftSigningDocumentWithActor(
+      agent,
+      { signingId: corrupted.id, sourcePacketFormId: packetFormA },
+      admin,
+    );
+    const corruptedParticipant = await addDraftSigningParticipantWithActor(
+      agent,
+      {
+        signingId: corrupted.id,
+        fullName: "Casey Corrupt",
+        email: `casey-${stamp}@example.com`,
+      },
+      admin,
+    );
+    await upsertDraftSigningFieldWithActor(
+      agent,
+      {
+        signingId: corrupted.id,
+        signingDocumentId: corruptedDoc.id,
+        signingParticipantId: corruptedParticipant.id,
+        fieldType: "SIGNATURE",
+        pageNumber: 1,
+        x: 72,
+        y: 640,
+        width: 160,
+        height: 40,
+      },
+      admin,
+    );
+    const { data: corruptedSnapshot } = await admin
+      .from("signing_draft_source_snapshots")
+      .select("id, source_pdf_object_key")
+      .eq("signing_id", corrupted.id)
+      .single();
+    if (!corruptedSnapshot) fail("corruption fixture captured no snapshot");
+    const corruptedKey = corruptedSnapshot.source_pdf_object_key as string;
+    storageKeysToRemove.push(corruptedKey);
+
+    const readyBeforeCorruption = await evaluateSigningReadiness(
+      admin,
+      corrupted.id,
+      agent,
+    );
+    if (!readyBeforeCorruption.ready) {
+      fail(
+        `corruption fixture was not ready: ${JSON.stringify(
+          readyBeforeCorruption.blockers,
+        )}`,
+      );
+    }
+
+    // Replace the stored snapshot bytes without touching the recorded hash.
+    const { error: corruptUploadError } = await admin.storage
+      .from(SIGNING_ARTIFACTS_BUCKET)
+      .upload(corruptedKey, await makeFixturePdf(`Corrupted ${stamp}`), {
+        contentType: "application/pdf",
+        upsert: true,
+      });
+    if (corruptUploadError) {
+      fail(`snapshot corruption upload failed: ${corruptUploadError.message}`);
+    }
+
+    await expectSigningError(
+      "activation with corrupted Draft snapshot bytes",
+      "INTEGRITY_MISMATCH",
+      () =>
+        activateSigningWithActor(
+          agent,
+          {
+            signingId: corrupted.id,
+            mode: "REMOTE_SEND",
+            clientRequestId: randomUUID(),
+          },
+          admin,
+        ),
+    );
+    if (
+      (await countRows(admin, "signing_package_revisions", corrupted.id)) !== 0
+    ) {
+      fail("corrupted snapshot activation left a package revision behind");
+    }
+    const { data: corruptedSigningRow } = await admin
+      .from("signings")
+      .select("lifecycle_state")
+      .eq("id", corrupted.id)
+      .single();
+    if (corruptedSigningRow?.lifecycle_state !== "DRAFT") {
+      fail("corrupted snapshot activation advanced the lifecycle");
+    }
+    if (
+      (await countRows(admin, "signing_participant_credentials", corrupted.id)) >
+      0
+    ) {
+      const { data: leftover } = await admin
+        .from("signing_participant_credentials")
+        .select("is_current")
+        .eq("signing_id", corrupted.id)
+        .eq("is_current", true);
+      if ((leftover ?? []).length > 0) {
+        fail("corrupted snapshot activation left a usable credential");
+      }
+    }
+    ok("corrupted Draft snapshot bytes fail closed and never promote");
 
     // 10. Browser deny-by-default for every Stage 4 table.
     const { data: browserSession, error: signInError } =
@@ -902,6 +1280,8 @@ async function main() {
         .delete()
         .eq("signing_id", id);
       await admin.from("signing_work_items").delete().eq("signing_id", id);
+      // Entry sessions reference credentials with ON DELETE RESTRICT.
+      await admin.from("signing_entry_sessions").delete().eq("signing_id", id);
       await admin
         .from("signing_participant_credentials")
         .update({ replaced_by_credential_id: null })

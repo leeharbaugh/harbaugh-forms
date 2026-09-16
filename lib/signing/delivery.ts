@@ -10,10 +10,12 @@
  * unconfigured provider records a FAILED attempt and never undoes activation.
  *
  * Invitation URL shape: `{APP_BASE_URL}/sign/{rawToken}` — a path segment so it
- * matches the `app/sign/[token]` route and is never placed in a query string
- * that could leak through a Referer header. Raw tokens are held in memory only
- * for the sending call: they are never written to instructions, work items,
- * events, or logs.
+ * matches the `app/sign/[token]` exchange route and is never placed in a query
+ * string that could leak through a Referer header. Opening the link exchanges
+ * the bearer for an HttpOnly entry-session cookie and redirects to
+ * `/sign/continue`, so the bearer stops appearing in URLs after the first hop.
+ * Raw tokens are held in memory only for the sending call: they are never
+ * written to instructions, work items, events, or logs.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadRawParticipantCredentialToken } from "./credentials";
@@ -226,8 +228,10 @@ export type ProcessInvitationResult = {
  * Process one invitation work item.
  *
  * The work item stores only the credential id (never the raw bearer). Stage 4
- * recovers the same link for retries via server-only credential unwrap so the
- * participant keeps one credential unless it is revoked/replaced.
+ * recovers the same link for retries via server-only credential unwrap, bound to
+ * the credential row by AAD and to a named wrap key version, so the participant
+ * keeps one credential unless it is revoked/replaced. A credential whose wrap
+ * key version is unknown fails closed and must be re-issued.
  *
  * This never mutates Signing lifecycle state: a delivery failure leaves an
  * activated Signing activated.

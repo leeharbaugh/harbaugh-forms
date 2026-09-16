@@ -21,6 +21,7 @@ import {
   upsertDraftSigningFieldWithActor,
 } from "../lib/signing/draft-fields.ts";
 import { promotePackageRevisionFromDraftWithActor } from "../lib/signing/package-promotion.ts";
+import { updateDraftSourceToLatestWithActor } from "../lib/signing/source-drift.ts";
 import { verifyPreparedDocumentVersionIntegrity } from "../lib/signing/integrity.ts";
 import { ensurePreparedDocumentVersion } from "../lib/signing/document-versions.ts";
 import { SigningError } from "../lib/signing/errors.ts";
@@ -464,6 +465,16 @@ async function main() {
       });
     if (overwriteError) fail(`contract overwrite failed: ${overwriteError.message}`);
 
+    // Stage 4 promotes from the selected Draft source snapshot, so overwriting
+    // live bytes is drift rather than a content change: the agent must accept it
+    // explicitly before it can reach a revision. Update to Latest captures the
+    // new bytes into a new snapshot, which is what makes this a changed document.
+    await updateDraftSourceToLatestWithActor(
+      agent,
+      { signingId: created.id, signingDocumentId: docA.id },
+      admin,
+    );
+
     const promotedChanged = await promotePackageRevisionFromDraftWithActor(
       agent,
       {
@@ -740,6 +751,21 @@ async function main() {
       process.env.NATIVE_SIGNING_ENABLED = previousGate;
     }
 
+    // Stage 4 captures a Draft source snapshot per included document, so Stage 3
+    // fixtures now own snapshot rows and Storage objects too.
+    for (const id of createdSigningIds) {
+      const { data: snapshots } = await admin
+        .from("signing_draft_source_snapshots")
+        .select("source_pdf_object_key")
+        .eq("signing_id", id);
+      for (const row of snapshots ?? []) {
+        const key = row.source_pdf_object_key as string;
+        if (key && !storageKeysToRemove.includes(key)) {
+          storageKeysToRemove.push(key);
+        }
+      }
+    }
+
     if (storageKeysToRemove.length > 0) {
       await admin.storage
         .from(SIGNING_ARTIFACTS_BUCKET)
@@ -776,6 +802,18 @@ async function main() {
       await admin.from("signing_document_versions").delete().eq("signing_id", id);
       await admin.from("signing_package_revisions").delete().eq("signing_id", id);
       await admin.from("signing_draft_fields").delete().eq("signing_id", id);
+      // The selection pointer is a RESTRICT FK: clear it before snapshot rows.
+      await admin
+        .from("signing_documents")
+        .update({
+          selected_draft_source_snapshot_id: null,
+          acknowledged_live_content_fingerprint: null,
+        })
+        .eq("signing_id", id);
+      await admin
+        .from("signing_draft_source_snapshots")
+        .delete()
+        .eq("signing_id", id);
       await admin.from("signing_documents").delete().eq("signing_id", id);
       await admin.from("signing_participants").delete().eq("signing_id", id);
       await admin

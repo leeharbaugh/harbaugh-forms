@@ -25,6 +25,12 @@ describe("Native Signing Stage 4 activation boundary contracts", () => {
   const migration = read(
     "supabase/migrations/20260915160000_native_signing_stage4_draft_snapshots_activation.sql",
   );
+  const wrapMigration = read(
+    "supabase/migrations/20260915161000_native_signing_stage4_credential_wrap.sql",
+  );
+  const wrapKeyMigration = read(
+    "supabase/migrations/20260915162000_native_signing_stage4_wrap_key_version.sql",
+  );
 
   it("issues opaque high-entropy tokens and stores only their hash", () => {
     const token = generateParticipantCredentialToken();
@@ -52,10 +58,65 @@ describe("Native Signing Stage 4 activation boundary contracts", () => {
     assert.doesNotMatch(credentials, /raw_token:/);
   });
 
+  it("wraps with a dedicated key and never falls back to the Supabase service key", () => {
+    // The whole point of the dedicated key: database credentials must not be
+    // reachable as wrapping material from this module at all.
+    assert.doesNotMatch(credentials, /SUPABASE_SECRET_KEY/);
+    assert.doesNotMatch(credentials, /SUPABASE_SERVICE_ROLE_KEY/);
+    assert.match(credentials, /SIGNING_CREDENTIAL_WRAP_KEY_ID/);
+    assert.match(credentials, /SIGNING_CREDENTIAL_WRAP_KEY/);
+    assert.match(credentials, /SIGNING_CREDENTIAL_WRAP_PREVIOUS_KEYS/);
+    assert.match(credentials, /class SigningCredentialWrapConfigError/);
+    // Keyring resolution happens before any credential row is written.
+    assert.match(
+      credentials,
+      /const keyring = resolveCredentialWrapKeyring\(\);/,
+    );
+  });
+
+  it("binds wrapped bearers to their row through AAD and a named key version", () => {
+    assert.match(credentials, /cipher\.setAAD\(buildCredentialWrapAad\(/);
+    assert.match(credentials, /decipher\.setAAD\(buildCredentialWrapAad\(/);
+    assert.match(
+      credentials,
+      /requireContextPart\(context\.credentialId, "credential id"\)/,
+    );
+    assert.match(credentials, /requireWrapKeyId\(wrapKeyId, "wrap key id"\)/);
+
+    // The credential id exists before wrapping so it can be part of the AAD.
+    assert.match(credentials, /const credentialId = randomUUID\(\);/);
+    assert.match(credentials, /id: credentialId,/);
+    assert.match(credentials, /wrap_key_id: wrapKeyId,/);
+
+    // Unwrap selects the key by the id recorded on the row.
+    assert.match(credentials, /wrapKeyId: data\.wrap_key_id as string \| null/);
+    assert.match(
+      credentials,
+      /signingParticipantId: data\.signing_participant_id as string/,
+    );
+
+    assert.match(wrapMigration, /add column if not exists token_wrapped text/);
+    assert.match(wrapKeyMigration, /add column if not exists wrap_key_id text/);
+    assert.match(wrapKeyMigration, /spc_wrapped_requires_key_id/);
+    assert.match(wrapKeyMigration, /spc_wrap_key_id_shape/);
+  });
+
   it("keeps credentials unusable until the Signing is In Progress", () => {
     assert.match(credentials, /signing\.lifecycle_state !== "IN_PROGRESS"/);
     assert.match(credentials, /credential\.revoked_at/);
     assert.match(credentials, /credential\.is_current !== true/);
+  });
+
+  it("authenticates on token_hash only and never decrypts to authenticate", () => {
+    const validate = credentials.slice(
+      credentials.indexOf("export async function validateParticipantCredential"),
+      credentials.indexOf("/** Constant-time hash comparison"),
+    );
+    assert.ok(validate.length > 0);
+    assert.match(validate, /hashParticipantCredentialToken\(rawToken\)/);
+    assert.doesNotMatch(validate, /token_wrapped/);
+    assert.doesNotMatch(validate, /unwrap/);
+    assert.doesNotMatch(validate, /wrap_key_id/);
   });
 
   it("routes activation through idempotency records per mode", () => {

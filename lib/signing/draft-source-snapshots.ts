@@ -6,6 +6,16 @@
  * document's appearance at capture time. It is NOT a signing_document_version,
  * NOT a package revision, and NOT signer evidence.
  *
+ * Immutable bytes are not the same thing as evidence. A snapshot's bytes never
+ * change after capture, yet the snapshot remains *preparation history*: it
+ * records how the agent set the package up, not what a participant agreed to.
+ * The evidentiary artifact is the prepared `signing_document_version` frozen
+ * into a package revision at activation (see document-versions.ts). Storage
+ * namespaces keep the two apart: `.../draft-snapshots/{id}/source.pdf` here
+ * versus `.../versions/{id}.pdf` for versions. Superseded snapshots are retained
+ * for audit/debug of preparation until a later retention policy prunes them, and
+ * they are deleted outright when an evidence-free document is removed.
+ *
  * Live packet_form edits never silently update a captured snapshot. Drift is
  * surfaced through content fingerprints (see source-drift.ts) and resolved
  * explicitly by Keep Current or Update to Latest.
@@ -73,6 +83,13 @@ export type CapturedDraftSourceState = {
   sourceUpdatedAt: string;
 };
 
+/**
+ * Draft snapshot bytes live under a `draft-snapshots/` namespace, deliberately
+ * separate from the evidentiary `versions/` namespace written by
+ * `buildPreparedVersionObjectKey`. Snapshot bytes are immutable once written,
+ * but immutability is not evidentiary status: see `isDraftSourceObjectKey` /
+ * `isPreparedVersionObjectKey` in stage1-schema.ts.
+ */
 export function buildDraftSourceObjectKey(options: {
   signingId: string;
   documentId: string;

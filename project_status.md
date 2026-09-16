@@ -13,23 +13,36 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Item | Result |
 |------|--------|
 | Feature branch | `feat/native-signing-stage-4` from `main` `d57e11c` |
-| Migrations (dev) | `20260915160000_native_signing_stage4_draft_snapshots_activation.sql`; `20260915161000_native_signing_stage4_credential_wrap.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| Migrations (dev) | `20260915160000_native_signing_stage4_draft_snapshots_activation.sql`; `20260915161000_native_signing_stage4_credential_wrap.sql`; `20260915162000_native_signing_stage4_wrap_key_version.sql`; `20260915163000_native_signing_stage4_entry_sessions.sql` applied to `ewxsxwzezhkeawnjvigx` |
 | Production migrations | **Not applied** |
 | Draft source snapshots | `signing_draft_source_snapshots`: exact source PDF in `signing-artifacts` + `field_views_json` + `annotations_json` + `content_fingerprint`; selected via `signing_documents.selected_draft_source_snapshot_id` |
 | Drift | Server fingerprint of live render inputs vs selected snapshot; `CURRENT` / `SOURCE_CHANGED` / `SOURCE_UNAVAILABLE`; Keep Current acknowledges one live fingerprint; Update to Latest inserts a **new** snapshot |
 | Re-include | Preserves selected Draft snapshot; surfaces Source Changed if live drifted; no silent refresh |
-| Prepared PDF | Promotion/activation renders from selected Draft snapshot (not live `packet_form`) |
+| Prepared PDF | Promotion/activation renders from selected Draft snapshot (not live `packet_form`); snapshot bytes are hash-verified before rendering and fail closed |
 | Dashboard / readiness | `/signings/[signingId]` + derived preflight (never a Ready lifecycle state) |
 | Activation | Common `activateSigningWithActor` (`REMOTE_SEND` \| `IN_PERSON`); idempotency via `signing_operation_idempotency`; Revision 1 + credentials then Draft → In Progress |
-| Credentials | `signing_participant_credentials`: `token_hash` verifier + server-only `token_wrapped` for invitation retry; unusable until In Progress |
+| Credentials | `signing_participant_credentials`: `token_hash` verifier (authentication never decrypts) + server-only `token_wrapped` for invitation retry, AAD-bound to `credentialId\|signingId\|participantId\|wrapKeyId` and stamped with `wrap_key_id`; unusable until In Progress |
+| Credential wrap key | **Dedicated and required:** `SIGNING_CREDENTIAL_WRAP_KEY_ID` + `SIGNING_CREDENTIAL_WRAP_KEY`, optional decrypt-only `SIGNING_CREDENTIAL_WRAP_PREVIOUS_KEYS`; **no Supabase-key fallback**; missing/malformed fails closed |
 | Delivery | Outbox `signing_work_items` + instructions/attempts; email failure does not undo activation; IN_PERSON skips invitation emails |
-| Entry shell | `/sign/[token]` validates credential; “I am [Name]” disabled; ceremony pending |
-| Browser/RLS | Stage 4 tables deny-by-default + FORCE RLS; grants revoked |
-| Tests | `npm run test:native-signing-stage4`; `npm run validate:native-signing-stage4-dev` |
+| Entry exchange | `/sign/{token}` Route Handler validates the credential, creates a `signing_entry_sessions` row, sets `hf_signing_entry` (HttpOnly, Secure, SameSite=Lax, Path=/sign, 30 min), 303 → `/sign/continue`; all failures are a bare 404 |
+| Entry shell | `/sign/continue` re-validates the cookie session (unexpired, unrevoked, In Progress, credential still current); “I am [Name]” disabled; ceremony pending |
+| Referrer / caching | `/sign/:path*` sends `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` |
+| Object-key namespaces | Preparation history `.../draft-snapshots/{id}/source.pdf` vs evidence `.../versions/{id}.pdf`, with `isDraftSourceObjectKey()` / `isPreparedVersionObjectKey()` predicates |
+| Browser/RLS | Stage 4 tables (including `signing_entry_sessions`) deny-by-default + FORCE RLS; grants revoked |
+| Tests | `npm run test:native-signing-stage4` (50 tests); `npm run validate:native-signing-stage4-dev` |
 
-**Still absent (next stage / later):** participant Signature/Initials ceremony, Finish Signing, Decline UX, amendment lock UI, reminders, completed PDFs/audit certificate, completion emails, copy recipients, admin integrity UI, protected-key event chain, production enablement.
+**Architecture/security review fixes (2026-09-15, applied on the feature branch):**
 
-**Recommended next:** Review Stage 4 on the feature branch; do not merge or begin the ceremony stage until an explicit prompt.
+1. **Dedicated wrapping key.** Credential wrapping no longer falls back to `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` — those names appear nowhere in `lib/signing/credentials.ts` and a boundary test enforces that. A purpose-separated key with a named version is mandatory, `signing_participant_credentials.wrap_key_id` records the version that wrapped each row, previous versions are decrypt-only during rotation, and wrap/unwrap are exported as pure keyring functions.
+2. **AAD row binding.** The credential UUID is generated before wrapping so the ciphertext is bound to `credentialId|signingId|participantId|wrapKeyId`. Replaying a wrapped bearer onto another credential row, another Signing, or another key version fails closed. Envelope version `v2.`; pre-review `v1.` ciphertext was cleared by migration and those credentials must be re-issued.
+3. **Draft snapshot vs evidence.** Documented in code and decisions: immutable snapshot bytes are *preparation history*, not evidentiary `signing_document_versions`. Namespaces unchanged; predicates added.
+4. **Token exchange.** `/sign/{token}` became a server redirector minting an HttpOnly entry session; the participant shell moved to `/sign/continue`. No bearer in a URL after the first hop.
+5. **Retention.** Superseded Draft snapshots are retained as preparation history for audit/debug until a later retention policy; hard-deleting an evidence-free document already deletes its snapshot rows and Storage objects (verified in `draft-documents.ts` and by the validator).
+6. **Stage 3 validator made Stage 4-aware.** `validate:native-signing-stage3-dev` was failing on this branch (pre-existing, from `8f394f8`): its “changed document produces a new version” step overwrote live Packet Form bytes, which Stage 4 correctly treats as drift rather than a content change, so promotion reused the version. It now runs Update to Latest before that promotion, and its cleanup clears the snapshot pointer and removes Stage 4 snapshot rows and Storage objects (previously leaked, blocking `signing_documents` deletion via the RESTRICT FK). Leftover dev fixture rows from the failing runs were removed; `harbaugh-forms-dev` has zero `signings` rows.
+
+**Still absent (next stage / later):** participant Signature/Initials ceremony, Finish Signing, Decline UX, amendment lock UI, reminders, completed PDFs/audit certificate, completion emails, copy recipients, admin integrity UI, protected-key event chain, Draft-snapshot retention policy, production enablement.
+
+**Recommended next:** Review Stage 4 on the feature branch; do not merge or begin the ceremony stage until an explicit prompt. Any environment that activates a Signing must set `SIGNING_CREDENTIAL_WRAP_KEY_ID` and `SIGNING_CREDENTIAL_WRAP_KEY` before enablement.
 
 ### Native Signing Stage 3 — Draft preparation + activation-snapshot primitives (2026-09-15)
 
@@ -70,7 +83,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 * Integrity verification preserves expected hash and fails closed for promotion/reuse.
 * Complete package revision freeze (documents/versions, participants, evidence `signing_fields`, pointer advance).
 
-**Explicitly still unavailable on `main` (Stage 4+):** reproducible Draft document source snapshots; source-change detection + Keep Current / Update to Latest; Signing dashboard readiness/preflight; common activation; participant credentials; delivery outbox; `/sign` entry shell; ceremony; production enablement. See Stage 4 section above for the feature-branch implementation.
+**Explicitly still unavailable on `main` (Stage 4+):** reproducible Draft document source snapshots; source-change detection + Keep Current / Update to Latest; Signing dashboard readiness/preflight; common activation; participant credentials + dedicated credential wrap key; delivery outbox; `/sign` entry exchange and shell; ceremony; production enablement. See Stage 4 section above for the feature-branch implementation.
 
 **Recommended next:** Review/merge Stage 4 when ready; do not begin the ceremony stage until an explicit prompt.
 
@@ -1227,7 +1240,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signatures Stage 4 (feature branch ready for review):** Implemented on `feat/native-signing-stage-4`. Do not merge or begin the ceremony/finalization stage until an explicit prompt. Preserve F1–F11 + R12 Stage 1–4 tests. Still no production enablement.
+1. **Native Signatures Stage 4 (feature branch ready for review):** Implemented on `feat/native-signing-stage-4`, including the 2026-09-15 architecture/security review fixes (dedicated versioned credential wrap key with AAD row binding; `/sign` bearer→cookie entry-session exchange; Draft-snapshot-vs-evidence documentation and object-key predicates). Do not merge or begin the ceremony/finalization stage until an explicit prompt. Preserve F1–F11 + R12 Stage 1–4 tests. Still no production enablement, and any environment that activates a Signing must set `SIGNING_CREDENTIAL_WRAP_KEY_ID` + `SIGNING_CREDENTIAL_WRAP_KEY` first.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically

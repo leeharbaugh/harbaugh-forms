@@ -2,8 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { buildDraftSourceObjectKey } from "./draft-source-snapshots";
 import {
+  buildDraftSourceObjectKey,
+  renderPreparedPdfFromDraftSnapshot,
+  type DraftSourceSnapshotRow,
+} from "./draft-source-snapshots";
+import { SigningError } from "./errors";
+import { buildPreparedVersionObjectKey } from "./prepare-pdf";
+import { compareDraftSourceFingerprints } from "./source-drift";
+import {
+  isDraftSourceObjectKey,
+  isPreparedVersionObjectKey,
   NATIVE_SIGNING_STAGE4_MIGRATIONS,
   NATIVE_SIGNING_STAGE4_TABLES,
 } from "./stage1-schema";
@@ -31,8 +40,11 @@ describe("Native Signing Stage 4 draft source snapshot contracts", () => {
       "signing_work_items",
       "signing_delivery_instructions",
       "signing_delivery_attempts",
+      // Added by the Stage 4 review fixes; see stage4-entry-exchange.test.ts.
+      "signing_entry_sessions",
     ]);
     for (const table of NATIVE_SIGNING_STAGE4_TABLES) {
+      if (table === "signing_entry_sessions") continue;
       assert.match(
         migration,
         new RegExp(`create table if not exists public\\.${table}`),
@@ -70,6 +82,137 @@ describe("Native Signing Stage 4 draft source snapshot contracts", () => {
       "signings/11111111-1111-4111-8111-111111111111/documents/22222222-2222-4222-8222-222222222222/draft-snapshots/33333333-3333-4333-8333-333333333333/source.pdf",
     );
     assert.doesNotMatch(key, /Contract|Buyer|@| /);
+  });
+
+  it("keeps preparation-history and evidentiary object keys in separate namespaces", () => {
+    const ids = {
+      signingId: "11111111-1111-4111-8111-111111111111",
+      documentId: "22222222-2222-4222-8222-222222222222",
+    };
+    const draftKey = buildDraftSourceObjectKey({
+      ...ids,
+      snapshotId: "33333333-3333-4333-8333-333333333333",
+    });
+    const versionKey = buildPreparedVersionObjectKey({
+      ...ids,
+      versionId: "44444444-4444-4444-8444-444444444444",
+    });
+
+    assert.match(draftKey, /\/draft-snapshots\//);
+    assert.match(versionKey, /\/versions\//);
+
+    // Immutable bytes in either namespace, but only one namespace is evidence.
+    assert.ok(isDraftSourceObjectKey(draftKey));
+    assert.ok(!isPreparedVersionObjectKey(draftKey));
+    assert.ok(isPreparedVersionObjectKey(versionKey));
+    assert.ok(!isDraftSourceObjectKey(versionKey));
+
+    for (const bogus of [
+      null,
+      undefined,
+      "",
+      42,
+      `${draftKey}.bak`,
+      draftKey.replace("draft-snapshots", "versions"),
+      versionKey.replace("versions", "draft-snapshots"),
+      "signings/not-a-uuid/documents/x/versions/y.pdf",
+    ]) {
+      assert.ok(!isDraftSourceObjectKey(bogus));
+      assert.ok(!isPreparedVersionObjectKey(bogus));
+    }
+
+    // The distinction is documented where each key is built and interpreted.
+    assert.match(snapshots, /Immutable bytes are not the same thing as evidence/);
+    assert.match(preparePdf, /evidentiary `versions\/` namespace/);
+  });
+
+  it("acknowledges one exact live fingerprint: Keep Current Y then Z re-raises drift", () => {
+    const snapshotFingerprint = "a".repeat(64);
+    const liveY = "b".repeat(64);
+    const liveZ = "c".repeat(64);
+
+    // No acknowledgement yet: drift.
+    assert.deepEqual(
+      compareDraftSourceFingerprints({
+        snapshotFingerprint,
+        liveFingerprint: liveY,
+        acknowledgedFingerprint: null,
+      }),
+      { status: "SOURCE_CHANGED", reason: "LIVE_CHANGED" },
+    );
+
+    // Keep Current on Y: current while live is still exactly Y.
+    assert.deepEqual(
+      compareDraftSourceFingerprints({
+        snapshotFingerprint,
+        liveFingerprint: liveY,
+        acknowledgedFingerprint: liveY,
+      }),
+      { status: "CURRENT", reason: "ACKNOWLEDGED_LIVE_CHANGE" },
+    );
+
+    // Live then changes to Z: the Y acknowledgement must not suppress drift.
+    assert.deepEqual(
+      compareDraftSourceFingerprints({
+        snapshotFingerprint,
+        liveFingerprint: liveZ,
+        acknowledgedFingerprint: liveY,
+      }),
+      { status: "SOURCE_CHANGED", reason: "LIVE_CHANGED" },
+    );
+
+    // Live reverting to the snapshot is CURRENT on its own merits.
+    assert.deepEqual(
+      compareDraftSourceFingerprints({
+        snapshotFingerprint,
+        liveFingerprint: snapshotFingerprint,
+        acknowledgedFingerprint: liveY,
+      }),
+      { status: "CURRENT", reason: "MATCHES_SNAPSHOT" },
+    );
+  });
+
+  it("fails closed when snapshot bytes do not match the recorded hash", async () => {
+    const bytes = Buffer.from("not the bytes this snapshot recorded", "utf8");
+    const snapshot = {
+      id: "33333333-3333-4333-8333-333333333333",
+      signing_id: "11111111-1111-4111-8111-111111111111",
+      signing_document_id: "22222222-2222-4222-8222-222222222222",
+      source_pdf_storage_bucket: "signing-artifacts",
+      source_pdf_object_key: "signings/x/documents/y/draft-snapshots/z/source.pdf",
+      // Deliberately wrong: simulates tampered or swapped Storage bytes.
+      source_pdf_sha256: "0".repeat(64),
+      source_pdf_byte_size: bytes.byteLength,
+      field_views_json: [],
+      annotations_json: [],
+      content_fingerprint: "1".repeat(64),
+    } as unknown as DraftSourceSnapshotRow;
+
+    const adminReturning = (result: { data: unknown; error: unknown }) =>
+      ({
+        storage: { from: () => ({ download: async () => result }) },
+      }) as never;
+
+    await assert.rejects(
+      () =>
+        renderPreparedPdfFromDraftSnapshot({
+          admin: adminReturning({ data: new Blob([bytes]), error: null }),
+          snapshot,
+        }),
+      (error: unknown) =>
+        error instanceof SigningError && error.code === "INTEGRITY_MISMATCH",
+    );
+
+    // A snapshot object that can no longer be read also fails closed.
+    await assert.rejects(
+      () =>
+        renderPreparedPdfFromDraftSnapshot({
+          admin: adminReturning({ data: null, error: { message: "gone" } }),
+          snapshot,
+        }),
+      (error: unknown) =>
+        error instanceof SigningError && error.code === "VALIDATION_FAILED",
+    );
   });
 
   it("captures snapshots with a stale-source guard around the live read", () => {
@@ -131,7 +274,11 @@ describe("Native Signing Stage 4 draft source snapshot contracts", () => {
     assert.match(sourceDrift, /"SOURCE_UNAVAILABLE"/);
     assert.match(
       sourceDrift,
-      /liveFingerprint === document\.acknowledged_live_content_fingerprint/,
+      /input\.liveFingerprint === input\.acknowledgedFingerprint/,
+    );
+    assert.match(
+      sourceDrift,
+      /acknowledgedFingerprint:\s*\n\s*document\.acknowledged_live_content_fingerprint \?\? null/,
     );
     assert.match(
       sourceDrift,
