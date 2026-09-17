@@ -323,6 +323,219 @@ A bearer credential in a URL persists in browser history, bookmarks, shared link
 
 ---
 
+## Entry sessions and ceremony browser sessions are separate runtime layers (Model B)
+
+**Date:** 2026-09-17
+
+**Decision:**
+Stage 4 `hf_signing_entry` / `signing_entry_sessions` remains pre-ceremony access plumbing only. After the participant affirmatively selects **I am [Participant Name]**, the server creates a distinct ceremony browser session represented by **`signing_browser_sessions`**.
+
+The ceremony browser session belongs to exactly one Signing and one participant, derives only from a validated participant entry session or approved in-person handoff, is never a general Harbaugh Forms login, replaces the entry session as authority for ceremony actions, uses its own HttpOnly cookie, supports the approved 60-minute inactivity model, and revalidates the underlying credential (when remote), participant, Signing state, package revision, and locks on every meaningful action. Once the ceremony session is established, the entry session is terminated or otherwise rendered non-authoritative.
+
+**Reason:**
+Keeping entry exchange separate from ceremony authority prevents a short-lived access cookie from becoming indefinite signing power, supports anti-fixation, and matches the already-approved `signing_browser_sessions` domain model.
+
+**Consequences:**
+
+* Entry-session validation alone must never accept Signature/Initials placements, Finish, or Decline.
+* Ceremony routes read the ceremony cookie, not `hf_signing_entry`.
+* Exact cookie name/path and supersession SQL remain technical design.
+
+**Related files or migrations:**
+
+* This file: **Opening a Signing invitation exchanges the bearer for a short-lived entry session** (2026-09-15); **Signing credentials, completed-package credentials, copy recipients, and temporary browser sessions are separate** (2026-09-14)
+
+---
+
+## At most one active ceremony browser session per participant
+
+**Date:** 2026-09-17
+
+**Decision:**
+Only one **ACTIVE** ceremony browser session may exist for a given participant within a Signing. When the same participant re-enters and establishes a new ceremony session, the prior active session is atomically superseded/invalidated, its presence lease is released, and all already server-accepted work is preserved. The older browser or tab must fail future writes and show an inactive-session / reopen-link message. No important signing state may exist only unsaved in the browser; all meaningful ceremony actions are server-authoritative and autosaved.
+
+**Reason:**
+Concurrent active sessions for one participant create confusing presence, ambiguous amendment blocking, and write races without improving participant usability.
+
+**Consequences:**
+
+* Session creation and supersession must be transactional.
+* Idempotent server state remains the resume source of truth.
+
+**Related files or migrations:**
+
+* This file: **Entry sessions and ceremony browser sessions are separate runtime layers (Model B)** (2026-09-17)
+
+---
+
+## Participant presence leases start only after identity affirmation
+
+**Date:** 2026-09-17
+
+**Decision:**
+Participant presence begins when the ceremony browser session is established after **I am [Name]**. Merely opening the Stage 4 entry page does not block amendments. The active ceremony browser session owns and renews the participant presence lease. Only the current active ceremony session for that participant may own that participant's presence lease. Timeout, supersession, revocation, Finish, Decline, or explicit exit releases or expires the lease.
+
+**Reason:**
+Abandoned pre-affirmation tabs must not prevent an agent from acquiring a permitted amendment lock.
+
+**Consequences:**
+
+* Presence lease rows reference the ceremony browser session, not the entry session.
+* Lease heartbeat may renew presence without resetting the ceremony inactivity deadline.
+
+**Related files or migrations:**
+
+* This file: **Signing presence leases and amendment locks are temporary, server-expiring concurrency records** (2026-09-14)
+
+---
+
+## Pre-affirmation disclosure shows participant, agent, and brokerage context
+
+**Date:** 2026-09-17
+
+**Decision:**
+Before **I am [Participant Name]**, the participant shell shows only minimal identity and official-business context: the participant name, the sending agent's name, the sending agent's brokerage name, and optionally the neutral Signing title when already available. It must not expose document titles, PDF or document contents, contractual details, field assignments, signing progress, or other participants' activity. No ceremony document bytes are disclosed before affirmation. Sender and brokerage identification is a product choice that reinforces that the Signing is official real-estate business, independent of whether a particular communication is technically subject to an advertising rule.
+
+**Reason:**
+Participants need enough context to recognize a legitimate Signing before affirming identity, without premature disclosure of contract content.
+
+**Consequences:**
+
+* `/sign/continue` (and in-person pre-affirmation) load only approved context fields.
+* Document viewers and field progress load only after a valid ceremony browser session exists.
+
+**Related files or migrations:**
+
+* This file: **Remote participants use emailed links with explicit identity confirmation** (2026-09-06); **Electronic-signing consent is a single per-Signing disclosure and affirmative access confirmation** (2026-09-14)
+
+---
+
+## Ceremony inactivity uses meaningful participant activity, not heartbeat alone
+
+**Date:** 2026-09-17
+
+**Decision:**
+Ceremony browser sessions continue to use the approved **60-minute inactivity** rule. Meaningful activity that resets the inactivity clock includes deliberate participant interaction such as identity/consent/adoption actions, Start Signing, document/page navigation, detectable active scrolling/review interaction when recorded server-side without excessive logging, placement attempts, placement replacement/removal, Finish, and Decline. Heartbeat alone must not keep an abandoned session alive indefinitely. Presence-lease renewal may use heartbeat, but the ceremony session inactivity deadline remains based on meaningful participant activity. After timeout, accepted server state survives; the participant re-enters through the existing valid Signing link or in-person handoff, must repeat **I am [Name]**, and receives a new ceremony browser session that replaces the old one.
+
+**Reason:**
+Separating presence heartbeat from ceremony inactivity prevents abandoned tabs from indefinitely blocking amendments while still allowing short renewable presence leases.
+
+**Consequences:**
+
+* `last_meaningful_activity_at` and presence `renewed_at` are distinct operational timestamps.
+* Ordinary navigation/heartbeat is not durable Signing-event history.
+
+**Related files or migrations:**
+
+* This file: **Signing participants use a focused, autosaving signature-and-initials ceremony** (2026-09-06)
+
+---
+
+## Session timeout repeats identity affirmation but not electronic-signing consent when disclosure is unchanged
+
+**Date:** 2026-09-17
+
+**Decision:**
+If consent was already validly accepted for the applicable disclosure version, a browser-session timeout does not require consent again. Identity affirmation repeats; consent remains valid; accepted marks and placements remain valid. If consent was never completed, the participant resumes at consent. If the applicable disclosure version later changes through an approved process, fresh consent may be required; an existing acceptance must not silently bind to changed disclosure text. This timeout rule is distinct from a permitted pre-signature package amendment, which may require ceremony review to restart under existing amendment decisions.
+
+**Reason:**
+Repeating identity affirmation after inactivity preserves the attestation boundary without forcing redundant disclosure clicks when the accepted disclosure is unchanged.
+
+**Consequences:**
+
+* Consent evidence must identify disclosure version and content fingerprint, not only `consent_accepted_at`.
+* Ceremony routing after re-affirmation skips consent when the stored acceptance still matches the current applicable disclosure.
+
+**Related files or migrations:**
+
+* This file: **Electronic-signing consent is a single per-Signing disclosure and affirmative access confirmation** (2026-09-14)
+
+---
+
+## Adopted-mark locking is per participant and mark type, distinct from package freeze
+
+**Date:** 2026-09-17
+
+**Decision:**
+Package freeze and adopted-mark freeze are separate concepts. The first accepted Signature or Initials placement anywhere in the Signing freezes the package revision globally. Each participant's adopted mark locks only when **that participant first successfully uses that particular mark type**. Participant A's Signature use does not lock Participant B's unused Signature, and does not automatically lock Participant A's unused Initials. Once a mark type has been used successfully by that participant, that adopted-mark representation cannot be changed for that Signing; field placements may still be removed or replaced before Finish using the same locked mark. This supersedes earlier wording that locked both signature and initials together after a participant's first placement of either kind.
+
+**Reason:**
+Participants often adopt Signature before Initials (or the reverse). Locking unused mark types early creates unnecessary ceremony friction without improving package integrity.
+
+**Consequences:**
+
+* `signing_adopted_marks.locked_at` is set per mark row/kind on first successful use of that kind.
+* Global `signings.frozen_package_revision_id` remains the package-freeze pointer.
+
+**Related files or migrations:**
+
+* This file: **Authenticated Users may keep one reusable signature and initials preset** (2026-09-06); **A Signing freezes on its first signature or initial** (earlier freeze decisions)
+
+---
+
+## Paired Date Signed tracks its Signature placement through remove and replace
+
+**Date:** 2026-09-17
+
+**Decision:**
+A linked automatic Date Signed follows its Signature placement. If a participant removes a Signature before Finish, the linked Date Signed ceases to be effective with it, while prior Signature/Date activity remains historical. If a participant replaces the Signature, the new Signature acceptance receives a new automatic Date Signed derived from the new server acceptance time; the old Date Signed value is not reused.
+
+**Reason:**
+Date Signed is evidence of the corresponding Signature act, so it must move with that act's effective state.
+
+**Consequences:**
+
+* Placement acceptance/removal transactions update the linked Date Signed disposition in the same authoritative write path.
+* Initials still do not auto-create Date Signed unless an independently configured Date Signed field exists.
+
+**Related files or migrations:**
+
+* This file: **Signature fields create optional paired dates; initials do not** (2026-09-06)
+
+---
+
+## Personal typed signatures match the displayed name exactly without OCR
+
+**Date:** 2026-09-17
+
+**Decision:**
+For personal signing, typed signature text must exactly match the approved displayed Signing participant name. This stage does not implement OCR or PDF-name matching. The agent remains responsible for preparing the document with the intended signer name before signing. Representative signing continues to follow the separate approved capacity/represented-party model and does not claim authority verification.
+
+**Reason:**
+Exact displayed-name enforcement is already approved product behavior; PDF text extraction would be brittle and is unnecessary for the ceremony stage.
+
+**Consequences:**
+
+* Ceremony UI and server validation compare typed text to the current/frozen participant display name only.
+* Document-content name detection remains out of scope.
+
+**Related files or migrations:**
+
+* This file: **A personal participant's signing name must match the document and ceremony** (2026-09-14)
+
+---
+
+## Consent evidence records disclosure version, fingerprint, and acceptance scope
+
+**Date:** 2026-09-17
+
+**Decision:**
+Consent evidence must preserve more than `consent_accepted_at`. The system retains a stable disclosure version/id, a SHA-256 (or equivalent) content fingerprint, the accepted timestamp, and participant/Signing (and package-revision/session provenance as appropriate). Prefer retaining or referencing the exact disclosure content in a durable immutable way sufficient for later reproduction. Do not rely only on a mutable global disclosure string. Development may use clearly marked non-production placeholder disclosure copy; production enablement still requires Texas legal review of final disclosure language.
+
+**Reason:**
+Later audit and certificate generation must prove exactly which disclosure the participant accepted.
+
+**Consequences:**
+
+* Ceremony migrations introduce durable disclosure-version storage and participant acceptance references.
+* Changing disclosure text publishes a new version rather than rewriting historical acceptance rows.
+
+**Related files or migrations:**
+
+* This file: **Electronic-signing consent is a single per-Signing disclosure and affirmative access confirmation** (2026-09-14)
+
+---
+
 ## Mutable Draft signer-field instructions use `signing_draft_fields`, not revision-scoped `signing_fields`
 
 **Date:** 2026-09-15

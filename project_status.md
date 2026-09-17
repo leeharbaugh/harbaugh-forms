@@ -1,10 +1,39 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-16 (Native Signing Stages 1–4 merged to `main`; Stage 4 DB remains development-only; production Signing schema still absent; ceremony not started)
+**As of:** 2026-09-17 (Native Signing Stages 1–4 merged to `main`; participant ceremony stage in progress on `feat/native-signing-ceremony`; Stage 4–5 DB development-only; production Native Signing unavailable; finalization deferred)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
+
+### Native Signing Stage 5 — participant ceremony (2026-09-17)
+
+**Status:** **Implemented on feature branch `feat/native-signing-ceremony`.** Durable ceremony decisions recorded in `decisions.md` (2026-09-17). **Default-off feature gate still required.** **No completed-PDF finalization, audit certificate, reminders, copy recipients, or production enablement.** Production Native Signing remains unavailable.
+
+| Item | Result |
+|------|--------|
+| Feature branch | `feat/native-signing-ceremony` (not merged) |
+| Migrations (dev) | `20260917120000_native_signing_ceremony_foundation.sql`; `20260917130000_native_signing_ceremony_disclosure_fingerprint.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| Production migrations | **Not applied** |
+| Session model | **Model B** — Stage 4 `hf_signing_entry` is pre-ceremony only; after **I am [Name]** authority is `hf_signing_ceremony` / `signing_browser_sessions` |
+| One-active-session | Unique partial index + transactional supersession; old tab gets `SESSION_SUPERSEDED` |
+| Presence | `signing_participant_presence_leases` begin only after affirmation; heartbeat renews lease only |
+| Inactivity | 60 minutes from last meaningful activity; heartbeat does not extend inactivity |
+| Pre–I am UI | Participant name, sending agent, brokerage, optional Signing title; no docs/PDF/progress |
+| Consent evidence | `signing_consent_disclosure_versions` + participant `consent_disclosure_version_id` / `consent_content_sha256`; timeout does not re-prompt when version unchanged |
+| Mark locking | Per participant + mark type; package freeze remains global on first accepted mark |
+| Date Signed | Linked automatic date follows Signature remove/replace with fresh acceptance time |
+| Finish vs Complete | Last Finish sets `finalization_condition=READY` + enqueues `FINALIZE_SIGNING` work item; lifecycle stays `IN_PROGRESS` (not `COMPLETE`) |
+| Decline | Whole-Signing terminal `DECLINED` with confirmation; ends sessions/leases |
+| In-person | `signing_in_person_handoffs` + `/sign/in-person/{token}` → same pre-affirm / ceremony model |
+| Browser/RLS | All new ceremony tables deny-by-default + FORCE RLS |
+| Tests | `npm run test:native-signing-ceremony` (39); `npm run validate:native-signing-ceremony-dev` green on linked development |
+
+**Settled ceremony decisions (documented before implement):** Model B sessions; one active ceremony session; presence after I am; pre-affirmation disclosure; meaningful-activity inactivity; consent resume after timeout; mark-type locking; Date Signed follows Signature; typed name exact match without OCR; consent version+fingerprint evidence.
+
+**Still deferred after this stage:** completed signed PDFs, audit certificate generation, finalization worker beyond pending/enqueue, reminders, overdue, copy recipients, completed-package delivery, admin integrity remediation, production migrations/enablement, drawn-mark UI surface (server accepts drawn paths; typed path is the shipping UI).
+
+**Recommended next:** Review this branch; then a separate finalization-stage prompt. Do not merge to production enablement and do not promote Vercel.
 
 ### Native Signing Stage 4 — Draft source snapshots + activation foundation (2026-09-16)
 
@@ -1243,7 +1272,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signatures ceremony stage (awaiting explicit approval):** Stages 1–4 are merged to `main` (Stage 4 DB development-only). Do not begin participant Signature/Initials ceremony, Finish Signing, or finalization until an explicit prompt. Preserve F1–F11 + R12 Stage 1–4 tests. Still no production enablement. Any environment that activates a Signing must set `SIGNING_CREDENTIAL_WRAP_KEY_ID` + `SIGNING_CREDENTIAL_WRAP_KEY` first.
+1. **Native Signatures ceremony stage (in progress on `feat/native-signing-ceremony`):** Stages 1–4 remain on `main`. Ceremony decisions (2026-09-17) and implementation live on the feature branch only. Do not merge/enable production, and do not begin completed-PDF finalization until an explicit finalization prompt. Preserve F1–F11 + R12 Stage 1–4 tests; extend R12 for ceremony. Any environment that activates a Signing must set `SIGNING_CREDENTIAL_WRAP_KEY_ID` + `SIGNING_CREDENTIAL_WRAP_KEY` first.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically

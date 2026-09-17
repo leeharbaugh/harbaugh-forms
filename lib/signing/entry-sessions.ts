@@ -263,6 +263,31 @@ export async function touchSigningEntrySession(
   }
 }
 
+/**
+ * Revoke one entry session.
+ *
+ * Used when a ceremony browser session takes over authority after "I am
+ * [Name]": the entry session must not survive as a second, longer-lived way to
+ * reach ceremony state.
+ */
+export async function revokeSigningEntrySessionById(options: {
+  admin: SupabaseClient;
+  signingId: string;
+  sessionId: string;
+  reason: string;
+}): Promise<void> {
+  const { error } = await options.admin
+    .from("signing_entry_sessions")
+    .update({
+      revoked_at: new Date().toISOString(),
+      revoked_reason: options.reason,
+    })
+    .eq("id", options.sessionId)
+    .eq("signing_id", options.signingId)
+    .is("revoked_at", null);
+  if (error) throw new Error(error.message);
+}
+
 /** Revoke every session derived from a credential (revoke / re-issue paths). */
 export async function revokeSigningEntrySessionsForCredential(options: {
   admin: SupabaseClient;
