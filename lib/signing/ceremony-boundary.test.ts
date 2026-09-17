@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { SIGNING_CEREMONY_COOKIE_NAME } from "./browser-sessions";
 import { SIGNING_ENTRY_COOKIE_NAME } from "./entry-sessions";
-import { DEVICE_HANDOFF_LOCK_COOKIE_NAME } from "./device-handoff-lock";
 import { SIGNING_HANDOFF_COOKIE_NAME } from "./in-person-handoff";
 import {
   NATIVE_SIGNING_CEREMONY_MIGRATIONS,
@@ -331,16 +330,23 @@ describe("Native Signing ceremony boundaries", () => {
     assert.match(deviceLockMigration, /sdhl_one_open_per_signing_uidx/);
     assert.match(deviceLockLib, /DEVICE_HANDOFF_LOCK_COOKIE_NAME/);
     assert.match(deviceLockLib, /DEVICE_HANDOFF_LOCK_COOKIE_PATH = "\/"/);
+    // Segment boundaries: `/signings` must not match `/sign`.
+    assert.match(deviceLockLib, /pathname\.startsWith\("\/sign\/"\)/);
+    assert.match(deviceLockLib, /pathname === "\/sign"/);
     assert.match(agentActions, /buildDeviceHandoffLockCookieAttributes/);
+    assert.match(agentActions, /buildDeviceHandoffActiveCookieAttributes/);
     assert.match(agentActions, /unlockDeviceHandoffLockAction/);
     assert.match(inPersonHandoffLib, /createDeviceHandoffLock/);
     assert.match(proxy, /DEVICE_HANDOFF_LOCK_COOKIE_NAME/);
     assert.match(proxy, /\/sign\/return-to-agent/);
+    assert.match(proxy, /no-store/);
     assert.match(returnToAgentPage, /validateDeviceHandoffLock/);
     assert.match(read("components/sign/return-to-agent-form.tsx"), /unlockDeviceHandoffLockAction/);
+    assert.match(read("components/sign/return-to-agent-form.tsx"), /location\.replace/);
     assert.doesNotMatch(returnToAgentPage, /loadCeremonyDocumentBytes/);
     assert.match(actions, /exitCeremonyAction/);
     assert.match(actions, /return-to-agent/);
+    assert.match(read("components/device-handoff-bfcache-guard.tsx"), /pageshow/);
   });
 
   it("authorizes the agent handoff with the ordinary Signing actor checks", () => {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import { DeviceHandoffBfcacheGuard } from "@/components/device-handoff-bfcache-guard";
 import "./globals.css";
 
 const defaultUrl = process.env.VERCEL_URL
@@ -33,6 +34,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <DeviceHandoffBfcacheGuard />
           {children}
         </ThemeProvider>
       </body>

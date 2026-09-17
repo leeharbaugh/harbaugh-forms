@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { unlockDeviceHandoffLockAction } from "@/lib/signing/ceremony-agent-actions";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 export function ReturnToAgentForm({
@@ -14,7 +13,6 @@ export function ReturnToAgentForm({
   signingId: string | null;
   redirectPath: string;
 }) {
-  const router = useRouter();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -31,8 +29,9 @@ export function ReturnToAgentForm({
             setError(result.error);
             return;
           }
-          router.push(redirectPath);
-          router.refresh();
+          // Replace so Back cannot return to the locked Return-to-Agent screen
+          // or a prior workspace history entry from before handoff.
+          window.location.replace(redirectPath);
         });
       }}
     >

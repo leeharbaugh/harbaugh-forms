@@ -4,7 +4,9 @@ import "server-only";
 
 import { requireSigningActor } from "@/lib/signing/actor";
 import {
+  buildClearedDeviceHandoffActiveCookieAttributes,
   buildClearedDeviceHandoffLockCookieAttributes,
+  buildDeviceHandoffActiveCookieAttributes,
   buildDeviceHandoffLockCookieAttributes,
   DEVICE_HANDOFF_LOCK_COOKIE_NAME,
   releaseDeviceHandoffLockWithActor,
@@ -69,6 +71,8 @@ export async function startInPersonHandoffAction(input: {
         rawLockToken: handoff.rawDeviceLockToken,
       }),
     );
+    // Readable companion flag for bfcache/pageshow guards only — not authority.
+    cookieStore.set(buildDeviceHandoffActiveCookieAttributes());
 
     return {
       ok: true,
@@ -113,6 +117,7 @@ export async function unlockDeviceHandoffLockAction(input: {
     });
 
     cookieStore.set(buildClearedDeviceHandoffLockCookieAttributes());
+    cookieStore.set(buildClearedDeviceHandoffActiveCookieAttributes());
 
     return {
       ok: true,

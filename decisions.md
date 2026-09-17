@@ -615,14 +615,19 @@ A shared device must not leave brokerage workspace and participant ceremony acce
 **Consequences:**
 
 * Durable device handoff lock rows and an HttpOnly lock cookie scope workspace routing.
+* The lock is **browser/device scoped** (cookies on the handed-off browser), not account-global: an agent on a second independent device is not locked out of Harbaugh Forms unless that browser also holds the lock cookie.
+* Private authenticated workspace responses use `Cache-Control: no-store` (and related private/no-cache headers). A readable companion flag plus a `pageshow`/bfcache guard force Return-to-Agent when a restored history entry would otherwise briefly show pre-handoff workspace HTML. Server/proxy lock validation remains authoritative.
 * Ceremony completion redirects to Return-to-Agent when the lock is active, not to agent dashboards.
+* Handoff entry and unlock prefer `location.replace` so ordinary Back does not re-enter the prior workspace history entry.
 
 **Related files or migrations:**
 
 * `supabase/migrations/20260917140000_native_signing_ceremony_device_handoff_lock.sql`
 * `lib/signing/device-handoff-lock.ts`
+* `components/device-handoff-bfcache-guard.tsx`
 * `app/sign/return-to-agent/page.tsx`
 * `lib/supabase/proxy.ts`
+* `next.config.ts` (private workspace `no-store` headers)
 
 ---
 

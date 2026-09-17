@@ -169,7 +169,7 @@ export function CeremonyShell({
             <Button
               type="button"
               className="w-full"
-              onClick={() => window.location.assign("/sign/return-to-agent")}
+              onClick={() => window.location.replace("/sign/return-to-agent")}
             >
               Hand device back to your agent
             </Button>

@@ -11,6 +11,13 @@ import { SigningError } from "./errors";
 import { isUuid, type SigningActor } from "./types";
 
 export const DEVICE_HANDOFF_LOCK_COOKIE_NAME = "hf_device_handoff_lock" as const;
+/**
+ * Non-authoritative companion flag (readable by JS) so a bfcache/pageshow
+ * guard can instantly leave a restored workspace page. Presence of this cookie
+ * is never treated as lock authority — only `hf_device_handoff_lock` is.
+ */
+export const DEVICE_HANDOFF_ACTIVE_COOKIE_NAME =
+  "hf_device_handoff_active" as const;
 export const DEVICE_HANDOFF_LOCK_COOKIE_PATH = "/" as const;
 /**
  * Device lock outlives the short handoff entry token: the participant may take
@@ -61,11 +68,51 @@ export function buildDeviceHandoffLockCookieAttributes(options: {
   };
 }
 
+export type DeviceHandoffActiveCookieAttributes = {
+  name: typeof DEVICE_HANDOFF_ACTIVE_COOKIE_NAME;
+  value: "1";
+  httpOnly: false;
+  secure: true;
+  sameSite: "lax";
+  path: typeof DEVICE_HANDOFF_LOCK_COOKIE_PATH;
+  maxAge: number;
+};
+
+/** Readable flag only — never a substitute for the HttpOnly lock secret. */
+export function buildDeviceHandoffActiveCookieAttributes(options?: {
+  ttlMinutes?: number;
+}): DeviceHandoffActiveCookieAttributes {
+  return {
+    name: DEVICE_HANDOFF_ACTIVE_COOKIE_NAME,
+    value: "1",
+    httpOnly: false,
+    secure: true,
+    sameSite: "lax",
+    path: DEVICE_HANDOFF_LOCK_COOKIE_PATH,
+    maxAge: (options?.ttlMinutes ?? DEVICE_HANDOFF_LOCK_TTL_MINUTES) * 60,
+  };
+}
+
 export function buildClearedDeviceHandoffLockCookieAttributes(): DeviceHandoffLockCookieAttributes {
   return {
     name: DEVICE_HANDOFF_LOCK_COOKIE_NAME,
     value: "",
     httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: DEVICE_HANDOFF_LOCK_COOKIE_PATH,
+    maxAge: 0,
+  };
+}
+
+export function buildClearedDeviceHandoffActiveCookieAttributes(): Omit<
+  DeviceHandoffActiveCookieAttributes,
+  "value"
+> & { value: "" } {
+  return {
+    name: DEVICE_HANDOFF_ACTIVE_COOKIE_NAME,
+    value: "",
+    httpOnly: false,
     secure: true,
     sameSite: "lax",
     path: DEVICE_HANDOFF_LOCK_COOKIE_PATH,
@@ -269,11 +316,16 @@ export async function releaseDeviceHandoffLockWithActor(options: {
 
 /** Paths that remain reachable while the device handoff lock cookie is set. */
 export function isPathAllowedDuringDeviceHandoffLock(pathname: string): boolean {
+  // Use segment boundaries so `/signings` is not treated as `/sign`.
   return (
-    pathname.startsWith("/sign") ||
-    pathname.startsWith("/auth") ||
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/api/auth")
+    pathname === "/sign" ||
+    pathname.startsWith("/sign/") ||
+    pathname === "/auth" ||
+    pathname.startsWith("/auth/") ||
+    pathname === "/login" ||
+    pathname.startsWith("/login/") ||
+    pathname === "/api/auth" ||
+    pathname.startsWith("/api/auth/")
   );
 }
 

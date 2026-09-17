@@ -20,7 +20,9 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/sign/return-to-agent";
     url.search = "";
-    return NextResponse.redirect(url);
+    const redirect = NextResponse.redirect(url);
+    redirect.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    return redirect;
   }
 
   // If the env vars are not set, skip proxy check. You can remove this
@@ -120,6 +122,19 @@ export async function updateSession(request: NextRequest) {
   //    return myNewResponse
   // If this is not done, you may be causing the browser and server to go out
   // of sync and terminate the user's session prematurely!
+
+  // Private authenticated HTML must not be restorable from browser cache after
+  // an in-person handoff begins on the same device. Segment-aware: `/signings`
+  // is workspace and must be no-store; `/sign/*` already has ceremony no-store.
+  if (
+    !path.startsWith("/_next") &&
+    !isPathAllowedDuringDeviceHandoffLock(path)
+  ) {
+    supabaseResponse.headers.set(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, private",
+    );
+  }
 
   return supabaseResponse;
 }
