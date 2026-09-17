@@ -1,6 +1,6 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-17 (Native Signing Stages 1–4 merged to `main`; participant ceremony stage in progress on `feat/native-signing-ceremony`; Stage 4–5 DB development-only; production Native Signing unavailable; finalization deferred)
+**As of:** 2026-09-17 (Native Signing Stages 1–5 merged to `main`; Stage 1–5 DB development-only; production Native Signing unavailable; finalization deferred)
 
 ## Current State
 
@@ -8,20 +8,22 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 ### Native Signing Stage 5 — participant ceremony (2026-09-17)
 
-**Status:** **Implemented on feature branch `feat/native-signing-ceremony`.** Durable ceremony decisions recorded in `decisions.md` (2026-09-17). **Default-off feature gate still required.** **No completed-PDF finalization, audit certificate, reminders, copy recipients, or production enablement.** Production Native Signing remains unavailable.
+**Status:** **Code merged to `main`.** Development migrations applied to `harbaugh-forms-dev` only. **Default-off feature gate still required.** **No completed-PDF finalization, audit certificate, reminders, copy recipients, or production enablement.** Production Native Signing remains unavailable (no Stage 1–5 schema there).
 
 | Item | Result |
 |------|--------|
-| Feature branch / PR | `feat/native-signing-ceremony` — [PR #39](https://github.com/leeharbaugh/harbaugh-forms/pull/39) (not merged) |
-| Migrations (dev) | `20260917120000_native_signing_ceremony_foundation.sql`; `20260917130000_native_signing_ceremony_disclosure_fingerprint.sql`; `20260917140000_native_signing_ceremony_device_handoff_lock.sql` (apply on dev before validator) |
-| Production migrations | **Not applied** |
+| PR | [#39](https://github.com/leeharbaugh/harbaugh-forms/pull/39) squash-merged `2026-09-17T21:13:11Z` → `main` `8c18c7d` (from reviewed `d950f6b`) |
+| Feature branch | `feat/native-signing-ceremony` deleted after merge |
+| Migrations (dev) | `20260917120000_native_signing_ceremony_foundation.sql`; `20260917130000_native_signing_ceremony_disclosure_fingerprint.sql`; `20260917140000_native_signing_ceremony_device_handoff_lock.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| Production migrations | **Not applied**; prod still has no Stage 5 ceremony tables / no production Native Signing enablement |
 | Session model | **Model B** — Stage 4 `hf_signing_entry` is pre-ceremony only; after **I am [Name]** authority is `hf_signing_ceremony` / `signing_browser_sessions` |
 | One-active-session | Unique partial index + transactional supersession; old tab gets `SESSION_SUPERSEDED` |
 | Presence | `signing_participant_presence_leases` begin only after affirmation; heartbeat renews lease only |
 | Inactivity | 60 minutes from last meaningful activity; heartbeat does not extend inactivity |
 | Pre–I am UI | Participant name, sending agent, brokerage, optional Signing title; no docs/PDF/progress |
 | Consent evidence | `signing_consent_disclosure_versions` + participant `consent_disclosure_version_id` / `consent_content_sha256`; timeout does not re-prompt when version unchanged |
-| Mark locking | Per participant + mark type; package freeze remains global on first accepted mark |
+| Full names | Free-form display name (no first/middle/last schema); multi-middle, hyphenated, apostrophe, prefix/suffix supported |
+| Mark locking | Per participant + mark type; typed Signature exact match; typed Initials suggested and editable until first use; package freeze remains global on first accepted mark |
 | Date Signed | Linked automatic date follows Signature remove/replace with fresh acceptance time |
 | Finish vs Complete | Last Finish sets `finalization_condition=READY` + enqueues `FINALIZE_SIGNING` work item; lifecycle stays `IN_PROGRESS` (not `COMPLETE`) |
 | Decline | Whole-Signing terminal `DECLINED` with confirmation; ends sessions/leases |
@@ -29,7 +31,9 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Shared-device isolation | HttpOnly `hf_device_handoff_lock` + proxy redirect; readable companion `hf_device_handoff_active`; private workspace `Cache-Control: no-store`; `pageshow`/bfcache guard → `/sign/return-to-agent`; handoff/unlock use `location.replace`; path allowlist uses `/sign` segment boundaries so `/signings` stays blocked |
 | Device-lock scope | **Browser/device cookie scoped** (not account-global); second independent device remains usable |
 | Browser/RLS | All new ceremony tables deny-by-default + FORCE RLS |
-| Tests | `npm run test:native-signing-ceremony` (includes bfcache/history isolation); `npm run validate:native-signing-ceremony-dev` on linked development |
+| Production Vercel | Merge created Ready deployment `dpl_D4CZgESYkyiVkxQoghgnXgtvHy4o` / `9i5ao5ynn` — **not promoted** to custom domains |
+| Live custom domain | Remains prior approved deployment `dpl_2CMdac6EViudwyp6TgoQbHf8htiM` (`oh3z3x7r5`); Auto-assign Custom Production Domains remains disabled |
+| Tests | Pre-merge on `d950f6b`: `test:native-signing-ceremony` 60/60; Stage 1–4 green; `validate:native-signing-ceremony-dev` green on `ewxsxwzezhkeawnjvigx`; audit 0; tsc; ESLint; `git diff --check`; `build:validate` |
 
 **Settled ceremony decisions (documented before implement):** Model B sessions; one active ceremony session; presence after I am; pre-affirmation disclosure; meaningful-activity inactivity; consent resume after timeout; mark-type locking; Date Signed follows Signature; typed **Signature** exact match without OCR; typed **Initials** suggested and editable until first use; multi-participant names without truncation; in-person **device handoff lock** + **Return-to-Agent** unlock (password re-verify; not finalization); production refuses non-`is_production_ready` disclosure via `assertProductionDisclosureReady`; consent version+fingerprint evidence; shared-device Back/bfcache isolation via no-store + lifecycle guard.
 
@@ -37,7 +41,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Still deferred after this stage:** completed signed PDFs, audit certificate generation, finalization worker beyond pending/enqueue, reminders, overdue, copy recipients, completed-package delivery, admin integrity remediation, production migrations/enablement, drawn-mark UI surface (server accepts drawn paths; typed path is the shipping UI).
 
-**Recommended next:** Review and squash-merge PR #39. Do not begin finalization or production enablement. Do not promote Vercel.
+**Recommended next:** Await an explicit Native Signing finalization design/implementation prompt. Do not begin finalization or production enablement. Do not promote Vercel.
 
 
 ### Native Signing Stage 4 — Draft source snapshots + activation foundation (2026-09-16)
