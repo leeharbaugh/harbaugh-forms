@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { deriveTypedInitialsFromDisplayName } from "./adopted-marks";
+import { suggestTypedInitialsFromDisplayName } from "./adopted-marks";
 import {
   buildClearedSigningCeremonyCookieAttributes,
   buildSigningCeremonyCookieAttributes,
@@ -264,19 +264,18 @@ describe("Native Signing ceremony sessions, presence, and consent", () => {
     assert.match(context, /!consent\.satisfied/);
   });
 
-  it("derives typed initials from the displayed name, exact match only", () => {
-    assert.equal(deriveTypedInitialsFromDisplayName("Jane Q Public"), "JQP");
-    assert.equal(deriveTypedInitialsFromDisplayName("Mary-Jane Smith"), "MS");
-    assert.equal(deriveTypedInitialsFromDisplayName("  lee   harbaugh "), "LH");
-    assert.equal(deriveTypedInitialsFromDisplayName("Ann Boleyn 3rd"), "AB");
-    assert.equal(deriveTypedInitialsFromDisplayName(""), "");
+  it("suggests typed initials from the displayed name without requiring adoption match", () => {
+    assert.equal(suggestTypedInitialsFromDisplayName("Jane Q Public"), "JQP");
+    assert.equal(suggestTypedInitialsFromDisplayName("Mary-Jane Smith"), "MJS");
+    assert.equal(suggestTypedInitialsFromDisplayName("  lee   harbaugh "), "LH");
+    assert.equal(suggestTypedInitialsFromDisplayName("Ann Boleyn III"), "AB");
+    assert.equal(suggestTypedInitialsFromDisplayName(""), "");
 
     const marks = read("lib/signing/adopted-marks.ts");
-    assert.match(marks, /typedText !== expected/);
-    assert.match(marks, /deriveTypedInitialsFromDisplayName\(context\.displayedName\)/);
+    assert.match(marks, /parseTypedInitialsText/);
     assert.match(marks, /context\.displayedName\.trim\(\)/);
-    // Exact match only: no name detection in the prepared PDF.
-    assert.match(marks, /exact-match only/);
+    assert.doesNotMatch(marks, /Typed initials must be exactly/);
+    assert.match(marks, /Typed personal Signatures are exact-match/);
   });
 
   it("never logs a ceremony, entry, or handoff token", () => {

@@ -17,7 +17,11 @@
  *    takes an already-validated ceremony session.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { loadAdoptedMarksForParticipant, type AdoptedMarkView } from "./adopted-marks";
+import {
+  loadAdoptedMarksForParticipant,
+  suggestTypedInitialsFromDisplayName,
+  type AdoptedMarkView,
+} from "./adopted-marks";
 import { assertNoActiveAmendmentLock } from "./amendment-locks";
 import type { ValidatedCeremonySession } from "./browser-sessions";
 import {
@@ -281,6 +285,10 @@ export type CeremonyOverview = {
   requiredRemaining: number;
   canFinish: boolean;
   nextStep: CeremonyStep;
+  /** Suggested typed initials (editable until first Initials use). */
+  suggestedTypedInitials: string;
+  /** True when this ceremony session began from supervised in-person handoff. */
+  inPersonCeremony: boolean;
 };
 
 /**
@@ -460,5 +468,7 @@ export async function loadCeremonyOverview(options: {
     requiredRemaining,
     canFinish: participantStatus !== "FINISHED" && requiredRemaining === 0,
     nextStep,
+    suggestedTypedInitials: suggestTypedInitialsFromDisplayName(displayedName),
+    inPersonCeremony: session.inPersonHandoffId !== null,
   };
 }

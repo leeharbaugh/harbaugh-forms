@@ -170,7 +170,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         path: data.handoffPath,
         expiresAt: data.expiresAt,
       });
-      await reload();
+      window.location.assign(data.handoffPath);
     }
     setHandoffBusyParticipantId(null);
   }

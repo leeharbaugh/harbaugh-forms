@@ -74,11 +74,13 @@ export const NATIVE_SIGNING_CEREMONY_TABLES = [
   "signing_browser_sessions",
   "signing_participant_presence_leases",
   "signing_amendment_locks",
+  "signing_device_handoff_locks",
 ] as const;
 
 export const NATIVE_SIGNING_CEREMONY_MIGRATIONS = [
   "20260917120000_native_signing_ceremony_foundation",
   "20260917130000_native_signing_ceremony_disclosure_fingerprint",
+  "20260917140000_native_signing_ceremony_device_handoff_lock",
 ] as const;
 
 export type NativeSigningCeremonyTable =

@@ -28,6 +28,8 @@ export type FinishSigningResult = {
   finalizationEnqueued: boolean;
   /** True when this participant had already finished. */
   replayed: boolean;
+  /** Supervised in-person handoff: agent must unlock the shared device. */
+  inPersonCeremony: boolean;
 };
 
 async function loadFinalizationCondition(
@@ -67,6 +69,7 @@ export async function finishParticipantSigning(options: {
       ),
       finalizationEnqueued: false,
       replayed: true,
+      inPersonCeremony: session.inPersonHandoffId !== null,
     };
   }
 
@@ -103,6 +106,7 @@ export async function finishParticipantSigning(options: {
       ),
       finalizationEnqueued: false,
       replayed: true,
+      inPersonCeremony: session.inPersonHandoffId !== null,
     };
   }
 
@@ -180,5 +184,6 @@ export async function finishParticipantSigning(options: {
     ),
     finalizationEnqueued,
     replayed: false,
+    inPersonCeremony: session.inPersonHandoffId !== null,
   };
 }

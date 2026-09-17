@@ -6,8 +6,8 @@
  *   replaces the Stage 4 entry session, which stops working immediately.
  * - Consent is required before any mark, is recorded as version + fingerprint,
  *   and re-accepting is idempotent.
- * - Typed personal marks must equal the displayed name (initials are derived),
- *   Signature and Initials adopt independently, and a mark locks on first use.
+ * - Typed Signatures must equal the displayed name; Initials may override the
+ *   suggestion. Signature and Initials adopt independently; marks lock on use.
  * - The first accepted mark freezes the package revision, a linked Date Signed
  *   follows its Signature in the sender's timezone, and accept/remove/replace
  *   are idempotent on their client request id.
@@ -27,7 +27,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { activateSigningWithActor } from "../lib/signing/activation.ts";
 import {
   adoptCeremonyMark,
-  deriveTypedInitialsFromDisplayName,
+  suggestTypedInitialsFromDisplayName,
 } from "../lib/signing/adopted-marks.ts";
 import {
   hashCeremonySessionToken,
@@ -73,6 +73,7 @@ import {
 } from "../lib/signing/entry-sessions.ts";
 import { SigningError } from "../lib/signing/errors.ts";
 import { NativeSigningDisabledError } from "../lib/signing/feature-gate.ts";
+import { validateDeviceHandoffLock } from "../lib/signing/device-handoff-lock.ts";
 import { createInPersonHandoffWithActor } from "../lib/signing/in-person-handoff.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
 import {
@@ -718,18 +719,16 @@ async function main() {
           typedText: "J. Public",
         }),
     );
-    await expectSigningError(
-      "typed initials that are not the derived initials",
-      "VALIDATION_FAILED",
-      () =>
-        adoptCeremonyMark({
-          admin,
-          context: consentContext,
-          markKind: "INITIALS",
-          representationType: "TYPED",
-          typedText: "JP",
-        }),
-    );
+    const overriddenInitials = await adoptCeremonyMark({
+      admin,
+      context: consentContext,
+      markKind: "INITIALS",
+      representationType: "TYPED",
+      typedText: "JP",
+    });
+    if (overriddenInitials.mark.typedText !== "JP") {
+      fail("typed initials override was not accepted");
+    }
     const signatureMark = await adoptCeremonyMark({
       admin,
       context: consentContext,
@@ -750,7 +749,7 @@ async function main() {
     });
     if (!readopted.updated) fail("re-adopting an unused mark was not an update");
     ok(
-      `typed marks are exact-match only (initials derive to ${deriveTypedInitialsFromDisplayName(
+      `typed signature exact-match; initials override allowed (suggestion ${suggestTypedInitialsFromDisplayName(
         "Jane Q Public",
       )})`,
     );
@@ -844,7 +843,7 @@ async function main() {
       context: consentContext,
       markKind: "INITIALS",
       representationType: "TYPED",
-      typedText: deriveTypedInitialsFromDisplayName("Jane Q Public"),
+      typedText: suggestTypedInitialsFromDisplayName("Jane Q Public"),
     });
     if (initialsMark.mark.lockedAt) {
       fail("adopting initials arrived pre-locked");
@@ -1014,6 +1013,25 @@ async function main() {
       { signingId: signingA.signingId, signingParticipantId: janeId },
       admin,
     );
+    const { data: openDeviceLock } = await admin
+      .from("signing_device_handoff_locks")
+      .select("id, signing_in_person_handoff_id, agent_user_id, released_at")
+      .eq("signing_id", signingA.signingId)
+      .is("released_at", null)
+      .maybeSingle();
+    if (
+      !openDeviceLock ||
+      openDeviceLock.signing_in_person_handoff_id !== handoff.handoffId ||
+      openDeviceLock.agent_user_id !== agent.userId
+    ) {
+      fail("in-person handoff did not create an open device workspace lock");
+    }
+    if (
+      !handoff.rawDeviceLockToken ||
+      !(await validateDeviceHandoffLock(admin, handoff.rawDeviceLockToken))
+    ) {
+      fail("device lock token did not validate");
+    }
     const reaffirmed = await affirmIdentityFromInPersonHandoff({
       admin,
       rawHandoffToken: handoff.rawHandoffToken,

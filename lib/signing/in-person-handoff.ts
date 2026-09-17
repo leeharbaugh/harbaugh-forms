@@ -18,6 +18,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supersedeActiveCeremonySessions } from "./browser-sessions";
+import { createDeviceHandoffLock } from "./device-handoff-lock";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { getSigningForActor } from "./operations";
@@ -87,6 +88,9 @@ export type CreatedInPersonHandoff = {
   rawHandoffToken: string;
   expiresAt: string;
   endedPriorSessionIds: string[];
+  /** In-memory only, for the device workspace lock cookie. Never persisted or logged. */
+  rawDeviceLockToken: string;
+  deviceLockExpiresAt: string;
 };
 
 /**
@@ -201,11 +205,22 @@ export async function createInPersonHandoffWithActor(
   });
   if (eventError) throw new Error(eventError.message);
 
+  const deviceLock = await createDeviceHandoffLock({
+    admin,
+    signingId: summary.id,
+    signingParticipantId: participant.id as string,
+    agentUserId: actor.userId,
+    handoffId: handoff.id as string,
+    // Device lock uses its own longer TTL; do not inherit the short entry-token TTL.
+  });
+
   return {
     handoffId: handoff.id as string,
     rawHandoffToken,
     expiresAt: (handoff.expires_at as string | null) ?? expiresAt,
     endedPriorSessionIds,
+    rawDeviceLockToken: deviceLock.rawLockToken,
+    deviceLockExpiresAt: deviceLock.expiresAt,
   };
 }
 

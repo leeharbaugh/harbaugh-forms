@@ -20,6 +20,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CeremonyWriteContext } from "./ceremony-context";
 import { appendCeremonyEvent } from "./ceremony-events";
 import { SigningError } from "./errors";
+import {
+  assertProductionDisclosureReady,
+  isSigningProductionRuntime,
+} from "./feature-gate";
 
 export type ConsentDisclosure = {
   id: string;
@@ -70,7 +74,7 @@ export async function loadCurrentConsentDisclosure(
     );
   }
 
-  return {
+  const disclosure: ConsentDisclosure = {
     id: data.id as string,
     versionKey: data.version_key as string,
     title: data.title as string,
@@ -79,7 +83,12 @@ export async function loadCurrentConsentDisclosure(
     isProductionReady: data.is_production_ready === true,
     publishedAt: data.published_at as string,
   };
+
+  assertProductionDisclosureReady(disclosure);
+  return disclosure;
 }
+
+export { isSigningProductionRuntime };
 
 export type ConsentState = {
   satisfied: boolean;

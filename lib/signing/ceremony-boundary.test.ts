@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { SIGNING_CEREMONY_COOKIE_NAME } from "./browser-sessions";
 import { SIGNING_ENTRY_COOKIE_NAME } from "./entry-sessions";
+import { DEVICE_HANDOFF_LOCK_COOKIE_NAME } from "./device-handoff-lock";
 import { SIGNING_HANDOFF_COOKIE_NAME } from "./in-person-handoff";
 import {
   NATIVE_SIGNING_CEREMONY_MIGRATIONS,
@@ -39,6 +40,13 @@ describe("Native Signing ceremony boundaries", () => {
     "app/sign/ceremony/document/[revisionDocumentId]/route.ts",
   );
   const handoffRoute = read("app/sign/in-person/[token]/route.ts");
+  const deviceLockMigration = read(
+    `supabase/migrations/${NATIVE_SIGNING_CEREMONY_MIGRATIONS[2]}.sql`,
+  );
+  const proxy = read("lib/supabase/proxy.ts");
+  const returnToAgentPage = read("app/sign/return-to-agent/page.tsx");
+  const deviceLockLib = read("lib/signing/device-handoff-lock.ts");
+  const inPersonHandoffLib = read("lib/signing/in-person-handoff.ts");
   const errors = read("lib/signing/errors.ts");
 
   it("declares exactly the additive ceremony tables the migration creates", () => {
@@ -48,10 +56,13 @@ describe("Native Signing ceremony boundaries", () => {
       "signing_browser_sessions",
       "signing_participant_presence_leases",
       "signing_amendment_locks",
+      "signing_device_handoff_locks",
     ]);
     for (const table of NATIVE_SIGNING_CEREMONY_TABLES) {
+      const source =
+        table === "signing_device_handoff_locks" ? deviceLockMigration : migration;
       assert.match(
-        migration,
+        source,
         new RegExp(`create table if not exists public\\.${table}\\b`),
       );
     }
@@ -316,21 +327,36 @@ describe("Native Signing ceremony boundaries", () => {
     assert.match(affirmation, /consumeInPersonHandoff/);
   });
 
+  it("locks the agent workspace during in-person handoff until Return-to-Agent", () => {
+    assert.match(deviceLockMigration, /sdhl_one_open_per_signing_uidx/);
+    assert.match(deviceLockLib, /DEVICE_HANDOFF_LOCK_COOKIE_NAME/);
+    assert.match(deviceLockLib, /DEVICE_HANDOFF_LOCK_COOKIE_PATH = "\/"/);
+    assert.match(agentActions, /buildDeviceHandoffLockCookieAttributes/);
+    assert.match(agentActions, /unlockDeviceHandoffLockAction/);
+    assert.match(inPersonHandoffLib, /createDeviceHandoffLock/);
+    assert.match(proxy, /DEVICE_HANDOFF_LOCK_COOKIE_NAME/);
+    assert.match(proxy, /\/sign\/return-to-agent/);
+    assert.match(returnToAgentPage, /validateDeviceHandoffLock/);
+    assert.match(read("components/sign/return-to-agent-form.tsx"), /unlockDeviceHandoffLockAction/);
+    assert.doesNotMatch(returnToAgentPage, /loadCeremonyDocumentBytes/);
+    assert.match(actions, /exitCeremonyAction/);
+    assert.match(actions, /return-to-agent/);
+  });
+
   it("authorizes the agent handoff with the ordinary Signing actor checks", () => {
     assert.match(agentActions, /"use server"/);
     assert.match(agentActions, /server-only/);
     assert.match(agentActions, /requireSigningActor/);
     assert.match(agentActions, /createInPersonHandoffWithActor/);
-    const handoffLib = read("lib/signing/in-person-handoff.ts");
-    assert.match(handoffLib, /if \(!summary\.canManage\)/);
-    assert.match(handoffLib, /assertNativeSigningEnabled/);
-    assert.match(handoffLib, /lifecycleState !== "IN_PROGRESS"/);
+    assert.match(inPersonHandoffLib, /if \(!summary\.canManage\)/);
+    assert.match(inPersonHandoffLib, /assertNativeSigningEnabled/);
+    assert.match(inPersonHandoffLib, /lifecycleState !== "IN_PROGRESS"/);
     // The raw token is returned once and never logged.
     assert.match(agentActions, /handoffPath: `\/sign\/in-person\/\$\{handoff\.rawHandoffToken\}`/);
-    for (const source of [agentActions, handoffLib]) {
+    for (const source of [agentActions, inPersonHandoffLib]) {
       assert.doesNotMatch(source, /console\.log/);
     }
-    assert.match(handoffLib, /Never the token/);
+    assert.match(inPersonHandoffLib, /Never the token/);
   });
 
   it("never returns raw database errors to a participant", () => {

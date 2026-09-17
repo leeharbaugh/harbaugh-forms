@@ -17,6 +17,7 @@ import {
   adoptCeremonyMarkAction,
   ceremonyHeartbeatAction,
   declineCeremonyAction,
+  exitCeremonyAction,
   finishCeremonyAction,
   getCeremonyOverviewAction,
   noteCeremonyReviewActivityAction,
@@ -50,7 +51,10 @@ export function CeremonyShell({
   const [sessionEnded, setSessionEnded] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [typedSignature, setTypedSignature] = useState("");
-  const [typedInitials, setTypedInitials] = useState("");
+  const [typedInitials, setTypedInitials] = useState(
+    initialOverview.suggestedTypedInitials,
+  );
+  const [initialsPrefilled, setInitialsPrefilled] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
   const [finished, setFinished] = useState(
@@ -60,12 +64,27 @@ export function CeremonyShell({
   const refresh = useCallback(async () => {
     const result = await getCeremonyOverviewAction();
     if (result.ok) {
-      setOverview(result.data as CeremonyOverview);
+      const next = result.data as CeremonyOverview;
+      setOverview(next);
+      if (!initialsPrefilled && !next.marks.initials) {
+        setTypedInitials(next.suggestedTypedInitials);
+        setInitialsPrefilled(true);
+      }
       return true;
     }
     setSessionEnded(result.error);
     return false;
-  }, []);
+  }, [initialsPrefilled]);
+
+  function redirectAfterInPersonExit(data: unknown) {
+    const payload = data as {
+      inPersonCeremony?: boolean;
+      returnToAgentPath?: string | null;
+    };
+    if (payload.inPersonCeremony && payload.returnToAgentPath) {
+      window.location.assign(payload.returnToAgentPath);
+    }
+  }
 
   // Presence heartbeat. This renews the lease only; the 60-minute inactivity
   // deadline still depends on meaningful activity.
@@ -141,11 +160,20 @@ export function CeremonyShell({
             .
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Nothing else is needed from you. Your agent will send the completed
             documents when every participant has finished.
           </p>
+          {overview.inPersonCeremony ? (
+            <Button
+              type="button"
+              className="w-full"
+              onClick={() => window.location.assign("/sign/return-to-agent")}
+            >
+              Hand device back to your agent
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     );
@@ -275,8 +303,8 @@ export function CeremonyShell({
                   onChange={(event) => setTypedInitials(event.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Use the first letter of each part of your name on this
-                  Signing.
+                  Suggested from your name — you may edit before first use. Not
+                  a legal verification.
                 </p>
                 <Button
                   type="button"
@@ -470,7 +498,10 @@ export function CeremonyShell({
             disabled={pending || !overview.canFinish || !consentSatisfied}
             onClick={() =>
               run(() => finishCeremonyAction(), {
-                onSuccess: () => setFinished(true),
+                onSuccess: (data) => {
+                  redirectAfterInPersonExit(data);
+                  setFinished(true);
+                },
               })
             }
           >
@@ -497,11 +528,13 @@ export function CeremonyShell({
                   variant="destructive"
                   disabled={pending}
                   onClick={() =>
-                    run(() =>
-                      declineCeremonyAction({
-                        confirmed: true,
-                        reason: declineReason,
-                      }),
+                    run(
+                      () =>
+                        declineCeremonyAction({
+                          confirmed: true,
+                          reason: declineReason,
+                        }),
+                      { onSuccess: redirectAfterInPersonExit },
                     )
                   }
                 >
@@ -528,6 +561,20 @@ export function CeremonyShell({
               Decline to sign
             </Button>
           )}
+
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            disabled={pending}
+            onClick={() =>
+              run(() => exitCeremonyAction(), {
+                onSuccess: redirectAfterInPersonExit,
+              })
+            }
+          >
+            Exit signing
+          </Button>
         </CardContent>
       </Card>
     </div>

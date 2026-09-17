@@ -13,7 +13,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Item | Result |
 |------|--------|
 | Feature branch | `feat/native-signing-ceremony` (not merged) |
-| Migrations (dev) | `20260917120000_native_signing_ceremony_foundation.sql`; `20260917130000_native_signing_ceremony_disclosure_fingerprint.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| Migrations (dev) | `20260917120000_native_signing_ceremony_foundation.sql`; `20260917130000_native_signing_ceremony_disclosure_fingerprint.sql`; `20260917140000_native_signing_ceremony_device_handoff_lock.sql` (apply on dev before validator) |
 | Production migrations | **Not applied** |
 | Session model | **Model B** — Stage 4 `hf_signing_entry` is pre-ceremony only; after **I am [Name]** authority is `hf_signing_ceremony` / `signing_browser_sessions` |
 | One-active-session | Unique partial index + transactional supersession; old tab gets `SESSION_SUPERSEDED` |
@@ -29,7 +29,9 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Browser/RLS | All new ceremony tables deny-by-default + FORCE RLS |
 | Tests | `npm run test:native-signing-ceremony` (39); `npm run validate:native-signing-ceremony-dev` green on linked development |
 
-**Settled ceremony decisions (documented before implement):** Model B sessions; one active ceremony session; presence after I am; pre-affirmation disclosure; meaningful-activity inactivity; consent resume after timeout; mark-type locking; Date Signed follows Signature; typed name exact match without OCR; consent version+fingerprint evidence.
+**Settled ceremony decisions (documented before implement):** Model B sessions; one active ceremony session; presence after I am; pre-affirmation disclosure; meaningful-activity inactivity; consent resume after timeout; mark-type locking; Date Signed follows Signature; typed **Signature** exact match without OCR; typed **Initials** suggested and editable until first use; multi-participant names without truncation; in-person **device handoff lock** + **Return-to-Agent** unlock (password re-verify; not finalization); production refuses non-`is_production_ready` disclosure via `assertProductionDisclosureReady`; consent version+fingerprint evidence.
+
+**Return-to-Agent residual limitations:** Lock routing is cookie + middleware scoped (does not erase bfcache/history on the device); unlock requires the issuing agent session + password re-verify; device-lock TTL is **240 minutes** (independent of the shorter handoff entry-token TTL); not a hardware/OS kiosk mode.
 
 **Still deferred after this stage:** completed signed PDFs, audit certificate generation, finalization worker beyond pending/enqueue, reminders, overdue, copy recipients, completed-package delivery, admin integrity remediation, production migrations/enablement, drawn-mark UI surface (server accepts drawn paths; typed path is the shipping UI).
 

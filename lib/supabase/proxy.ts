@@ -1,3 +1,7 @@
+import {
+  DEVICE_HANDOFF_LOCK_COOKIE_NAME,
+  isPathAllowedDuringDeviceHandoffLock,
+} from "@/lib/signing/device-handoff-lock";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
@@ -6,6 +10,18 @@ export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
+
+  const path = request.nextUrl.pathname;
+  const deviceLockCookie = request.cookies.get(DEVICE_HANDOFF_LOCK_COOKIE_NAME);
+  if (
+    deviceLockCookie?.value &&
+    !isPathAllowedDuringDeviceHandoffLock(path)
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/sign/return-to-agent";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
 
   // If the env vars are not set, skip proxy check. You can remove this
   // once you setup the project.
@@ -60,7 +76,6 @@ export async function updateSession(request: NextRequest) {
 
   // Force password change before any non-auth application route.
   if (user) {
-    const path = request.nextUrl.pathname;
     const allowedWhileForced =
       path.startsWith("/auth") ||
       path.startsWith("/login");

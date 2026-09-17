@@ -65,7 +65,7 @@
     "validate:native-signing-stage3-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-stage3-dev.ts",
     "test:native-signing-stage4": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/draft-source-fingerprint.test.ts lib/signing/stage4-draft-snapshot.test.ts lib/signing/stage4-activation-boundary.test.ts lib/signing/stage4-credential-wrap.test.ts lib/signing/stage4-entry-exchange.test.ts",
     "validate:native-signing-stage4-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-stage4-dev.ts",
-    "test:native-signing-ceremony": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/ceremony-boundary.test.ts lib/signing/ceremony-session.test.ts lib/signing/ceremony-placement.test.ts",
+    "test:native-signing-ceremony": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/ceremony-boundary.test.ts lib/signing/ceremony-session.test.ts lib/signing/ceremony-placement.test.ts lib/signing/initials-suggestion.test.ts lib/signing/feature-gate.test.ts",
     "validate:native-signing-ceremony-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-ceremony-dev.ts",
     "test:packet-form-lifecycle": "node --experimental-strip-types --test lib/types/packet-form-lifecycle.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",

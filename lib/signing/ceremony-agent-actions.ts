@@ -4,9 +4,16 @@ import "server-only";
 
 import { requireSigningActor } from "@/lib/signing/actor";
 import {
+  buildClearedDeviceHandoffLockCookieAttributes,
+  buildDeviceHandoffLockCookieAttributes,
+  DEVICE_HANDOFF_LOCK_COOKIE_NAME,
+  releaseDeviceHandoffLockWithActor,
+} from "@/lib/signing/device-handoff-lock";
+import { createClient } from "@/lib/supabase/server";
+import {
   createInPersonHandoffWithActor,
-  SIGNING_HANDOFF_TTL_MINUTES,
 } from "@/lib/signing/in-person-handoff";
+import { cookies } from "next/headers";
 import { SigningError } from "@/lib/signing/errors";
 import { NativeSigningDisabledError } from "@/lib/signing/feature-gate";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -55,14 +62,63 @@ export async function startInPersonHandoffAction(input: {
       },
       admin,
     );
+
+    const cookieStore = await cookies();
+    cookieStore.set(
+      buildDeviceHandoffLockCookieAttributes({
+        rawLockToken: handoff.rawDeviceLockToken,
+      }),
+    );
+
     return {
       ok: true,
       data: {
         handoffId: handoff.handoffId,
         handoffPath: `/sign/in-person/${handoff.rawHandoffToken}`,
         expiresAt: handoff.expiresAt,
-        ttlMinutes: SIGNING_HANDOFF_TTL_MINUTES,
+        deviceLockExpiresAt: handoff.deviceLockExpiresAt,
         endedPriorSessions: handoff.endedPriorSessionIds.length,
+      },
+    };
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+/**
+ * Release the shared-device workspace lock after in-person ceremony.
+ *
+ * Requires the issuing agent and password re-verification. Does not finalize
+ * the Signing.
+ */
+export async function unlockDeviceHandoffLockAction(input: {
+  password: unknown;
+}): Promise<SigningCeremonyAgentActionResult> {
+  try {
+    const actor = await requireSigningActor();
+    const admin = createAdminClient();
+    const cookieStore = await cookies();
+    const rawLockToken = cookieStore.get(DEVICE_HANDOFF_LOCK_COOKIE_NAME)?.value;
+
+    const supabase = await createClient();
+    const released = await releaseDeviceHandoffLockWithActor({
+      admin,
+      actor,
+      rawLockToken,
+      password: input.password,
+      signInWithPassword: async (credentials) => {
+        const { error } = await supabase.auth.signInWithPassword(credentials);
+        return { error: error ? { message: error.message } : null };
+      },
+    });
+
+    cookieStore.set(buildClearedDeviceHandoffLockCookieAttributes());
+
+    return {
+      ok: true,
+      data: {
+        signingId: released.signingId,
+        releasedAt: released.releasedAt,
       },
     };
   } catch (error) {

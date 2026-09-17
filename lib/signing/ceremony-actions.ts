@@ -6,6 +6,7 @@ import { cookies, headers } from "next/headers";
 import { adoptCeremonyMark } from "@/lib/signing/adopted-marks";
 import {
   buildClearedSigningCeremonyCookieAttributes,
+  endCeremonyBrowserSession,
   recordMeaningfulCeremonyActivity,
   requireCeremonyBrowserSession,
   SIGNING_CEREMONY_COOKIE_NAME,
@@ -111,6 +112,16 @@ async function requireSameOriginCeremonyRequest(): Promise<void> {
 async function readCeremonyCookie(): Promise<string | undefined> {
   const cookieStore = await cookies();
   return cookieStore.get(SIGNING_CEREMONY_COOKIE_NAME)?.value;
+}
+
+const RETURN_TO_AGENT_PATH = "/sign/return-to-agent" as const;
+
+function inPersonCeremonyExitPayload(session: ValidatedCeremonySession) {
+  const inPersonCeremony = session.inPersonHandoffId !== null;
+  return {
+    inPersonCeremony,
+    returnToAgentPath: inPersonCeremony ? RETURN_TO_AGENT_PATH : null,
+  };
 }
 
 /**
@@ -310,11 +321,46 @@ export async function finishCeremonyAction(): Promise<SigningCeremonyActionResul
     );
     const result = await finishParticipantSigning({ admin, session });
 
-    // Authority ends with Finish; the cookie must not linger as a live session.
     const cookieStore = await cookies();
     cookieStore.set(buildClearedSigningCeremonyCookieAttributes());
+    cookieStore.set(buildClearedSigningHandoffCookieAttributes());
 
-    return { ok: true, data: result };
+    return {
+      ok: true,
+      data: { ...result, ...inPersonCeremonyExitPayload(session) },
+    };
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+export async function exitCeremonyAction(): Promise<SigningCeremonyActionResult> {
+  try {
+    assertNativeSigningEnabled();
+    await requireSameOriginCeremonyRequest();
+
+    const admin = createAdminClient();
+    const session = await requireCeremonyBrowserSession(
+      admin,
+      await readCeremonyCookie(),
+    );
+
+    await endCeremonyBrowserSession({
+      admin,
+      signingId: session.signingId,
+      sessionId: session.sessionId,
+      reason: "PARTICIPANT_EXIT",
+      status: "ENDED",
+    });
+
+    const cookieStore = await cookies();
+    cookieStore.set(buildClearedSigningCeremonyCookieAttributes());
+    cookieStore.set(buildClearedSigningHandoffCookieAttributes());
+
+    return {
+      ok: true,
+      data: inPersonCeremonyExitPayload(session),
+    };
   } catch (error) {
     return toActionError(error);
   }
@@ -342,8 +388,12 @@ export async function declineCeremonyAction(input: {
 
     const cookieStore = await cookies();
     cookieStore.set(buildClearedSigningCeremonyCookieAttributes());
+    cookieStore.set(buildClearedSigningHandoffCookieAttributes());
 
-    return { ok: true, data: result };
+    return {
+      ok: true,
+      data: { ...result, ...inPersonCeremonyExitPayload(session) },
+    };
   } catch (error) {
     return toActionError(error);
   }

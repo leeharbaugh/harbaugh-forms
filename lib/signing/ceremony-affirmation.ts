@@ -28,7 +28,11 @@ import {
 import { appendCeremonyEvent } from "./ceremony-events";
 import { validateSigningEntrySession } from "./entry-sessions";
 import { SigningError } from "./errors";
-import { assertNativeSigningEnabled } from "./feature-gate";
+import {
+  assertNativeSigningEnabled,
+  assertProductionDisclosureReady,
+} from "./feature-gate";
+import { loadCurrentConsentDisclosure } from "./consent-disclosure";
 import {
   consumeInPersonHandoff,
   validateInPersonHandoff,
@@ -79,6 +83,9 @@ async function affirmIdentity(options: {
   }
 
   const alreadyFinished = participant.participant_status === "FINISHED";
+
+  const currentDisclosure = await loadCurrentConsentDisclosure(admin);
+  assertProductionDisclosureReady(currentDisclosure);
 
   // Fail closed while the agent holds the package: granting presence would let
   // a participant contend with a lock that is already held.

@@ -536,6 +536,140 @@ Later audit and certificate generation must prove exactly which disclosure the p
 
 ---
 
+## Typed initials are a suggested convenience, not a legal validation
+
+**Date:** 2026-09-17
+
+**Decision:**
+Suggested typed initials are derived from the participant's full approved display name on this Signing. The participant may freely edit that suggestion before the first successful Initials use. The server must not reject typed initials merely because they differ from the suggestion. Initials lock on first successful Initials use only; Signature adoption and locking remain independent. The UI must not present suggested initials as legally required or server-verified identity.
+
+**Reason:**
+Initials are a practical shorthand; enforcing exact derived initials conflicts with diverse name structures and misstates what the product verifies (typed Signature still matches the displayed name exactly).
+
+**Consequences:**
+
+* Ceremony UI prefills a suggestion and states it is editable and not legal verification.
+* Server validation for typed Initials accepts reasonable participant-entered text within bounds; only typed Signature remains exact-match to the displayed name.
+
+**Related files or migrations:**
+
+* `lib/signing/adopted-marks.ts`
+* `components/sign/ceremony-shell.tsx`
+* This file: **Personal typed Signature remains exact-match; Initials remain editable suggestions** (2026-09-17)
+
+---
+
+## Participant signing names are free-form and support multiple middle names
+
+**Date:** 2026-09-17
+
+**Decision:**
+Signing participant display names are free-form text without a rigid first/middle/last assumption. The product supports zero, one, or many middle names, compounds, hyphens, apostrophes, prefixes/suffixes, and cultural name structures without truncation. Initials suggestion tokenizes the full display name and includes all meaningful name components. For suggestion only, common generational suffixes (Jr, Sr, II, III, IV, and similar) are skipped; the participant may still edit the result. This stage does not implement OCR or PDF-name detection.
+
+**Reason:**
+Real signer names do not fit a single Western three-part schema; initials suggestion should assist without constraining legal or cultural naming.
+
+**Consequences:**
+
+* Initials suggestion algorithm skips honorific prefixes and generational suffixes for convenience only.
+* Agent-prepared display names remain authoritative for typed Signature exact match.
+
+**Related files or migrations:**
+
+* `lib/signing/adopted-marks.ts`
+* `lib/signing/initials-suggestion.test.ts`
+
+---
+
+## Personal typed Signature remains exact-match; Initials remain editable suggestions
+
+**Date:** 2026-09-17
+
+**Decision:**
+Personal typed Signature text must still exactly match the approved displayed Signing participant name. Typed Initials remain a suggested default that the participant may edit until first successful Initials use; they are not required to match the suggestion.
+
+**Reason:**
+Preserves the approved personal-signature integrity rule while separating initials convenience from identity verification.
+
+**Consequences:**
+
+* `adoptCeremonyMark` enforces exact display name for SIGNATURE typed marks only.
+* Initials typed marks validate format and length, not equality to the suggestion.
+
+**Related files or migrations:**
+
+* `lib/signing/adopted-marks.ts`
+
+---
+
+## In-person handoff locks the ordinary agent workspace until Return-to-Agent unlock
+
+**Date:** 2026-09-17
+
+**Decision:**
+When an agent begins supervised in-person handoff on a shared device, the ordinary agent workspace is locked until an explicit Return-to-Agent unlock. Flow: handoff issued → workspace locked → participant pre-affirmation and ceremony → participant Finish/Decline/Exit → Return-to-Agent screen → explicit agent unlock → workspace restored. After Finish, Decline, or Exit, the participant must not land in the agent authenticated workspace. Browser Back must not expose cached agent workspace routes while the device lock is active (server-side redirect enforces this).
+
+**Reason:**
+A shared device must not leave brokerage workspace and participant ceremony accessible in the same browser session without a deliberate agent-controlled boundary.
+
+**Consequences:**
+
+* Durable device handoff lock rows and an HttpOnly lock cookie scope workspace routing.
+* Ceremony completion redirects to Return-to-Agent when the lock is active, not to agent dashboards.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260917140000_native_signing_ceremony_device_handoff_lock.sql`
+* `lib/signing/device-handoff-lock.ts`
+* `app/sign/return-to-agent/page.tsx`
+* `lib/supabase/proxy.ts`
+
+---
+
+## Return-to-Agent is a device-control boundary, not Signing finalization
+
+**Date:** 2026-09-17
+
+**Decision:**
+The Return-to-Agent screen and unlock action restore agent workspace access on a shared device. They do not complete the Signing, enqueue finalization, or replace participant Finish. Signing finalization and lifecycle `COMPLETE` remain a later stage.
+
+**Reason:**
+Device handoff safety and Signing completion are separate concerns; conflating unlock with finalization would mis-state product state.
+
+**Consequences:**
+
+* Return-to-Agent UI explains handoff mode and excludes document content.
+* Unlock releases the device lock only; it does not mutate finalization evidence.
+
+**Related files or migrations:**
+
+* `app/sign/return-to-agent/page.tsx`
+* `lib/signing/device-handoff-lock.ts`
+
+---
+
+## Agent unlock after in-person ceremony requires an explicit verified transition
+
+**Date:** 2026-09-17
+
+**Decision:**
+Restoring the agent workspace after in-person ceremony requires a dedicated locked Return-to-Agent screen and an explicit "Return to Agent Workspace" action. Prefer password re-authentication when the auth stack supports it; at minimum there is no automatic restoration of agent workspace routes while the device lock cookie is present. Failed re-authentication fails closed.
+
+**Reason:**
+Explicit agent verification on a device the participant just used reduces accidental or opportunistic access to brokerage workspace.
+
+**Consequences:**
+
+* Unlock validates the authenticated agent matches the lock issuer and re-verifies password before releasing the lock and clearing the cookie.
+* Residual: full protection against a determined local attacker with physical device access is not claimed; routing and cookie scope provide the practical boundary.
+
+**Related files or migrations:**
+
+* `lib/signing/device-handoff-lock.ts`
+* `lib/signing/ceremony-agent-actions.ts` (unlock action)
+
+---
+
 ## Mutable Draft signer-field instructions use `signing_draft_fields`, not revision-scoped `signing_fields`
 
 **Date:** 2026-09-15

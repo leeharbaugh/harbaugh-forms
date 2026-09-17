@@ -26,6 +26,7 @@ export type DeclineSigningResult = {
   lifecycleState: string;
   /** True when this participant had already declined. */
   replayed: boolean;
+  inPersonCeremony: boolean;
 };
 
 function parseDeclineReason(value: unknown): string | null {
@@ -71,6 +72,7 @@ export async function declineSigning(options: {
         (participant?.declined_at as string | null) ?? new Date().toISOString(),
       lifecycleState: "DECLINED",
       replayed: true,
+      inPersonCeremony: session.inPersonHandoffId !== null,
     };
   }
 
@@ -149,5 +151,6 @@ export async function declineSigning(options: {
     declinedAt: (declined.declined_at as string | null) ?? declinedAt,
     lifecycleState: "DECLINED",
     replayed: false,
+    inPersonCeremony: session.inPersonHandoffId !== null,
   };
 }

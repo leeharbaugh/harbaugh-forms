@@ -33,3 +33,33 @@ export function assertNativeSigningEnabled(
     throw new NativeSigningDisabledError();
   }
 }
+
+/** True when Native Signing runs in a production-class deployment. */
+export function isSigningProductionRuntime(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return env.VERCEL_ENV === "production";
+}
+
+export class NativeSigningProductionDisclosureError extends Error {
+  readonly code = "PRODUCTION_DISCLOSURE_NOT_READY" as const;
+
+  constructor(
+    message = "Native Signing cannot run in production until the electronic-signing disclosure is marked production-ready.",
+  ) {
+    super(message);
+    this.name = "NativeSigningProductionDisclosureError";
+  }
+}
+
+/**
+ * Fail closed in production when the current disclosure is not counsel-ready.
+ */
+export function assertProductionDisclosureReady(
+  disclosure: { isProductionReady: boolean },
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (isSigningProductionRuntime(env) && !disclosure.isProductionReady) {
+    throw new NativeSigningProductionDisclosureError();
+  }
+}

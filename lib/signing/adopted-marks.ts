@@ -7,9 +7,11 @@
  * a Signature freezes the package revision globally but does not lock that
  * participant's unused Initials, and never touches another participant's marks.
  *
- * Typed personal marks are exact-match only; there is no OCR or PDF-name
- * matching. The agent remains responsible for preparing the document with the
- * intended signer name before signing.
+ * Typed personal Signatures are exact-match to the displayed name only.
+ * Typed Initials are suggested from the display name but may be edited until
+ * first use; there is no OCR or PDF-name matching. The agent remains
+ * responsible for preparing the document with the intended signer name before
+ * signing.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CeremonyWriteContext } from "./ceremony-context";
@@ -30,7 +32,82 @@ export type AdoptedMarkView = {
 };
 
 const MAX_TYPED_TEXT_LENGTH = 200;
+const MAX_TYPED_INITIALS_LENGTH = 40;
 const MAX_DRAWN_POINTS = 20_000;
+
+const NAME_PREFIX_TOKENS = new Set([
+  "mr",
+  "mrs",
+  "ms",
+  "miss",
+  "mx",
+  "dr",
+  "prof",
+  "sir",
+  "dame",
+]);
+
+const NAME_SUFFIX_TOKENS = new Set([
+  "jr",
+  "sr",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+  "ix",
+  "x",
+  "esq",
+  "phd",
+  "md",
+  "jd",
+]);
+
+function normalizeNameToken(token: string): string {
+  return token.replace(/\.$/, "").toLowerCase();
+}
+
+function firstUnicodeLetter(segment: string): string | null {
+  const match = segment.match(/\p{L}/u);
+  return match ? match[0]!.toUpperCase() : null;
+}
+
+/**
+ * Suggested typed initials from the displayed Signing name (editable by the
+ * participant; not validated for equality on adoption).
+ */
+export function suggestTypedInitialsFromDisplayName(displayName: string): string {
+  try {
+    const collapsed = displayName.trim().replace(/\s+/g, " ");
+    if (!collapsed) return "";
+
+    const initials: string[] = [];
+    for (const token of collapsed.split(" ")) {
+      const trimmed = token.trim();
+      if (!trimmed) continue;
+
+      const normalized = normalizeNameToken(trimmed);
+      if (NAME_PREFIX_TOKENS.has(normalized)) continue;
+      if (NAME_SUFFIX_TOKENS.has(normalized)) continue;
+
+      const segments = trimmed.split("-");
+      for (const segment of segments) {
+        const letter = firstUnicodeLetter(segment);
+        if (letter) initials.push(letter);
+      }
+    }
+    return initials.join("");
+  } catch {
+    return "";
+  }
+}
+
+/** @deprecated Use suggestTypedInitialsFromDisplayName */
+export function deriveTypedInitialsFromDisplayName(displayName: string): string {
+  return suggestTypedInitialsFromDisplayName(displayName);
+}
 
 function toMarkView(row: Record<string, unknown>): AdoptedMarkView {
   return {
@@ -86,25 +163,6 @@ export async function getAdoptedMarkForKind(options: {
   return data ? toMarkView(data as Record<string, unknown>) : null;
 }
 
-/**
- * Typed initials derived from the displayed Signing name.
- *
- * The first letter of each whitespace-separated name part, uppercased:
- * "Jane Q Public" -> "JQP", "Mary-Jane Smith" -> "MS". Parts that do not start
- * with a letter (for example "3rd") are skipped. Only an exact match against
- * this derivation is accepted, mirroring the exact-displayed-name rule for
- * typed signatures: participants do not get to choose a different
- * representation of who they are, and there is no name detection in the PDF.
- */
-export function deriveTypedInitialsFromDisplayName(displayName: string): string {
-  return displayName
-    .split(/\s+/)
-    .map((part) => part.trim())
-    .filter((part) => /^\p{L}/u.test(part))
-    .map((part) => part[0]!.toUpperCase())
-    .join("");
-}
-
 function parseMarkKind(value: unknown): AdoptedMarkKind {
   if (value === "SIGNATURE" || value === "INITIALS") return value;
   throw new SigningError("INVALID_INPUT", "Invalid mark type.");
@@ -115,13 +173,35 @@ function parseRepresentationType(value: unknown): MarkRepresentationType {
   throw new SigningError("INVALID_INPUT", "Invalid mark representation.");
 }
 
-function parseTypedText(value: unknown): string {
+function parseTypedSignatureText(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new SigningError("INVALID_INPUT", "Enter your name to adopt a typed mark.");
   }
   const trimmed = value.trim();
   if (trimmed.length > MAX_TYPED_TEXT_LENGTH) {
     throw new SigningError("INVALID_INPUT", "That text is too long.");
+  }
+  return trimmed;
+}
+
+const TYPED_INITIALS_RE = /^[\p{L}\p{M}\s.'-]+$/u;
+
+function parseTypedInitialsText(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new SigningError("INVALID_INPUT", "Enter your initials before adopting them.");
+  }
+  const trimmed = value.trim();
+  if (trimmed.length > MAX_TYPED_INITIALS_LENGTH) {
+    throw new SigningError("INVALID_INPUT", "Those initials are too long.");
+  }
+  if (!TYPED_INITIALS_RE.test(trimmed)) {
+    throw new SigningError(
+      "INVALID_INPUT",
+      "Initials may use letters, spaces, periods, hyphens, and apostrophes only.",
+    );
+  }
+  if (!/\p{L}/u.test(trimmed)) {
+    throw new SigningError("INVALID_INPUT", "Enter at least one letter for your initials.");
   }
   return trimmed;
 }
@@ -164,24 +244,17 @@ export async function adoptCeremonyMark(options: {
   let drawnPath: unknown = null;
 
   if (representationType === "TYPED") {
-    typedText = parseTypedText(options.typedText);
-    // Personal signing: typed text must be exactly the approved displayed name.
-    // TODO(representative-signing): when participant capacity / represented-party
-    // columns exist, a representative typed signature must instead match the
-    // prepared execution wording for the stated capacity. No capacity columns
-    // exist on signing_participants or signing_package_revision_participants
-    // yet, so only the personal path is implemented here.
-    const expected =
-      markKind === "SIGNATURE"
-        ? context.displayedName.trim()
-        : deriveTypedInitialsFromDisplayName(context.displayedName);
-    if (typedText !== expected) {
-      throw new SigningError(
-        "VALIDATION_FAILED",
-        markKind === "SIGNATURE"
-          ? `A typed signature must match your name on this Signing exactly: ${expected}`
-          : `Typed initials must be exactly ${expected}`,
-      );
+    if (markKind === "SIGNATURE") {
+      typedText = parseTypedSignatureText(options.typedText);
+      const expected = context.displayedName.trim();
+      if (typedText !== expected) {
+        throw new SigningError(
+          "VALIDATION_FAILED",
+          `A typed signature must match your name on this Signing exactly: ${expected}`,
+        );
+      }
+    } else {
+      typedText = parseTypedInitialsText(options.typedText);
     }
   } else {
     drawnPath = parseDrawnPath(options.drawnPath);
@@ -222,7 +295,6 @@ export async function adoptCeremonyMark(options: {
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) {
-      // Lost the race against this participant's first use of the mark.
       throw new SigningError(
         "MARK_LOCKED",
         "That mark was locked by a placement you just made. Reload to continue.",
