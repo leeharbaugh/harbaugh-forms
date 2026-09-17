@@ -43,6 +43,8 @@ export type SigningRow = {
   update_date: string;
   originating_organization_id: string;
   source_packet_id: number | null;
+  /** Actual User who created the Signing (may be a TC). */
+  created_by_user_id?: string | null;
   original_sender_user_id: string | null;
   original_sender_display_name: string;
   original_sender_email: string | null;
@@ -79,6 +81,7 @@ export type SigningSummary = {
   finalizationCondition: string;
   originatingOrganizationId: string;
   sourcePacketId: number | null;
+  createdByUserId: string | null;
   originalSenderUserId: string | null;
   originalSenderDisplayName: string;
   originalSenderEmail: string | null;
@@ -88,6 +91,7 @@ export type SigningSummary = {
   canManage: boolean;
   canRead: boolean;
   isBrokerageAdministrator: boolean;
+  isTransactionCoordinator: boolean;
   primaryAssociation: {
     id: string;
     agentUserId: string | null;

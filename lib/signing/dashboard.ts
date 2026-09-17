@@ -53,6 +53,8 @@ export async function loadSigningDashboardForActor(
   admin: SupabaseClient,
 ): Promise<SigningDashboard> {
   const summary = await getSigningForActor(actor, signingIdRaw, admin);
+  const packetOwnerUserId =
+    summary.originalSenderUserId ?? actor.userId;
 
   const [
     { data: activation, error: activationError },
@@ -125,7 +127,7 @@ export async function loadSigningDashboardForActor(
     const sourceStatus =
       cached ??
       (isDraft
-        ? (await getDocumentSourceStatus(admin, row, actor.userId)).status
+        ? (await getDocumentSourceStatus(admin, row, packetOwnerUserId)).status
         : "CURRENT");
     documents.push({
       id: row.id,

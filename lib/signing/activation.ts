@@ -28,6 +28,11 @@ import {
   enqueueParticipantInvitations,
   type ParticipantInvitationTarget,
 } from "./delivery";
+import { loadSigningAuthorityBundle } from "./authority-context";
+import {
+  buildResponsibleContextMetadata,
+  resolveSigningEventActorType,
+} from "./event-actor";
 import { SigningError } from "./errors";
 import { requireManageableDraftSigning } from "./manage";
 import { getSigningForActor } from "./operations";
@@ -368,11 +373,23 @@ export async function activateSigningWithActor(
 
     // Recorded before the lifecycle flip so a failed flip rolls the event back
     // with the abandoned revision; summary carries the mode, never a token.
+    const authorityBundle = await loadSigningAuthorityBundle(
+      admin,
+      actor,
+      signing.id,
+    );
+    const actorType = authorityBundle
+      ? resolveSigningEventActorType(authorityBundle.authority)
+      : "PRIMARY_AGENT";
+    const responsibleMeta = buildResponsibleContextMetadata({
+      responsibleUserId: signing.original_sender_user_id,
+      responsibleDisplayName: signing.original_sender_display_name,
+    });
     const { error: eventError } = await admin.from("signing_events").insert({
       signing_id: signing.id,
       package_revision_id: promoted.packageRevisionId,
       event_type: "SIGNING_ACTIVATED",
-      actor_type: "PRIMARY_AGENT",
+      actor_type: actorType,
       actor_user_id: actor.userId,
       actor_display_name: actor.displayName,
       visibility: "BUSINESS",
@@ -380,6 +397,7 @@ export async function activateSigningWithActor(
         mode === "REMOTE_SEND"
           ? "Signing activated and sent for remote signing"
           : "Signing activated for in-person signing",
+      details_json: responsibleMeta ?? null,
     });
     if (eventError) throw new Error(eventError.message);
 

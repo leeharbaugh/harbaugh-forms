@@ -8,7 +8,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SigningDocumentRow } from "./draft-documents";
-import { evaluateSigningAuthority } from "./authority";
+import { loadSigningAuthorityBundle } from "./authority-context";
 import { assertNativeSigningEnabled } from "./feature-gate";
 import {
   collectDraftPromotionBlockers,
@@ -20,7 +20,8 @@ import {
   type DocumentSourceStatus,
 } from "./source-drift";
 import { SigningError } from "./errors";
-import { isUuid, type SigningActor, type SigningRow } from "./types";
+import { isUuid, type SigningActor } from "./types";
+import { resolveSigningPacketOwnerUserId } from "./operations";
 
 export type SigningReadinessBlocker = DraftPromotionBlocker;
 
@@ -54,44 +55,15 @@ export async function evaluateSigningReadiness(
     throw new SigningError("INVALID_INPUT", "Invalid Signing id.");
   }
 
-  const { data: signingRow, error: signingError } = await admin
-    .from("signings")
-    .select("*")
-    .eq("id", signingIdRaw)
-    .maybeSingle();
-  if (signingError) throw new Error(signingError.message);
-  if (!signingRow) {
+  const authorityBundle = await loadSigningAuthorityBundle(
+    admin,
+    actor,
+    signingIdRaw,
+  );
+  if (!authorityBundle || !authorityBundle.authority.canRead) {
     throw new SigningError("NOT_FOUND", "Signing not found.");
   }
-  const signing = signingRow as SigningRow;
-
-  const { data: associations, error: associationError } = await admin
-    .from("signing_agent_associations")
-    .select("*")
-    .eq("signing_id", signing.id);
-  if (associationError) throw new Error(associationError.message);
-
-  const authority = evaluateSigningAuthority({
-    signing: {
-      signingId: signing.id,
-      originatingOrganizationId: signing.originating_organization_id,
-      lifecycleState: signing.lifecycle_state,
-      currentPrimaryAgentAssociationId:
-        signing.current_primary_agent_association_id,
-      associations: (associations ?? []).map((row) => ({
-        id: row.id as string,
-        agentUserId: row.agent_user_id as string | null,
-        associationRole: row.association_role as "PRIMARY" | "CO_AGENT",
-        effectiveEndedAt: row.effective_ended_at as string | null,
-      })),
-    },
-    actorUserId: actor.userId,
-    memberships: actor.memberships,
-  });
-
-  if (!authority.canRead) {
-    throw new SigningError("NOT_FOUND", "Signing not found.");
-  }
+  const { signing, authority } = authorityBundle;
 
   const blockers: SigningReadinessBlocker[] = [];
 
@@ -124,9 +96,14 @@ export async function evaluateSigningReadiness(
   }
 
   const documents: SigningReadinessDocument[] = [];
+  const packetOwnerUserId = resolveSigningPacketOwnerUserId(signing);
   for (const row of bundle.documents) {
     const document = row as unknown as SigningDocumentRow;
-    const status = await getDocumentSourceStatus(admin, document, actor.userId);
+    const status = await getDocumentSourceStatus(
+      admin,
+      document,
+      packetOwnerUserId,
+    );
 
     if (!document.selected_draft_source_snapshot_id) {
       blockers.push({

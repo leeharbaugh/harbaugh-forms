@@ -7,6 +7,7 @@ import {
   parsePositiveInt,
   requireManageableDraftSigning,
 } from "./manage";
+import { resolveSigningPacketOwnerUserId } from "./operations";
 import { SIGNING_ARTIFACTS_BUCKET } from "./stage1-schema";
 import type { SigningActor } from "./types";
 import { isUuid } from "./types";
@@ -170,7 +171,7 @@ export async function addDraftSigningDocumentWithActor(
         signingId: signing.id,
         signingDocumentId: reincluded.id as string,
         packetFormId,
-        expectedOwnerUserId: actor.userId,
+        expectedOwnerUserId: resolveSigningPacketOwnerUserId(signing),
       });
       return reloadSigningDocument(admin, signing.id, reincluded.id as string);
     }
@@ -212,7 +213,7 @@ export async function addDraftSigningDocumentWithActor(
       signingId: signing.id,
       signingDocumentId: inserted.id as string,
       packetFormId,
-      expectedOwnerUserId: actor.userId,
+      expectedOwnerUserId: resolveSigningPacketOwnerUserId(signing),
     });
   } catch (error) {
     // A document without a snapshot cannot be promoted; roll the fresh insert

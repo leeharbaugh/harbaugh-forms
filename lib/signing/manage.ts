@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { evaluateSigningAuthority } from "./authority";
+import { loadSigningAuthorityBundle } from "./authority-context";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { isUuid, type SigningActor, type SigningRow } from "./types";
@@ -12,6 +12,7 @@ export type ManagedDraftSigning = {
 /**
  * Authorize Draft management for a Signing, then return the Signing row.
  * Callers must not use a privileged client for evidence until this succeeds.
+ * Revalidates agent, TC (delegation + operator association), and ORG_ADMIN paths.
  */
 export async function requireManageableDraftSigning(
   actor: SigningActor,
@@ -24,62 +25,46 @@ export async function requireManageableDraftSigning(
     throw new SigningError("INVALID_INPUT", "Invalid Signing id.");
   }
 
-  const { data: signing, error } = await admin
-    .from("signings")
-    .select("*")
-    .eq("id", signingIdRaw)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-  if (!signing) {
+  const bundle = await loadSigningAuthorityBundle(admin, actor, signingIdRaw);
+  if (!bundle || !bundle.authority.canRead) {
     throw new SigningError("NOT_FOUND", "Signing not found.");
   }
-
-  const typed = signing as SigningRow;
-
-  const { data: associations, error: associationError } = await admin
-    .from("signing_agent_associations")
-    .select("*")
-    .eq("signing_id", typed.id);
-
-  if (associationError) {
-    throw new Error(associationError.message);
-  }
-
-  const authority = evaluateSigningAuthority({
-    signing: {
-      signingId: typed.id,
-      originatingOrganizationId: typed.originating_organization_id,
-      lifecycleState: typed.lifecycle_state,
-      currentPrimaryAgentAssociationId:
-        typed.current_primary_agent_association_id,
-      associations: (associations ?? []).map((row) => ({
-        id: row.id as string,
-        agentUserId: row.agent_user_id as string | null,
-        associationRole: row.association_role as "PRIMARY" | "CO_AGENT",
-        effectiveEndedAt: row.effective_ended_at as string | null,
-      })),
-    },
-    actorUserId: actor.userId,
-    memberships: actor.memberships,
-  });
-
-  if (!authority.canRead) {
-    throw new SigningError("NOT_FOUND", "Signing not found.");
-  }
-  if (!authority.canManage) {
+  if (!bundle.authority.canManage) {
     throw new SigningError("FORBIDDEN", "You cannot manage this Signing.");
   }
-  if (typed.lifecycle_state !== "DRAFT") {
+  if (bundle.signing.lifecycle_state !== "DRAFT") {
     throw new SigningError(
       "CONFLICT",
       "Only Draft Signings may be prepared in Stage 3.",
     );
   }
 
-  return { signing: typed, canManage: true };
+  return { signing: bundle.signing, canManage: true };
+}
+
+/**
+ * Authorize management for unfinished Signings (Draft or In Progress).
+ */
+export async function requireManageableSigning(
+  actor: SigningActor,
+  signingIdRaw: unknown,
+  admin: SupabaseClient,
+): Promise<{ signing: SigningRow; canManage: true }> {
+  assertNativeSigningEnabled();
+
+  if (!isUuid(signingIdRaw)) {
+    throw new SigningError("INVALID_INPUT", "Invalid Signing id.");
+  }
+
+  const bundle = await loadSigningAuthorityBundle(admin, actor, signingIdRaw);
+  if (!bundle || !bundle.authority.canRead) {
+    throw new SigningError("NOT_FOUND", "Signing not found.");
+  }
+  if (!bundle.authority.canManage) {
+    throw new SigningError("FORBIDDEN", "You cannot manage this Signing.");
+  }
+
+  return { signing: bundle.signing, canManage: true };
 }
 
 export function parsePositiveInt(value: unknown, label: string): number {

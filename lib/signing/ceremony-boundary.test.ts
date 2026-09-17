@@ -156,16 +156,17 @@ describe("Native Signing ceremony boundaries", () => {
     assert.match(browserSessions, /lifecycle_state !== "IN_PROGRESS"/);
   });
 
-  it("fails ceremony writes closed while an agent holds an amendment lock", () => {
+  it("fails ceremony writes closed while a manager holds an amendment lock", () => {
     assert.match(amendmentLocks, /export async function hasActiveAmendmentLock/);
     assert.match(amendmentLocks, /"AMENDMENT_LOCKED"/);
     assert.match(amendmentLocks, /\.is\("released_at", null\)/);
     assert.match(amendmentLocks, /\.gt\("expires_at", new Date\(\)\.toISOString\(\)\)/);
-    // Read-only in this stage: no acquire/release/renew and no agent UI.
-    assert.doesNotMatch(amendmentLocks, /\.insert\(/);
-    assert.doesNotMatch(amendmentLocks, /\.update\(/);
+    // TC foundation: managers (agent or TC) may acquire/release; never hard-delete.
+    assert.match(amendmentLocks, /acquireAmendmentLockWithActor/);
+    assert.match(amendmentLocks, /releaseAmendmentLockWithActor/);
+    assert.match(amendmentLocks, /held_by_operator_association_id/);
     assert.doesNotMatch(amendmentLocks, /\.delete\(/);
-    // Presence is the predicate a future acquisition must contend with.
+    // Presence remains the predicate acquisition must contend with.
     assert.match(presence, /export async function hasActivePresenceForSigning/);
     assert.match(amendmentLocks, /hasActivePresenceForSigning/);
   });
