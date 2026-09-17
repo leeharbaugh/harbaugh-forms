@@ -59,6 +59,34 @@ export const NATIVE_SIGNING_STAGE4_MIGRATIONS = [
 ] as const;
 
 /**
+ * Stage 5 additive ceremony tables.
+ *
+ * Consent disclosure versions are immutable published copy; in-person handoffs
+ * and browser sessions are access/authority state; presence leases and
+ * amendment locks are temporary server-expiring concurrency records. None of
+ * these is signer evidence: participant evidence stays in `signing_participants`
+ * (consent reference), `signing_adopted_marks`, `signing_field_placements`, and
+ * `signing_events`.
+ */
+export const NATIVE_SIGNING_CEREMONY_TABLES = [
+  "signing_consent_disclosure_versions",
+  "signing_in_person_handoffs",
+  "signing_browser_sessions",
+  "signing_participant_presence_leases",
+  "signing_amendment_locks",
+  "signing_device_handoff_locks",
+] as const;
+
+export const NATIVE_SIGNING_CEREMONY_MIGRATIONS = [
+  "20260917120000_native_signing_ceremony_foundation",
+  "20260917130000_native_signing_ceremony_disclosure_fingerprint",
+  "20260917140000_native_signing_ceremony_device_handoff_lock",
+] as const;
+
+export type NativeSigningCeremonyTable =
+  (typeof NATIVE_SIGNING_CEREMONY_TABLES)[number];
+
+/**
  * `signing-artifacts` object-key namespaces.
  *
  * Two different kinds of immutable bytes live in the same private bucket and

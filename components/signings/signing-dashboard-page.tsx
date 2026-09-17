@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { startInPersonHandoffAction } from "@/lib/signing/ceremony-agent-actions";
 import type { SigningDashboard } from "@/lib/signing/dashboard";
 import type { DocumentSourceStatus } from "@/lib/signing/source-drift";
 import {
@@ -56,6 +57,14 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     clientRequestId: string;
   } | null>(null);
   const [activating, setActivating] = useState(false);
+  const [handoffBusyParticipantId, setHandoffBusyParticipantId] = useState<
+    string | null
+  >(null);
+  const [handoff, setHandoff] = useState<{
+    participantId: string;
+    path: string;
+    expiresAt: string;
+  } | null>(null);
 
   const reload = useCallback(async () => {
     const result = await getSigningDashboardAction({ signingId });
@@ -137,6 +146,35 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     setActivating(false);
   }
 
+  /**
+   * Hand the shared device to a participant for in-person signing.
+   *
+   * The returned path carries a single-use handoff token, so it is shown once,
+   * here, and is consumed when the participant affirms their identity.
+   */
+  async function startHandoff(participantId: string) {
+    setHandoffBusyParticipantId(participantId);
+    setError(null);
+    setNotice(null);
+    setHandoff(null);
+    const result = await startInPersonHandoffAction({
+      signingId,
+      signingParticipantId: participantId,
+    });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      const data = result.data as { handoffPath: string; expiresAt: string };
+      setHandoff({
+        participantId,
+        path: data.handoffPath,
+        expiresAt: data.expiresAt,
+      });
+      window.location.replace(data.handoffPath);
+    }
+    setHandoffBusyParticipantId(null);
+  }
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading Signing…</p>;
   }
@@ -152,6 +190,12 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
   const isDraft = dashboard.signing.lifecycleState === "DRAFT";
   const canManage = dashboard.signing.canManage;
   const canActivate = isDraft && canManage && dashboard.ready;
+  // Supervised handoff is an in-person concern only, and only once the package
+  // is actionable.
+  const canStartHandoff =
+    canManage &&
+    dashboard.signing.lifecycleState === "IN_PROGRESS" &&
+    dashboard.signing.activationMode === "IN_PERSON";
 
   return (
     <div className="flex flex-col gap-6">
@@ -358,6 +402,35 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                   <p className="text-xs text-destructive">
                     {participant.lastDeliveryFailureSafe}
                   </p>
+                ) : null}
+                {canStartHandoff &&
+                participant.participantStatus !== "FINISHED" &&
+                participant.participantStatus !== "DECLINED" ? (
+                  <div className="mt-1 space-y-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={handoffBusyParticipantId === participant.id}
+                      onClick={() => void startHandoff(participant.id)}
+                    >
+                      {handoffBusyParticipantId === participant.id
+                        ? "Preparing…"
+                        : "Hand device to this participant"}
+                    </Button>
+                    {handoff?.participantId === participant.id ? (
+                      <p className="text-xs text-muted-foreground">
+                        <a
+                          className="text-primary underline-offset-4 hover:underline"
+                          href={handoff.path}
+                        >
+                          Open {participant.fullName}&rsquo;s signing session
+                        </a>
+                        {" · expires "}
+                        {new Date(handoff.expiresAt).toLocaleTimeString()}
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             ))

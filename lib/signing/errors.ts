@@ -19,7 +19,18 @@ export type SigningErrorCode =
   | "SOURCE_CHANGED"
   | "NOT_READY"
   | "IDEMPOTENCY_CONFLICT"
-  | "ACTIVATION_FAILED";
+  | "ACTIVATION_FAILED"
+  // Participant ceremony (Stage 5). The ceremony browser session — not the
+  // Stage 4 entry session — is the authority for every code below.
+  | "SESSION_EXPIRED"
+  | "SESSION_SUPERSEDED"
+  | "CEREMONY_FORBIDDEN"
+  | "CONSENT_REQUIRED"
+  | "MARK_LOCKED"
+  | "ALREADY_FINISHED"
+  | "DECLINED"
+  | "AMENDMENT_LOCKED"
+  | "PRESENCE_REQUIRED";
 
 export class SigningError extends Error {
   readonly code: SigningErrorCode;

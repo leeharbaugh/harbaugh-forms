@@ -1,3 +1,7 @@
+import {
+  DEVICE_HANDOFF_LOCK_COOKIE_NAME,
+  isPathAllowedDuringDeviceHandoffLock,
+} from "@/lib/signing/device-handoff-lock";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
@@ -6,6 +10,20 @@ export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
+
+  const path = request.nextUrl.pathname;
+  const deviceLockCookie = request.cookies.get(DEVICE_HANDOFF_LOCK_COOKIE_NAME);
+  if (
+    deviceLockCookie?.value &&
+    !isPathAllowedDuringDeviceHandoffLock(path)
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/sign/return-to-agent";
+    url.search = "";
+    const redirect = NextResponse.redirect(url);
+    redirect.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    return redirect;
+  }
 
   // If the env vars are not set, skip proxy check. You can remove this
   // once you setup the project.
@@ -60,7 +78,6 @@ export async function updateSession(request: NextRequest) {
 
   // Force password change before any non-auth application route.
   if (user) {
-    const path = request.nextUrl.pathname;
     const allowedWhileForced =
       path.startsWith("/auth") ||
       path.startsWith("/login");
@@ -105,6 +122,19 @@ export async function updateSession(request: NextRequest) {
   //    return myNewResponse
   // If this is not done, you may be causing the browser and server to go out
   // of sync and terminate the user's session prematurely!
+
+  // Private authenticated HTML must not be restorable from browser cache after
+  // an in-person handoff begins on the same device. Segment-aware: `/signings`
+  // is workspace and must be no-store; `/sign/*` already has ceremony no-store.
+  if (
+    !path.startsWith("/_next") &&
+    !isPathAllowedDuringDeviceHandoffLock(path)
+  ) {
+    supabaseResponse.headers.set(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, private",
+    );
+  }
 
   return supabaseResponse;
 }

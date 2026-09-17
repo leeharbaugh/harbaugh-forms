@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   assertNativeSigningEnabled,
+  assertProductionDisclosureReady,
   isNativeSigningEnabled,
+  isSigningProductionRuntime,
   NATIVE_SIGNING_ENV_FLAG,
   NativeSigningDisabledError,
+  NativeSigningProductionDisclosureError,
 } from "./feature-gate.ts";
 
 describe("Native Signing feature gate", () => {
@@ -34,6 +37,32 @@ describe("Native Signing feature gate", () => {
   it("assertNativeSigningEnabled passes when enabled", () => {
     assert.doesNotThrow(() =>
       assertNativeSigningEnabled({ [NATIVE_SIGNING_ENV_FLAG]: "true" }),
+    );
+  });
+
+  it("detects production runtime via VERCEL_ENV", () => {
+    assert.equal(isSigningProductionRuntime({ VERCEL_ENV: "production" }), true);
+    assert.equal(isSigningProductionRuntime({ VERCEL_ENV: "preview" }), false);
+    assert.equal(isSigningProductionRuntime({}), false);
+  });
+
+  it("assertProductionDisclosureReady fails closed in production", () => {
+    assert.throws(
+      () =>
+        assertProductionDisclosureReady(
+          { isProductionReady: false },
+          { VERCEL_ENV: "production" },
+        ),
+      (error: unknown) => error instanceof NativeSigningProductionDisclosureError,
+    );
+  });
+
+  it("assertProductionDisclosureReady allows dev placeholder disclosure", () => {
+    assert.doesNotThrow(() =>
+      assertProductionDisclosureReady(
+        { isProductionReady: false },
+        { VERCEL_ENV: "preview" },
+      ),
     );
   });
 });
