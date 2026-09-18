@@ -8,7 +8,10 @@ import {
   evaluateSigningAuthority,
   type SigningAuthorityResult,
 } from "./authority";
-import { resolveSigningEventActorType } from "./event-actor";
+import {
+  resolveSigningEventActorType,
+  requireSigningEventActorType,
+} from "./event-actor";
 import {
   NATIVE_SIGNING_TC_AUTHORITY_MIGRATIONS,
   NATIVE_SIGNING_TC_AUTHORITY_TABLES,
@@ -60,6 +63,16 @@ describe("TC operator authority foundation", () => {
       "signing_operator_delegations",
       "signing_operator_associations",
     ]);
+    assert.ok(
+      NATIVE_SIGNING_TC_AUTHORITY_MIGRATIONS.includes(
+        "20260917150000_native_signing_tc_operator_authority",
+      ),
+    );
+    assert.ok(
+      NATIVE_SIGNING_TC_AUTHORITY_MIGRATIONS.includes(
+        "20260918120000_native_signing_tc_provenance_immutability",
+      ),
+    );
     for (const table of NATIVE_SIGNING_TC_AUTHORITY_TABLES) {
       assert.match(
         migration,
@@ -117,18 +130,25 @@ describe("TC operator authority foundation", () => {
       ["handoff", handoff],
       ["promotion", promotion],
       ["source-drift", sourceDrift],
-      ["operations", operations],
     ] as const) {
       assert.doesNotMatch(
         source,
         /actor_type:\s*"PRIMARY_AGENT"/,
         `${label} must not hardcode PRIMARY_AGENT`,
       );
-      assert.match(source, /resolveSigningEventActorType|TRANSACTION_COORDINATOR/);
+      assert.doesNotMatch(
+        source,
+        /\?[\s\S]{0,80}:\s*"PRIMARY_AGENT"/,
+        `${label} must not fall back to PRIMARY_AGENT`,
+      );
+      assert.match(source, /requireSigningEventActorType/);
     }
+    // Create attributes TC vs PRIMARY from creatingAsTc, never from a null-authority fallback.
+    assert.match(operations, /creatingAsTc \? "TRANSACTION_COORDINATOR" : "PRIMARY_AGENT"/);
+    assert.match(operations, /requireSigningEventActorType/);
   });
 
-  it("resolves event actor types honestly", () => {
+  it("resolves event actor types honestly and fails closed when unresolved", () => {
     assert.equal(
       resolveSigningEventActorType(
         baseAuthority({
@@ -177,6 +197,14 @@ describe("TC operator authority foundation", () => {
       ),
       "BROKERAGE_ADMINISTRATOR",
     );
+    assert.throws(
+      () => resolveSigningEventActorType(baseAuthority()),
+      /SIGNING_EVENT_ACTOR_UNRESOLVED/,
+    );
+    assert.throws(
+      () => requireSigningEventActorType(null),
+      /SIGNING_EVENT_ACTOR_AUTHORITY_REQUIRED/,
+    );
   });
 
   it("documents TC ceremony prohibitions and blocks management-as-ceremony", () => {
@@ -199,7 +227,7 @@ describe("TC operator authority foundation", () => {
   it("implements Cancel with TC on-behalf attribution", () => {
     assert.match(cancel, /SIGNING_CANCELLED/);
     assert.match(cancel, /Transaction Coordinator, on behalf of/);
-    assert.match(cancel, /resolveSigningEventActorType/);
+    assert.match(cancel, /requireSigningEventActorType/);
   });
 
   it("implements grant/revoke gates for responsible User and ORG_ADMIN", () => {
@@ -207,6 +235,7 @@ describe("TC operator authority foundation", () => {
     assert.match(delegations, /ordinary|organization administrator|ORG_ADMIN/i);
     assert.match(delegations, /Application administrators cannot grant/);
     assert.match(delegations, /DELEGATION_REVOKED/);
+    assert.match(delegations, /signing_amendment_locks/);
   });
 
   it("prepares Retry Finalization and completed-artifact authority helpers", () => {
@@ -215,6 +244,7 @@ describe("TC operator authority foundation", () => {
     const managed = baseAuthority({ canManage: true });
     assert.equal(canRequestRetryFinalization(managed, "IN_PROGRESS"), true);
     assert.equal(canRequestRetryFinalization(managed, "DRAFT"), false);
+    assert.equal(canRequestRetryFinalization(managed, "COMPLETE"), false);
     assert.equal(
       canReadCompletedSigningArtifacts(
         baseAuthority({ canRead: true, canManage: false }),

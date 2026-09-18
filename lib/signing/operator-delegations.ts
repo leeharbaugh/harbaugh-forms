@@ -327,17 +327,38 @@ export async function revokeOperatorDelegationWithActor(
   }
 
   // End active operator associations tied to this delegation (historical retain).
-  await admin
+  // Do not set effective_ended_at from the client clock: skew vs server
+  // effective_started_at can violate soa_effective_range. Status ENDED alone
+  // removes manage authority; partial unique index is status=ACTIVE only.
+  const { data: endedAssociations, error: endAssocError } = await admin
     .from("signing_operator_associations")
     .update({
       status: "ENDED",
-      effective_ended_at: revokedAt,
       end_reason: "DELEGATION_REVOKED",
       ended_by_user_id: actor.userId,
     })
     .eq("signing_operator_delegation_id", row.id)
     .eq("status", "ACTIVE")
-    .is("effective_ended_at", null);
+    .is("effective_ended_at", null)
+    .select("id");
+  if (endAssocError) throw new Error(endAssocError.message);
+
+  // Release open amendment locks held by ended operator associations so a
+  // revoked TC cannot leave the package locked until TTL expiry.
+  const endedIds = (endedAssociations ?? [])
+    .map((assoc) => assoc.id as string)
+    .filter(Boolean);
+  if (endedIds.length > 0) {
+    const { error: releaseLockError } = await admin
+      .from("signing_amendment_locks")
+      .update({
+        released_at: revokedAt,
+        release_reason: "DELEGATION_REVOKED",
+      })
+      .in("held_by_operator_association_id", endedIds)
+      .is("released_at", null);
+    if (releaseLockError) throw new Error(releaseLockError.message);
+  }
 
   return updated as SigningOperatorDelegationRow;
 }

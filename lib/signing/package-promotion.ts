@@ -3,7 +3,7 @@ import { loadSigningAuthorityBundle } from "./authority-context";
 import { ensurePreparedDocumentVersion } from "./document-versions";
 import {
   buildResponsibleContextMetadata,
-  resolveSigningEventActorType,
+  requireSigningEventActorType,
 } from "./event-actor";
 import { SigningError } from "./errors";
 import {
@@ -552,9 +552,9 @@ export async function promotePackageRevisionFromDraftWithActor(
       actor,
       signing.id,
     );
-    const actorType = authorityBundle
-      ? resolveSigningEventActorType(authorityBundle.authority)
-      : "PRIMARY_AGENT";
+    const actorType = requireSigningEventActorType(
+      authorityBundle?.authority,
+    );
     const responsibleMeta = buildResponsibleContextMetadata({
       responsibleUserId: signing.original_sender_user_id,
       responsibleDisplayName: signing.original_sender_display_name,

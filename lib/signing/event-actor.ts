@@ -43,9 +43,21 @@ export function resolveSigningEventActorType(
   if (authority.isBrokerageAdministrator) {
     return "BROKERAGE_ADMINISTRATOR";
   }
-  // Fail closed to a distinct admin-shaped label only when manage somehow
-  // succeeded without association (should not happen for unfinished Signings).
-  return "BROKERAGE_ADMINISTRATOR";
+  // Fail closed: never invent PRIMARY_AGENT when authority is unresolved.
+  throw new Error("SIGNING_EVENT_ACTOR_UNRESOLVED");
+}
+
+/**
+ * Require a loaded authority result before writing a meaningful Signing event.
+ * Call sites must not fall back to PRIMARY_AGENT when the bundle is missing.
+ */
+export function requireSigningEventActorType(
+  authority: SigningAuthorityResult | null | undefined,
+): SigningEventActorType {
+  if (!authority) {
+    throw new Error("SIGNING_EVENT_ACTOR_AUTHORITY_REQUIRED");
+  }
+  return resolveSigningEventActorType(authority);
 }
 
 /** Sanitized responsible-context metadata for "on behalf of" events. */

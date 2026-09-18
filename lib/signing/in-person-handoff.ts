@@ -22,7 +22,7 @@ import { supersedeActiveCeremonySessions } from "./browser-sessions";
 import { createDeviceHandoffLock } from "./device-handoff-lock";
 import {
   buildResponsibleContextMetadata,
-  resolveSigningEventActorType,
+  requireSigningEventActorType,
 } from "./event-actor";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
@@ -201,9 +201,7 @@ export async function createInPersonHandoffWithActor(
     actor,
     summary.id,
   );
-  const actorType = authorityBundle
-    ? resolveSigningEventActorType(authorityBundle.authority)
-    : "PRIMARY_AGENT";
+  const actorType = requireSigningEventActorType(authorityBundle?.authority);
   const responsibleMeta = buildResponsibleContextMetadata({
     responsibleUserId: summary.originalSenderUserId,
     responsibleDisplayName: summary.originalSenderDisplayName,

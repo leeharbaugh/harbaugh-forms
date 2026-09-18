@@ -65,7 +65,7 @@ TC authority uses a hybrid model:
 
 `signing_agent_associations` remains PRIMARY/CO_AGENT only. Do not store TC identity as a profile `transaction_coordinator_user_id` field.
 
-**Creator provenance:** `signings.created_by_user_id` records the actual creating User (may be a TC). `original_sender_*` and PRIMARY association remain the responsible agent/broker. Event `SIGNING_CREATED` also attributes the TC actor. Creator and responsible concepts are never overwritten later.
+**Creator provenance:** `signings.created_by_user_id` records the actual creating User (may be a TC). `original_sender_*` and PRIMARY association remain the responsible agent/broker. Event `SIGNING_CREATED` also attributes the TC actor. Creator and responsible concepts are never overwritten later; DB BEFORE UPDATE trigger restores `created_by_user_id` and `original_sender_*` on any update.
 
 **Reason:** Persistent grants enable brokerage-wide TC assignment; Signing associations preserve historical operator evidence and management scope without falsifying agent relationships.
 

@@ -12,7 +12,7 @@ import {
 } from "./eligibility";
 import {
   buildResponsibleContextMetadata,
-  resolveSigningEventActorType,
+  requireSigningEventActorType,
 } from "./event-actor";
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { SigningError } from "./errors";
@@ -509,7 +509,7 @@ export async function updateDraftSigningTitleForActor(
     throw new Error(updateError?.message ?? "Failed to update Signing title.");
   }
 
-  const actorType = resolveSigningEventActorType(bundle.authority);
+  const actorType = requireSigningEventActorType(bundle.authority);
   const responsibleMeta = buildResponsibleContextMetadata({
     responsibleUserId: bundle.signing.original_sender_user_id,
     responsibleDisplayName: bundle.signing.original_sender_display_name,

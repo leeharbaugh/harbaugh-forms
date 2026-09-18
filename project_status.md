@@ -6,9 +6,9 @@
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
-### Transaction Coordinator / operator authority foundation (2026-09-17)
+### Transaction Coordinator / operator authority foundation (2026-09-17; review fixes 2026-09-18)
 
-**Status:** Minimal TC authority foundation implemented (not Stage 6). Hybrid `signing_operator_delegations` + `signing_operator_associations`; create-on-behalf splits creator vs responsible PRIMARY; event actor attribution includes `TRANSACTION_COORDINATOR`; Cancel supported; ceremony prohibitions preserved; historical read after revoke. No production enablement. No full TC administration UI.
+**Status:** Minimal TC authority foundation on PR [#40](https://github.com/leeharbaugh/harbaugh-forms/pull/40) (`feat/native-signing-tc-authority`). Hybrid `signing_operator_delegations` + `signing_operator_associations`; create-on-behalf splits creator vs responsible PRIMARY; event actor attribution includes `TRANSACTION_COORDINATOR`; Cancel supported; ceremony prohibitions preserved; historical read after revoke; provenance immutability trigger; revoke releases orphaned amendment locks. No production enablement. No full TC administration UI. **Not merged.** Stage 6 still deferred.
 
 **Deferred:** Stage 6 finalization; combined PDF generation; polished TC Settings UX; completed-package delivery features.
 

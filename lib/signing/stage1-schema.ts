@@ -95,6 +95,7 @@ export const NATIVE_SIGNING_TC_AUTHORITY_TABLES = [
 
 export const NATIVE_SIGNING_TC_AUTHORITY_MIGRATIONS = [
   "20260917150000_native_signing_tc_operator_authority",
+  "20260918120000_native_signing_tc_provenance_immutability",
 ] as const;
 
 export type NativeSigningCeremonyTable =

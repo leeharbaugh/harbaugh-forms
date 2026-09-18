@@ -219,15 +219,14 @@ export function evaluateSigningAuthority(options: {
 /**
  * Whether an active manager may request Retry Finalization once Stage 6 exists.
  * Does not authorize artifact mutation, forced Complete, or worker resume.
+ * Recoverable finalization failure remains an unfinished (IN_PROGRESS) Signing;
+ * completed Signings are not re-managed through this helper.
  */
 export function canRequestRetryFinalization(
   authority: SigningAuthorityResult,
   lifecycleState: string,
 ): boolean {
-  return (
-    authority.canManage &&
-    (lifecycleState === "IN_PROGRESS" || lifecycleState === "COMPLETE")
-  );
+  return authority.canManage && lifecycleState === "IN_PROGRESS";
 }
 
 /**

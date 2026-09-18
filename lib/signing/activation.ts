@@ -31,7 +31,7 @@ import {
 import { loadSigningAuthorityBundle } from "./authority-context";
 import {
   buildResponsibleContextMetadata,
-  resolveSigningEventActorType,
+  requireSigningEventActorType,
 } from "./event-actor";
 import { SigningError } from "./errors";
 import { requireManageableDraftSigning } from "./manage";
@@ -378,9 +378,9 @@ export async function activateSigningWithActor(
       actor,
       signing.id,
     );
-    const actorType = authorityBundle
-      ? resolveSigningEventActorType(authorityBundle.authority)
-      : "PRIMARY_AGENT";
+    const actorType = requireSigningEventActorType(
+      authorityBundle?.authority,
+    );
     const responsibleMeta = buildResponsibleContextMetadata({
       responsibleUserId: signing.original_sender_user_id,
       responsibleDisplayName: signing.original_sender_display_name,

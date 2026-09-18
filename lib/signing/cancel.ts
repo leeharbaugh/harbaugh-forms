@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadSigningAuthorityBundle } from "./authority-context";
 import {
   buildResponsibleContextMetadata,
-  resolveSigningEventActorType,
+  requireSigningEventActorType,
 } from "./event-actor";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
@@ -60,7 +60,7 @@ export async function cancelSigningWithActor(
       ? input.reason.trim().slice(0, 500)
       : null;
 
-  const actorType = resolveSigningEventActorType(authority);
+  const actorType = requireSigningEventActorType(authority);
   const responsibleMeta = buildResponsibleContextMetadata({
     responsibleUserId: signing.original_sender_user_id,
     responsibleDisplayName: signing.original_sender_display_name,

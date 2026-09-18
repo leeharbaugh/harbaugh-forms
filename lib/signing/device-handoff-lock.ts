@@ -261,7 +261,7 @@ export async function releaseDeviceHandoffLockWithActor(options: {
   if (lock.agentUserId !== options.actor.userId) {
     throw new SigningError(
       "FORBIDDEN",
-      "Only the agent who started this in-person handoff can unlock this device.",
+      "Only the User who started this in-person handoff can unlock this device.",
     );
   }
 
