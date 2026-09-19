@@ -187,11 +187,11 @@ describe("Native Signing ceremony boundaries", () => {
     ]) {
       assert.match(events, new RegExp(`"${eventType}"`));
     }
-    assert.match(events, /\.from\("signing_events"\)\n\s*\.insert|from\("signing_events"\)\.insert/);
-    assert.match(events, /actor_type: "PARTICIPANT"/);
-    assert.match(events, /actor_participant_id: options\.signingParticipantId/);
-    assert.match(events, /package_revision_id: options\.packageRevisionId/);
-    assert.match(events, /idempotency_key: options\.idempotencyKey/);
+    assert.match(events, /appendSigningEvent/);
+    assert.match(events, /actorType: "PARTICIPANT"/);
+    assert.match(events, /actorParticipantId: options\.signingParticipantId/);
+    assert.match(events, /packageRevisionId: options\.packageRevisionId/);
+    assert.match(events, /idempotencyKey: options\.idempotencyKey/);
     // Append-only: ceremony code never rewrites or deletes Signing history.
     for (const source of [events, marks, placements, finish, decline]) {
       assert.doesNotMatch(source, /from\("signing_events"\)\s*\n?\s*\.update/);

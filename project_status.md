@@ -1,10 +1,33 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-18 (Native Signing Stages 1–5 + TC/operator authority foundation merged to `main`; Stage 6 finalization still deferred; production Native Signing unavailable)
+**As of:** 2026-09-19 (Native Signing Stage 6 finalization review-hardened on feature branch; Stages 1–5 + TC remain on `main`; production Native Signing unavailable)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
+
+### Native Signing Stage 6 — finalization (2026-09-18; review 2026-09-19)
+
+**Status:** **Implemented on feature branch `feat/native-signing-stage-6-finalization` (PR #41 open; not merged).** Architecture/security/failure-recovery review applied forward-only fixes on the same branch. Development migrations applied to `harbaugh-forms-dev` only. **Default-off feature gate still required.** **No production enablement, completion email delivery, or polished TC UX.**
+
+| Item | Result |
+|------|--------|
+| Feature branch / PR | `feat/native-signing-stage-6-finalization` / [#41](https://github.com/leeharbaugh/harbaugh-forms/pull/41) (from `main` `24f9d33`) |
+| Migrations (dev) | `20260918160000_native_signing_stage6_finalization.sql`; `20260919120000_native_signing_stage6_completed_at_immutability.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| Production migrations | **Not applied**; production remains unlinked/untouched |
+| Work-item lease | `claimed_by` / `claimed_until` / `processing_started_at` on `signing_work_items` |
+| Finalization | `FINALIZE_SIGNING` worker: READY/FAILED → IN_PROGRESS → VERIFIED + lifecycle `COMPLETE`; Complete-then-`SIGNING_COMPLETED` with idempotent repair |
+| Completed PDFs | Signing-specific renderer from prepared versions + ACCEPTED placements only; DRAWN fail-closed until richer evidence schema |
+| Audit certificate | Exactly one verified `AUDIT_CERTIFICATE` per Signing + frozen revision; sequence boundary before Complete |
+| Event chain | HMAC-SHA-256 keyring (`SIGNING_EVENT_CHAIN_KEY_*`); genesis/checkpoint; protected append; MAC-covered `eventOccurredAt` |
+| Artifact reads | `canReadCompletedSigningArtifacts` is COMPLETE-only (not Cancelled/Declined) |
+| Combined PDF | Optional `GENERATE_COMBINED_PACKAGE` after Complete; failure cannot block Complete |
+| Retry | Primary / co-agent / TC / ORG_ADMIN via `requestFinalizationRetryWithActor` |
+| Validators | `validate:native-signing-stage6-dev`; `test:native-signing-stage6` |
+
+**Deferred after Stage 6:** production rollout/enablement; completion delivery / copy recipients; reminders; representative signing model; drawn-mark evidence schema upgrade; polished TC UI; admin artifact remediation; authenticated DAST; external timestamp anchoring; recovery-safe worker gate (architecture leaves room).
+
+**Recommended next:** Review and squash-merge PR #41. Do not begin production enablement or completion-delivery implementation.
 
 ### Transaction Coordinator / operator authority foundation (2026-09-18)
 
@@ -23,7 +46,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Production Vercel | Merge created Ready deployment for `5ec0b97` (`harbaugh-forms-74yck7g2v…`) — **not promoted** to custom domains |
 | Live domains | Remain on previously approved production deployment (auto-assign custom production domains disabled) |
 
-**Deferred:** Stage 6 finalization; combined PDF generation; polished TC Settings/team UI; completed-package delivery; production Native Signing enablement.
+**Deferred:** polished TC Settings/team UI; completed-package delivery; production Native Signing enablement. Stage 6 finalization lives on PR #41 (not yet merged).
 
 ### Native Signing Stage 5 — participant ceremony (2026-09-17)
 
@@ -1300,7 +1323,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signing finalization (next stage):** Stages 1–5 + TC/operator authority are merged to `main` (`5ec0b97` TC squash; Stage 5 `8c18c7d`). Ceremony and TC authority are implemented; completed-PDF/audit-certificate finalization remains deferred until an explicit Stage 6 prompt. DB migrations remain development-only. Do not enable production Native Signing. Preserve F1–F11 + R12 Stage 1–5 + TC foundation tests. Any environment that activates a Signing must set `SIGNING_CREDENTIAL_WRAP_KEY_ID` + `SIGNING_CREDENTIAL_WRAP_KEY` first.
+1. **Native Signing Stage 6 squash-merge (next):** PR #41 (`feat/native-signing-stage-6-finalization`) is review-hardened on development only. Review and squash-merge when ready. Do not enable production Native Signing. Do not begin completion-delivery implementation. Preserve F1–F11 + R12 Stage 1–6 + TC tests. Any environment that activates a Signing must set credential-wrap keys; finalization additionally requires `SIGNING_EVENT_CHAIN_KEY_ID` + `SIGNING_EVENT_CHAIN_KEY`.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically

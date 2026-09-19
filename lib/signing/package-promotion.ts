@@ -11,6 +11,7 @@ import {
   verifyPreparedDocumentVersionIntegrity,
 } from "./integrity";
 import { requireManageableDraftSigning } from "./manage";
+import { appendSigningEvent } from "./signing-events";
 import type { SigningActor } from "./types";
 import { isUuid } from "./types";
 
@@ -560,20 +561,17 @@ export async function promotePackageRevisionFromDraftWithActor(
       responsibleDisplayName: signing.original_sender_display_name,
     });
 
-    const { error: eventError } = await admin.from("signing_events").insert({
-      signing_id: signing.id,
-      package_revision_id: revision.id,
-      event_type: "PACKAGE_REVISION_PROMOTED",
-      actor_type: actorType,
-      actor_user_id: actor.userId,
-      actor_display_name: actor.displayName,
+    await appendSigningEvent(admin, {
+      signingId: signing.id,
+      packageRevisionId: revision.id,
+      eventType: "PACKAGE_REVISION_PROMOTED",
+      actorType,
+      actorUserId: actor.userId,
+      actorDisplayName: actor.displayName,
       visibility: "BUSINESS",
       summary: `Package revision ${nextRevisionNumber} promoted`,
-      details_json: responsibleMeta ?? null,
+      detailsJson: responsibleMeta,
     });
-    if (eventError) {
-      throw new Error(eventError.message);
-    }
   } catch (error) {
     // Roll back this invocation's pointer first (RESTRICT FK), and only when we
     // advanced it — never regress a concurrently promoted current revision.

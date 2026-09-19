@@ -231,14 +231,18 @@ export function canRequestRetryFinalization(
 
 /**
  * Whether an active manager (or historical reader with prior operator/agent
- * association) may read completed business artifacts via trusted server mediation.
- * Never implies direct Storage access.
+ * association) may read **completed-package** business artifacts via trusted
+ * server mediation after lifecycle Complete.
+ *
+ * Cancelled / Declined Signings may retain prepared or abandoned finalization
+ * attempts; those must not be treated as a completed package through this
+ * helper. Never implies direct Storage access.
  */
 export function canReadCompletedSigningArtifacts(
   authority: SigningAuthorityResult,
   lifecycleState: string,
 ): boolean {
-  if (lifecycleState !== "COMPLETE" && lifecycleState !== "CANCELLED") {
+  if (lifecycleState !== "COMPLETE") {
     return false;
   }
   return authority.canRead;

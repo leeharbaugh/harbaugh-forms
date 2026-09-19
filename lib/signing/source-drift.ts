@@ -23,6 +23,7 @@ import {
   buildResponsibleContextMetadata,
   requireSigningEventActorType,
 } from "./event-actor";
+import { appendSigningEvent } from "./signing-events";
 import { SigningError } from "./errors";
 import { requireManageableDraftSigning } from "./manage";
 import { resolveSigningPacketOwnerUserId } from "./operations";
@@ -252,15 +253,15 @@ export async function keepCurrentDraftSourceWithActor(
     responsibleDisplayName: signing.original_sender_display_name,
   });
 
-  await admin.from("signing_events").insert({
-    signing_id: signing.id,
-    event_type: "DRAFT_SOURCE_KEPT_CURRENT",
-    actor_type: actorType,
-    actor_user_id: actor.userId,
-    actor_display_name: actor.displayName,
+  await appendSigningEvent(admin, {
+    signingId: signing.id,
+    eventType: "DRAFT_SOURCE_KEPT_CURRENT",
+    actorType,
+    actorUserId: actor.userId,
+    actorDisplayName: actor.displayName,
     visibility: "BUSINESS",
     summary: "Draft source change acknowledged; existing snapshot kept",
-    details_json: responsibleMeta ?? null,
+    detailsJson: responsibleMeta,
   });
 
   return getDocumentSourceStatus(
@@ -315,15 +316,15 @@ export async function updateDraftSourceToLatestWithActor(
     responsibleDisplayName: signing.original_sender_display_name,
   });
 
-  await admin.from("signing_events").insert({
-    signing_id: signing.id,
-    event_type: "DRAFT_SOURCE_UPDATED_TO_LATEST",
-    actor_type: actorType,
-    actor_user_id: actor.userId,
-    actor_display_name: actor.displayName,
+  await appendSigningEvent(admin, {
+    signingId: signing.id,
+    eventType: "DRAFT_SOURCE_UPDATED_TO_LATEST",
+    actorType,
+    actorUserId: actor.userId,
+    actorDisplayName: actor.displayName,
     visibility: "BUSINESS",
     summary: "Draft source snapshot recaptured from latest Packet Form content",
-    details_json: responsibleMeta ?? null,
+    detailsJson: responsibleMeta,
   });
 
   const { data: refreshed, error } = await admin

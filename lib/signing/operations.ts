@@ -17,6 +17,7 @@ import {
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { SigningError } from "./errors";
 import { findActiveOperatorDelegation } from "./operator-delegations";
+import { appendSigningEvent } from "./signing-events";
 import {
   isUuid,
   normalizeSigningTitle,
@@ -388,22 +389,33 @@ export async function createDraftSigningWithActor(
       })
     : undefined;
 
-  const { error: eventError } = await admin.from("signing_events").insert({
-    signing_id: signing.id,
-    event_type: "SIGNING_CREATED",
-    actor_type: actorType,
-    actor_user_id: actor.userId,
-    actor_display_name: actor.displayName,
-    visibility: "BUSINESS",
-    summary: creatingAsTc
-      ? `Draft Signing created by Transaction Coordinator on behalf of ${responsible.displayName}`
-      : "Draft Signing created",
-    details_json: {
-      createdByUserId: actor.userId,
-      responsibleUserId,
-      ...(responsibleMeta ?? {}),
-    },
-  });
+  const { error: eventError } = await (async () => {
+    try {
+      await appendSigningEvent(admin, {
+        signingId: signing.id,
+        eventType: "SIGNING_CREATED",
+        actorType,
+        actorUserId: actor.userId,
+        actorDisplayName: actor.displayName,
+        visibility: "BUSINESS",
+        summary: creatingAsTc
+          ? `Draft Signing created by Transaction Coordinator on behalf of ${responsible.displayName}`
+          : "Draft Signing created",
+        detailsJson: {
+          createdByUserId: actor.userId,
+          responsibleUserId,
+          ...(responsibleMeta ?? {}),
+        },
+      });
+      return { error: null };
+    } catch (error) {
+      return {
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  })();
 
   if (eventError) {
     await admin
@@ -515,20 +527,16 @@ export async function updateDraftSigningTitleForActor(
     responsibleDisplayName: bundle.signing.original_sender_display_name,
   });
 
-  const { error: eventError } = await admin.from("signing_events").insert({
-    signing_id: bundle.signing.id,
-    event_type: "SIGNING_TITLE_UPDATED",
-    actor_type: actorType,
-    actor_user_id: actor.userId,
-    actor_display_name: actor.displayName,
+  await appendSigningEvent(admin, {
+    signingId: bundle.signing.id,
+    eventType: "SIGNING_TITLE_UPDATED",
+    actorType,
+    actorUserId: actor.userId,
+    actorDisplayName: actor.displayName,
     visibility: "BUSINESS",
     summary: "Draft Signing title updated",
-    details_json: responsibleMeta ?? null,
+    detailsJson: responsibleMeta,
   });
-
-  if (eventError) {
-    throw new Error(eventError.message);
-  }
 
   return toSummary(updated as SigningRow, bundle.associations, bundle.authority);
 }

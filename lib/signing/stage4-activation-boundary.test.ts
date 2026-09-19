@@ -154,18 +154,20 @@ describe("Native Signing Stage 4 activation boundary contracts", () => {
   });
 
   it("records activation history without leaking tokens", () => {
-    assert.match(activation, /event_type: "SIGNING_ACTIVATED"/);
+    assert.match(activation, /appendSigningEvent/);
+    assert.match(activation, /eventType: "SIGNING_ACTIVATED"/);
     assert.match(activation, /visibility: "BUSINESS"/);
     assert.match(activation, /remote signing/);
     assert.match(activation, /in-person signing/);
 
-    const eventInsert = activation.slice(
-      activation.indexOf('event_type: "SIGNING_ACTIVATED"'),
-      activation.indexOf("if (eventError)"),
+    const eventAppend = activation.slice(
+      activation.indexOf("await appendSigningEvent"),
+      activation.indexOf("const activatedAt"),
     );
-    assert.ok(eventInsert.length > 0);
-    assert.doesNotMatch(eventInsert, /rawToken/);
-    assert.doesNotMatch(eventInsert, /token/);
+    assert.ok(eventAppend.length > 0);
+    assert.doesNotMatch(eventAppend, /rawToken/);
+    assert.doesNotMatch(eventAppend, /token/);
+    assert.doesNotMatch(activation, /\.from\("signing_events"\)\s*\.insert/);
   });
 
   it("separates delivery from activation and never rolls activation back", () => {
