@@ -5035,3 +5035,76 @@ Implements the settled Complete boundary with recoverable finalization, verifiab
 * `scripts/validate-native-signing-stage6-dev.ts`
 * `project_status.md` (status note)
 * `security.md` (local R12 Stage 6 residual notes)
+
+---
+
+## Post–Stage-6 next-stage sequencing: completion delivery before drawn evidence
+
+**Date:** 2026-09-19
+
+**Decision:**
+After Stage 6 merge, the next **implementation** stage is **completion delivery + copy recipients**, not drawn-mark evidence redesign.
+
+Drawn remains deferred while the shipping ceremony UI is typed-only: the server may accept `DRAWN` for a later surface, but Stage 5 UI exposes only typed adoption, and Stage 6 finalization fail-closes on drawn marks. That combination is acceptable for controlled production **if drawn UI stays disabled**.
+
+Completion delivery is the stronger pre-production product gap: settled decisions already require automatic completed-copy email without login, participant entitlement, addable copy recipients, separate completed-package credentials, and delivery independence from `COMPLETE`. Stage 4 already provides invitation delivery outbox/instructions/attempts and a Resend adapter that delivery can extend; Stage 6 already produces the artifacts delivery must send.
+
+The completion-delivery stage boundary should also include:
+
+* durable production worker scheduling/dispatch for `FINALIZE_SIGNING`, `GENERATE_COMBINED_PACKAGE`, and completed-package delivery work;
+* a minimal recovery-safe work-suspension gate so restores cannot silently resume finalization/email.
+
+This decision records sequencing only. It does not authorize schema, code, migrations, production enablement, or new product behavior beyond the already-settled delivery decisions.
+
+**Reason:**
+Drawn evidence redesign is not required to ship typed Signing end-to-end. Automatic completed-copy delivery is already promised by product/consent decisions and is what turns Complete into a usable transaction outcome for participants and agents. Worker scheduling and recovery-safe suspension are shared prerequisites for safe automated email and production finalization.
+
+**Consequences:**
+
+* Next Cursor implementation/design prompt targets completion delivery + copy recipients (+ worker dispatch + recovery-safe gate).
+* Drawn-mark v2 and drawn UI remain deferred; keep typed-only shipping and finalizer fail-closed until an explicit drawn stage.
+* Production legal disclosure, production migrations/keys, DAST, representative signing, and polished TC UX remain separately gated.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision.
+
+**Related files or migrations:**
+
+* `project_status.md` (sequencing status)
+* This file: **Completed copies are emailed without login and copy recipients remain addable** (2026-09-06); **Completed Signings preserve separate documents and provide one Signing-wide audit certificate** (2026-09-06); **Signing recovery preserves evidence and begins in a non-delivering safe mode** (2026-09-14); **Native Signing Stage 6 finalization implementation choices** (2026-09-18)
+* No SQL migration; no schema change
+
+---
+
+## Native Signing completion delivery implementation choices
+
+**Date:** 2026-09-19
+
+**Decision:**
+Completion delivery is implemented on development with these durable choices:
+
+* **Link-first v1:** emails contain account-free package links only; `delivery_channel` reserves future attachment modes.
+* **Credentials:** `signing_completed_package_credentials` are distinct from ceremony credentials; 32-byte base64url bearer; SHA-256 hash auth; purpose-separated wrap keys (`SIGNING_COMPLETED_PACKAGE_WRAP_*`, AAD purpose `completed-package-v1`) for same-link resend; Replace Link revokes and issues a new credential.
+* **Session:** Bearer exchanges at `/sign/completed/{token}` into HttpOnly cookie `hf_signing_completed_package` (Path `/sign/package`, Secure, SameSite=lax, **60 minutes**), then clean `/sign/package` UI; bearer remains non-expiring until revoked.
+* **Copy recipients:** `signing_copy_recipients` soft-remove; email required; post-Complete manage via `canManageCompletedSigningOperations` (PRIMARY/CO_AGENT/active TC/ORG_ADMIN); revoked TC read-only.
+* **Participant email:** frozen revision email snapshot for delivery; missing/invalid → FAILED attempt without inventing addresses; identity snapshot not rewritten — use copy recipient or future intentional resend for corrected destinations.
+* **Instructions vs attempts:** one instruction = intentional send; retries append attempts; intentional resend = new instruction.
+* **Worker dispatch:** authenticated POST `/api/internal/signing-worker` with `x-signing-worker-secret` / `SIGNING_WORKER_SECRET`; bounded batch; processes FINALIZE_SIGNING, GENERATE_COMBINED_PACKAGE, DELIVER_COMPLETED_PACKAGE, PARTICIPANT_INVITATION_EMAIL. Production cron schedule is deferred configuration.
+* **Email sandbox:** `SIGNING_EMAIL_SANDBOX=true` accepts sends without Resend (dev/tests only). Production must use real Resend credentials and must not enable sandbox.
+* **Recovery-safe suspension:** `signing_system_controls.work_suspended` or env `SIGNING_WORK_SUSPENDED=true` blocks claim/send without deleting queued work.
+* Development migration: `20260919180000_native_signing_completion_delivery.sql`.
+
+**Reason:**
+Implements settled completed-copy entitlement with recoverable email, isolated credentials/sessions, and safe worker controls without enabling production or reopening drawn/representative scope.
+
+**Consequences:**
+
+* Complete fan-out enqueues delivery work; email failure never undoes Complete or regenerates artifacts/certificate.
+* Drawn UI remains typed-only; finalizer still fail-closes DRAWN.
+* Production must later configure worker secret, completed-package wrap keys, Resend, and intentional cron — not done here.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260919180000_native_signing_completion_delivery.sql`
+* `lib/signing/completed-package-*.ts`, `copy-recipients.ts`, `signing-worker-dispatch.ts`, `work-suspension.ts`
+* `app/sign/completed/[token]/route.ts`, `app/sign/package/**`, `app/api/internal/signing-worker/route.ts`
+* `scripts/validate-native-signing-completion-delivery-dev.ts`
+* `project_status.md`; `security.md` (local)

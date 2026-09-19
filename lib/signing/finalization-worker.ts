@@ -44,6 +44,7 @@ import {
   type SigningWorkItemRow,
 } from "./work-items";
 import { PDFDocument } from "pdf-lib";
+import { enqueueInitialCompletedPackageFanOut } from "./completed-package-delivery";
 
 export const GENERATE_COMBINED_PACKAGE_WORK_TYPE =
   "GENERATE_COMBINED_PACKAGE" as const;
@@ -576,6 +577,16 @@ export async function processNextFinalizationWorkItem(options: {
       signingId,
       frozenRevisionId,
     );
+
+    try {
+      await enqueueInitialCompletedPackageFanOut(options.admin, signingId);
+    } catch (fanOutError) {
+      // Delivery must never fail or roll back Complete.
+      console.error(
+        "[native-signing-completion-delivery] initial fan-out failed:",
+        fanOutError instanceof Error ? fanOutError.message : "unknown error",
+      );
+    }
 
     return {
       status: "COMPLETED",

@@ -71,6 +71,8 @@
     "validate:native-signing-tc-authority-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-tc-authority-dev.ts",
     "test:native-signing-stage6": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/stage6-finalization.test.ts",
     "validate:native-signing-stage6-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-stage6-dev.ts",
+    "test:native-signing-completion-delivery": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/completion-delivery.test.ts",
+    "validate:native-signing-completion-delivery-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-completion-delivery-dev.ts",
     "test:packet-form-lifecycle": "node --experimental-strip-types --test lib/types/packet-form-lifecycle.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",
     "test:ui-lists": "node --experimental-strip-types --test lib/ui/list-badges.test.ts lib/ui/nav-styles.test.ts lib/types/profile.test.ts lib/ui/dialogs-polish.test.ts",

@@ -130,11 +130,22 @@ export type SigningEmailSendResult =
 /**
  * Minimal provider-neutral transactional mail boundary.
  * Fails safely (and describably) when the provider is not configured.
- * Message bodies contain invitation URLs and are never logged.
+ * Message bodies contain invitation/package URLs and are never logged.
+ *
+ * SIGNING_EMAIL_SANDBOX=true accepts without calling Resend (dev/tests only).
+ * Do not enable in production.
  */
 export async function sendSigningEmail(
   message: SigningEmailMessage,
 ): Promise<SigningEmailSendResult> {
+  if (process.env.SIGNING_EMAIL_SANDBOX?.trim() === "true") {
+    const toFingerprint = message.to.trim().toLowerCase().slice(0, 64);
+    return {
+      ok: true,
+      providerReference: `sandbox:${toFingerprint}`,
+    };
+  }
+
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.SIGNING_EMAIL_FROM?.trim();
 
@@ -142,7 +153,7 @@ export async function sendSigningEmail(
     return {
       ok: false,
       failureDetailSafe:
-        "Signing email provider is not configured; invitation was not sent.",
+        "Signing email provider is not configured; message was not sent.",
     };
   }
 
@@ -201,6 +212,44 @@ function buildInvitationMessage(options: {
       "This link is unique to you. Please do not forward it.",
     ].join("\n"),
   };
+}
+
+/** Text-only completed-package message (no HTML; link-only v1). */
+export function buildCompletedPackageMessage(options: {
+  recipientName: string;
+  recipientEmail: string;
+  signingTitle: string;
+  packageUrl: string;
+  senderDisplayName?: string | null;
+  brokerageName?: string | null;
+}): SigningEmailMessage {
+  const sender =
+    options.senderDisplayName?.trim() || "your real estate professional";
+  const brokerage = options.brokerageName?.trim();
+  const fromLine = brokerage
+    ? `${sender} at ${brokerage}`
+    : sender;
+
+  return {
+    to: options.recipientEmail,
+    subject: `Your completed documents: ${options.signingTitle}`,
+    textBody: [
+      `Hello ${options.recipientName},`,
+      "",
+      `The documents for "${options.signingTitle}" are complete.`,
+      `They were prepared by ${fromLine}.`,
+      "",
+      "Open your personal link to download the completed package:",
+      options.packageUrl,
+      "",
+      "This link is unique to you. Please do not forward it.",
+      "Possession of the link grants access to the completed documents.",
+    ].join("\n"),
+  };
+}
+
+export function buildCompletedPackageUrl(rawToken: string): string {
+  return `${resolveAppBaseUrl()}/sign/completed/${rawToken}`;
 }
 
 async function nextAttemptNumber(
