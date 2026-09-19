@@ -108,6 +108,7 @@ export const NATIVE_SIGNING_STAGE6_TABLES = [
 
 export const NATIVE_SIGNING_STAGE6_MIGRATIONS = [
   "20260918160000_native_signing_stage6_finalization",
+  "20260919120000_native_signing_stage6_completed_at_immutability",
 ] as const;
 
 export type NativeSigningCeremonyTable =

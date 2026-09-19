@@ -128,12 +128,19 @@ export async function buildAuditCertificateModel(options: {
   if (participantsError) throw new Error(participantsError.message);
 
   const participantStatusById = new Map<string, string>();
+  // Prefer Finish evidence from the participant row only for roster display at
+  // finalization time; names/emails come from frozen revision snapshots.
   const { data: liveParticipants } = await admin
     .from("signing_participants")
-    .select("id, participant_status")
+    .select("id, participant_status, finished_at")
     .eq("signing_id", signingId);
   for (const row of liveParticipants ?? []) {
-    participantStatusById.set(row.id as string, row.participant_status as string);
+    participantStatusById.set(
+      row.id as string,
+      row.participant_status === "FINISHED" && row.finished_at
+        ? "FINISHED"
+        : (row.participant_status as string),
+    );
   }
 
   const { data: revDocs, error: revDocsError } = await admin
@@ -372,7 +379,7 @@ export async function renderAuditCertificatePdf(
 
   drawHeading("Result");
   drawParagraph(
-    "Required completed documents and this audit certificate were verified. Signing lifecycle Complete is recorded after this certificate boundary.",
+    "All required participants finished. Required completed documents and this audit certificate were verified as of the chronology sequence boundary above. Signing lifecycle Complete is recorded by a separate protected completion event after this certificate boundary.",
   );
 
   const bytes = await pdfDoc.save({ useObjectStreams: false });

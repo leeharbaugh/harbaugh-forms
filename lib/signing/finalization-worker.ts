@@ -248,6 +248,32 @@ async function ensureAuditCertificate(options: {
   return artifact;
 }
 
+async function ensureSigningCompletedEvent(options: {
+  admin: SupabaseClient;
+  signingId: string;
+  frozenRevisionId: string;
+  certificate: SigningArtifactRow;
+  completedCount: number;
+  completedAt: string;
+}): Promise<void> {
+  await appendProtectedSigningEvent(options.admin, {
+    signingId: options.signingId,
+    eventType: "SIGNING_COMPLETED",
+    actorType: "SYSTEM",
+    actorDisplayName: "Native Signing Finalization",
+    packageRevisionId: options.frozenRevisionId,
+    summary: "Signing finalized and completed",
+    detailsJson: {
+      completedDocumentCount: options.completedCount,
+      certificateArtifactId: options.certificate.id,
+      auditHistorySequenceBoundary:
+        options.certificate.audit_history_sequence_boundary,
+      completedAt: options.completedAt,
+    },
+    idempotencyKey: `SIGNING_COMPLETED:${options.frozenRevisionId}`,
+  });
+}
+
 async function commitSigningComplete(options: {
   admin: SupabaseClient;
   signingId: string;
@@ -260,7 +286,17 @@ async function commitSigningComplete(options: {
     options.signingId,
   );
   if (!signing) throw new Error("Signing not found.");
+
   if (signing.lifecycle_state === "COMPLETE" && signing.completed_at) {
+    // Repair path: Complete committed but SIGNING_COMPLETED append crashed.
+    await ensureSigningCompletedEvent({
+      admin: options.admin,
+      signingId: options.signingId,
+      frozenRevisionId: options.frozenRevisionId,
+      certificate: options.certificate,
+      completedCount: options.completedCount,
+      completedAt: signing.completed_at as string,
+    });
     return {
       completed: true,
       completedAt: signing.completed_at as string,
@@ -293,8 +329,9 @@ async function commitSigningComplete(options: {
     throw new Error(`EVENT_CHAIN_${chain.reason}`);
   }
 
-  const completedAt =
-    (signing.completed_at as string | null) ?? new Date().toISOString();
+  // Complete CAS first so Cancel/Decline cannot race after the completion event.
+  // Then append SIGNING_COMPLETED (idempotent). Retry repairs a missing event.
+  const completedAt = new Date().toISOString();
 
   const { data: updated, error } = await options.admin
     .from("signings")
@@ -307,6 +344,7 @@ async function commitSigningComplete(options: {
     .eq("id", options.signingId)
     .eq("lifecycle_state", "IN_PROGRESS")
     .eq("frozen_package_revision_id", options.frozenRevisionId)
+    .is("completed_at", null)
     .select("id, completed_at")
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -317,6 +355,14 @@ async function commitSigningComplete(options: {
       options.signingId,
     );
     if (again?.lifecycle_state === "COMPLETE" && again.completed_at) {
+      await ensureSigningCompletedEvent({
+        admin: options.admin,
+        signingId: options.signingId,
+        frozenRevisionId: options.frozenRevisionId,
+        certificate: options.certificate,
+        completedCount: options.completedCount,
+        completedAt: again.completed_at as string,
+      });
       return {
         completed: true,
         completedAt: again.completed_at as string,
@@ -325,26 +371,21 @@ async function commitSigningComplete(options: {
     throw new Error("COMPLETE_CAS_FAILED");
   }
 
-  await appendProtectedSigningEvent(options.admin, {
+  const finalCompletedAt =
+    (updated.completed_at as string | null) ?? completedAt;
+
+  await ensureSigningCompletedEvent({
+    admin: options.admin,
     signingId: options.signingId,
-    eventType: "SIGNING_COMPLETED",
-    actorType: "SYSTEM",
-    actorDisplayName: "Native Signing Finalization",
-    packageRevisionId: options.frozenRevisionId,
-    summary: "Signing finalized and completed",
-    detailsJson: {
-      completedDocumentCount: options.completedCount,
-      certificateArtifactId: options.certificate.id,
-      auditHistorySequenceBoundary:
-        options.certificate.audit_history_sequence_boundary,
-      completedAt,
-    },
-    idempotencyKey: `SIGNING_COMPLETED:${options.frozenRevisionId}`,
+    frozenRevisionId: options.frozenRevisionId,
+    certificate: options.certificate,
+    completedCount: options.completedCount,
+    completedAt: finalCompletedAt,
   });
 
   return {
     completed: true,
-    completedAt: (updated.completed_at as string) ?? completedAt,
+    completedAt: finalCompletedAt,
   };
 }
 

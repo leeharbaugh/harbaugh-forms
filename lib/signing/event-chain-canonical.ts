@@ -20,12 +20,18 @@ const BLOCKED_DETAIL_KEYS = new Set([
   "browser_session_id",
   "rawToken",
   "token",
+  "accessToken",
+  "access_token",
   "credentialToken",
+  "password",
   "wrapKey",
   "wrappingKey",
+  "wrapSecret",
   "integrityKey",
   "integrity_key",
   "hmac",
+  "hmacTag",
+  "hmac_tag",
   "authenticationTag",
   "authentication_tag",
   "priorEventDigest",
@@ -47,9 +53,22 @@ export type CanonicalSigningEventInput = {
   signingFieldPlacementId: string | null;
   summary: string | null;
   detailsJson: unknown;
+  /** Normalized UTC ISO-8601; MAC-covered wall-clock evidence. */
+  eventOccurredAt: string;
   priorEventDigest: string;
   idempotencyKey: string | null;
 };
+
+/**
+ * Normalize timestamptz round-trips to a stable UTC ISO string before hashing.
+ */
+export function normalizeEventOccurredAt(value: string): string {
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) {
+    throw new Error("Canonical eventOccurredAt must be a valid timestamp.");
+  }
+  return new Date(ms).toISOString();
+}
 
 function encodeNull(): string {
   return "N";
@@ -122,6 +141,7 @@ export function canonicalizeSigningEventV1(
     encodeString(input.signingFieldPlacementId),
     encodeString(input.summary),
     encodeJson(input.detailsJson),
+    encodeString(normalizeEventOccurredAt(input.eventOccurredAt)),
     encodeString(input.priorEventDigest),
     encodeString(input.idempotencyKey),
   ];

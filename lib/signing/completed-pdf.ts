@@ -125,42 +125,6 @@ function drawDateSigned(options: {
   });
 }
 
-function drawDrawnPath(options: {
-  page: PDFPage;
-  points: DrawnPathPoint[];
-  x: number;
-  yFromTop: number;
-  width: number;
-  height: number;
-  pageHeight: number;
-}) {
-  const xs = options.points.map((p) => p.x);
-  const ys = options.points.map((p) => p.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const spanX = Math.max(maxX - minX, 1e-6);
-  const spanY = Math.max(maxY - minY, 1e-6);
-
-  const svgParts: string[] = [];
-  options.points.forEach((point, index) => {
-    const nx = (point.x - minX) / spanX;
-    const ny = (point.y - minY) / spanY;
-    const px = options.x + nx * options.width;
-    // Field-local y grows downward in persisted evidence; PDF y grows up.
-    const py =
-      options.pageHeight -
-      (options.yFromTop + ny * options.height);
-    svgParts.push(`${index === 0 ? "M" : "L"} ${px.toFixed(3)} ${py.toFixed(3)}`);
-  });
-
-  options.page.drawSvgPath(svgParts.join(" "), {
-    borderColor: rgb(0.05, 0.05, 0.08),
-    borderWidth: Math.max(0.75, Math.min(options.width, options.height) * 0.03),
-  });
-}
-
 async function loadPreparedBytes(
   admin: SupabaseClient,
   versionId: string,
@@ -352,17 +316,12 @@ export async function renderCompletedSigningDocumentPdf(options: {
     }
 
     if (representation === "DRAWN") {
-      const points = parseDrawnPathForRendering(mark.drawn_path_json);
-      drawDrawnPath({
-        page,
-        points,
-        x,
-        yFromTop,
-        width,
-        height,
-        pageHeight,
-      });
-      continue;
+      // Stage 5 persists loosely validated {x,y}[] without a settled coordinate
+      // system, stroke width, or multi-stroke schema. Shipping ceremony UI defers
+      // the drawing surface; fail closed rather than invent visual fidelity.
+      throw new Error(
+        "DRAWN_MARK_FINALIZATION_UNSUPPORTED: drawn marks lack settled reproduction evidence for Stage 6 finalization.",
+      );
     }
 
     throw new Error(`Unsupported mark representation: ${representation}`);

@@ -256,6 +256,20 @@ describe("TC operator authority foundation", () => {
       canReadCompletedSigningArtifacts(managed, "DRAFT"),
       false,
     );
+    assert.equal(
+      canReadCompletedSigningArtifacts(
+        baseAuthority({ canRead: true }),
+        "CANCELLED",
+      ),
+      false,
+    );
+    assert.equal(
+      canReadCompletedSigningArtifacts(
+        baseAuthority({ canRead: true }),
+        "DECLINED",
+      ),
+      false,
+    );
   });
 
   it("evaluates TC manage through operator path, not agent association", () => {

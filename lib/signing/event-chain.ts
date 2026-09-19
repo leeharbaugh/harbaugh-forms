@@ -11,6 +11,7 @@ import {
   canonicalizeSigningEventV1,
   digestCanonicalEvent,
   EVENT_CHAIN_FORMAT_VERSION,
+  normalizeEventOccurredAt,
   sanitizeSigningEventDetails,
 } from "./event-chain-canonical";
 import {
@@ -243,6 +244,7 @@ export async function appendProtectedSigningEvent(
   const sanitizedDetails = sanitizeSigningEventDetails(
     input.detailsJson ?? null,
   );
+  const eventOccurredAt = normalizeEventOccurredAt(new Date().toISOString());
 
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < MAX_APPEND_RETRIES; attempt++) {
@@ -264,6 +266,7 @@ export async function appendProtectedSigningEvent(
       signingFieldPlacementId: input.signingFieldPlacementId ?? null,
       summary: input.summary ?? null,
       detailsJson: sanitizedDetails,
+      eventOccurredAt,
       priorEventDigest: priorDigest,
       idempotencyKey: input.idempotencyKey ?? null,
     });
@@ -288,6 +291,7 @@ export async function appendProtectedSigningEvent(
         summary: input.summary ?? null,
         details_json: sanitizedDetails,
         idempotency_key: input.idempotencyKey ?? null,
+        create_date: eventOccurredAt,
         prior_event_digest: priorDigest,
         event_digest: eventDigest,
         integrity_key_id: keyring.currentKeyId,
@@ -372,9 +376,27 @@ export async function verifySigningEventChain(
     .order("sequence_number", { ascending: true });
   if (error) throw new Error(error.message);
 
-  const rows = (events ?? []) as SigningEventRow[];
+  return verifySigningEventChainRows({
+    chain,
+    rows: (events ?? []) as SigningEventRow[],
+    keyring,
+    throughSequence: options?.throughSequence,
+  });
+}
+
+/**
+ * Pure verifier over in-memory rows (DB path + synthetic tamper tests).
+ */
+export function verifySigningEventChainRows(options: {
+  chain: SigningEventChainState;
+  rows: SigningEventRow[];
+  keyring: EventChainKeyring;
+  throughSequence?: number;
+}): EventChainVerificationResult {
+  const { chain, rows, keyring } = options;
+
   if (rows.length === 0 && chain.unprotectedPrefixEndSequence === 0) {
-    if (options?.throughSequence != null && options.throughSequence > 0) {
+    if (options.throughSequence != null && options.throughSequence > 0) {
       return {
         ok: false,
         reason: "EMPTY",
@@ -391,7 +413,7 @@ export async function verifySigningEventChain(
 
   for (const row of rows) {
     if (
-      options?.throughSequence != null &&
+      options.throughSequence != null &&
       row.sequence_number > options.throughSequence
     ) {
       break;
@@ -408,14 +430,6 @@ export async function verifySigningEventChain(
     expectedSequence += 1;
 
     if (row.sequence_number <= chain.unprotectedPrefixEndSequence) {
-      if (
-        row.event_digest != null ||
-        row.prior_event_digest != null ||
-        row.integrity_authentication_tag != null
-      ) {
-        // Historical unprotected rows should not carry partial integrity.
-        // Tolerate fully-null only.
-      }
       lastVerified = row.sequence_number;
       continue;
     }
@@ -434,17 +448,16 @@ export async function verifySigningEventChain(
       };
     }
 
-    if (!safeEqualHex(row.prior_event_digest, priorDigest)) {
-      // Compare as strings when genesis digest is not hex-equal length issues —
-      // genesis and event digests are always hex sha256.
-      if (row.prior_event_digest !== priorDigest) {
-        return {
-          ok: false,
-          reason: "PRIOR_MISMATCH",
-          sequenceNumber: row.sequence_number,
-          message: "Prior event digest does not match chain tip.",
-        };
-      }
+    if (
+      !safeEqualHex(row.prior_event_digest, priorDigest) &&
+      row.prior_event_digest !== priorDigest
+    ) {
+      return {
+        ok: false,
+        reason: "PRIOR_MISMATCH",
+        sequenceNumber: row.sequence_number,
+        message: "Prior event digest does not match chain tip.",
+      };
     }
 
     let key: Buffer;
@@ -474,6 +487,7 @@ export async function verifySigningEventChain(
       signingFieldPlacementId: row.signing_field_placement_id,
       summary: row.summary,
       detailsJson: row.details_json,
+      eventOccurredAt: normalizeEventOccurredAt(row.create_date),
       priorEventDigest: row.prior_event_digest,
       idempotencyKey: row.idempotency_key,
     });
@@ -506,7 +520,7 @@ export async function verifySigningEventChain(
   }
 
   if (
-    options?.throughSequence != null &&
+    options.throughSequence != null &&
     lastVerified < options.throughSequence &&
     options.throughSequence > 0
   ) {
