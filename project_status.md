@@ -1,16 +1,29 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-17 (Native Signing Stages 1–5 merged to `main`; TC/operator authority foundation on `feat/native-signing-tc-authority`; Stage 6 finalization still deferred; production Native Signing unavailable)
+**As of:** 2026-09-18 (Native Signing Stages 1–5 + TC/operator authority foundation merged to `main`; Stage 6 finalization still deferred; production Native Signing unavailable)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
-### Transaction Coordinator / operator authority foundation (2026-09-17; review fixes 2026-09-18)
+### Transaction Coordinator / operator authority foundation (2026-09-18)
 
-**Status:** Minimal TC authority foundation on PR [#40](https://github.com/leeharbaugh/harbaugh-forms/pull/40) (`feat/native-signing-tc-authority`). Hybrid `signing_operator_delegations` + `signing_operator_associations`; create-on-behalf splits creator vs responsible PRIMARY; event actor attribution includes `TRANSACTION_COORDINATOR`; Cancel supported; ceremony prohibitions preserved; historical read after revoke; provenance immutability trigger; revoke releases orphaned amendment locks. No production enablement. No full TC administration UI. **Not merged.** Stage 6 still deferred.
+**Status:** **Code merged to `main`.** Hybrid `signing_operator_delegations` + `signing_operator_associations`; create-on-behalf splits creator vs responsible PRIMARY; honest `TRANSACTION_COORDINATOR` event attribution; Cancel; historical read after revoke; provenance immutability; revoke releases TC amendment locks. Development migrations applied to `harbaugh-forms-dev` only. **Default-off feature gate still required.** **No Stage 6 finalization, completed PDFs, audit certificate, combined PDF, or production enablement.** Production Native Signing remains unavailable (no Native Signing schema there).
 
-**Deferred:** Stage 6 finalization; combined PDF generation; polished TC Settings UX; completed-package delivery features.
+| Item | Result |
+|------|--------|
+| PR | [#40](https://github.com/leeharbaugh/harbaugh-forms/pull/40) squash-merged `2026-09-19T01:14:28Z` → `main` `5ec0b97` (from reviewed `df32ab5`) |
+| Feature branch | `feat/native-signing-tc-authority` deleted after merge |
+| Migrations (dev) | `20260917150000_native_signing_tc_operator_authority.sql`; `20260918120000_native_signing_tc_provenance_immutability.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| Production migrations | **Not applied**; prod still has no Native Signing schema |
+| TC model | Persistent many-to-many delegations + Signing-scoped operator associations; `signing_agent_associations` remain PRIMARY/CO_AGENT only |
+| Create-on-behalf | Creator = TC; PRIMARY/`original_sender_*` = responsible User; operator association = TC |
+| Actor precedence | PRIMARY → CO_AGENT → TRANSACTION_COORDINATOR → ORG_ADMIN |
+| Ceremony | TC manage never authorizes participant ceremony writes |
+| Production Vercel | Merge created Ready deployment for `5ec0b97` (`harbaugh-forms-74yck7g2v…`) — **not promoted** to custom domains |
+| Live domains | Remain on previously approved production deployment (auto-assign custom production domains disabled) |
+
+**Deferred:** Stage 6 finalization; combined PDF generation; polished TC Settings/team UI; completed-package delivery; production Native Signing enablement.
 
 ### Native Signing Stage 5 — participant ceremony (2026-09-17)
 
@@ -1287,21 +1300,20 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **TC authority PR review (next):** Focused architecture/security review of `feat/native-signing-tc-authority` before merge. Do **not** begin Stage 6 finalization yet. Do not enable production Native Signing.
-2. **Native Signing finalization (deferred):** Stages 1–5 are merged to `main` (`8c18c7d` Stage 5 squash). Ceremony is implemented; completed-PDF/audit-certificate finalization remains deferred until after TC authority lands and an explicit Stage 6 prompt. DB migrations remain development-only. Preserve F1–F11 + R12 Stage 1–5 + TC foundation tests. Any environment that activates a Signing must set `SIGNING_CREDENTIAL_WRAP_KEY_ID` + `SIGNING_CREDENTIAL_WRAP_KEY` first.
-3. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
-4. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
-5. Monitor real-world Lee-only production use; review runtime logs periodically
-6. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
-7. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
-8. Add error tracking before broader multi-user exposure
-9. Establish production backup/restore procedures
-10. Consider paid tiers only when recovery, usage, or SLA requirements justify them
-11. Review Mapbox domain restrictions if map behavior fails on the custom domain
+1. **Native Signing finalization (next stage):** Stages 1–5 + TC/operator authority are merged to `main` (`5ec0b97` TC squash; Stage 5 `8c18c7d`). Ceremony and TC authority are implemented; completed-PDF/audit-certificate finalization remains deferred until an explicit Stage 6 prompt. DB migrations remain development-only. Do not enable production Native Signing. Preserve F1–F11 + R12 Stage 1–5 + TC foundation tests. Any environment that activates a Signing must set `SIGNING_CREDENTIAL_WRAP_KEY_ID` + `SIGNING_CREDENTIAL_WRAP_KEY` first.
+2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
+3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
+4. Monitor real-world Lee-only production use; review runtime logs periodically
+5. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
+6. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
+7. Add error tracking before broader multi-user exposure
+8. Establish production backup/restore procedures
+9. Consider paid tiers only when recovery, usage, or SLA requirements justify them
+10. Review Mapbox domain restrictions if map behavior fails on the custom domain
 
 ## Future Product Roadmap
 
-Two **major** planned feature areas. They are related through the packet/document model, but they are **distinct product efforts**. Native Signing architecture is recorded in `decisions.md`; Stages 1–5 are merged to `main` (DB development-only). Participant ceremony is implemented; completed-PDF finalization and production enablement have **not** started. Imported-document markup remains separate.
+Two **major** planned feature areas. They are related through the packet/document model, but they are **distinct product efforts**. Native Signing architecture is recorded in `decisions.md`; Stages 1–5 and TC/operator authority are merged to `main` (DB development-only). Participant ceremony and TC foundation are implemented; completed-PDF finalization and production enablement have **not** started. Imported-document markup remains separate.
 
 ### Native E-Signature Workflow
 
