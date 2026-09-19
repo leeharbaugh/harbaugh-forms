@@ -11,6 +11,7 @@
  *   document versions and no package revisions.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadSigningAuthorityBundle } from "./authority-context";
 import type { SigningDocumentRow } from "./draft-documents";
 import {
   captureAndSelectDraftSourceSnapshot,
@@ -18,8 +19,13 @@ import {
   loadDraftSourceSnapshotById,
   type DraftSourceSnapshotRow,
 } from "./draft-source-snapshots";
+import {
+  buildResponsibleContextMetadata,
+  requireSigningEventActorType,
+} from "./event-actor";
 import { SigningError } from "./errors";
 import { requireManageableDraftSigning } from "./manage";
+import { resolveSigningPacketOwnerUserId } from "./operations";
 import type { SigningActor } from "./types";
 import { isUuid } from "./types";
 
@@ -203,7 +209,12 @@ export async function keepCurrentDraftSourceWithActor(
     input.signingDocumentId,
   );
 
-  const status = await getDocumentSourceStatus(admin, document, actor.userId);
+  const packetOwnerUserId = resolveSigningPacketOwnerUserId(signing);
+  const status = await getDocumentSourceStatus(
+    admin,
+    document,
+    packetOwnerUserId,
+  );
   if (status.status !== "SOURCE_CHANGED" || !status.liveFingerprint) {
     throw new SigningError(
       "CONFLICT",
@@ -230,20 +241,32 @@ export async function keepCurrentDraftSourceWithActor(
     );
   }
 
+  const authorityBundle = await loadSigningAuthorityBundle(
+    admin,
+    actor,
+    signing.id,
+  );
+  const actorType = requireSigningEventActorType(authorityBundle?.authority);
+  const responsibleMeta = buildResponsibleContextMetadata({
+    responsibleUserId: signing.original_sender_user_id,
+    responsibleDisplayName: signing.original_sender_display_name,
+  });
+
   await admin.from("signing_events").insert({
     signing_id: signing.id,
     event_type: "DRAFT_SOURCE_KEPT_CURRENT",
-    actor_type: "PRIMARY_AGENT",
+    actor_type: actorType,
     actor_user_id: actor.userId,
     actor_display_name: actor.displayName,
     visibility: "BUSINESS",
     summary: "Draft source change acknowledged; existing snapshot kept",
+    details_json: responsibleMeta ?? null,
   });
 
   return getDocumentSourceStatus(
     admin,
     updated as SigningDocumentRow,
-    actor.userId,
+    packetOwnerUserId,
   );
 }
 
@@ -278,17 +301,29 @@ export async function updateDraftSourceToLatestWithActor(
     signingId: signing.id,
     signingDocumentId: document.id,
     packetFormId: document.source_packet_form_id,
-    expectedOwnerUserId: actor.userId,
+    expectedOwnerUserId: resolveSigningPacketOwnerUserId(signing),
+  });
+
+  const authorityBundle = await loadSigningAuthorityBundle(
+    admin,
+    actor,
+    signing.id,
+  );
+  const actorType = requireSigningEventActorType(authorityBundle?.authority);
+  const responsibleMeta = buildResponsibleContextMetadata({
+    responsibleUserId: signing.original_sender_user_id,
+    responsibleDisplayName: signing.original_sender_display_name,
   });
 
   await admin.from("signing_events").insert({
     signing_id: signing.id,
     event_type: "DRAFT_SOURCE_UPDATED_TO_LATEST",
-    actor_type: "PRIMARY_AGENT",
+    actor_type: actorType,
     actor_user_id: actor.userId,
     actor_display_name: actor.displayName,
     visibility: "BUSINESS",
     summary: "Draft source snapshot recaptured from latest Packet Form content",
+    details_json: responsibleMeta ?? null,
   });
 
   const { data: refreshed, error } = await admin
@@ -304,6 +339,6 @@ export async function updateDraftSourceToLatestWithActor(
   return getDocumentSourceStatus(
     admin,
     refreshed as SigningDocumentRow,
-    actor.userId,
+    resolveSigningPacketOwnerUserId(signing),
   );
 }

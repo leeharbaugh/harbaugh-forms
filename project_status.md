@@ -1,10 +1,16 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-17 (Native Signing Stages 1–5 merged to `main`; Stage 1–5 DB development-only; production Native Signing unavailable; finalization deferred)
+**As of:** 2026-09-17 (Native Signing Stages 1–5 merged to `main`; TC/operator authority foundation on `feat/native-signing-tc-authority`; Stage 6 finalization still deferred; production Native Signing unavailable)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
+
+### Transaction Coordinator / operator authority foundation (2026-09-17; review fixes 2026-09-18)
+
+**Status:** Minimal TC authority foundation on PR [#40](https://github.com/leeharbaugh/harbaugh-forms/pull/40) (`feat/native-signing-tc-authority`). Hybrid `signing_operator_delegations` + `signing_operator_associations`; create-on-behalf splits creator vs responsible PRIMARY; event actor attribution includes `TRANSACTION_COORDINATOR`; Cancel supported; ceremony prohibitions preserved; historical read after revoke; provenance immutability trigger; revoke releases orphaned amendment locks. No production enablement. No full TC administration UI. **Not merged.** Stage 6 still deferred.
+
+**Deferred:** Stage 6 finalization; combined PDF generation; polished TC Settings UX; completed-package delivery features.
 
 ### Native Signing Stage 5 — participant ceremony (2026-09-17)
 
@@ -1281,20 +1287,21 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signatures ceremony stage (in progress on `feat/native-signing-ceremony`):** Stages 1–4 remain on `main`. Ceremony decisions (2026-09-17) and implementation live on the feature branch only. Do not merge/enable production, and do not begin completed-PDF finalization until an explicit finalization prompt. Preserve F1–F11 + R12 Stage 1–4 tests; extend R12 for ceremony. Any environment that activates a Signing must set `SIGNING_CREDENTIAL_WRAP_KEY_ID` + `SIGNING_CREDENTIAL_WRAP_KEY` first.
-2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
-3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
-4. Monitor real-world Lee-only production use; review runtime logs periodically
-5. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
-6. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
-7. Add error tracking before broader multi-user exposure
-8. Establish production backup/restore procedures
-9. Consider paid tiers only when recovery, usage, or SLA requirements justify them
-10. Review Mapbox domain restrictions if map behavior fails on the custom domain
+1. **TC authority PR review (next):** Focused architecture/security review of `feat/native-signing-tc-authority` before merge. Do **not** begin Stage 6 finalization yet. Do not enable production Native Signing.
+2. **Native Signing finalization (deferred):** Stages 1–5 are merged to `main` (`8c18c7d` Stage 5 squash). Ceremony is implemented; completed-PDF/audit-certificate finalization remains deferred until after TC authority lands and an explicit Stage 6 prompt. DB migrations remain development-only. Preserve F1–F11 + R12 Stage 1–5 + TC foundation tests. Any environment that activates a Signing must set `SIGNING_CREDENTIAL_WRAP_KEY_ID` + `SIGNING_CREDENTIAL_WRAP_KEY` first.
+3. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
+4. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
+5. Monitor real-world Lee-only production use; review runtime logs periodically
+6. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
+7. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
+8. Add error tracking before broader multi-user exposure
+9. Establish production backup/restore procedures
+10. Consider paid tiers only when recovery, usage, or SLA requirements justify them
+11. Review Mapbox domain restrictions if map behavior fails on the custom domain
 
 ## Future Product Roadmap
 
-Two **major** planned feature areas. They are related through the packet/document model, but they are **distinct product efforts**. Native Signing architecture is recorded in `decisions.md`; Stages 1–4 are merged to `main` (Stage 4 DB development-only). Participant ceremony/finalization has **not** started. Imported-document markup remains separate.
+Two **major** planned feature areas. They are related through the packet/document model, but they are **distinct product efforts**. Native Signing architecture is recorded in `decisions.md`; Stages 1–5 are merged to `main` (DB development-only). Participant ceremony is implemented; completed-PDF finalization and production enablement have **not** started. Imported-document markup remains separate.
 
 ### Native E-Signature Workflow
 
@@ -1430,7 +1437,7 @@ See `decisions.md` for architectural decisions. Highlights:
 - Invitation-only access; invite confirmation uses token-hash `verifyOtp` (PKCE preserved separately); HostPapa DNS changes limited to intended subdomain records
 - Packet-form annotations (`typed_signature`, `date_signed`) are packet-document-specific agent markup, not catalog fields and not Native Signing evidence; future Fill Form markup should extend that annotation model, while ceremony signer fields belong to Signing-owned tables
 - Native e-signature is planned in-app; Authentisign remains prior research / current inventory-exclusion policy, not a committed vendor
-- Native e-signature architecture decisions are in `decisions.md`. Stage 1 foundation schema + private `signing-artifacts` bucket exist in development only behind `NATIVE_SIGNING_ENABLED` (default off); ceremony/credentials/delivery not started
+- Native e-signature architecture decisions are in `decisions.md`. Stages 1–5 (foundation through participant ceremony) exist on `main` with development-only DB; completed-PDF finalization, delivery, and production enablement are not started
 - Signing development must preserve the verified F1–F11 security baseline and R12 Stage 1 deny-by-default tests before each stage is complete
 - One-off imported packet PDFs should not require the reusable form-library workflow; quick PDF annotations are not reusable fields
 - Packet existing-property search shows matches only after the user types; a blank query does not list all properties, and the selected property stays independent of the search box

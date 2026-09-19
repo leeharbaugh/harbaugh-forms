@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadSigningAuthorityBundle } from "./authority-context";
 import { ensurePreparedDocumentVersion } from "./document-versions";
+import {
+  buildResponsibleContextMetadata,
+  requireSigningEventActorType,
+} from "./event-actor";
 import { SigningError } from "./errors";
 import {
   assertTrustedIntegrity,
@@ -542,15 +547,29 @@ export async function promotePackageRevisionFromDraftWithActor(
     }
     pointerAdvanced = true;
 
+    const authorityBundle = await loadSigningAuthorityBundle(
+      admin,
+      actor,
+      signing.id,
+    );
+    const actorType = requireSigningEventActorType(
+      authorityBundle?.authority,
+    );
+    const responsibleMeta = buildResponsibleContextMetadata({
+      responsibleUserId: signing.original_sender_user_id,
+      responsibleDisplayName: signing.original_sender_display_name,
+    });
+
     const { error: eventError } = await admin.from("signing_events").insert({
       signing_id: signing.id,
       package_revision_id: revision.id,
       event_type: "PACKAGE_REVISION_PROMOTED",
-      actor_type: "PRIMARY_AGENT",
+      actor_type: actorType,
       actor_user_id: actor.userId,
       actor_display_name: actor.displayName,
       visibility: "BUSINESS",
       summary: `Package revision ${nextRevisionNumber} promoted`,
+      details_json: responsibleMeta ?? null,
     });
     if (eventError) {
       throw new Error(eventError.message);

@@ -17,8 +17,13 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadSigningAuthorityBundle } from "./authority-context";
 import { supersedeActiveCeremonySessions } from "./browser-sessions";
 import { createDeviceHandoffLock } from "./device-handoff-lock";
+import {
+  buildResponsibleContextMetadata,
+  requireSigningEventActorType,
+} from "./event-actor";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { getSigningForActor } from "./operations";
@@ -191,20 +196,36 @@ export async function createInPersonHandoffWithActor(
     throw new Error(error?.message ?? "Failed to create in-person handoff.");
   }
 
+  const authorityBundle = await loadSigningAuthorityBundle(
+    admin,
+    actor,
+    summary.id,
+  );
+  const actorType = requireSigningEventActorType(authorityBundle?.authority);
+  const responsibleMeta = buildResponsibleContextMetadata({
+    responsibleUserId: summary.originalSenderUserId,
+    responsibleDisplayName: summary.originalSenderDisplayName,
+  });
+
   const { error: eventError } = await admin.from("signing_events").insert({
     signing_id: summary.id,
     event_type: "IN_PERSON_HANDOFF_ISSUED",
-    actor_type: "PRIMARY_AGENT",
+    actor_type: actorType,
     actor_user_id: actor.userId,
     actor_display_name: actor.displayName,
     actor_participant_id: participant.id,
     visibility: "BUSINESS",
     summary: "In-person signing handoff issued",
     // Never the token: only that a handoff exists for this participant.
-    details_json: { handoffId: handoff.id, expiresAt },
+    details_json: {
+      handoffId: handoff.id,
+      expiresAt,
+      ...(responsibleMeta ?? {}),
+    },
   });
   if (eventError) throw new Error(eventError.message);
 
+  // Lock issuer is the authenticated workspace User (agent or TC).
   const deviceLock = await createDeviceHandoffLock({
     admin,
     signingId: summary.id,

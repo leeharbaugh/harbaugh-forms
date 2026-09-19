@@ -181,6 +181,7 @@ describe("Signing authority evaluation", () => {
     originatingOrganizationId: "org-a",
     lifecycleState: "DRAFT",
     currentPrimaryAgentAssociationId: "assoc-1",
+    originalSenderUserId: "agent-1",
     associations: [
       {
         id: "assoc-1",
@@ -199,6 +200,26 @@ describe("Signing authority evaluation", () => {
       organizationStatus: "ACTIVE",
     },
   ];
+
+  const activeDelegation = {
+    id: "del-1",
+    organizationId: "org-a",
+    responsibleUserId: "agent-1",
+    delegateUserId: "tc-1",
+    operatorRole: "TRANSACTION_COORDINATOR" as const,
+    status: "ACTIVE",
+    revokedAt: null,
+    effectiveEndedAt: null,
+  };
+
+  const activeOperator = {
+    id: "op-1",
+    operatorUserId: "tc-1",
+    operatorRole: "TRANSACTION_COORDINATOR" as const,
+    status: "ACTIVE",
+    effectiveEndedAt: null,
+    signingOperatorDelegationId: "del-1",
+  };
 
   it("grants current primary agent management when eligible", () => {
     const result = evaluateSigningAuthority({
@@ -294,6 +315,80 @@ describe("Signing authority evaluation", () => {
     });
     assert.equal(result.canManage, true);
     assert.equal(result.canRead, true);
+  });
+
+  it("grants TC manage when operator association and active delegation are valid", () => {
+    const result = evaluateSigningAuthority({
+      signing: {
+        ...baseSigning,
+        operatorAssociations: [activeOperator],
+        operatorDelegations: [activeDelegation],
+      },
+      actorUserId: "tc-1",
+      memberships: member,
+    });
+    assert.equal(result.canManage, true);
+    assert.equal(result.canRead, true);
+    assert.equal(result.isTransactionCoordinator, true);
+    assert.equal(result.activeOperatorAssociation?.id, "op-1");
+  });
+
+  it("revokes TC manage when delegation ends but retains historical read", () => {
+    const result = evaluateSigningAuthority({
+      signing: {
+        ...baseSigning,
+        operatorAssociations: [
+          {
+            ...activeOperator,
+            status: "ENDED",
+            effectiveEndedAt: "2026-09-01T00:00:00Z",
+          },
+        ],
+        operatorDelegations: [
+          {
+            ...activeDelegation,
+            status: "REVOKED",
+            revokedAt: "2026-09-01T00:00:00Z",
+            effectiveEndedAt: "2026-09-01T00:00:00Z",
+          },
+        ],
+      },
+      actorUserId: "tc-1",
+      memberships: member,
+    });
+    assert.equal(result.canManage, false);
+    assert.equal(result.canRead, true);
+    assert.equal(result.isTransactionCoordinator, false);
+  });
+
+  it("denies TC manage when operator association exists but delegation is revoked", () => {
+    const result = evaluateSigningAuthority({
+      signing: {
+        ...baseSigning,
+        operatorAssociations: [activeOperator],
+        operatorDelegations: [
+          {
+            ...activeDelegation,
+            status: "REVOKED",
+            revokedAt: "2026-09-01T00:00:00Z",
+          },
+        ],
+      },
+      actorUserId: "tc-1",
+      memberships: member,
+    });
+    assert.equal(result.canManage, false);
+    assert.equal(result.canRead, true);
+  });
+
+  it("does not grant TC manage for an unrelated Signing", () => {
+    const result = evaluateSigningAuthority({
+      signing: baseSigning,
+      actorUserId: "tc-1",
+      memberships: member,
+    });
+    assert.equal(result.canManage, false);
+    assert.equal(result.canRead, false);
   });
 });
 

@@ -12,6 +12,181 @@ Each decision should include:
 
 ---
 
+## Transaction Coordinators are delegated operators, not fake agents or signers
+
+**Date:** 2026-09-17
+
+**Decision:**
+Harbaugh Forms supports a **Transaction Coordinator (TC)** as an authenticated User who may be **explicitly delegated** authority to create and administer Signings on behalf of a responsible agent and/or broker.
+
+A TC:
+
+* may perform operational Signing administration that the responsible agent/broker has authorized;
+* is **not** made into a fake agent or fake co-agent merely to obtain permissions;
+* is **not** a signing participant merely because they administer the Signing;
+* cannot sign, adopt, or place Signature/Initials for the responsible agent/broker (or any participant) by virtue of TC authority;
+* cannot impersonate the agent/broker in ceremony evidence;
+* must retain their own identity in audit/events for every action they actually perform.
+
+When a TC acts for Agent A, the Signing preserves both:
+
+* **Responsible agent/broker:** Agent A (participant-facing sender/brokerage context and transaction responsibility);
+* **Operational actor:** the TC (who clicked Send, amended, cancelled, requested finalization retry, etc.).
+
+These identities must not be collapsed. Ordinary same-organization membership, Global Admin status, Packet access, or email domain alone never implies TC authority.
+
+This decision is additive to **Signing access belongs to the originating brokerage and full-authority agents** (2026-09-06), which already stated that a trainee or assistant who should not have full Signing authority is not added as a co-agent. TC is the first-class answer to that gap.
+
+**Reason:**
+Brokerage workflows depend on coordinators who run paperwork without becoming the transaction's agent of record or a surrogate signer. Shoehorning TCs into `signing_agent_associations` as PRIMARY/CO_AGENT would falsify audit, certificates, and participant-facing sender identity.
+
+**Consequences:**
+
+* TC implementation uses explicit delegation records and Signing-scoped operator associations separate from agent associations (see following decisions).
+* Stage 2 `canManage` and event `actor_type` vocabulary include an honest `TRANSACTION_COORDINATOR` path rather than overloading PRIMARY_AGENT.
+* Participant ceremony authority remains entirely separate from TC operational authority.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260917150000_native_signing_tc_operator_authority.sql`
+* `lib/signing/authority.ts`, `lib/signing/operator-delegations.ts`, `lib/signing/operations.ts`
+
+---
+
+## Persistent TC delegation plus Signing-scoped operator association
+
+**Date:** 2026-09-17
+
+**Decision:**
+TC authority uses a hybrid model:
+
+1. **`signing_operator_delegations`** — persistent many-to-many grants (organization, responsible User, delegate User, role=`TRANSACTION_COORDINATOR`, status, effective/revoked provenance). Supports one TC → many responsible Users and one responsible User → many TCs.
+2. **`signing_operator_associations`** — Signing-scoped operator rows (role=`TRANSACTION_COORDINATOR`, display-name snapshot, delegation reference, effective period). Multiple active TCs per Signing are allowed.
+
+`signing_agent_associations` remains PRIMARY/CO_AGENT only. Do not store TC identity as a profile `transaction_coordinator_user_id` field.
+
+**Creator provenance:** `signings.created_by_user_id` records the actual creating User (may be a TC). `original_sender_*` and PRIMARY association remain the responsible agent/broker. Event `SIGNING_CREATED` also attributes the TC actor. Creator and responsible concepts are never overwritten later; DB BEFORE UPDATE trigger restores `created_by_user_id` and `original_sender_*` on any update.
+
+**Reason:** Persistent grants enable brokerage-wide TC assignment; Signing associations preserve historical operator evidence and management scope without falsifying agent relationships.
+
+**Consequences:**
+
+* Manage requires active operator association **and** currently valid delegation (revalidated on writes).
+* Revocation ends associations for manage but retains historical rows for read.
+* RLS denies browser self-service on both tables; trusted server mutations only.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260917150000_native_signing_tc_operator_authority.sql`
+
+---
+
+## Agent or ORG_ADMIN may grant TC delegation; TC cannot self-grant
+
+**Date:** 2026-09-17
+
+**Decision:**
+An active TC delegation may be granted or revoked by:
+
+* the responsible User themselves; or
+* an authorized `ORG_ADMIN` for that organization.
+
+Ordinary MEMBER cannot grant. A TC cannot grant or revoke their own delegation. App/Global Admin status alone does not create a business TC delegation. The responsible User is any eligible organization User (agent or broker/responsible brokerage User) — not a salesperson-only subtype. Do not infer brokerage responsibility from generic org membership alone.
+
+**Reason:** Brokerages need ORG_ADMIN to configure TCs without requiring every agent to click every grant, while preventing privilege self-escalation.
+
+**Consequences:**
+
+* `grantOperatorDelegationWithActor` / `revokeOperatorDelegationWithActor` enforce these gates server-side.
+* Cross-organization grants fail closed.
+
+---
+
+## TC capability bundle (v1) and cancellation authority
+
+**Date:** 2026-09-17
+
+**Decision:**
+An active TC management association (backed by a valid delegation) grants the operational TC bundle without fine-grained per-capability RBAC in v1: create/manage delegated Signings, Draft document/participant/field prep, Keep Current / Update to Latest, readiness, Send / Begin In-Person, handoff, credential-admin operations already available to managers, permitted pre-freeze amendment lock/acquire, Cancel under the same lifecycle rules as agents, and (once Stage 6 exists) request Retry Finalization and read completed artifacts via trusted server mediation.
+
+TC may Cancel; wording/attribution preserves “Cancelled by [TC], Transaction Coordinator, on behalf of [responsible agent/broker]”. TC cannot Decline for a participant.
+
+**Historical read after revoke:** When delegation or active operator authority ends, all future management writes fail immediately. The TC retains historical read of Signings on which they had a genuine operator association. Historical read never restores manage. Modeled similarly in principle to ended agent associations, with roles kept semantically separate.
+
+**Participant-facing sender:** Remains responsible agent/broker + brokerage (e.g. `Lee Harbaugh — Davey Goosmann Realty`). TC is not default invitation/Reply-To identity in v1.
+
+**Actor attribution:** Meaningful events distinguish PRIMARY_AGENT, CO_AGENT, TRANSACTION_COORDINATOR, BROKERAGE_ADMINISTRATOR (ORG_ADMIN), PARTICIPANT, SYSTEM_ADMINISTRATOR, SYSTEM. Precedence when multiple paths apply: active agent association → active TC operator association → ORG_ADMIN.
+
+**ORG_ADMIN vs TC vs App ADMIN:** ORG_ADMIN is organization administrative authority; TC is explicit delegated operational authority; App/Global Admin does not become business manager, TC, or responsible sender.
+
+**Reason:** Coordinators need a coherent operational bundle without ceremony signing power or sender identity confusion.
+
+**Consequences:**
+
+* Ceremony prohibitions are absolute (affirm, consent, adopt, place, Finish, satisfy agent fields, representative shortcut).
+* Revocation is authoritative on the next server action; open browser pages are not authority.
+
+---
+
+## A completed Signing has exactly one immutable audit certificate
+
+**Date:** 2026-09-17
+
+**Decision:**
+A successfully completed Signing has **exactly one** canonical immutable Signing-wide audit certificate. There are no certificate “versions” caused by resend, download, copy-recipient addition, credential replacement, or later delivery activity.
+
+If the transaction later requires changed documents after successful completion, that work requires a **new Signing**, not a new certificate for the completed Signing. Package revisions remain a **pre-completion / pre-freeze** amendment concept and are not created after successful completion merely to update a certificate.
+
+Later delivery and operational history remain append-only Signing/system history (and delivery records) without mutating or replacing the completion certificate. This clarifies **Completed Signings preserve separate documents and provide one Signing-wide audit certificate** (2026-09-06) where that earlier text mentioned later delivery activity alongside an immutable certificate.
+
+**Reason:**
+Completion evidence must remain stable. Treating resends or copy-recipient adds as certificate revisions would undermine immutability and confuse recipients about which certificate is authoritative.
+
+**Consequences:**
+
+* Finalization produces one AUDIT_CERTIFICATE artifact bound to the frozen package revision.
+* Delivery stages must not regenerate or version that certificate.
+* Material post-completion document change ⇒ new Signing.
+* No implementation is authorized by this decision alone.
+
+**Related files or migrations:**
+
+* This file: **Completed Signings preserve separate documents…** (2026-09-06); **Finish Signing and finalization…** (2026-09-08)
+
+---
+
+## Combined convenience PDF is supported and non-blocking for Complete
+
+**Date:** 2026-09-17
+
+**Decision:**
+Harbaugh Forms will support a **combined convenience PDF** of the completed package in addition to the authoritative individual completed signed PDFs and the Signing-wide audit certificate.
+
+* Individual completed PDFs remain separately downloadable and authoritative.
+* The Signing-wide audit certificate remains authoritative.
+* The combined PDF does not replace individual files.
+* It may be generated only from already-verified completed document artifacts (and must not invent content).
+* Combined-artifact generation failure must **not** block Signing lifecycle `COMPLETE`.
+* When generated, the combined PDF is its own immutable `signing_artifacts` row (`COMBINED_PACKAGE`) with its own opaque Storage object and SHA-256 fingerprint.
+* Prefer an **optional post-required-artifacts work item** after required completed PDFs + certificate verify; `COMPLETE` must not wait on combined PDF generation.
+
+Exact Stage timing must preserve the non-blocking rule. Combined PDF is not implemented in the TC authority foundation.
+
+**Reason:**
+Agents often want one downloadable packet, but completion evidence cannot depend on a convenience merge succeeding.
+
+**Consequences:**
+
+* Schema already anticipates `COMBINED_PACKAGE`; generation is still unimplemented.
+* Finalization eligibility for Complete must not require a verified combined artifact.
+* No combined-PDF implementation is authorized by the TC foundation work.
+
+**Related files or migrations:**
+
+* This file: **Completed Signings preserve separate documents…** (2026-09-06); Stage 1 `signing_artifacts.artifact_category`
+
+---
+
 ## Draft Signing creation establishes mutable preparation state; package revisions freeze at activation
 
 **Date:** 2026-09-15
