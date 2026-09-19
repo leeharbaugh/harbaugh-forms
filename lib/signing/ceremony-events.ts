@@ -1,15 +1,16 @@
 /**
  * Native Signing Stage 5 participant ceremony events.
  *
- * Thin wrapper over the append-only `signing_events` insert used by
- * `activation.ts`, so every ceremony act is attributed to both the Signing
- * participant and the package revision it acted on. `sequence_number`,
- * `create_date`, and append-only enforcement remain server-side.
+ * Thin wrapper over the central Signing event append boundary so every ceremony
+ * act is attributed to both the Signing participant and the package revision
+ * it acted on. Sequence assignment and append-only enforcement remain
+ * server-side; Stage 6 adds protected event-chain integrity when configured.
  *
  * Ordinary navigation and heartbeat are operational state, not durable Signing
  * history, and must not be recorded here.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { appendSigningEvent } from "./signing-events";
 
 export type CeremonyEventType =
   | "IDENTITY_AFFIRMED"
@@ -39,26 +40,19 @@ export async function appendCeremonyEvent(options: {
   /** Makes a replayed ceremony action append one event, not two. */
   idempotencyKey?: string | null;
 }): Promise<void> {
-  const { error } = await options.admin.from("signing_events").insert({
-    signing_id: options.signingId,
-    package_revision_id: options.packageRevisionId ?? null,
-    signing_document_version_id: options.signingDocumentVersionId ?? null,
-    signing_field_id: options.signingFieldId ?? null,
-    signing_field_placement_id: options.signingFieldPlacementId ?? null,
-    event_type: options.eventType,
-    actor_type: "PARTICIPANT",
-    actor_participant_id: options.signingParticipantId,
-    actor_display_name: options.actorDisplayName,
+  await appendSigningEvent(options.admin, {
+    signingId: options.signingId,
+    eventType: options.eventType,
+    actorType: "PARTICIPANT",
+    actorParticipantId: options.signingParticipantId,
+    actorDisplayName: options.actorDisplayName,
     visibility: "BUSINESS",
+    packageRevisionId: options.packageRevisionId ?? null,
+    signingDocumentVersionId: options.signingDocumentVersionId ?? null,
+    signingFieldId: options.signingFieldId ?? null,
+    signingFieldPlacementId: options.signingFieldPlacementId ?? null,
     summary: options.summary,
-    details_json: options.detailsJson ?? null,
-    idempotency_key: options.idempotencyKey ?? null,
+    detailsJson: options.detailsJson ?? null,
+    idempotencyKey: options.idempotencyKey ?? null,
   });
-  if (error) {
-    // A duplicate idempotency key means the event is already recorded.
-    if (error.code === "23505" || /duplicate key/i.test(error.message)) {
-      return;
-    }
-    throw new Error(error.message);
-  }
 }

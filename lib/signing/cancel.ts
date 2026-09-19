@@ -10,6 +10,7 @@ import {
 } from "./event-actor";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
+import { appendSigningEvent } from "./signing-events";
 import { isUuid, type SigningActor, type SigningSummary } from "./types";
 import { getSigningForActor } from "./operations";
 
@@ -91,21 +92,20 @@ export async function cancelSigningWithActor(
     );
   }
 
-  const { error: eventError } = await admin.from("signing_events").insert({
-    signing_id: signing.id,
-    event_type: "SIGNING_CANCELLED",
-    actor_type: actorType,
-    actor_user_id: actor.userId,
-    actor_display_name: actor.displayName,
+  await appendSigningEvent(admin, {
+    signingId: signing.id,
+    eventType: "SIGNING_CANCELLED",
+    actorType,
+    actorUserId: actor.userId,
+    actorDisplayName: actor.displayName,
     visibility: "BUSINESS",
     summary: summaryText,
-    details_json: {
+    detailsJson: {
       cancelledAt,
       ...(reason ? { reason } : {}),
       ...(responsibleMeta ?? {}),
     },
   });
-  if (eventError) throw new Error(eventError.message);
 
   return getSigningForActor(actor, signing.id, admin);
 }

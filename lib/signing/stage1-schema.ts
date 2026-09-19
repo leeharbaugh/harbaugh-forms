@@ -98,6 +98,18 @@ export const NATIVE_SIGNING_TC_AUTHORITY_MIGRATIONS = [
   "20260918120000_native_signing_tc_provenance_immutability",
 ] as const;
 
+/**
+ * Stage 6 finalization: work-item leases, completion timestamp, artifact
+ * traceability, verified-artifact uniqueness, event-chain genesis state.
+ */
+export const NATIVE_SIGNING_STAGE6_TABLES = [
+  "signing_event_chain_state",
+] as const;
+
+export const NATIVE_SIGNING_STAGE6_MIGRATIONS = [
+  "20260918160000_native_signing_stage6_finalization",
+] as const;
+
 export type NativeSigningCeremonyTable =
   (typeof NATIVE_SIGNING_CEREMONY_TABLES)[number];
 
@@ -114,6 +126,9 @@ export type NativeSigningCeremonyTable =
  * - `.../versions/{versionId}.pdf` — a **prepared `signing_document_version`**.
  *   This is evidentiary: it is what a package revision freezes and what
  *   participants sign against. It is never deleted as preparation history.
+ * - `.../artifacts/completed|certificate|combined/{artifactId}.pdf` —
+ *   **Stage 6 generated artifacts** (completed docs, audit certificate,
+ *   optional combined package). Distinct from draft and prepared namespaces.
  *
  * Immutable bytes therefore do not imply evidentiary status; the namespace does.
  */
@@ -123,6 +138,15 @@ export const DRAFT_SOURCE_OBJECT_KEY_RE =
 export const PREPARED_VERSION_OBJECT_KEY_RE =
   /^signings\/[0-9a-fA-F-]{36}\/documents\/[0-9a-fA-F-]{36}\/versions\/[0-9a-fA-F-]{36}\.pdf$/;
 
+export const COMPLETED_ARTIFACT_OBJECT_KEY_RE =
+  /^signings\/[0-9a-fA-F-]{36}\/artifacts\/completed\/[0-9a-fA-F-]{36}\.pdf$/;
+
+export const CERTIFICATE_ARTIFACT_OBJECT_KEY_RE =
+  /^signings\/[0-9a-fA-F-]{36}\/artifacts\/certificate\/[0-9a-fA-F-]{36}\.pdf$/;
+
+export const COMBINED_ARTIFACT_OBJECT_KEY_RE =
+  /^signings\/[0-9a-fA-F-]{36}\/artifacts\/combined\/[0-9a-fA-F-]{36}\.pdf$/;
+
 /** True for Draft source snapshot bytes (preparation history, not evidence). */
 export function isDraftSourceObjectKey(key: unknown): key is string {
   return typeof key === "string" && DRAFT_SOURCE_OBJECT_KEY_RE.test(key);
@@ -131,6 +155,18 @@ export function isDraftSourceObjectKey(key: unknown): key is string {
 /** True for prepared document-version bytes (evidentiary, never pruned). */
 export function isPreparedVersionObjectKey(key: unknown): key is string {
   return typeof key === "string" && PREPARED_VERSION_OBJECT_KEY_RE.test(key);
+}
+
+export function isCompletedArtifactObjectKey(key: unknown): key is string {
+  return typeof key === "string" && COMPLETED_ARTIFACT_OBJECT_KEY_RE.test(key);
+}
+
+export function isCertificateArtifactObjectKey(key: unknown): key is string {
+  return typeof key === "string" && CERTIFICATE_ARTIFACT_OBJECT_KEY_RE.test(key);
+}
+
+export function isCombinedArtifactObjectKey(key: unknown): key is string {
+  return typeof key === "string" && COMBINED_ARTIFACT_OBJECT_KEY_RE.test(key);
 }
 
 export type NativeSigningStage4Table =

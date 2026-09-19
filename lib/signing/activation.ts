@@ -34,6 +34,7 @@ import {
   requireSigningEventActorType,
 } from "./event-actor";
 import { SigningError } from "./errors";
+import { appendSigningEvent } from "./signing-events";
 import { requireManageableDraftSigning } from "./manage";
 import { getSigningForActor } from "./operations";
 import {
@@ -385,21 +386,20 @@ export async function activateSigningWithActor(
       responsibleUserId: signing.original_sender_user_id,
       responsibleDisplayName: signing.original_sender_display_name,
     });
-    const { error: eventError } = await admin.from("signing_events").insert({
-      signing_id: signing.id,
-      package_revision_id: promoted.packageRevisionId,
-      event_type: "SIGNING_ACTIVATED",
-      actor_type: actorType,
-      actor_user_id: actor.userId,
-      actor_display_name: actor.displayName,
+    await appendSigningEvent(admin, {
+      signingId: signing.id,
+      packageRevisionId: promoted.packageRevisionId,
+      eventType: "SIGNING_ACTIVATED",
+      actorType,
+      actorUserId: actor.userId,
+      actorDisplayName: actor.displayName,
       visibility: "BUSINESS",
       summary:
         mode === "REMOTE_SEND"
           ? "Signing activated and sent for remote signing"
           : "Signing activated for in-person signing",
-      details_json: responsibleMeta ?? null,
+      detailsJson: responsibleMeta,
     });
-    if (eventError) throw new Error(eventError.message);
 
     const activatedAt = new Date().toISOString();
     const { data: activatedRows, error: activateError } = await admin

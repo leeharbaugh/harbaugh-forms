@@ -24,6 +24,7 @@ import {
   buildResponsibleContextMetadata,
   requireSigningEventActorType,
 } from "./event-actor";
+import { appendSigningEvent } from "./signing-events";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { getSigningForActor } from "./operations";
@@ -207,23 +208,22 @@ export async function createInPersonHandoffWithActor(
     responsibleDisplayName: summary.originalSenderDisplayName,
   });
 
-  const { error: eventError } = await admin.from("signing_events").insert({
-    signing_id: summary.id,
-    event_type: "IN_PERSON_HANDOFF_ISSUED",
-    actor_type: actorType,
-    actor_user_id: actor.userId,
-    actor_display_name: actor.displayName,
-    actor_participant_id: participant.id,
+  await appendSigningEvent(admin, {
+    signingId: summary.id,
+    eventType: "IN_PERSON_HANDOFF_ISSUED",
+    actorType,
+    actorUserId: actor.userId,
+    actorDisplayName: actor.displayName,
+    actorParticipantId: participant.id as string,
     visibility: "BUSINESS",
     summary: "In-person signing handoff issued",
     // Never the token: only that a handoff exists for this participant.
-    details_json: {
+    detailsJson: {
       handoffId: handoff.id,
       expiresAt,
       ...(responsibleMeta ?? {}),
     },
   });
-  if (eventError) throw new Error(eventError.message);
 
   // Lock issuer is the authenticated workspace User (agent or TC).
   const deviceLock = await createDeviceHandoffLock({

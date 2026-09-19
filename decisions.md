@@ -4993,3 +4993,39 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 
 * `lib/auth/email-otp.ts`
 * `lib/auth/auth-confirm.test.ts`
+
+---
+
+## Native Signing Stage 6 finalization implementation choices
+
+**Date:** 2026-09-18
+
+**Decision:**
+Stage 6 finalization is implemented with these durable technical choices (product behavior was already settled):
+
+* Work-item claim uses expiring `claimed_by` / `claimed_until` leases; the work item is never authority.
+* Finalization source of truth is `frozen_package_revision_id` + prepared versions + ACCEPTED placements + locked adopted marks + preserved `rendered_sender_local_date`.
+* Completed PDFs use a Signing-specific `pdf-lib` renderer (not Fill Form). Artifact reuse is authoritative when byte-identical re-render is not guaranteed.
+* Drawn marks render only finite `{x,y}[]` field-local paths with a fixed stroke; stroke width/pressure/multi-stroke evidence is not in Stage 5 schema (residual).
+* Representative signing remains deferred (no capacity/represented-party columns).
+* Exactly one verified `AUDIT_CERTIFICATE` per Signing + frozen revision; chronology boundary excludes `SIGNING_COMPLETED`.
+* Protected event chain uses purpose-separated `SIGNING_EVENT_CHAIN_KEY_ID` / `SIGNING_EVENT_CHAIN_KEY` (HMAC-SHA-256), genesis/checkpoint for pre-chain events, and central `appendSigningEvent`.
+* Canonical event encoding v1 excludes wall-clock `create_date` (avoids timestamptz round-trip nondeterminism); sequence remains authoritative order.
+* Combined package is optional post-Complete work; failure never blocks or rolls back `COMPLETE`.
+* Development-only migration `20260918160000_native_signing_stage6_finalization.sql`.
+
+**Reason:**
+Implements the settled Complete boundary with recoverable finalization, verifiable artifacts, and a protected event chain without reopening product decisions or enabling production.
+
+**Consequences:**
+
+* Lifecycle `COMPLETE` requires verified completed PDFs, one certificate, and chain verification through the certificate boundary.
+* Delivery remains a later stage.
+* Production Native Signing remains off and unconfigured.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260918160000_native_signing_stage6_finalization.sql`
+* `lib/signing/finalization-worker.ts`, `event-chain*.ts`, `completed-pdf.ts`, `audit-certificate.ts`, `artifacts.ts`, `work-items.ts`, `finalization-retry.ts`
+* `scripts/validate-native-signing-stage6-dev.ts`
+* `project_status.md` (status note)
