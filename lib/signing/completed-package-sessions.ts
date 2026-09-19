@@ -137,6 +137,8 @@ export type ValidatedCompletedPackageSession = {
   signingCopyRecipientId: string | null;
   expiresAt: string;
   signingTitle: string;
+  senderDisplayName: string | null;
+  brokerageName: string | null;
 };
 
 function hashesMatch(left: string, right: unknown): boolean {
@@ -190,7 +192,9 @@ export async function validateCompletedPackageSession(
       .maybeSingle(),
     admin
       .from("signings")
-      .select("id, title, lifecycle_state")
+      .select(
+        "id, title, lifecycle_state, original_sender_display_name, originating_organization_id",
+      )
       .eq("id", session.signing_id as string)
       .maybeSingle(),
   ]);
@@ -204,6 +208,17 @@ export async function validateCompletedPackageSession(
     return null;
   }
 
+  let brokerageName: string | null = null;
+  const orgId = signing.originating_organization_id as string | null;
+  if (orgId) {
+    const { data: org } = await admin
+      .from("organizations")
+      .select("name")
+      .eq("id", orgId)
+      .maybeSingle();
+    brokerageName = (org?.name as string | null) ?? null;
+  }
+
   return {
     sessionId: session.id as string,
     signingId: session.signing_id as string,
@@ -213,7 +228,10 @@ export async function validateCompletedPackageSession(
     signingCopyRecipientId:
       (session.signing_copy_recipient_id as string | null) ?? null,
     expiresAt,
-    signingTitle: signing.title as string,
+    signingTitle: (signing.title as string | null) ?? "Completed Signing",
+    senderDisplayName:
+      (signing.original_sender_display_name as string | null) ?? null,
+    brokerageName,
   };
 }
 

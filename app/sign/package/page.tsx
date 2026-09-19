@@ -60,6 +60,10 @@ async function PackageBody() {
     session,
   });
 
+  const senderLine = [session.senderDisplayName, session.brokerageName]
+    .filter((part) => Boolean(part && part.trim()))
+    .join(" · ");
+
   return (
     <main className="mx-auto flex min-h-screen max-w-lg flex-col gap-8 px-6 py-12">
       <header className="space-y-2">
@@ -68,6 +72,9 @@ async function PackageBody() {
           Completed documents
         </h1>
         <p className="text-sm text-muted-foreground">{session.signingTitle}</p>
+        {senderLine ? (
+          <p className="text-sm text-muted-foreground">{senderLine}</p>
+        ) : null}
       </header>
 
       {artifacts.length === 0 ? (
