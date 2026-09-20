@@ -217,7 +217,9 @@ async function main() {
   process.env.NATIVE_SIGNING_ENABLED = "true";
   // Activation must survive an unconfigured mail provider.
   const previousResendKey = process.env.RESEND_API_KEY;
+  const previousEmailSandbox = process.env.SIGNING_EMAIL_SANDBOX;
   delete process.env.RESEND_API_KEY;
+  delete process.env.SIGNING_EMAIL_SANDBOX;
 
   const stamp = Date.now();
   const password = `Stage4-${randomUUID()}!aA1`;
@@ -1239,6 +1241,9 @@ async function main() {
     }
     if (previousResendKey !== undefined) {
       process.env.RESEND_API_KEY = previousResendKey;
+    }
+    if (previousEmailSandbox !== undefined) {
+      process.env.SIGNING_EMAIL_SANDBOX = previousEmailSandbox;
     }
 
     for (const id of createdSigningIds) {

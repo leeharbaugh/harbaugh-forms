@@ -111,6 +111,22 @@ export const NATIVE_SIGNING_STAGE6_MIGRATIONS = [
   "20260919120000_native_signing_stage6_completed_at_immutability",
 ] as const;
 
+/**
+ * Completion delivery: copy recipients, completed-package credentials/sessions,
+ * access log, and system work-suspension controls.
+ */
+export const NATIVE_SIGNING_COMPLETION_DELIVERY_TABLES = [
+  "signing_copy_recipients",
+  "signing_completed_package_credentials",
+  "signing_completed_package_sessions",
+  "signing_completed_package_access_log",
+  "signing_system_controls",
+] as const;
+
+export const NATIVE_SIGNING_COMPLETION_DELIVERY_MIGRATIONS = [
+  "20260919180000_native_signing_completion_delivery",
+] as const;
+
 export type NativeSigningCeremonyTable =
   (typeof NATIVE_SIGNING_CEREMONY_TABLES)[number];
 

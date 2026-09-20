@@ -207,7 +207,7 @@ describe("Native Signing Stage 4 activation boundary contracts", () => {
     assert.match(delivery, /SIGNING_EMAIL_FROM/);
     assert.match(
       delivery,
-      /Signing email provider is not configured; invitation was not sent/,
+      /Signing email provider is not configured; message was not sent/,
     );
     assert.match(delivery, /outcome: result\.ok \? "ACCEPTED" : "FAILED"/);
     assert.match(delivery, /failure_detail_safe/);

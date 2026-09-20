@@ -34,6 +34,7 @@ import {
 } from "./integrity";
 import { sha256Hex } from "./prepare-pdf";
 import { SIGNING_ARTIFACTS_BUCKET } from "./stage1-schema";
+import { enqueueInitialCompletedPackageFanOut } from "./completed-package-delivery";
 import {
   claimSigningWorkItem,
   completeWorkItem,
@@ -43,6 +44,7 @@ import {
   workerHoldsLease,
   type SigningWorkItemRow,
 } from "./work-items";
+import { isSigningWorkSuspended } from "./work-suspension";
 import { PDFDocument } from "pdf-lib";
 
 export const GENERATE_COMBINED_PACKAGE_WORK_TYPE =
@@ -418,6 +420,13 @@ export async function processNextFinalizationWorkItem(options: {
   workerId?: string;
   signingId?: string;
 }): Promise<FinalizationWorkerResult> {
+  if (await isSigningWorkSuspended(options.admin)) {
+    return {
+      status: "NO_WORK",
+      detail: "Signing work is suspended.",
+    };
+  }
+
   const workerId = options.workerId ?? newWorkerId("finalize");
   const claimed = await claimSigningWorkItem({
     admin: options.admin,
@@ -426,6 +435,23 @@ export async function processNextFinalizationWorkItem(options: {
     signingId: options.signingId,
   });
   if (!claimed) return { status: "NO_WORK" };
+
+  // Recheck after claim so a mid-lease suspension stops side effects.
+  if (await isSigningWorkSuspended(options.admin)) {
+    await failWorkItem({
+      admin: options.admin,
+      workItemId: claimed.id,
+      workerId,
+      errorSafe: "Signing work is suspended.",
+      retryDelaySeconds: 300,
+    });
+    return {
+      status: "SKIPPED",
+      signingId: claimed.signing_id,
+      workItemId: claimed.id,
+      detail: "Signing work is suspended.",
+    };
+  }
 
   const signingId = claimed.signing_id;
   try {
@@ -577,6 +603,16 @@ export async function processNextFinalizationWorkItem(options: {
       frozenRevisionId,
     );
 
+    try {
+      await enqueueInitialCompletedPackageFanOut(options.admin, signingId);
+    } catch (fanOutError) {
+      // Delivery must never fail or roll back Complete.
+      console.error(
+        "[native-signing-completion-delivery] initial fan-out failed:",
+        fanOutError instanceof Error ? fanOutError.message : "unknown error",
+      );
+    }
+
     return {
       status: "COMPLETED",
       signingId,
@@ -650,6 +686,13 @@ export async function processNextCombinedPackageWorkItem(options: {
   workerId?: string;
   signingId?: string;
 }): Promise<FinalizationWorkerResult> {
+  if (await isSigningWorkSuspended(options.admin)) {
+    return {
+      status: "NO_WORK",
+      detail: "Signing work is suspended.",
+    };
+  }
+
   const workerId = options.workerId ?? newWorkerId("combined");
   const claimed = await claimSigningWorkItem({
     admin: options.admin,
@@ -658,6 +701,22 @@ export async function processNextCombinedPackageWorkItem(options: {
     signingId: options.signingId,
   });
   if (!claimed) return { status: "NO_WORK" };
+
+  if (await isSigningWorkSuspended(options.admin)) {
+    await failWorkItem({
+      admin: options.admin,
+      workItemId: claimed.id,
+      workerId,
+      errorSafe: "Signing work is suspended.",
+      retryDelaySeconds: 300,
+    });
+    return {
+      status: "SKIPPED",
+      signingId: claimed.signing_id,
+      workItemId: claimed.id,
+      detail: "Signing work is suspended.",
+    };
+  }
 
   const signingId = claimed.signing_id;
   try {
