@@ -57,7 +57,31 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Deferred after Stage 6 (partially addressed by completion-delivery merge):** production rollout/enablement; reminders; representative signing model; drawn-mark evidence schema upgrade (UI remains typed-only; server DRAWN accept + finalizer fail-closed); polished TC UI; admin artifact remediation; authenticated DAST; external timestamp anchoring; full restore credential/session gate; durable production worker scheduling/secrets.
 
-**Recommended next:** See completion-delivery section above.
+**Recommended next:** Implement the **recovery credential/session access gate** next (epoch + access suspension), then production readiness scaffolding (keys/cron/Resend/docs), then focused pre-production security, then controlled Lee-only production enablement. Do not begin production enablement or drawn-signature implementation until an explicit prompt is issued.
+
+### Native Signing pre-production blocker audit (2026-09-20, read-only)
+
+**Status:** Audit only — no schema/code/production changes. Current `main` bookkeeping HEAD `5a841ff`; completion-delivery squash `f68d8bb`.
+
+**Hard blockers before any production Native Signing enablement:**
+
+1. Recovery **credential/session access gate** (decisions require restored environments non-authorizing; today only workers suspend — restored bearers/sessions still authenticate via token/session hashes).
+2. Production Native Signing migrations (Stages 1–6 + TC + completion delivery) not applied.
+3. Production secrets/config: event-chain HMAC, participant wrap, completed-package wrap, worker secret, `NEXT_PUBLIC_SITE_URL`, Resend, feature gate still off.
+4. Production worker scheduling (no `vercel.json` cron; worker route is POST-only so Cron needs an authenticated GET→batch adapter).
+5. Counsel-approved electronic-signing disclosure marked `is_production_ready` (seeded text is explicit development placeholder; production runtime fails closed).
+
+**Hard blockers before external participant use (after schema/keys exist):** production Resend From/domain; synthetic then Lee-owned email smoke; feature-on with work still deliberately controlled; first controlled Signing plan.
+
+**Strong pre-production requirements:** minimal delivery/ops UI or documented ops path for copy/resend/replace/revoke after Complete; stuck-work visibility; backup + restore runbook tying suspension + access epoch; focused manual security pass; Vercel unique-URL then promote pattern.
+
+**Can follow controlled rollout:** provider webhooks (ACCEPTED ≠ inbox); polished TC Settings UI; DAST breadth; package Close UX; attachments; delivery-contact override; monitoring polish.
+
+**Optional later / case-specific:** drawn v2 (typed-only ships); representative signing (product-approved model exists, unimplemented — blocks representative cases only); external timestamping.
+
+**Recommended next implementation stage:** **A — Recovery credential/session access gate** (environment access epoch + access suspension; preserve work suspension; no evidence rewrite).
+
+**Recommended full sequence:** recovery access gate → production readiness scaffolding (cron adapter, secrets inventory, disclosure publication path, ops checklist) → focused pre-production security → controlled Lee-only production enablement → representative signing as needed → drawn v2 later.
 
 ### Transaction Coordinator / operator authority foundation (2026-09-18)
 
@@ -1353,7 +1377,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Re-baseline after completion-delivery merge (next):** Design remaining pre-production Native Signing blockers (restore credential/session gate, production keys/cron/Resend, disclosure). Do not begin production enablement or drawn-signature implementation until an explicit prompt is issued. Preserve F1–F11 + R12 Stage 1–6 + TC + completion-delivery tests.
+1. **Native Signing recovery access gate (next):** Implement credential/session recovery-safe access (epoch + access suspension) so restored environments cannot authenticate old bearers/sessions. Do not begin production enablement, drawn UI, or representative signing until an explicit prompt is issued.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically

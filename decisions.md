@@ -5108,3 +5108,52 @@ Implements settled completed-copy entitlement with recoverable email, isolated c
 * `app/sign/completed/[token]/route.ts`, `app/sign/package/**`, `app/api/internal/signing-worker/route.ts`
 * `scripts/validate-native-signing-completion-delivery-dev.ts`
 * `project_status.md`; `security.md` (local)
+
+---
+
+## Native Signing pre-production blocker audit sequencing (2026-09-20)
+
+**Date:** 2026-09-20
+
+**Decision:**
+After completion-delivery merge (`f68d8bb` / bookkeeping `5a841ff`), the remaining path to controlled production Native Signing is sequenced as follows. This audit records repository evidence; it does not authorize production enablement, migrations, secrets, Cron, disclosure publication, drawn UI, or representative signing.
+
+**Next implementation stage (exactly one):** implement the **recovery credential/session access gate** so restored environments become non-authorizing for participant and completed-package bearers and browser sessions until deliberate recovery review — fulfilling the already-approved recovery decision that today is only partially met by worker suspension.
+
+**Recommended architecture (design target for the next implementation prompt, not implemented by this audit):**
+
+* Keep existing **work suspension** (`signing_system_controls.work_suspended` / `SIGNING_WORK_SUSPENDED`) for finalization/delivery/invitation workers.
+* Add **access suspension** and/or an environment **access epoch** bound into credential/session rows at issuance and checked on every validation. Rotating wrap keys alone does **not** invalidate bearers (auth is hash-based). Event-chain key rotation is independent and must not rewrite history.
+* Restore/clone procedure: suspend work + invalidate external access (epoch bump and/or access suspension) before any email or ceremony resumes; re-issue links after review rather than silently reviving pre-restore bearers.
+
+**Full sequence to production (ordered):**
+
+1. Recovery credential/session access gate (implementation).
+2. Production readiness scaffolding: Vercel Cron GET adapter for worker batch, secrets inventory/runbook, disclosure publication path, ops checklist; keep feature off and work suspended.
+3. Focused pre-production security pass (manual adversarial + regressions); DAST breadth may follow controlled rollout.
+4. Controlled Lee-only production enablement (migrations → keys → Cron suspended → unique URL smoke → promote domain → feature on → deliberate unsuspend) with typed-only personal Signings.
+5. Representative signing later as needed for capacity cases.
+6. Drawn evidence v2 later.
+
+**Classifications settled by this audit (non-Lee technical):**
+
+* Drawn UI: optional later while typed-only + finalizer fail-closed remains.
+* Attachments / delivery-contact override / package Close UX / external timestamping: optional later for controlled v1.
+* Provider webhooks: not a hard blocker for ACCEPTED semantics; strong follow-up (sending-domain auth remains required for production email).
+* Polished TC Settings UI: not required for Lee-only rollout.
+* Minimal post-Complete delivery ops path (copy/resend/replace/revoke visibility): strong practical requirement — server APIs exist; Signing dashboard currently lacks COMPLETE delivery management UI.
+
+**Reason:**
+The approved recovery decision requires restored systems to be non-delivering **and non-authorizing**. Worker suspension alone leaves invitation, ceremony, and completed-package hashes usable after DB restore. Closing that gap before production secrets and external participant email is the highest-leverage next stage.
+
+**Consequences:**
+
+* Next Cursor implementation prompt targets recovery access gate only.
+* Production migrations/keys/Cron/Resend/disclosure/feature enablement remain separately gated.
+* No application code, schema, migration, storage, route, configuration, test, or package change is made by this decision beyond documentation.
+
+**Related files or migrations:**
+
+* `project_status.md` (audit section)
+* This file: **Signing recovery preserves evidence and begins in a non-delivering safe mode** (2026-09-14); **Native Signing completion delivery implementation choices** (2026-09-19)
+* No SQL migration; no schema change
