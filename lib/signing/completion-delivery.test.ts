@@ -253,9 +253,44 @@ describe("Native Signing completion delivery", () => {
   it("wires fan-out after Complete without failing finalization", () => {
     assert.match(finalization, /enqueueInitialCompletedPackageFanOut/);
     assert.match(finalization, /must never fail or roll back Complete/);
+    assert.match(finalization, /isSigningWorkSuspended/);
     assert.match(delivery, /enqueueInitialCompletedPackageFanOut/);
     assert.match(delivery, /frozen_email/);
     assert.match(delivery, /COMPLETED_PACKAGE_SENT/);
+    assert.match(delivery, /COMPLETED_PACKAGE_RESEND_REQUESTED/);
+    assert.match(
+      delivery,
+      /Completed-package link could not be recovered; use Replace Link/,
+    );
+  });
+
+  it("revokes completed-package access when a copy recipient is removed", () => {
+    const copyRecipients = read("lib/signing/copy-recipients.ts");
+    assert.match(copyRecipients, /revokeCompletedPackageCredential/);
+    assert.match(copyRecipients, /revokeCompletedPackageSessionsForCredential/);
+    assert.match(copyRecipients, /COPY_RECIPIENT_REMOVED/);
+    assert.match(
+      credentials,
+      /copyRecipient\.status !== "ACTIVE"/,
+    );
+    assert.match(
+      sessions,
+      /copyRecipient\.status !== "ACTIVE"/,
+    );
+  });
+
+  it("blocks invitation and finalization when work is suspended", () => {
+    const invitationDelivery = read("lib/signing/delivery.ts");
+    assert.match(invitationDelivery, /isSigningWorkSuspended/);
+    assert.match(
+      invitationDelivery,
+      /VERCEL_ENV[\s\S]*production[\s\S]*sandbox is not allowed/,
+    );
+    assert.match(finalization, /isSigningWorkSuspended/);
+    assert.match(
+      read("lib/signing/signing-worker-dispatch.ts"),
+      /isSigningWorkSuspended/,
+    );
   });
 
   it("exchanges completed bearer and serves package without app nav", () => {

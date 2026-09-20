@@ -20,6 +20,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadRawParticipantCredentialToken } from "./credentials";
 import { SigningError } from "./errors";
+import { isSigningWorkSuspended } from "./work-suspension";
 
 export const PARTICIPANT_INVITATION_WORK_TYPE =
   "PARTICIPANT_INVITATION_EMAIL" as const;
@@ -133,12 +134,20 @@ export type SigningEmailSendResult =
  * Message bodies contain invitation/package URLs and are never logged.
  *
  * SIGNING_EMAIL_SANDBOX=true accepts without calling Resend (dev/tests only).
- * Do not enable in production.
+ * Sandbox is rejected when VERCEL_ENV=production so misconfiguration cannot
+ * mark deliveries accepted without sending.
  */
 export async function sendSigningEmail(
   message: SigningEmailMessage,
 ): Promise<SigningEmailSendResult> {
   if (process.env.SIGNING_EMAIL_SANDBOX?.trim() === "true") {
+    if (process.env.VERCEL_ENV?.trim() === "production") {
+      return {
+        ok: false,
+        failureDetailSafe:
+          "Signing email sandbox is not allowed in production; message was not sent.",
+      };
+    }
     const toFingerprint = message.to.trim().toLowerCase().slice(0, 64);
     return {
       ok: true,
@@ -290,6 +299,15 @@ export async function processParticipantInvitationWorkItem(options: {
   workItemId: string;
   rawToken?: string;
 }): Promise<ProcessInvitationResult> {
+  if (await isSigningWorkSuspended(options.admin)) {
+    return {
+      workItemId: options.workItemId,
+      deliveryInstructionId: "",
+      outcome: "FAILED",
+      failureDetailSafe: "Signing work is suspended; invitation was not sent.",
+    };
+  }
+
   const { data: workItem, error: workItemError } = await options.admin
     .from("signing_work_items")
     .select("*")
@@ -334,6 +352,41 @@ export async function processParticipantInvitationWorkItem(options: {
     .eq("id", workItem.signing_id as string)
     .maybeSingle();
   if (signingError) throw new Error(signingError.message);
+
+  // Recheck immediately before external side effect (suspension race).
+  if (await isSigningWorkSuspended(options.admin)) {
+    const { data: attemptCountRows } = await options.admin
+      .from("signing_delivery_attempts")
+      .select("attempt_number")
+      .eq("delivery_instruction_id", deliveryInstructionId)
+      .order("attempt_number", { ascending: false })
+      .limit(1);
+    const attemptNumber =
+      ((attemptCountRows?.[0]?.attempt_number as number | undefined) ?? 0) + 1;
+    await options.admin.from("signing_delivery_attempts").insert({
+      signing_id: workItem.signing_id as string,
+      delivery_instruction_id: deliveryInstructionId,
+      attempt_number: attemptNumber,
+      outcome: "FAILED",
+      failure_detail_safe: "Signing work is suspended; invitation was not sent.",
+    });
+    await options.admin
+      .from("signing_work_items")
+      .update({
+        processing_state: "FAILED",
+        last_error_safe: "Signing work is suspended; invitation was not sent.",
+        next_attempt_at: new Date(Date.now() + 300_000).toISOString(),
+        claimed_by: null,
+        claimed_until: null,
+      })
+      .eq("id", options.workItemId);
+    return {
+      workItemId: options.workItemId,
+      deliveryInstructionId,
+      outcome: "FAILED",
+      failureDetailSafe: "Signing work is suspended; invitation was not sent.",
+    };
+  }
 
   await options.admin
     .from("signing_work_items")

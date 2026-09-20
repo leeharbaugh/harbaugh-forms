@@ -208,6 +208,21 @@ export async function validateCompletedPackageSession(
     return null;
   }
 
+  const copyRecipientId =
+    (session.signing_copy_recipient_id as string | null) ?? null;
+  if (copyRecipientId) {
+    const { data: copyRecipient, error: copyError } = await admin
+      .from("signing_copy_recipients")
+      .select("id, status")
+      .eq("id", copyRecipientId)
+      .eq("signing_id", session.signing_id as string)
+      .maybeSingle();
+    if (copyError) throw new Error(copyError.message);
+    if (!copyRecipient || copyRecipient.status !== "ACTIVE") {
+      return null;
+    }
+  }
+
   let brokerageName: string | null = null;
   const orgId = signing.originating_organization_id as string | null;
   if (orgId) {
@@ -225,8 +240,7 @@ export async function validateCompletedPackageSession(
     credentialId: session.completed_package_credential_id as string,
     signingParticipantId:
       (session.signing_participant_id as string | null) ?? null,
-    signingCopyRecipientId:
-      (session.signing_copy_recipient_id as string | null) ?? null,
+    signingCopyRecipientId: copyRecipientId,
     expiresAt,
     signingTitle: (signing.title as string | null) ?? "Completed Signing",
     senderDisplayName:

@@ -1349,7 +1349,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signing completion-delivery PR review (next):** Review and harden `feat/native-signing-completion-delivery` before merge. Do not enable production Native Signing. Do not begin drawn-signature implementation. Preserve F1–F11 + R12 Stage 1–6 + TC + completion-delivery tests. Dev needs wrap keys + optional completed-package wrap keys + `SIGNING_WORKER_SECRET` for dispatch; finalization needs event-chain keys.
+1. **Native Signing completion-delivery PR #42 review fixes (next):** Review and squash-merge only after confirming copy-recipient remove revoke, suspension gates (incl. invitation/finalization), and sandbox production reject. Do not enable production Native Signing. Do not begin drawn-signature implementation. Dev needs wrap keys + `SIGNING_WORKER_SECRET`; finalization needs event-chain keys. Restore credential/session gating remains residual.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically

@@ -425,6 +425,35 @@ export async function processCompletedPackageDeliveryWorkItem(options: {
     );
   }
 
+  // Block delivery to soft-removed copy recipients even if credential row lags.
+  const copyRecipientId = instruction.signing_copy_recipient_id as
+    | string
+    | null;
+  if (copyRecipientId) {
+    const { data: copyRecipient, error: copyError } = await options.admin
+      .from("signing_copy_recipients")
+      .select("id, status")
+      .eq("id", copyRecipientId)
+      .eq("signing_id", workItem.signing_id as string)
+      .maybeSingle();
+    if (copyError) throw new Error(copyError.message);
+    if (!copyRecipient || copyRecipient.status !== "ACTIVE") {
+      await failWorkItem({
+        admin: options.admin,
+        workItemId: options.workItemId,
+        workerId: options.workerId,
+        errorSafe: "Copy recipient is no longer active; delivery cancelled.",
+        retryDelaySeconds: 86_400 * 365,
+      });
+      return {
+        workItemId: options.workItemId,
+        deliveryInstructionId,
+        outcome: "SKIPPED",
+        failureDetailSafe: "Copy recipient is no longer active.",
+      };
+    }
+  }
+
   const recipientEmail = String(
     instruction.recipient_email_snapshot ?? "",
   ).trim();
@@ -437,6 +466,23 @@ export async function processCompletedPackageDeliveryWorkItem(options: {
         "Recipient email is missing or invalid; completed package was not sent.",
     };
   } else {
+    // Recheck suspension immediately before external email side effect.
+    if (await isSigningWorkSuspended(options.admin)) {
+      await failWorkItem({
+        admin: options.admin,
+        workItemId: options.workItemId,
+        workerId: options.workerId,
+        errorSafe: "Signing work is suspended.",
+        retryDelaySeconds: 300,
+      });
+      return {
+        workItemId: options.workItemId,
+        deliveryInstructionId,
+        outcome: "SUSPENDED",
+        failureDetailSafe: "Signing work is suspended.",
+      };
+    }
+
     const rawToken =
       options.rawToken ??
       (await loadRawCompletedPackageToken({
@@ -463,7 +509,7 @@ export async function processCompletedPackageDeliveryWorkItem(options: {
       : {
           ok: false,
           failureDetailSafe:
-            "Completed-package link could not be recovered; re-issue the credential.",
+            "Completed-package link could not be recovered; use Replace Link.",
         };
   }
 
@@ -619,12 +665,18 @@ export async function resendCompletedPackageWithActor(
   } else if (credential.signing_copy_recipient_id) {
     const { data: copy } = await admin
       .from("signing_copy_recipients")
-      .select("email, display_name")
+      .select("email, display_name, status")
       .eq("id", credential.signing_copy_recipient_id as string)
       .eq("signing_id", bundle.signing.id)
       .maybeSingle();
-    recipientEmail = String(copy?.email ?? "").trim();
-    recipientName = String(copy?.display_name ?? "Recipient");
+    if (!copy || copy.status !== "ACTIVE") {
+      throw new SigningError(
+        "VALIDATION_FAILED",
+        "Copy recipient is no longer active.",
+      );
+    }
+    recipientEmail = String(copy.email ?? "").trim();
+    recipientName = String(copy.display_name ?? "Recipient");
   }
 
   if (!isValidDeliveryEmail(recipientEmail)) {
@@ -634,7 +686,21 @@ export async function resendCompletedPackageWithActor(
     );
   }
 
-  return enqueueCompletedPackageDelivery({
+  // Same-link resend requires a recoverable wrapped bearer. Do not invent a
+  // new credential here — managers must use Replace Link explicitly.
+  const recoverable = await loadRawCompletedPackageToken({
+    admin,
+    signingId: bundle.signing.id,
+    credentialId: credential.id as string,
+  });
+  if (!recoverable) {
+    throw new SigningError(
+      "VALIDATION_FAILED",
+      "The current completed-package link cannot be recovered for resend. Use Replace Link to issue a new credential.",
+    );
+  }
+
+  const enqueued = await enqueueCompletedPackageDelivery({
     admin,
     signingId: bundle.signing.id,
     credentialId: credential.id as string,
@@ -647,6 +713,23 @@ export async function resendCompletedPackageWithActor(
     packageRevisionId: bundle.signing.frozen_package_revision_id,
     initiatedByUserId: actor.userId,
   });
+
+  await appendSigningEvent(admin, {
+    signingId: bundle.signing.id,
+    eventType: "COMPLETED_PACKAGE_RESEND_REQUESTED",
+    actorType: requireSigningEventActorType(bundle.authority),
+    actorUserId: actor.userId,
+    actorDisplayName: actor.displayName,
+    summary: "Completed-package resend requested",
+    detailsJson: {
+      deliveryInstructionId: enqueued.deliveryInstructionId,
+      completedPackageCredentialId: credential.id,
+      signingParticipantId: credential.signing_participant_id ?? null,
+      signingCopyRecipientId: credential.signing_copy_recipient_id ?? null,
+    },
+  });
+
+  return enqueued;
 }
 
 export async function replaceCompletedPackageCredentialWithActor(

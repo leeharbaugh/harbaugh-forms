@@ -234,13 +234,27 @@ export async function validateCompletedPackageCredential(
     return null;
   }
 
+  const copyRecipientId =
+    (credential.signing_copy_recipient_id as string | null) ?? null;
+  if (copyRecipientId) {
+    const { data: copyRecipient, error: copyError } = await admin
+      .from("signing_copy_recipients")
+      .select("id, status")
+      .eq("id", copyRecipientId)
+      .eq("signing_id", signing.id as string)
+      .maybeSingle();
+    if (copyError) throw new Error(copyError.message);
+    if (!copyRecipient || copyRecipient.status !== "ACTIVE") {
+      return null;
+    }
+  }
+
   return {
     credentialId: credential.id as string,
     signingId: signing.id as string,
     signingParticipantId:
       (credential.signing_participant_id as string | null) ?? null,
-    signingCopyRecipientId:
-      (credential.signing_copy_recipient_id as string | null) ?? null,
+    signingCopyRecipientId: copyRecipientId,
     signingTitle: signing.title as string,
   };
 }

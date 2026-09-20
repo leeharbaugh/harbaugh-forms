@@ -7,8 +7,11 @@ import { loadSigningAuthorityBundle } from "./authority-context";
 import { canManageCompletedSigningOperations } from "./completed-package-authority";
 import {
   ensureCompletedPackageCredential,
+  findCurrentCompletedPackageCredential,
+  revokeCompletedPackageCredential,
 } from "./completed-package-credentials";
 import { enqueueCompletedPackageDelivery } from "./completed-package-delivery";
+import { revokeCompletedPackageSessionsForCredential } from "./completed-package-sessions";
 import { requireSigningEventActorType } from "./event-actor";
 import { SigningError } from "./errors";
 import {
@@ -216,6 +219,66 @@ export async function softRemoveCopyRecipientWithActor(
     throw new SigningError("NOT_FOUND", "Active copy recipient not found.");
   }
 
+  const recipient = updated as SigningCopyRecipientRow;
+  const currentCredential = await findCurrentCompletedPackageCredential({
+    admin,
+    signingId: bundle.signing.id,
+    target: { signingCopyRecipientId: recipient.id },
+  });
+  let revokedCredentialId: string | null = null;
+  if (currentCredential) {
+    revokedCredentialId = currentCredential.credentialId;
+    await revokeCompletedPackageSessionsForCredential({
+      admin,
+      signingId: bundle.signing.id,
+      credentialId: currentCredential.credentialId,
+    });
+    await revokeCompletedPackageCredential({
+      admin,
+      signingId: bundle.signing.id,
+      credentialId: currentCredential.credentialId,
+      revokedByUserId: actor.userId,
+      reason: "COPY_RECIPIENT_REMOVED",
+    });
+
+    // Park pending/failed delivery work for this credential (no further sends).
+    const { data: pendingWork } = await admin
+      .from("signing_work_items")
+      .select("id, reference_json, processing_state")
+      .eq("signing_id", bundle.signing.id)
+      .eq("work_type", "DELIVER_COMPLETED_PACKAGE")
+      .in("processing_state", ["PENDING", "PROCESSING", "FAILED"]);
+    const nowIso = new Date().toISOString();
+    for (const item of pendingWork ?? []) {
+      const reference = (item.reference_json ?? {}) as Record<string, unknown>;
+      const credentialRef = String(
+        reference.completedPackageCredentialId ?? reference.credentialId ?? "",
+      );
+      if (credentialRef !== currentCredential.credentialId) continue;
+      await admin
+        .from("signing_work_items")
+        .update({
+          processing_state: "SUCCEEDED",
+          completed_at: nowIso,
+          claimed_by: null,
+          claimed_until: null,
+          last_error_safe:
+            "Cancelled: copy recipient removed; completed-package delivery stopped.",
+          next_attempt_at: null,
+        })
+        .eq("id", item.id as string)
+        .neq("processing_state", "SUCCEEDED");
+    }
+
+    await admin
+      .from("signing_delivery_instructions")
+      .update({ delivery_state: "FAILED" })
+      .eq("signing_id", bundle.signing.id)
+      .eq("signing_copy_recipient_id", recipient.id)
+      .eq("completed_package_credential_id", currentCredential.credentialId)
+      .in("delivery_state", ["PENDING", "QUEUED"]);
+  }
+
   await appendSigningEvent(admin, {
     signingId: bundle.signing.id,
     eventType: "COPY_RECIPIENT_REMOVED",
@@ -224,10 +287,11 @@ export async function softRemoveCopyRecipientWithActor(
     actorDisplayName: actor.displayName,
     summary: "Copy recipient removed",
     detailsJson: {
-      copyRecipientId: input.copyRecipientId,
+      copyRecipientId: recipient.id,
       reason,
+      revokedCredentialId,
     },
   });
 
-  return updated as SigningCopyRecipientRow;
+  return recipient;
 }
