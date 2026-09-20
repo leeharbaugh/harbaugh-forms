@@ -13,19 +13,20 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Item | Result |
 |------|--------|
 | Branch | `feat/native-signing-recovery-access` |
-| Migration (dev) | `20260920180000_native_signing_recovery_access.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| Migration (dev) | `20260920180000_native_signing_recovery_access.sql` + `20260920190000_native_signing_recovery_access_controls_guard.sql` applied to `ewxsxwzezhkeawnjvigx` |
 | Production migrations | **Not applied**; production remains unlinked/untouched |
 | Access gate | `signing_system_controls.access_suspended` **OR** `SIGNING_ACCESS_SUSPENDED=true`; missing controls row = deny |
 | Access epoch | Stamped onto credentials/sessions/handoffs at issuance; immutable on those rows; bump invalidates prior bearers |
+| Epoch anti-rollback | Retired epochs in `signing_access_epoch_history`; controls epoch cannot be restored to a retired value; controls row cannot be deleted |
 | Pre-migration rows | Backfilled to sentinel `pre-recovery-access-v0` (fail closed) |
-| Dev seed | Epoch generated + `access_suspended=false` on default row so new Stage issuances work; production/restore must start suspended + bump |
-| Email workers | Invitation + completed-package park on access suspension; finalization/combined do **not** block on access suspension alone |
+| Dev seed | Epoch generated + `access_suspended=false` on default row so new Stage issuances work; production apply of `20260920180000` must immediately suspend + bump before enablement |
+| Email workers | Invitation + completed-package park/requeue on access suspension; finalization/combined do **not** block on access suspension alone |
 | Work suspension | Unchanged (`work_suspended` / `SIGNING_WORK_SUSPENDED`) |
 | Validators | `validate:native-signing-recovery-access-dev`; `test:native-signing-recovery-access` |
 
 **Deferred:** production enablement; production worker cron/secrets/Resend; drawn evidence v2; representative signing; polished delivery UI; provider webhooks; DAST.
 
-**Recommended next:** Perform a focused architecture/security/recovery review of the Native Signing recovery-access PR before merge. Do not begin production Cron/secrets/disclosure rollout.
+**Recommended next:** Review and squash-merge PR #43. Do not begin production Cron/secrets/disclosure rollout until the merge is complete and repository state is re-baselined.
 
 ### Native Signing completion delivery + copy recipients (2026-09-19; merged 2026-09-20)
 

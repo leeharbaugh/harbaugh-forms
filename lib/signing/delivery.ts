@@ -308,18 +308,6 @@ export async function processParticipantInvitationWorkItem(options: {
       failureDetailSafe: "Signing work is suspended; invitation was not sent.",
     };
   }
-  // Access suspension parks invitation email the same way as work suspension.
-  // Finalization must not use this gate — evidence generation is independent.
-  const accessState = await getSigningExternalAccessState(options.admin);
-  if (accessState.suspended) {
-    return {
-      workItemId: options.workItemId,
-      deliveryInstructionId: "",
-      outcome: "FAILED",
-      failureDetailSafe:
-        "Signing external access is suspended; invitation was not sent.",
-    };
-  }
 
   const { data: workItem, error: workItemError } = await options.admin
     .from("signing_work_items")
@@ -332,6 +320,34 @@ export async function processParticipantInvitationWorkItem(options: {
   }
   if (workItem.work_type !== PARTICIPANT_INVITATION_WORK_TYPE) {
     throw new SigningError("INVALID_INPUT", "Unsupported delivery work type.");
+  }
+
+  // Access suspension parks after the work item is loaded so the item is
+  // requeued (not left PROCESSING until lease expiry). Finalization must not
+  // use this gate — evidence generation is independent of link authorization.
+  const accessStateEarly = await getSigningExternalAccessState(options.admin);
+  if (accessStateEarly.suspended) {
+    const detail =
+      "Signing external access is suspended; invitation was not sent.";
+    await options.admin
+      .from("signing_work_items")
+      .update({
+        processing_state: "FAILED",
+        last_error_safe: detail,
+        next_attempt_at: new Date(Date.now() + 300_000).toISOString(),
+        claimed_by: null,
+        claimed_until: null,
+      })
+      .eq("id", options.workItemId);
+    return {
+      workItemId: options.workItemId,
+      deliveryInstructionId: String(
+        ((workItem.reference_json ?? {}) as Record<string, unknown>)
+          .deliveryInstructionId ?? "",
+      ),
+      outcome: "FAILED",
+      failureDetailSafe: detail,
+    };
   }
 
   const reference = (workItem.reference_json ?? {}) as Record<string, unknown>;

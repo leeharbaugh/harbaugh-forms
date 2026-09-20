@@ -134,6 +134,7 @@ export const NATIVE_SIGNING_COMPLETION_DELIVERY_MIGRATIONS = [
  */
 export const NATIVE_SIGNING_RECOVERY_ACCESS_MIGRATIONS = [
   "20260920180000_native_signing_recovery_access",
+  "20260920190000_native_signing_recovery_access_controls_guard",
 ] as const;
 
 export type NativeSigningCeremonyTable =

@@ -136,23 +136,31 @@ export const SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE =
  * Resume separately via setSigningAccessSuspended({ suspended: false }) after
  * review; never auto-reissues credentials.
  */
+function truncateAccessNote(note: string | null | undefined): string | null {
+  if (note == null) return null;
+  const trimmed = note.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, 500);
+}
+
 export async function bumpSigningAccessEpoch(options: {
   admin: SupabaseClient;
   note?: string | null;
 }): Promise<string> {
   const newEpoch = randomUUID();
   const now = new Date().toISOString();
+  const note = truncateAccessNote(options.note) ?? "access epoch bump";
   const { data, error } = await options.admin
     .from("signing_system_controls")
     .update({
       access_suspended: true,
       access_suspended_at: now,
-      access_suspended_by_note: options.note ?? "access epoch bump",
+      access_suspended_by_note: note,
       access_resumed_at: null,
       access_resumed_by_note: null,
       access_epoch: newEpoch,
       access_epoch_bumped_at: now,
-      access_epoch_bump_note: options.note ?? null,
+      access_epoch_bump_note: note,
     })
     .eq("id", "default")
     .select("access_epoch, access_suspended")
@@ -174,17 +182,18 @@ export async function setSigningAccessSuspended(options: {
   note?: string | null;
 }): Promise<void> {
   const now = new Date().toISOString();
+  const note = truncateAccessNote(options.note);
   const patch: Record<string, unknown> = {
     access_suspended: options.suspended,
   };
   if (options.suspended) {
     patch.access_suspended_at = now;
-    patch.access_suspended_by_note = options.note ?? null;
+    patch.access_suspended_by_note = note;
     patch.access_resumed_at = null;
     patch.access_resumed_by_note = null;
   } else {
     patch.access_resumed_at = now;
-    patch.access_resumed_by_note = options.note ?? null;
+    patch.access_resumed_by_note = note;
     patch.access_suspended_at = null;
     patch.access_suspended_by_note = null;
   }

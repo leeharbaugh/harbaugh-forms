@@ -47,6 +47,13 @@ describe("Native Signing recovery access gate", () => {
       migration,
       /production\/restore must set true|PRODUCTION \/ RESTORE/i,
     );
+    const guardMigration = read(
+      `supabase/migrations/${NATIVE_SIGNING_RECOVERY_ACCESS_MIGRATIONS[1]}.sql`,
+    );
+    assert.match(guardMigration, /signing_access_epoch_history/);
+    assert.match(guardMigration, /retired epoch/i);
+    assert.match(guardMigration, /ssc_access_controls_guard/);
+    assert.match(guardMigration, /cannot be deleted/);
     for (const table of [
       "signing_participant_credentials",
       "signing_entry_sessions",
@@ -146,14 +153,24 @@ describe("Native Signing recovery access gate", () => {
       delivery,
       /Signing external access is suspended; invitation was not sent/,
     );
+    assert.match(delivery, /next_attempt_at: new Date\(Date\.now\(\) \+ 300_000\)/);
     assert.match(completedDelivery, /getSigningExternalAccessState/);
     assert.match(
       completedDelivery,
       /Signing external access is suspended/,
     );
+    assert.match(completedDelivery, /retryDelaySeconds: 300/);
     // Finalization must NOT gate on access suspension alone.
     assert.doesNotMatch(finalization, /getSigningExternalAccessState/);
     assert.doesNotMatch(finalization, /SIGNING_ACCESS_SUSPENDED/);
     assert.match(finalization, /isSigningWorkSuspended/);
+  });
+
+  it("clears device handoff cookies on unavailable and escape return-to-agent", () => {
+    const unavailable = read("app/sign/unavailable/route.ts");
+    const returnToAgent = read("app/sign/return-to-agent/page.tsx");
+    assert.match(unavailable, /buildClearedDeviceHandoffLockCookieAttributes/);
+    assert.match(unavailable, /buildClearedDeviceHandoffActiveCookieAttributes/);
+    assert.match(returnToAgent, /redirect\("\/sign\/unavailable"\)/);
   });
 });

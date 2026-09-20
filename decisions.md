@@ -5172,6 +5172,8 @@ Implement the recovery **external access gate** so restored or cloned databases 
 * Keep existing **work suspension** (`signing_system_controls.work_suspended` / `SIGNING_WORK_SUSPENDED`) for finalization, combined package, invitation, and completed-package workers.
 * Add **access suspension** (`signing_system_controls.access_suspended` **OR** env `SIGNING_ACCESS_SUSPENDED=true`) plus a global **access_epoch** stamped onto credential/session/handoff rows at issuance and checked on every validation.
 * Epoch bump is atomic with access suspension (`access_suspended=true` in the same update). Resume is a separate deliberate step and never auto-reissues credentials.
+* Changing `signing_system_controls.access_epoch` requires `access_suspended=true` in the same update; prior epochs are appended to `signing_access_epoch_history` and cannot be restored as current (anti-rollback / no silent bearer revival).
+* Controls row deletion is rejected; missing row still fails closed in app code.
 * Missing `signing_system_controls` row = fail-closed (deny). Either env or DB suspension = deny. Validation failures remain generic (null / unavailable message); epochs are never leaked.
 * Issuance refuses while suspended. Validation order: suspension → structure → epoch → hash/revoke → lifecycle → scope.
 * Pre-migration rows are backfilled to sentinel epoch `pre-recovery-access-v0` (distinct from the seeded current epoch) so old bearers fail closed rather than being blessed.
@@ -5185,14 +5187,15 @@ Worker suspension alone left invitation, ceremony, and completed-package hashes 
 
 **Consequences:**
 
-* Migration `20260920180000_native_signing_recovery_access.sql` (dev apply only in this stage).
+* Migration `20260920180000_native_signing_recovery_access.sql` and follow-up `20260920190000_native_signing_recovery_access_controls_guard.sql` (dev apply only in this stage).
 * Module `lib/signing/external-access.ts`; issuance/validation wired across participant, entry, ceremony, completed-package, handoff, and device-lock paths.
 * Validators: `validate:native-signing-recovery-access-dev`; tests: `test:native-signing-recovery-access`.
-* Production migrations, Cron, feature enablement, drawn UI, and representative signing remain separately gated.
+* Production migrations, Cron, feature enablement, drawn UI, and representative signing remain separately gated. **When production eventually applies `20260920180000`, treat the existing-row seed (`access_suspended=false`) as development-oriented: immediately set `access_suspended=true` (and bump epoch as needed) before any worker/email/ceremony enablement.**
 
 **Related files or migrations:**
 
 * `supabase/migrations/20260920180000_native_signing_recovery_access.sql`
+* `supabase/migrations/20260920190000_native_signing_recovery_access_controls_guard.sql`
 * `lib/signing/external-access.ts`
 * Credential/session modules under `lib/signing/`
 * `project_status.md`; `security.md` (local R12)

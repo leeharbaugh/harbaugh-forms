@@ -16,7 +16,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { connection } from "next/server";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
@@ -39,20 +39,21 @@ async function SignCeremonyBody() {
   await connection();
 
   if (!isNativeSigningEnabled()) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const cookieStore = await cookies();
   const rawSessionToken = cookieStore.get(SIGNING_CEREMONY_COOKIE_NAME)?.value;
   if (!rawSessionToken) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const admin = createAdminClient();
   const resolved = await resolveCeremonyBrowserSession(admin, rawSessionToken);
   if (!resolved.ok) {
     if (resolved.code === "CEREMONY_FORBIDDEN") {
-      notFound();
+      // Includes access suspension / epoch mismatch — clear cookies via unavailable.
+      redirect("/sign/unavailable");
     }
     return (
       <Card>

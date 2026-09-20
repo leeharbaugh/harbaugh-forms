@@ -46,7 +46,14 @@ export async function GET(
     return unavailableResponse();
   }
 
-  const session = await createCompletedPackageSession({ admin, credential });
+  let session;
+  try {
+    session = await createCompletedPackageSession({ admin, credential });
+  } catch {
+    // Concurrent suspension/epoch bump between validate and mint must not
+    // leak NOT_READY / suspension details via a 500.
+    return unavailableResponse();
+  }
 
   try {
     await appendCompletedPackageAccessLog({

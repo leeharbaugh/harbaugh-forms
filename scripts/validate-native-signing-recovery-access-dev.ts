@@ -98,20 +98,14 @@ async function restoreAccessControls(
   admin: SupabaseClient,
   saved: SavedAccessState,
 ): Promise<void> {
-  const { error } = await admin
-    .from("signing_system_controls")
-    .update({
-      access_suspended: saved.access_suspended,
-      access_epoch: saved.access_epoch,
-      access_suspended_at: saved.access_suspended_at,
-      access_suspended_by_note: saved.access_suspended_by_note,
-      access_resumed_at: saved.access_resumed_at,
-      access_resumed_by_note: saved.access_resumed_by_note,
-      access_epoch_bumped_at: saved.access_epoch_bumped_at,
-      access_epoch_bump_note: saved.access_epoch_bump_note,
-    })
-    .eq("id", "default");
-  if (error) throw new Error(`restore access controls failed: ${error.message}`);
+  // Never restore a prior access_epoch: retired epochs are rejected by the
+  // controls guard (anti-rollback). Restore suspension only and leave the
+  // post-validator epoch in place so Stage validators keep working.
+  await setSigningAccessSuspended({
+    admin,
+    suspended: saved.access_suspended,
+    note: "recovery-access-dev restore suspension (epoch advanced; not rolled back)",
+  });
 }
 
 async function main() {
@@ -123,7 +117,7 @@ async function main() {
   }
   ok(`target project verified (${EXPECTED_REF})`);
   ok(
-    `migration expected: ${NATIVE_SIGNING_RECOVERY_ACCESS_MIGRATIONS[0]}`,
+    `migrations expected: ${NATIVE_SIGNING_RECOVERY_ACCESS_MIGRATIONS.join(", ")}`,
   );
 
   const serviceKey =
@@ -505,6 +499,26 @@ async function main() {
       fail("access_epoch UPDATE should be rejected by trigger");
     }
     ok(`access_epoch immutability enforced (${mutateEpochError.message})`);
+
+    // Controls epoch rollback to a retired epoch must be rejected.
+    const { error: rollbackError } = await admin
+      .from("signing_system_controls")
+      .update({
+        access_suspended: true,
+        access_epoch: epochA,
+      })
+      .eq("id", "default");
+    if (!rollbackError) {
+      fail("retired access_epoch reactivation should be rejected");
+    }
+    ok(`controls epoch rollback rejected (${rollbackError.message})`);
+
+    // Resume before reissue (bump left access suspended).
+    await setSigningAccessSuspended({
+      admin,
+      suspended: false,
+      note: "recovery-access-dev resume for reissue",
+    });
 
     const reissued = await issueParticipantCredentialsForActivation({
       admin,

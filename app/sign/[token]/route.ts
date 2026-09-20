@@ -49,7 +49,14 @@ export async function GET(
     return unavailableResponse();
   }
 
-  const session = await createSigningEntrySession({ admin, credential });
+  let session;
+  try {
+    session = await createSigningEntrySession({ admin, credential });
+  } catch {
+    // Concurrent suspension/epoch bump between validate and mint must not
+    // leak NOT_READY / suspension details via a 500.
+    return unavailableResponse();
+  }
 
   // A relative Location keeps the redirect independent of forwarded host
   // headers, so a spoofed Host cannot send the participant elsewhere.
