@@ -81,8 +81,12 @@ describe("Native Signing Stage 4 participant entry exchange", () => {
     assert.match(exchangeRoute, /status: 303/);
     assert.match(exchangeRoute, /"\/sign\/continue"/);
     assert.match(exchangeRoute, /buildSigningEntryCookieAttributes/);
-    // Failure of any kind is an indistinguishable bare 404.
-    assert.match(exchangeRoute, /status: 404/);
+    // Failures use a generic unavailable response (no epoch/token leakage).
+    assert.match(exchangeRoute, /status: 503/);
+    assert.match(
+      exchangeRoute,
+      /SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE/,
+    );
     assert.match(exchangeRoute, /isNativeSigningEnabled/);
   });
 

@@ -4,15 +4,12 @@
  * Mirrors the Stage 4 `/sign/{token}` credential exchange: `/sign/in-person/
  * {rawHandoffToken}` is a server-only redirector that validates the handoff,
  * moves the token out of the URL into an HttpOnly cookie scoped to `/sign`, and
- * redirects to `/sign/continue` for identity affirmation. Nothing after this
- * response carries the token in a URL, so it cannot leak through browser
- * history, bookmarks, or a Referer header.
+ * redirects to `/sign/continue` for identity affirmation.
  *
- * Every failure — feature gate off, unknown, expired, consumed, revoked, or a
- * Signing that is not In Progress — returns a bare 404 so possession of a token
- * reveals nothing. The token is never logged.
+ * Failures return a generic unavailable message. The token is never logged.
  */
 import { NextResponse } from "next/server";
+import { SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE } from "@/lib/signing/external-access";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import {
   buildSigningHandoffCookieAttributes,
@@ -22,12 +19,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const CONTINUE_PATH = "/sign/continue";
 
-function notFoundResponse(): NextResponse {
-  return new NextResponse("Not Found", {
-    status: 404,
+function unavailableResponse(): NextResponse {
+  return new NextResponse(SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE, {
+    status: 503,
     headers: {
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
+      "Content-Type": "text/plain; charset=utf-8",
     },
   });
 }
@@ -37,7 +35,7 @@ export async function GET(
   context: { params: Promise<{ token: string }> },
 ): Promise<NextResponse> {
   if (!isNativeSigningEnabled()) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   const { token } = await context.params;
@@ -47,7 +45,7 @@ export async function GET(
   // mis-click on the link does not burn the agent's handoff.
   const handoff = await validateInPersonHandoff(admin, token);
   if (!handoff) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   // A relative Location keeps the redirect independent of forwarded host

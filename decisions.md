@@ -5157,3 +5157,43 @@ The approved recovery decision requires restored systems to be non-delivering **
 * `project_status.md` (audit section)
 * This file: **Signing recovery preserves evidence and begins in a non-delivering safe mode** (2026-09-14); **Native Signing completion delivery implementation choices** (2026-09-19)
 * No SQL migration; no schema change
+
+---
+
+## Native Signing recovery credential/session access gate (2026-09-20)
+
+**Date:** 2026-09-20
+
+**Decision:**
+Implement the recovery **external access gate** so restored or cloned databases cannot silently reactivate historical participant links, ceremony sessions, completed-package links, in-person handoffs, or device handoff locks.
+
+**Chosen mechanics:**
+
+* Keep existing **work suspension** (`signing_system_controls.work_suspended` / `SIGNING_WORK_SUSPENDED`) for finalization, combined package, invitation, and completed-package workers.
+* Add **access suspension** (`signing_system_controls.access_suspended` **OR** env `SIGNING_ACCESS_SUSPENDED=true`) plus a global **access_epoch** stamped onto credential/session/handoff rows at issuance and checked on every validation.
+* Epoch bump is atomic with access suspension (`access_suspended=true` in the same update). Resume is a separate deliberate step and never auto-reissues credentials.
+* Missing `signing_system_controls` row = fail-closed (deny). Either env or DB suspension = deny. Validation failures remain generic (null / unavailable message); epochs are never leaked.
+* Issuance refuses while suspended. Validation order: suspension → structure → epoch → hash/revoke → lifecycle → scope.
+* Pre-migration rows are backfilled to sentinel epoch `pre-recovery-access-v0` (distinct from the seeded current epoch) so old bearers fail closed rather than being blessed.
+* `access_epoch` on credential/session/handoff tables is immutable via BEFORE UPDATE triggers.
+* Participant recovery reissue uses trusted-server `replaceParticipantCredentialsWithActor`; completed-package reuses existing Replace Link.
+* Invitation and completed-package email workers park/retry when access is suspended (same pattern as work suspension). **Finalization and combined-package workers do not block on access suspension alone** — evidence generation is independent of link authorization.
+* Development migration seed: generate epoch E and set `access_suspended=false` on the existing default row so Stage validators that create **new** credentials keep working. Column default remains `access_suspended=true` for uninitialized rows. **Production enablement and restore procedures must deliberately set `access_suspended=true` and bump the epoch** before any email or ceremony resumes, then re-issue links after review.
+
+**Reason:**
+Worker suspension alone left invitation, ceremony, and completed-package hashes usable after DB restore. The approved recovery decision requires restored systems to be non-delivering **and non-authorizing**. Rotating wrap keys does not invalidate hash-based authentication.
+
+**Consequences:**
+
+* Migration `20260920180000_native_signing_recovery_access.sql` (dev apply only in this stage).
+* Module `lib/signing/external-access.ts`; issuance/validation wired across participant, entry, ceremony, completed-package, handoff, and device-lock paths.
+* Validators: `validate:native-signing-recovery-access-dev`; tests: `test:native-signing-recovery-access`.
+* Production migrations, Cron, feature enablement, drawn UI, and representative signing remain separately gated.
+
+**Related files or migrations:**
+
+* `supabase/migrations/20260920180000_native_signing_recovery_access.sql`
+* `lib/signing/external-access.ts`
+* Credential/session modules under `lib/signing/`
+* `project_status.md`; `security.md` (local R12)
+* This file: **Signing recovery preserves evidence and begins in a non-delivering safe mode** (2026-09-14); **Native Signing pre-production blocker audit sequencing** (2026-09-20)

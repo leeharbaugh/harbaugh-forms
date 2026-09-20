@@ -3,7 +3,8 @@
  *
  * `/sign/completed/{rawToken}` validates the completed-package credential,
  * mints a short-lived package session cookie scoped to `/sign/package`, and
- * redirects to `/sign/package`. Failures are bare 404s. The token is never logged.
+ * redirects to `/sign/package`. Failures use a generic unavailable message.
+ * The token is never logged.
  */
 import { NextResponse } from "next/server";
 import { appendCompletedPackageAccessLog } from "@/lib/signing/completed-package-access";
@@ -12,17 +13,19 @@ import {
   buildCompletedPackageCookieAttributes,
   createCompletedPackageSession,
 } from "@/lib/signing/completed-package-sessions";
+import { SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE } from "@/lib/signing/external-access";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const PACKAGE_PATH = "/sign/package";
 
-function notFoundResponse(): NextResponse {
-  return new NextResponse("Not Found", {
-    status: 404,
+function unavailableResponse(): NextResponse {
+  return new NextResponse(SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE, {
+    status: 503,
     headers: {
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
+      "Content-Type": "text/plain; charset=utf-8",
     },
   });
 }
@@ -32,7 +35,7 @@ export async function GET(
   context: { params: Promise<{ token: string }> },
 ): Promise<NextResponse> {
   if (!isNativeSigningEnabled()) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   const { token } = await context.params;
@@ -40,7 +43,7 @@ export async function GET(
 
   const credential = await validateCompletedPackageCredential(admin, token);
   if (!credential) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   const session = await createCompletedPackageSession({ admin, credential });

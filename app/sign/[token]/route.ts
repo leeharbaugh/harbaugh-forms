@@ -7,9 +7,8 @@
  * this response carries the bearer in a URL, so it cannot leak through browser
  * history, bookmarks, or a Referer header.
  *
- * Every failure — feature gate off, unknown, revoked, superseded, or a Signing
- * that is not In Progress — returns a bare 404 so possession of a token reveals
- * nothing. The token is never logged.
+ * Failures return a generic unavailable message (no epoch/token leakage).
+ * The token is never logged.
  */
 import { NextResponse } from "next/server";
 import { validateParticipantCredential } from "@/lib/signing/credentials";
@@ -17,17 +16,19 @@ import {
   buildSigningEntryCookieAttributes,
   createSigningEntrySession,
 } from "@/lib/signing/entry-sessions";
+import { SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE } from "@/lib/signing/external-access";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const CONTINUE_PATH = "/sign/continue";
 
-function notFoundResponse(): NextResponse {
-  return new NextResponse("Not Found", {
-    status: 404,
+function unavailableResponse(): NextResponse {
+  return new NextResponse(SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE, {
+    status: 503,
     headers: {
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
+      "Content-Type": "text/plain; charset=utf-8",
     },
   });
 }
@@ -37,7 +38,7 @@ export async function GET(
   context: { params: Promise<{ token: string }> },
 ): Promise<NextResponse> {
   if (!isNativeSigningEnabled()) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   const { token } = await context.params;
@@ -45,7 +46,7 @@ export async function GET(
 
   const credential = await validateParticipantCredential(admin, token);
   if (!credential) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   const session = await createSigningEntrySession({ admin, credential });

@@ -25,6 +25,11 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { revokeSigningEntrySessionById } from "./entry-sessions";
 import { SigningError, type SigningErrorCode } from "./errors";
+import {
+  assertSigningExternalAccessActive,
+  isCredentialEpochCurrent,
+  requireIssuanceAccessEpoch,
+} from "./external-access";
 import { releasePresenceLeasesForSession } from "./presence";
 
 export const SIGNING_CEREMONY_COOKIE_NAME = "hf_signing_ceremony" as const;
@@ -156,6 +161,7 @@ export async function createCeremonyBrowserSession(options: {
     });
   }
 
+  const accessEpoch = await requireIssuanceAccessEpoch(options.admin);
   const rawSessionToken = generateCeremonySessionToken();
   // Derive every timestamp from one clock reading so the
   // `inactivity_expires_at > create_date` check cannot fail when the app
@@ -185,6 +191,7 @@ export async function createCeremonyBrowserSession(options: {
       identity_affirmed_at: createdAt,
       last_meaningful_activity_at: createdAt,
       inactivity_expires_at: inactivityExpiresAt,
+      access_epoch: accessEpoch,
     })
     .select("id, inactivity_expires_at")
     .single();
@@ -365,6 +372,10 @@ export async function resolveCeremonyBrowserSession(
   admin: SupabaseClient,
   rawSessionToken: unknown,
 ): Promise<CeremonySessionResolution> {
+  const currentEpoch = await assertSigningExternalAccessActive(admin);
+  if (!currentEpoch) {
+    return FORBIDDEN;
+  }
   if (!isWellFormedCeremonySessionToken(rawSessionToken)) {
     return FORBIDDEN;
   }
@@ -373,12 +384,20 @@ export async function resolveCeremonyBrowserSession(
   const { data: session, error } = await admin
     .from("signing_browser_sessions")
     .select(
-      "id, signing_id, signing_participant_id, signing_participant_credential_id, signing_in_person_handoff_id, session_token_hash, status, identity_affirmed_at, last_meaningful_activity_at, inactivity_expires_at",
+      "id, signing_id, signing_participant_id, signing_participant_credential_id, signing_in_person_handoff_id, session_token_hash, status, identity_affirmed_at, last_meaningful_activity_at, inactivity_expires_at, access_epoch",
     )
     .eq("session_token_hash", sessionTokenHash)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!session || !hashesMatch(sessionTokenHash, session.session_token_hash)) {
+    return FORBIDDEN;
+  }
+  if (
+    !isCredentialEpochCurrent(
+      session.access_epoch as string | null,
+      currentEpoch,
+    )
+  ) {
     return FORBIDDEN;
   }
 

@@ -18,6 +18,11 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ValidatedParticipantCredential } from "./credentials";
+import {
+  assertSigningExternalAccessActive,
+  isCredentialEpochCurrent,
+  requireIssuanceAccessEpoch,
+} from "./external-access";
 import { SigningError } from "./errors";
 
 export const SIGNING_ENTRY_COOKIE_NAME = "hf_signing_entry" as const;
@@ -76,6 +81,19 @@ export function buildSigningEntryCookieAttributes(options: {
   };
 }
 
+/** Clear entry cookie after suspension/epoch mismatch (authority remains server-side). */
+export function buildClearedSigningEntryCookieAttributes(): SigningEntryCookieAttributes {
+  return {
+    name: SIGNING_ENTRY_COOKIE_NAME,
+    value: "",
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: SIGNING_ENTRY_COOKIE_PATH,
+    maxAge: 0,
+  };
+}
+
 export type CreatedSigningEntrySession = {
   sessionId: string;
   /** In-memory only, for the Set-Cookie header. Never persisted or logged. */
@@ -101,6 +119,7 @@ export async function createSigningEntrySession(options: {
     );
   }
 
+  const accessEpoch = await requireIssuanceAccessEpoch(options.admin);
   const rawSessionToken = generateSigningEntrySessionToken();
   const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString();
 
@@ -112,6 +131,7 @@ export async function createSigningEntrySession(options: {
       signing_participant_credential_id: options.credential.credentialId,
       session_token_hash: hashSigningEntrySessionToken(rawSessionToken),
       expires_at: expiresAt,
+      access_epoch: accessEpoch,
     })
     .select("id, expires_at")
     .single();
@@ -170,6 +190,10 @@ export async function validateSigningEntrySession(
   admin: SupabaseClient,
   rawSessionToken: unknown,
 ): Promise<ValidatedSigningEntrySession | null> {
+  const currentEpoch = await assertSigningExternalAccessActive(admin);
+  if (!currentEpoch) {
+    return null;
+  }
   if (!isWellFormedSigningEntrySessionToken(rawSessionToken)) {
     return null;
   }
@@ -178,12 +202,20 @@ export async function validateSigningEntrySession(
   const { data: session, error } = await admin
     .from("signing_entry_sessions")
     .select(
-      "id, signing_id, signing_participant_id, signing_participant_credential_id, session_token_hash, expires_at, revoked_at",
+      "id, signing_id, signing_participant_id, signing_participant_credential_id, session_token_hash, expires_at, revoked_at, access_epoch",
     )
     .eq("session_token_hash", sessionTokenHash)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!session || !hashesMatch(sessionTokenHash, session.session_token_hash)) {
+    return null;
+  }
+  if (
+    !isCredentialEpochCurrent(
+      session.access_epoch as string | null,
+      currentEpoch,
+    )
+  ) {
     return null;
   }
   if (session.revoked_at) {

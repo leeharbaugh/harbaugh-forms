@@ -45,6 +45,7 @@ import {
   SIGNING_ENTRY_COOKIE_NAME,
   validateSigningEntrySession,
 } from "../lib/signing/entry-sessions.ts";
+import { PRE_RECOVERY_ACCESS_EPOCH_SENTINEL } from "../lib/signing/external-access.ts";
 import { evaluateSigningReadiness } from "../lib/signing/readiness.ts";
 import {
   getDocumentSourceStatus,
@@ -1072,6 +1073,7 @@ async function main() {
         session_token_hash: hashSigningEntrySessionToken(expiredSessionToken),
         create_date: new Date(Date.now() - 7_200_000).toISOString(),
         expires_at: new Date(Date.now() - 3_600_000).toISOString(),
+        access_epoch: PRE_RECOVERY_ACCESS_EPOCH_SENTINEL,
       })
       .select("id")
       .single();

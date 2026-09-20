@@ -33,6 +33,7 @@ import {
   newWorkerId,
   workerHoldsLease,
 } from "./work-items";
+import { getSigningExternalAccessState } from "./external-access";
 import { isSigningWorkSuspended } from "./work-suspension";
 
 export const DELIVER_COMPLETED_PACKAGE_WORK_TYPE =
@@ -320,6 +321,23 @@ export async function processCompletedPackageDeliveryWorkItem(options: {
       failureDetailSafe: "Signing work is suspended.",
     };
   }
+  // Access suspension parks completed-package email (not finalization).
+  const accessState = await getSigningExternalAccessState(options.admin);
+  if (accessState.suspended) {
+    await failWorkItem({
+      admin: options.admin,
+      workItemId: options.workItemId,
+      workerId: options.workerId,
+      errorSafe: "Signing external access is suspended.",
+      retryDelaySeconds: 300,
+    });
+    return {
+      workItemId: options.workItemId,
+      deliveryInstructionId: "",
+      outcome: "SUSPENDED",
+      failureDetailSafe: "Signing external access is suspended.",
+    };
+  }
 
   const { data: workItem, error: workItemError } = await options.admin
     .from("signing_work_items")
@@ -482,6 +500,22 @@ export async function processCompletedPackageDeliveryWorkItem(options: {
         failureDetailSafe: "Signing work is suspended.",
       };
     }
+    const accessBeforeSend = await getSigningExternalAccessState(options.admin);
+    if (accessBeforeSend.suspended) {
+      await failWorkItem({
+        admin: options.admin,
+        workItemId: options.workItemId,
+        workerId: options.workerId,
+        errorSafe: "Signing external access is suspended.",
+        retryDelaySeconds: 300,
+      });
+      return {
+        workItemId: options.workItemId,
+        deliveryInstructionId,
+        outcome: "SUSPENDED",
+        failureDetailSafe: "Signing external access is suspended.",
+      };
+    }
 
     const rawToken =
       options.rawToken ??
@@ -585,6 +619,15 @@ export async function processNextCompletedPackageDeliveryWorkItem(options: {
       deliveryInstructionId: "",
       outcome: "SUSPENDED",
       failureDetailSafe: "Signing work is suspended.",
+    };
+  }
+  const accessState = await getSigningExternalAccessState(options.admin);
+  if (accessState.suspended) {
+    return {
+      workItemId: "",
+      deliveryInstructionId: "",
+      outcome: "SUSPENDED",
+      failureDetailSafe: "Signing external access is suspended.",
     };
   }
 

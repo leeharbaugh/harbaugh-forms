@@ -4,23 +4,28 @@
 import { appendCompletedPackageAccessLog } from "@/lib/signing/completed-package-access";
 import { loadCompletedPackageArtifactForSession } from "@/lib/signing/completed-package-authority";
 import {
+  buildClearedCompletedPackageCookieAttributes,
   SIGNING_COMPLETED_PACKAGE_COOKIE_NAME,
   validateCompletedPackageSession,
 } from "@/lib/signing/completed-package-sessions";
 import { downloadArtifactBytes } from "@/lib/signing/artifacts";
+import { SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE } from "@/lib/signing/external-access";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-function notFoundResponse(): NextResponse {
-  return new NextResponse("Not Found", {
-    status: 404,
+function unavailableResponse(): NextResponse {
+  const response = new NextResponse(SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE, {
+    status: 503,
     headers: {
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
+      "Content-Type": "text/plain; charset=utf-8",
     },
   });
+  response.cookies.set(buildClearedCompletedPackageCookieAttributes());
+  return response;
 }
 
 export async function GET(
@@ -28,7 +33,7 @@ export async function GET(
   context: { params: Promise<{ artifactId: string }> },
 ): Promise<NextResponse> {
   if (!isNativeSigningEnabled()) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   const { artifactId } = await context.params;
@@ -37,13 +42,13 @@ export async function GET(
     SIGNING_COMPLETED_PACKAGE_COOKIE_NAME,
   )?.value;
   if (!rawSessionToken) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   const admin = createAdminClient();
   const session = await validateCompletedPackageSession(admin, rawSessionToken);
   if (!session) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   const artifact = await loadCompletedPackageArtifactForSession({
@@ -52,12 +57,12 @@ export async function GET(
     artifactId,
   });
   if (!artifact) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   const bytes = await downloadArtifactBytes({ admin, artifact });
   if (!bytes) {
-    return notFoundResponse();
+    return unavailableResponse();
   }
 
   try {

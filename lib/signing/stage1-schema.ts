@@ -127,6 +127,15 @@ export const NATIVE_SIGNING_COMPLETION_DELIVERY_MIGRATIONS = [
   "20260919180000_native_signing_completion_delivery",
 ] as const;
 
+/**
+ * Recovery credential/session access gate: access_suspended + access_epoch on
+ * signing_system_controls, stamped onto credential/session/handoff tables.
+ * No new tables — extends existing controls and bearer rows.
+ */
+export const NATIVE_SIGNING_RECOVERY_ACCESS_MIGRATIONS = [
+  "20260920180000_native_signing_recovery_access",
+] as const;
+
 export type NativeSigningCeremonyTable =
   (typeof NATIVE_SIGNING_CEREMONY_TABLES)[number];
 

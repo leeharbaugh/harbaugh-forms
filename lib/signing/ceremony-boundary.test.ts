@@ -321,7 +321,11 @@ describe("Native Signing ceremony boundaries", () => {
     assert.match(handoffRoute, /status: 303/);
     assert.match(handoffRoute, /Location: CONTINUE_PATH/);
     assert.match(handoffRoute, /"Referrer-Policy": "no-referrer"/);
-    assert.match(handoffRoute, /status: 404/);
+    assert.match(handoffRoute, /status: 503/);
+    assert.match(
+      handoffRoute,
+      /SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE/,
+    );
     // Validation only here: the token is consumed at affirmation.
     assert.doesNotMatch(handoffRoute, /consumeInPersonHandoff/);
     assert.match(affirmation, /consumeInPersonHandoff/);
