@@ -73,7 +73,8 @@ describe("Native Signing completion delivery", () => {
   const delivery = read("lib/signing/completed-package-delivery.ts");
   const finalization = read("lib/signing/finalization-worker.ts");
   const workerRoute = read("app/api/internal/signing-worker/route.ts");
-  const exchangeRoute = read("app/sign/completed/[token]/route.ts");
+  const exchangeRoute = read("app/api/sign/completed-package-exchange/route.ts");
+  const packageLanding = read("app/sign/completed/[publicId]/page.tsx");
   const packagePage = read("app/sign/package/page.tsx");
   const artifactRoute = read(
     "app/sign/package/artifact/[artifactId]/route.ts",
@@ -294,10 +295,13 @@ describe("Native Signing completion delivery", () => {
   });
 
   it("exchanges completed bearer and serves package without app nav", () => {
-    assert.match(exchangeRoute, /validateCompletedPackageCredential/);
+    assert.match(packageLanding, /FragmentExchangeBootstrap/);
+    assert.match(
+      exchangeRoute,
+      /validateCompletedPackageCredentialByPublicIdAndSecret/,
+    );
     assert.match(exchangeRoute, /createCompletedPackageSession/);
-    assert.match(exchangeRoute, /status: 303/);
-    assert.match(exchangeRoute, /"\/sign\/package"/);
+    assert.match(exchangeRoute, /SIGNING_PACKAGE_PATH|\/sign\/package/);
     assert.match(exchangeRoute, /no-referrer/);
     assert.match(exchangeRoute, /no-store/);
     assert.match(packagePage, /validateCompletedPackageSession/);
@@ -314,14 +318,16 @@ describe("Native Signing completion delivery", () => {
   });
 
   it("builds text-only completed-package email messages", () => {
+    const publicId = "22222222-2222-4222-8222-222222222222";
+    const secret = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
     const message = buildCompletedPackageMessage({
       recipientName: "Sam",
       recipientEmail: "sam@example.com",
       signingTitle: "Offer",
-      packageUrl: buildCompletedPackageUrl("tok"),
+      packageUrl: buildCompletedPackageUrl(publicId, secret),
     });
     assert.equal(message.to, "sam@example.com");
-    assert.match(message.textBody, /\/sign\/completed\/tok/);
+    assert.match(message.textBody, new RegExp(`/sign/completed/${publicId}#`));
     assert.doesNotMatch(message.textBody, /<html/i);
   });
 });

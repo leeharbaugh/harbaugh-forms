@@ -534,7 +534,7 @@ export async function processCompletedPackageDeliveryWorkItem(options: {
             recipientEmail,
             signingTitle:
               (signing.title as string | undefined) ?? "your Signing",
-            packageUrl: buildCompletedPackageUrl(rawToken),
+            packageUrl: buildCompletedPackageUrl(credentialId, rawToken),
             senderDisplayName:
               (signing.original_sender_display_name as string | null) ?? null,
             brokerageName,

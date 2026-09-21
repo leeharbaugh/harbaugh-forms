@@ -32,6 +32,7 @@ import {
   requireIssuanceAccessEpoch,
 } from "./external-access";
 import { SigningError } from "./errors";
+import { isUuid } from "./types";
 
 /** 32 random bytes, base64url encoded (43 characters, no padding). */
 const CREDENTIAL_TOKEN_BYTES = 32;
@@ -490,22 +491,79 @@ export type ValidatedParticipantCredential = {
   signingTitle: string;
 };
 
+/** Constant-time hash comparison for values the server itself derived. */
+function hashesMatch(left: string, right: unknown): boolean {
+  if (typeof right !== "string" || right.length !== left.length) {
+    return false;
+  }
+  return timingSafeEqual(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
+type ParticipantCredentialAuthRow = {
+  id: string;
+  signing_id: string;
+  signing_participant_id: string;
+  is_current: boolean;
+  revoked_at: string | null;
+  access_epoch: string | null;
+};
+
+async function finalizeValidatedParticipantCredential(
+  admin: SupabaseClient,
+  credential: ParticipantCredentialAuthRow,
+  currentEpoch: string,
+): Promise<ValidatedParticipantCredential | null> {
+  if (!isCredentialEpochCurrent(credential.access_epoch, currentEpoch)) {
+    return null;
+  }
+  if (credential.revoked_at || credential.is_current !== true) {
+    return null;
+  }
+
+  const [
+    { data: signing, error: signingError },
+    { data: participant, error: participantError },
+  ] = await Promise.all([
+    admin
+      .from("signings")
+      .select("id, title, lifecycle_state")
+      .eq("id", credential.signing_id)
+      .maybeSingle(),
+    admin
+      .from("signing_participants")
+      .select("id, full_name, email, participant_status")
+      .eq("id", credential.signing_participant_id)
+      .eq("signing_id", credential.signing_id)
+      .maybeSingle(),
+  ]);
+  if (signingError) throw new Error(signingError.message);
+  if (participantError) throw new Error(participantError.message);
+
+  if (!signing || signing.lifecycle_state !== "IN_PROGRESS") {
+    return null;
+  }
+  if (!participant || participant.participant_status === "REMOVED") {
+    return null;
+  }
+
+  return {
+    credentialId: credential.id,
+    signingId: signing.id as string,
+    signingParticipantId: participant.id as string,
+    participantFullName: participant.full_name as string,
+    participantEmail: participant.email as string,
+    signingTitle: signing.title as string,
+  };
+}
+
 /**
- * Resolve a raw bearer token to its participant.
- *
- * Authentication is hash-only: `token_wrapped` is never read or decrypted here.
- *
- * Returns null for every failure mode (unknown, revoked, superseded, or a
- * Signing that is not IN_PROGRESS) so possession of a token never reveals
- * whether a Signing exists or what state it is in. Draft Signings are
- * explicitly unusable: credentials only work after activation.
+ * Resolve a raw bearer token to its participant (hash lookup).
+ * Prefer `validateParticipantCredentialByPublicIdAndSecret` for emailed links.
  */
 export async function validateParticipantCredential(
   admin: SupabaseClient,
   rawToken: unknown,
 ): Promise<ValidatedParticipantCredential | null> {
-  // Order: suspension → structure → epoch → hash/revoke → lifecycle → scope.
-  // Generic null on every failure; never leak epoch values.
   const currentEpoch = await assertSigningExternalAccessActive(admin);
   if (!currentEpoch) {
     return null;
@@ -525,58 +583,70 @@ export async function validateParticipantCredential(
   if (!credential) {
     return null;
   }
+
+  return finalizeValidatedParticipantCredential(
+    admin,
+    {
+      id: credential.id as string,
+      signing_id: credential.signing_id as string,
+      signing_participant_id: credential.signing_participant_id as string,
+      is_current: credential.is_current as boolean,
+      revoked_at: (credential.revoked_at as string | null) ?? null,
+      access_epoch: (credential.access_epoch as string | null) ?? null,
+    },
+    currentEpoch,
+  );
+}
+
+/**
+ * Path-safe exchange: nonsecret public credential UUID + fragment secret.
+ * Public ID alone never authenticates. Generic null on every failure.
+ */
+export async function validateParticipantCredentialByPublicIdAndSecret(
+  admin: SupabaseClient,
+  publicId: unknown,
+  rawSecret: unknown,
+): Promise<ValidatedParticipantCredential | null> {
+  const currentEpoch = await assertSigningExternalAccessActive(admin);
+  if (!currentEpoch) {
+    return null;
+  }
+  if (!isUuid(publicId) || !isWellFormedParticipantCredentialToken(rawSecret)) {
+    return null;
+  }
+
+  const { data: credential, error } = await admin
+    .from("signing_participant_credentials")
+    .select(
+      "id, signing_id, signing_participant_id, is_current, revoked_at, access_epoch, token_hash",
+    )
+    .eq("id", publicId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!credential) {
+    return null;
+  }
   if (
-    !isCredentialEpochCurrent(
-      credential.access_epoch as string | null,
-      currentEpoch,
+    !hashesMatch(
+      hashParticipantCredentialToken(rawSecret),
+      credential.token_hash,
     )
   ) {
     return null;
   }
-  if (credential.revoked_at || credential.is_current !== true) {
-    return null;
-  }
 
-  const [{ data: signing, error: signingError }, { data: participant, error: participantError }] =
-    await Promise.all([
-      admin
-        .from("signings")
-        .select("id, title, lifecycle_state")
-        .eq("id", credential.signing_id as string)
-        .maybeSingle(),
-      admin
-        .from("signing_participants")
-        .select("id, full_name, email, participant_status")
-        .eq("id", credential.signing_participant_id as string)
-        .eq("signing_id", credential.signing_id as string)
-        .maybeSingle(),
-    ]);
-  if (signingError) throw new Error(signingError.message);
-  if (participantError) throw new Error(participantError.message);
-
-  if (!signing || signing.lifecycle_state !== "IN_PROGRESS") {
-    return null;
-  }
-  if (!participant || participant.participant_status === "REMOVED") {
-    return null;
-  }
-
-  return {
-    credentialId: credential.id as string,
-    signingId: signing.id as string,
-    signingParticipantId: participant.id as string,
-    participantFullName: participant.full_name as string,
-    participantEmail: participant.email as string,
-    signingTitle: signing.title as string,
-  };
-}
-
-/** Constant-time hash comparison for values the server itself derived. */
-function hashesMatch(left: string, right: unknown): boolean {
-  if (typeof right !== "string" || right.length !== left.length) {
-    return false;
-  }
-  return timingSafeEqual(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+  return finalizeValidatedParticipantCredential(
+    admin,
+    {
+      id: credential.id as string,
+      signing_id: credential.signing_id as string,
+      signing_participant_id: credential.signing_participant_id as string,
+      is_current: credential.is_current as boolean,
+      revoked_at: (credential.revoked_at as string | null) ?? null,
+      access_epoch: (credential.access_epoch as string | null) ?? null,
+    },
+    currentEpoch,
+  );
 }
 
 /**

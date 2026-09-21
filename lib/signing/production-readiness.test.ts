@@ -164,7 +164,7 @@ describe("production readiness helpers", () => {
     assert.match(cronRoute, /processSigningWorkBatch/);
     assert.doesNotMatch(cronRoute, /signingId/);
     assert.match(vercelJson, /\/api\/internal\/cron\/signing-worker/);
-    assert.match(vercelJson, /0 14 \* \* \*/);
+    assert.match(vercelJson, /\*\/2 \* \* \* \*/);
     assert.match(worker, /FEATURE_DISABLED/);
     const checks = evaluateCronCodePosture({
       cronRouteExists: true,
@@ -174,8 +174,9 @@ describe("production readiness helpers", () => {
     assert.ok(checks.every((c) => c.severity === "READY"));
   });
 
-  it("records bearer-path logging as a production constraint", () => {
-    assert.match(BEARER_PATH_LOGGING_PRODUCTION_BLOCKER, /requestPath/);
+  it("records bearer-path logging as resolved for emailed links", () => {
+    assert.match(BEARER_PATH_LOGGING_PRODUCTION_BLOCKER, /fragment/);
+    assert.match(BEARER_PATH_LOGGING_PRODUCTION_BLOCKER, /in-person/);
   });
 
   it("summarizes overall severity", () => {

@@ -5230,9 +5230,9 @@ Worker suspension alone left invitation, ceremony, and completed-package hashes 
 
 **Status:** **Merged to `main`** via PR #44 squash `3ac16c9` (reviewed source `345fed3`) at `2026-09-21T19:01:16Z`. Code only — no production rollout.
 
-**Cron architecture:** Dedicated GET `/api/internal/cron/signing-worker` authenticates with `Authorization: Bearer CRON_SECRET` (Vercel-native), invokes existing `processSigningWorkBatch` with fixed batch size 5, accepts no Signing IDs or work-type overrides. Tracked `vercel.json` schedule `0 14 * * *` (Hobby-compatible daily UTC). Manual POST `/api/internal/signing-worker` retains `x-signing-worker-secret` / `SIGNING_WORKER_SECRET`. Two secrets are intentional (distinct rotation/scope).
+**Cron architecture:** Dedicated GET `/api/internal/cron/signing-worker` authenticates with `Authorization: Bearer CRON_SECRET` (Vercel-native), invokes existing `processSigningWorkBatch` with fixed batch size 5, accepts no Signing IDs or work-type overrides. Scaffolding originally tracked `vercel.json` schedule `0 14 * * *` (Hobby daily UTC); transport hardening supersedes this to Pro `*/2 * * * *` (see Pro Cron decision below). Manual POST `/api/internal/signing-worker` retains `x-signing-worker-secret` / `SIGNING_WORKER_SECRET`. Two secrets are intentional (distinct rotation/scope).
 
-**Worker latency architecture (durable decision):** Cron is a recovery/sweep schedule, not the primary processor. Participant invitations remain inline on Send/Begin (`deliverEnqueuedParticipantInvitations`). After Finish (when `FINALIZE_SIGNING` is enqueued), Retry Finalization, completed-package Resend/Replace, and Add Copy Recipient, the server schedules `kickSigningWorkProcessing` via Next.js `after()` into the same `processSigningWorkBatch` (kick batch limit 10, Signing-scoped when known). `after()`/`waitUntil` are best-effort within the invocation `maxDuration`; durable queue + daily Cron remain authoritative if a kick fails. Do not rely on fire-and-forget promises outside `after()`.
+**Worker latency architecture (durable decision):** Cron is a recovery/sweep schedule, not the primary processor. Participant invitations remain inline on Send/Begin (`deliverEnqueuedParticipantInvitations`). After Finish (when `FINALIZE_SIGNING` is enqueued), Retry Finalization, completed-package Resend/Replace, and Add Copy Recipient, the server schedules `kickSigningWorkProcessing` via Next.js `after()` into the same `processSigningWorkBatch` (kick batch limit 10, Signing-scoped when known). `after()`/`waitUntil` are best-effort within the invocation `maxDuration`; durable queue + Cron sweep remain authoritative if a kick fails. Do not rely on fire-and-forget promises outside `after()`.
 
 **Feature-OFF worker behavior:** `processSigningWorkBatch` returns `FEATURE_DISABLED` without claiming work when `NATIVE_SIGNING_ENABLED !== "true"`. Queue rows remain intact. Precedence: feature then work suspension then claim/process. Distinct from `access_suspended` (handler-level email/auth deny; finalization may proceed when work/feature allow).
 
@@ -5246,6 +5246,66 @@ Worker suspension alone left invitation, ceremony, and completed-package hashes 
 
 **DRAWN server rejection:** `adoptCeremonyMark` validates then throws `DRAWN_MARK_UNSUPPORTED` before insert/update; Stage 6 finalization fail-closed retained.
 
-**Bearer path logging (production enablement blocker):** Official Vercel docs (2026-09-21 re-check): Runtime Logs expose `requestPath` (actual path); Log Drains expose `proxy.path` including query. No Runtime Logs field redaction; Analytics `beforeSend` does not cover Runtime/Drains. Retention: Hobby 1h / Pro 1d (+ Observability Plus 30d). Completed-package bearers are non-expiring until revoked and are the highest exposure. PR #44 may merge; do not enable Native Signing in production until a focused transport-hardening PR (preferred: public credential id in path + secret in URL fragment exchanged client-side to HttpOnly session, or short-lived one-time exchange ticket then durable session). Application does not log raw URLs/tokens; no `@vercel/analytics` / middleware path capture.
+**Bearer path logging (production enablement blocker at PR #44 merge):** Official Vercel docs (2026-09-21 re-check): Runtime Logs expose `requestPath` (actual path); Log Drains expose `proxy.path` including query. No Runtime Logs field redaction; Analytics `beforeSend` does not cover Runtime/Drains. Retention: Hobby 1h / Pro 1d (+ Observability Plus 30d). Completed-package bearers are non-expiring until revoked and are the highest exposure. PR #44 merged with this documented; transport hardening follows in a dedicated stage (see below). Application does not log raw URLs/tokens; no `@vercel/analytics` / middleware path capture.
 
 **Related:** `project_status.md`; local `security.md` R13; `lib/signing/bearer-path-logging.ts`; `lib/signing/signing-worker-kick.ts`.
+
+### Native Signing emailed links use path-safe public IDs + fragment secrets (2026-09-21)
+
+**Date:** 2026-09-21
+
+**Decision:**
+Participant invitation and completed-package delivery URLs use the existing credential primary key (UUID) as a **nonsecret public ID** in the HTTP path and place the high-entropy raw secret **only** in the URL fragment:
+
+* Invitation: `{APP_BASE_URL}/sign/{credentialId}#{rawSecret}`
+* Completed package: `{APP_BASE_URL}/sign/completed/{credentialId}#{rawSecret}`
+
+GET landings render a minimal client bootstrap that reads the fragment, clears it with `history.replaceState`, and `POST`s `{ publicId, secret }` to purpose-specific exchange endpoints (`/api/sign/entry-exchange`, `/api/sign/completed-package-exchange`). Those endpoints mint the existing HttpOnly entry/package sessions and redirect to clean `/sign/continue` or `/sign/package`. The public ID alone never authenticates. No schema migration: credential `id` columns already use `gen_random_uuid()`.
+
+One-time path tickets were rejected for this stage: a ticket in the logged path is still a credential until consumed; fragment transport removes reusable secrets from infrastructure `requestPath` / `proxy.path` entirely for emailed links.
+
+**Reason:**
+Vercel Runtime Logs and Log Drains capture request path (and query for drains). Path-bearer invitation/package links would place reusable secrets in platform logs. Fragment secrets never reach the server on the initial GET.
+
+**Consequences:**
+
+* Old `/sign/<43-char-bearer>` and `/sign/completed/<43-char-bearer>` links fail closed (GET never authenticates; malformed UUID leads to generic unavailable). Re-issue invitations/package links after deploy in environments that had legacy links.
+* Resend / Replace / Revoke / access-epoch semantics are unchanged: Resend unwraps `#secret` when wrap is recoverable; Replace issues a new credential UUID + secret.
+* Replay semantics unchanged: credentials remain reusable while valid; package links non-expiring until revoke/replace/epoch; browser sessions stay short-lived.
+* Residual enablement note: `/sign/in-person/[token]` remains path-bearer for supervised device handoff (out of emailed-link scope). Classification: **acceptable controlled residual** — agent-issued relative path (not emailed), ~15 min TTL, epoch-bound, superseded on reissue, consumed at identity affirmation; log exposure lifetime is short vs non-expiring package credentials.
+* `/sign` headers include a tight CSP (`default-src 'none'`; `script-src 'self' 'unsafe-inline'` required for Next.js App Router hydration without per-request nonces; `connect-src 'self'`; `style-src 'self' 'unsafe-inline'`; `base-uri 'none'`; `form-action 'self'`; `frame-ancestors 'none'`) plus existing no-referrer / no-store / X-Robots-Tag.
+
+**Related files:** `lib/signing/bearer-transport.ts`; `components/sign/fragment-exchange-bootstrap.tsx`; `app/sign/[publicId]/page.tsx`; `app/sign/completed/[publicId]/page.tsx`; `app/api/sign/entry-exchange/route.ts`; `app/api/sign/completed-package-exchange/route.ts`; `next.config.ts`; local `security.md` R14.
+
+### Pro Cron recovery sweep every 2 minutes + Global Admin manual worker (2026-09-21)
+
+**Date:** 2026-09-21
+
+**Decision:**
+Tracked `vercel.json` Cron schedule for `/api/internal/cron/signing-worker` is `*/2 * * * *` (Pro-confirmed). Cron remains a **recovery sweep with <=2 minute lag**, not the primary latency path. Inline invitation delivery and request-driven `kickSigningWorkProcessing` stay primary.
+
+Global Admins (`app_role=ADMIN` via `requireAppAdmin`) may run **Run Signing Worker Now** on `/admin/signing-controls`: fixed batch size 5 (same as Cron), no Signing/work-type overrides, honors `FEATURE_DISABLED` / work suspension, rate-limited, and records admin audit category `security` / action `signing_worker_manual_run` (not the Signing event chain). ORG_ADMIN / PRIMARY / TC alone are denied.
+
+**Reason:**
+Hobby daily Cron left multi-hour recovery gaps when kicks fail. Pro every-2-minutes keeps the durable outbox authoritative without making Cron the hot path. Manual sweep gives operators a controlled recovery action without exposing worker secrets in the UI.
+
+**Consequences:**
+
+* Reliability target: pending work recovers within ~2 minutes via Cron even if request-driven kicks fail.
+* `vercel.json` Cron declaration is still code/config only - not proof Cron is live in a given Vercel project until that environment's Cron/secret is configured.
+* Production Cron env / feature enablement remain separately gated.
+
+**Related files:** `vercel.json`; `lib/signing/admin-signing-worker.ts`; `components/admin/admin-signing-worker-controls.tsx`; `app/admin/signing-controls/page.tsx`.
+
+### Bearer transport security review conclusions (2026-09-21)
+
+**Date:** 2026-09-21
+
+**Decision:**
+Focused security review of PR #45 confirms emailed participant and completed-package reusable secrets no longer appear in HTTP path or query. Official Vercel Runtime Logs expose `requestPath` and query/search params, not request bodies; Log Drains expose `proxy.path` (path + query) and application `message`/`stdout` — not POST JSON bodies by default. Application exchange routes do not log bodies, URLs, or secrets. Therefore the original emailed bearer-path logging blocker is **closed** for invitation and completed-package links.
+
+In-person `/sign/in-person/[token]` remains a path bearer and is classified as an **acceptable controlled residual** for this stage (not a production blocker for emailed-link enablement, and not hardened in this PR because it is architecturally device-handoff local rather than email transport).
+
+Reliability semantics: request-driven kick + inline invitations remain the primary latency path; Cron `*/2` is a recovery sweep (target ~2 minute lag, not a contractual hard SLA); Global Admin Run Worker Now is immediate manual recovery. Transient provider/platform failures may exceed the target.
+
+**Related:** local `security.md` R14 review addendum; `lib/signing/bearer-path-logging.ts`.

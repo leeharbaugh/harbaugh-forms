@@ -1,9 +1,9 @@
 /**
  * Native Signing completed-package browser sessions.
  *
- * After bearer exchange at `/sign/completed/{token}`, a short-lived HttpOnly
- * cookie scoped to `/sign/package` authorizes package listing and artifact
- * download. Sessions expire independently of non-expiring credentials.
+ * After fragment exchange at `/sign/completed/{publicId}#secret`, a short-lived
+ * HttpOnly cookie scoped to `/sign/package` authorizes package listing and
+ * artifact download. Sessions expire independently of non-expiring credentials.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";

@@ -8,6 +8,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SigningError } from "./errors";
+import { isUuid } from "./types";
 import {
   assertSigningExternalAccessActive,
   isCredentialEpochCurrent,
@@ -209,7 +210,7 @@ export type ValidatedCompletedPackageCredential = {
 
 /**
  * Hash-only bearer validation. Requires Signing COMPLETE.
- * Returns null for every failure mode.
+ * Prefer `validateCompletedPackageCredentialByPublicIdAndSecret` for emailed links.
  */
 export async function validateCompletedPackageCredential(
   admin: SupabaseClient,
@@ -234,12 +235,90 @@ export async function validateCompletedPackageCredential(
   if (!credential) {
     return null;
   }
-  if (
-    !isCredentialEpochCurrent(
-      credential.access_epoch as string | null,
-      currentEpoch,
+
+  return finalizeValidatedCompletedPackageCredential(
+    admin,
+    {
+      id: credential.id as string,
+      signing_id: credential.signing_id as string,
+      signing_participant_id:
+        (credential.signing_participant_id as string | null) ?? null,
+      signing_copy_recipient_id:
+        (credential.signing_copy_recipient_id as string | null) ?? null,
+      is_current: credential.is_current as boolean,
+      revoked_at: (credential.revoked_at as string | null) ?? null,
+      access_epoch: (credential.access_epoch as string | null) ?? null,
+    },
+    currentEpoch,
+  );
+}
+
+/**
+ * Path-safe package exchange: public credential UUID + fragment secret.
+ */
+export async function validateCompletedPackageCredentialByPublicIdAndSecret(
+  admin: SupabaseClient,
+  publicId: unknown,
+  rawSecret: unknown,
+): Promise<ValidatedCompletedPackageCredential | null> {
+  const currentEpoch = await assertSigningExternalAccessActive(admin);
+  if (!currentEpoch) {
+    return null;
+  }
+  if (!isUuid(publicId) || !isWellFormedCompletedPackageToken(rawSecret)) {
+    return null;
+  }
+
+  const { data: credential, error } = await admin
+    .from("signing_completed_package_credentials")
+    .select(
+      "id, signing_id, signing_participant_id, signing_copy_recipient_id, is_current, revoked_at, access_epoch, token_hash",
     )
+    .eq("id", publicId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!credential) {
+    return null;
+  }
+  if (
+    !hashesMatch(hashCompletedPackageToken(rawSecret), credential.token_hash)
   ) {
+    return null;
+  }
+
+  return finalizeValidatedCompletedPackageCredential(
+    admin,
+    {
+      id: credential.id as string,
+      signing_id: credential.signing_id as string,
+      signing_participant_id:
+        (credential.signing_participant_id as string | null) ?? null,
+      signing_copy_recipient_id:
+        (credential.signing_copy_recipient_id as string | null) ?? null,
+      is_current: credential.is_current as boolean,
+      revoked_at: (credential.revoked_at as string | null) ?? null,
+      access_epoch: (credential.access_epoch as string | null) ?? null,
+    },
+    currentEpoch,
+  );
+}
+
+type CompletedPackageCredentialAuthRow = {
+  id: string;
+  signing_id: string;
+  signing_participant_id: string | null;
+  signing_copy_recipient_id: string | null;
+  is_current: boolean;
+  revoked_at: string | null;
+  access_epoch: string | null;
+};
+
+async function finalizeValidatedCompletedPackageCredential(
+  admin: SupabaseClient,
+  credential: CompletedPackageCredentialAuthRow,
+  currentEpoch: string,
+): Promise<ValidatedCompletedPackageCredential | null> {
+  if (!isCredentialEpochCurrent(credential.access_epoch, currentEpoch)) {
     return null;
   }
   if (credential.revoked_at || credential.is_current !== true) {
@@ -249,15 +328,14 @@ export async function validateCompletedPackageCredential(
   const { data: signing, error: signingError } = await admin
     .from("signings")
     .select("id, title, lifecycle_state")
-    .eq("id", credential.signing_id as string)
+    .eq("id", credential.signing_id)
     .maybeSingle();
   if (signingError) throw new Error(signingError.message);
   if (!signing || signing.lifecycle_state !== "COMPLETE") {
     return null;
   }
 
-  const copyRecipientId =
-    (credential.signing_copy_recipient_id as string | null) ?? null;
+  const copyRecipientId = credential.signing_copy_recipient_id;
   if (copyRecipientId) {
     const { data: copyRecipient, error: copyError } = await admin
       .from("signing_copy_recipients")
@@ -272,10 +350,9 @@ export async function validateCompletedPackageCredential(
   }
 
   return {
-    credentialId: credential.id as string,
+    credentialId: credential.id,
     signingId: signing.id as string,
-    signingParticipantId:
-      (credential.signing_participant_id as string | null) ?? null,
+    signingParticipantId: credential.signing_participant_id,
     signingCopyRecipientId: copyRecipientId,
     signingTitle: signing.title as string,
   };

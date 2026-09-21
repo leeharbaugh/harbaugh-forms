@@ -1,11 +1,11 @@
 /**
  * Participant Signing entry layout.
  *
- * No ordinary Harbaugh Forms workspace navigation, and no referrer: the entry
- * URL carries a bearer credential as a path segment, so outbound requests from
- * these pages must never disclose it. `next.config.ts` sends the
- * `Referrer-Policy: no-referrer` header for `/sign/:path*`; the meta tag below
- * is defence in depth for cached or statically served responses.
+ * No ordinary Harbaugh Forms workspace navigation. Invitation/package entry
+ * URLs place only a nonsecret public credential id in the path; the fragment
+ * secret is cleared client-side before continuing. `next.config.ts` sends
+ * Referrer-Policy / CSP / no-store for `/sign/:path*`; the meta tag below is
+ * defence in depth.
  */
 export default function SignEntryLayout({
   children,

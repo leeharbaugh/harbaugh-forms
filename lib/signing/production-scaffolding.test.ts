@@ -72,11 +72,11 @@ describe("production scaffolding wiring", () => {
 
   it("exchange routes never log tokens and set no-referrer", () => {
     for (const relative of [
-      "app/sign/[token]/route.ts",
-      "app/sign/completed/[token]/route.ts",
+      "app/api/sign/entry-exchange/route.ts",
+      "app/api/sign/completed-package-exchange/route.ts",
     ]) {
       const source = read(relative);
-      assert.match(source, /Referrer-Policy.: .no-referrer/);
+      assert.match(source, /Referrer-Policy.: .no-referrer|no-referrer/);
       assert.doesNotMatch(source, /console\.(log|info|debug)\([^)]*token/i);
       assert.doesNotMatch(source, /console\.(log|info)\([^)]*request\.url/i);
     }

@@ -9,19 +9,24 @@
  * The email provider is never the authority on Signing state. A failed or
  * unconfigured provider records a FAILED attempt and never undoes activation.
  *
- * Invitation URL shape: `{APP_BASE_URL}/sign/{rawToken}` — a path segment so it
- * matches the `app/sign/[token]` exchange route and is never placed in a query
- * string that could leak through a Referer header. Opening the link exchanges
- * the bearer for an HttpOnly entry-session cookie and redirects to
- * `/sign/continue`, so the bearer stops appearing in URLs after the first hop.
+ * Invitation URL shape: `{APP_BASE_URL}/sign/{credentialId}#{secret}` —
+ * path holds the nonsecret public credential UUID; the high-entropy secret is
+ * fragment-only so infrastructure request-path logs never see it. Client
+ * bootstrap POSTs publicId+secret to mint an HttpOnly entry session.
  * Raw tokens are held in memory only for the sending call: they are never
  * written to instructions, work items, events, or logs.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  buildCompletedPackageUrl,
+  buildParticipantInviteUrl,
+} from "./bearer-transport";
 import { loadRawParticipantCredentialToken } from "./credentials";
 import { SigningError } from "./errors";
 import { getSigningExternalAccessState } from "./external-access";
 import { isSigningWorkSuspended } from "./work-suspension";
+
+export { buildCompletedPackageUrl, buildParticipantInviteUrl };
 
 export const PARTICIPANT_INVITATION_WORK_TYPE =
   "PARTICIPANT_INVITATION_EMAIL" as const;
@@ -44,10 +49,6 @@ export function resolveAppBaseUrl(): string {
   return (
     process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://localhost:3000"
   ).replace(/\/+$/, "");
-}
-
-export function buildParticipantInviteUrl(rawToken: string): string {
-  return `${resolveAppBaseUrl()}/sign/${rawToken}`;
 }
 
 /**
@@ -256,10 +257,6 @@ export function buildCompletedPackageMessage(options: {
       "Possession of the link grants access to the completed documents.",
     ].join("\n"),
   };
-}
-
-export function buildCompletedPackageUrl(rawToken: string): string {
-  return `${resolveAppBaseUrl()}/sign/completed/${rawToken}`;
 }
 
 async function nextAttemptNumber(
@@ -478,7 +475,7 @@ export async function processParticipantInvitationWorkItem(options: {
           recipientName: instruction.recipient_name_snapshot as string,
           recipientEmail: instruction.recipient_email_snapshot as string,
           signingTitle: (signing?.title as string | undefined) ?? "your Signing",
-          inviteUrl: buildParticipantInviteUrl(rawToken),
+          inviteUrl: buildParticipantInviteUrl(credentialId as string, rawToken),
         }),
       )
     : {

@@ -15,9 +15,34 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Participant entry URLs carry a bearer credential as a path segment,
-        // so these responses must never leak a referrer or be cached.
+        // Signing entry/package bootstrap pages: path holds nonsecret public ids
+        // only. Fragment secrets never appear in request path/query.
         source: "/sign/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "no-store" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          {
+            // Next.js App Router without per-request nonces requires
+            // script-src 'unsafe-inline' for framework bootstrap/hydration.
+            // Keep first-party only; no third-party script hosts.
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'none'",
+              "script-src 'self' 'unsafe-inline'",
+              "connect-src 'self'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data:",
+              "font-src 'self'",
+              "base-uri 'none'",
+              "form-action 'self'",
+              "frame-ancestors 'none'",
+            ].join("; "),
+          },
+        ],
+      },
+      {
+        source: "/api/sign/:path*",
         headers: [
           { key: "Referrer-Policy", value: "no-referrer" },
           { key: "Cache-Control", value: "no-store" },
