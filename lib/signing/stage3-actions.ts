@@ -18,6 +18,7 @@ import {
   removeDraftSigningFieldWithActor,
   upsertDraftSigningFieldWithActor,
 } from "@/lib/signing/draft-fields";
+import { requireManageableDraftSigning } from "@/lib/signing/manage";
 import { SigningError } from "@/lib/signing/errors";
 import { NativeSigningDisabledError } from "@/lib/signing/feature-gate";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -170,3 +171,52 @@ export async function removeDraftSigningFieldAction(input: {
  * Internal promotion remains available only to server/tests/validators via
  * `promotePackageRevisionFromDraftWithActor`.
  */
+
+/**
+ * List AVAILABLE Packet Forms on Packets owned by the actor that may be added
+ * to this Draft Signing. Used by the manager Draft preparation UI.
+ */
+export async function listPacketFormsForDraftAction(input: {
+  signingId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin(async (actor, admin) => {
+    await requireManageableDraftSigning(actor, input.signingId, admin);
+
+    const { data: packets, error: packetError } = await admin
+      .from("packets")
+      .select("id, label, status")
+      .eq("owner_user_id", actor.userId)
+      .neq("status", "DELETED")
+      .order("id", { ascending: false })
+      .limit(50);
+    if (packetError) throw new Error(packetError.message);
+
+    const packetIds = (packets ?? []).map((row) => row.id as number);
+    if (packetIds.length === 0) {
+      return [];
+    }
+
+    const packetLabelById = new Map(
+      (packets ?? []).map((row) => [
+        row.id as number,
+        (row.label as string | null) ?? null,
+      ]),
+    );
+
+    const { data: forms, error: formError } = await admin
+      .from("packet_forms")
+      .select("id, packet_id, document_name, status")
+      .in("packet_id", packetIds)
+      .eq("status", "AVAILABLE")
+      .order("id", { ascending: false })
+      .limit(100);
+    if (formError) throw new Error(formError.message);
+
+    return (forms ?? []).map((form) => ({
+      id: form.id as number,
+      packetId: form.packet_id as number,
+      documentName: String(form.document_name ?? "Document"),
+      packetLabel: packetLabelById.get(form.packet_id as number) ?? null,
+    }));
+  });
+}

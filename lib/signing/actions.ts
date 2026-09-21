@@ -10,6 +10,7 @@ import {
 import {
   createDraftSigningWithActor,
   getSigningForActor,
+  listSigningsForActor,
   updateDraftSigningTitleForActor,
   type CreateDraftSigningInput,
   type UpdateDraftSigningTitleInput,
@@ -27,6 +28,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export type SigningActionResult =
   | { ok: true; signing: SigningSummary }
+  | { ok: false; code: string; error: string };
+
+export type SigningListActionResult =
+  | { ok: true; signings: SigningSummary[] }
   | { ok: false; code: string; error: string };
 
 export type DelegationActionResult =
@@ -69,6 +74,20 @@ export async function createDraftSigningAction(
     const admin = createAdminClient();
     const signing = await createDraftSigningWithActor(actor, input, admin);
     return { ok: true, signing };
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+/**
+ * Server action: list Signings visible to the authenticated Signing actor.
+ */
+export async function listSigningsAction(): Promise<SigningListActionResult> {
+  try {
+    const actor = await requireSigningActor();
+    const admin = createAdminClient();
+    const signings = await listSigningsForActor(actor, admin);
+    return { ok: true, signings };
   } catch (error) {
     return toActionError(error);
   }

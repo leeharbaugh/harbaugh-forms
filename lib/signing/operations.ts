@@ -553,3 +553,98 @@ export function resolveSigningPacketOwnerUserId(signing: SigningRow): string {
     "Signing has no responsible sender for Packet ownership checks.",
   );
 }
+
+/**
+ * List Signings the actor may read via agent, TC operator, or originating
+ * brokerage administrator authority. Trusted-server only.
+ */
+export async function listSigningsForActor(
+  actor: SigningActor,
+  admin: SupabaseClient,
+): Promise<SigningSummary[]> {
+  assertNativeSigningEnabled();
+
+  const adminOrgIds = actor.memberships
+    .filter(
+      (membership) =>
+        isActiveSigningOrganizationMembership(membership) &&
+        membership.membershipRole === "ORG_ADMIN",
+    )
+    .map((membership) => membership.organizationId);
+
+  const [
+    { data: agentRows, error: agentError },
+    { data: operatorRows, error: operatorError },
+    orgResult,
+  ] = await Promise.all([
+    admin
+      .from("signing_agent_associations")
+      .select("signing_id")
+      .eq("agent_user_id", actor.userId),
+    admin
+      .from("signing_operator_associations")
+      .select("signing_id")
+      .eq("operator_user_id", actor.userId),
+    adminOrgIds.length > 0
+      ? admin
+          .from("signings")
+          .select("id")
+          .in("originating_organization_id", adminOrgIds)
+      : Promise.resolve({ data: [] as { id: string }[], error: null }),
+  ]);
+
+  if (agentError) throw new Error(agentError.message);
+  if (operatorError) throw new Error(operatorError.message);
+  if (orgResult.error) throw new Error(orgResult.error.message);
+
+  const candidateIds = new Set<string>();
+  for (const row of agentRows ?? []) {
+    if (typeof row.signing_id === "string") candidateIds.add(row.signing_id);
+  }
+  for (const row of operatorRows ?? []) {
+    if (typeof row.signing_id === "string") candidateIds.add(row.signing_id);
+  }
+  for (const row of orgResult.data ?? []) {
+    if (typeof row.id === "string") candidateIds.add(row.id);
+  }
+
+  if (candidateIds.size === 0) {
+    return [];
+  }
+
+  const { data: signingRows, error: signingError } = await admin
+    .from("signings")
+    .select("*")
+    .in("id", [...candidateIds])
+    .order("update_date", { ascending: false });
+
+  if (signingError) throw new Error(signingError.message);
+
+  const summaries: SigningSummary[] = [];
+  for (const row of (signingRows ?? []) as SigningRow[]) {
+    const [{ data: associations, error: associationError }, operatorAssociations] =
+      await Promise.all([
+        admin
+          .from("signing_agent_associations")
+          .select("*")
+          .eq("signing_id", row.id),
+        loadSigningOperatorAssociations(admin, row.id),
+      ]);
+    if (associationError) throw new Error(associationError.message);
+
+    const agentAssociations = (associations ??
+      []) as SigningAgentAssociationRow[];
+    const authority = await evaluateLoadedSigningAuthority({
+      signing: row,
+      associations: agentAssociations,
+      operatorAssociations,
+      actorUserId: actor.userId,
+      memberships: actor.memberships,
+      admin,
+    });
+    if (!authority.canRead) continue;
+    summaries.push(toSummary(row, agentAssociations, authority));
+  }
+
+  return summaries;
+}

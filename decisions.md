@@ -5330,3 +5330,15 @@ No additional Native Signing **code** stage is required before production migrat
 **Deploy vs migrate:** Additive schema with feature OFF is compatible with the current live app. Prefer migrate+suspend+bump first, then deploy current `main` to a unique Production URL with secrets installed (feature OFF), validate, then manually promote custom domains.
 
 **Related:** `project_status.md` rollout checkpoint; local `security.md` R15.
+
+### Native Signing local QA UI exposure (2026-09-21)
+
+**Date:** 2026-09-21
+
+**Decision:**
+Manager-facing Native Signing requires a discoverable entry when `NATIVE_SIGNING_ENABLED=true`. The product ships a feature-gated **Signings** nav link, `/signings` list + Create Draft, and minimal Draft preparation controls (participant, Packet Form document, default Signature/Date Signed fields) on `/signings/[signingId]`. `/admin/signing-controls` remains Global Admin system ops only.
+
+**Reason:** Enabling the server feature gate alone left no manager navigation or Draft prep UI; Lee could not visually QA the workflow.
+
+**Related:** `project_status.md` local QA enablement note; local-only `.env.local` (`NATIVE_SIGNING_ENABLED=true`, `SIGNING_EMAIL_SANDBOX=true`).
+

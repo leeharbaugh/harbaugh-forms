@@ -1,6 +1,7 @@
 import { AuthButton } from "@/components/auth-button";
 import { AdminNavLink } from "@/components/admin-nav-link";
 import { ContactsNavLink } from "@/components/contacts-nav-link";
+import { SigningsNavLink } from "@/components/signings-nav-link";
 import { EnsureProfile } from "@/components/ensure-profile";
 import { EnvVarWarning } from "@/components/env-var-warning";
 import { navLinkClass } from "@/lib/ui/nav-styles";
@@ -15,7 +16,6 @@ type AppNavProps = {
     | "forms"
     | "collections"
     | "packets"
-    // Native Signing is feature-gated server-side and has no nav link yet.
     | "signings"
     | "settings"
     | "admin";
@@ -68,6 +68,12 @@ export function AppNav({ active }: AppNavProps) {
             >
               Packets
             </Link>
+            <Suspense fallback={null}>
+              <SigningsNavLink
+                className={navLinkClass(active === "signings")}
+                active={active === "signings"}
+              />
+            </Suspense>
             <Link
               href="/settings"
               className={navLinkClass(active === "settings")}

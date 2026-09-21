@@ -2,6 +2,7 @@
 
 import { ListPageHeader } from "@/components/list-page-header";
 import { SigningCompletedOpsPanel } from "@/components/signings/signing-completed-ops-panel";
+import { SigningDraftPrepPanel } from "@/components/signings/signing-draft-prep-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -268,6 +269,21 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
           <p>{NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE}</p>
           <p>{NATIVE_SIGNING_TYPED_ONLY_NOTICE}</p>
         </div>
+      ) : null}
+
+      {isDraft && canManage ? (
+        <SigningDraftPrepPanel
+          signingId={signingId}
+          canManage={canManage}
+          firstDocumentId={dashboard.documents[0]?.id ?? null}
+          participantsMissingFields={dashboard.participants
+            .filter((participant) => !participant.hasSignatureOrInitialsField)
+            .map((participant) => ({
+              id: participant.id,
+              fullName: participant.fullName,
+            }))}
+          onChanged={reload}
+        />
       ) : null}
 
       {isDraft ? (

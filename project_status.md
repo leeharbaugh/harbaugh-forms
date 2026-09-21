@@ -1,8 +1,22 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-21 (Native Signing production rollout checkpoint complete; no production mutation; production Native Signing unavailable)
+**As of:** 2026-09-21 (Native Signing enabled for local QA; production Native Signing unavailable)
 
 ## Current State
+
+### Native Signing local development QA enablement (2026-09-21)
+
+**Status:** Local/dev only. `.env.local` sets `NATIVE_SIGNING_ENABLED=true` and `SIGNING_EMAIL_SANDBOX=true` (gitignored). Production remains OFF/untouched.
+
+| Item | Result |
+|------|--------|
+| Manager entry | Feature-gated **Signings** nav → `/signings` list + Create Draft |
+| Detail | `/signings/[signingId]` dashboard + Draft prep panel + Send / Begin In-Person |
+| Admin | `/admin/signing-controls` remains system visibility + Run Worker Now |
+| Email | Sandbox on — no real Resend delivery from local Send |
+| Production | Untouched |
+
+**Recommended next:** Lee visual/functional Native Signing walkthrough in development before Gate A.
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
