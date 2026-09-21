@@ -1156,15 +1156,27 @@ async function main() {
       context: samContext,
       disclosureVersionId: disclosure.id,
     });
+    await expectSigningError(
+      "adopting a drawn mark while drawn evidence is unsupported",
+      "DRAWN_MARK_UNSUPPORTED",
+      () =>
+        adoptCeremonyMark({
+          admin,
+          context: samContext,
+          markKind: "SIGNATURE",
+          representationType: "DRAWN",
+          drawnPath: [
+            { x: 0, y: 0 },
+            { x: 10, y: 4 },
+          ],
+        }),
+    );
     await adoptCeremonyMark({
       admin,
       context: samContext,
       markKind: "SIGNATURE",
-      representationType: "DRAWN",
-      drawnPath: [
-        { x: 0, y: 0 },
-        { x: 10, y: 4 },
-      ],
+      representationType: "TYPED",
+      typedText: "Sam Second",
     });
     await acceptFieldPlacement({
       admin,

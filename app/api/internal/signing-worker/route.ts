@@ -49,7 +49,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const status =
     result.status === "DENIED"
       ? 401
-      : result.status === "SUSPENDED"
+      : result.status === "SUSPENDED" || result.status === "FEATURE_DISABLED"
         ? 503
         : 200;
 

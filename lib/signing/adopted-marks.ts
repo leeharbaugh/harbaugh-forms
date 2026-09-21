@@ -241,7 +241,6 @@ export async function adoptCeremonyMark(options: {
   const representationType = parseRepresentationType(options.representationType);
 
   let typedText: string | null = null;
-  let drawnPath: unknown = null;
 
   if (representationType === "TYPED") {
     if (markKind === "SIGNATURE") {
@@ -257,7 +256,13 @@ export async function adoptCeremonyMark(options: {
       typedText = parseTypedInitialsText(options.typedText);
     }
   } else {
-    drawnPath = parseDrawnPath(options.drawnPath);
+    // Validate payload shape first so malformed DRAWN requests stay INVALID_INPUT,
+    // then fail closed because drawn evidence v2 is not shipping.
+    parseDrawnPath(options.drawnPath);
+    throw new SigningError(
+      "DRAWN_MARK_UNSUPPORTED",
+      "Drawn signatures and initials are not available yet. Use a typed mark.",
+    );
   }
 
   const existing = await getAdoptedMarkForKind({
@@ -285,7 +290,7 @@ export async function adoptCeremonyMark(options: {
       .update({
         representation_type: representationType,
         typed_text: typedText,
-        drawn_path_json: drawnPath,
+        drawn_path_json: null,
         adopted_at: adoptedAt,
       })
       .eq("id", existing.markId)
@@ -310,7 +315,7 @@ export async function adoptCeremonyMark(options: {
         mark_kind: markKind,
         representation_type: representationType,
         typed_text: typedText,
-        drawn_path_json: drawnPath,
+        drawn_path_json: null,
         adopted_at: adoptedAt,
       })
       .select("*")

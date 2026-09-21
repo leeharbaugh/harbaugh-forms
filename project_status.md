@@ -1,10 +1,53 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-21 (Native Signing recovery access gate merged to `main`; production Native Signing unavailable)
+**As of:** 2026-09-21 (Native Signing production-readiness scaffolding implemented on feature branch; production Native Signing unavailable)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
+
+### Native Signing production-readiness scaffolding (2026-09-21)
+
+**Status:** Implemented on `feat/native-signing-production-readiness` (PR pending review). **Code only** — no production migrations, secrets, Cron install, Resend, disclosure ready-mark, feature enablement, or Vercel promotion.
+
+| Item | Result |
+|------|--------|
+| Cron route | `GET /api/internal/cron/signing-worker` — `Authorization: Bearer CRON_SECRET` → `processSigningWorkBatch` (batch 5) |
+| Cron declaration | `vercel.json` schedule `0 14 * * *` (Hobby-compatible daily; document Pro for tighter cadence) |
+| Worker feature-OFF | `FEATURE_DISABLED` — no claim/process; queue intact |
+| Controls remain distinct | feature / work_suspended / access_suspended+epoch |
+| Readiness validator | `validate:native-signing-production-readiness --target=dev\|prod` (read-only; ref-guarded) |
+| Migrate helper | `plan:native-signing-production-migrate` dry-run; execute unimplemented |
+| Ops UI | Completed-package panel on Signing dashboard; `/admin/signing-controls` read-only |
+| DRAWN | Server reject `DRAWN_MARK_UNSUPPORTED` at adopt |
+| Capacity notice | Personal-capacity / typed-only on Draft + Send confirm |
+| Bearer path logging | Documented production constraint (Vercel `requestPath` / Log Drain `proxy.path`) |
+
+**Recommended next:** Focused architecture/security/operations review of this PR before merge. Do not apply production migrations or configure production secrets/Cron/Resend/enablement.
+
+### Native Signing production-readiness design audit (2026-09-21, read-only)
+
+**Status:** Audit complete — findings incorporated into scaffolding above. Baseline `main` bookkeeping `b074d7f`; recovery-access squash `cd63d26`.
+
+**Migration inventory (authoritative):** **20** `native_signing*.sql` files (prior “19” estimate superseded). Stage 2 has no migration. First unapplied on production (once linked): `20260914200000_native_signing_stage1_foundation.sql`. Last pre-Signing migration: `20260913200000_scope_brokerage_settings_to_organization.sql`. No post-recovery unrelated migrations.
+
+**Safe post-migrate controls posture (before feature on):** `work_suspended=true` + `access_suspended=true` + fresh bumped production access epoch. Do **not** rely on `20260920180000` existing-row seed (`access_suspended=false`); immediately suspend+bump after that migration applies.
+
+**Control roles (durable):**
+| Control | Responsibility |
+|---------|----------------|
+| `NATIVE_SIGNING_ENABLED` | Product creation / workspace Signing UI / `/sign/*` route entry / worker permission (exact `"true"`) |
+| `work_suspended` / `SIGNING_WORK_SUSPENDED` | Parks finalization, combined, invitation, completed-package workers |
+| `access_suspended` / `SIGNING_ACCESS_SUSPENDED` + `access_epoch` | Denies external bearer/session auth; parks invitation/package email |
+
+**Hard blockers before production enablement:**
+1. Apply all 20 Native Signing migrations to production (with immediate recovery suspend+bump).
+2. Install secrets: event-chain HMAC, participant wrap, completed-package wrap, worker secret, `CRON_SECRET`; set `NEXT_PUBLIC_SITE_URL`; Resend From/domain.
+3. Counsel-approved disclosure with `is_production_ready=true`.
+4. Resolve/accept bearer-path platform logging risk (ticket exchange or log-access controls).
+5. Focused manual security pass; unique Vercel URL then promote (auto-assign custom domains stays disabled).
+
+**Genuine Lee decisions remaining:** (1) Signing email From/domain identity; (2) disclosure approval source/process; (3) confirm typed-only / personal-capacity-only first rollout.
 
 ### Native Signing recovery credential/session access gate (2026-09-20; merged 2026-09-21)
 
