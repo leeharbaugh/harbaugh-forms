@@ -9,6 +9,11 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SigningError } from "./errors";
 import {
+  assertSigningExternalAccessActive,
+  isCredentialEpochCurrent,
+  requireIssuanceAccessEpoch,
+} from "./external-access";
+import {
   generateCompletedPackageToken,
   hashCompletedPackageToken,
   isWellFormedCompletedPackageToken,
@@ -95,6 +100,7 @@ export async function issueCompletedPackageCredential(options: {
 }): Promise<IssuedCompletedPackageCredential> {
   const recipients = assertXorRecipient(options.target);
   const keyring = resolveCompletedPackageWrapKeyring();
+  const accessEpoch = await requireIssuanceAccessEpoch(options.admin);
   const credentialId = randomUUID();
   const rawToken = generateCompletedPackageToken();
   const { wrapped, wrapKeyId } = wrapCompletedPackageTokenWithKeyring({
@@ -119,6 +125,7 @@ export async function issueCompletedPackageCredential(options: {
       wrap_key_id: wrapKeyId,
       issued_by_user_id: options.issuedByUserId ?? null,
       is_current: true,
+      access_epoch: accessEpoch,
     })
     .select("id")
     .single();
@@ -208,6 +215,10 @@ export async function validateCompletedPackageCredential(
   admin: SupabaseClient,
   rawToken: unknown,
 ): Promise<ValidatedCompletedPackageCredential | null> {
+  const currentEpoch = await assertSigningExternalAccessActive(admin);
+  if (!currentEpoch) {
+    return null;
+  }
   if (!isWellFormedCompletedPackageToken(rawToken)) {
     return null;
   }
@@ -215,12 +226,23 @@ export async function validateCompletedPackageCredential(
   const { data: credential, error } = await admin
     .from("signing_completed_package_credentials")
     .select(
-      "id, signing_id, signing_participant_id, signing_copy_recipient_id, is_current, revoked_at",
+      "id, signing_id, signing_participant_id, signing_copy_recipient_id, is_current, revoked_at, access_epoch",
     )
     .eq("token_hash", hashCompletedPackageToken(rawToken))
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!credential || credential.revoked_at || credential.is_current !== true) {
+  if (!credential) {
+    return null;
+  }
+  if (
+    !isCredentialEpochCurrent(
+      credential.access_epoch as string | null,
+      currentEpoch,
+    )
+  ) {
+    return null;
+  }
+  if (credential.revoked_at || credential.is_current !== true) {
     return null;
   }
 

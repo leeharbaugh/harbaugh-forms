@@ -26,6 +26,11 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  assertSigningExternalAccessActive,
+  isCredentialEpochCurrent,
+  requireIssuanceAccessEpoch,
+} from "./external-access";
 import { SigningError } from "./errors";
 
 /** 32 random bytes, base64url encoded (43 characters, no padding). */
@@ -403,6 +408,7 @@ export async function issueParticipantCredentialsForActivation(options: {
   // Resolved once up front so a misconfigured deployment fails before any
   // credential row is written.
   const keyring = resolveCredentialWrapKeyring();
+  const accessEpoch = await requireIssuanceAccessEpoch(options.admin);
 
   for (const participantId of options.participantIds) {
     const credentialId = randomUUID();
@@ -451,6 +457,7 @@ export async function issueParticipantCredentialsForActivation(options: {
         wrap_key_id: wrapKeyId,
         issued_by_user_id: options.issuedByUserId,
         is_current: true,
+        access_epoch: accessEpoch,
       })
       .select("id")
       .single();
@@ -497,6 +504,12 @@ export async function validateParticipantCredential(
   admin: SupabaseClient,
   rawToken: unknown,
 ): Promise<ValidatedParticipantCredential | null> {
+  // Order: suspension → structure → epoch → hash/revoke → lifecycle → scope.
+  // Generic null on every failure; never leak epoch values.
+  const currentEpoch = await assertSigningExternalAccessActive(admin);
+  if (!currentEpoch) {
+    return null;
+  }
   if (!isWellFormedParticipantCredentialToken(rawToken)) {
     return null;
   }
@@ -504,12 +517,23 @@ export async function validateParticipantCredential(
   const { data: credential, error } = await admin
     .from("signing_participant_credentials")
     .select(
-      "id, signing_id, signing_participant_id, is_current, revoked_at",
+      "id, signing_id, signing_participant_id, is_current, revoked_at, access_epoch",
     )
     .eq("token_hash", hashParticipantCredentialToken(rawToken))
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!credential || credential.revoked_at || credential.is_current !== true) {
+  if (!credential) {
+    return null;
+  }
+  if (
+    !isCredentialEpochCurrent(
+      credential.access_epoch as string | null,
+      currentEpoch,
+    )
+  ) {
+    return null;
+  }
+  if (credential.revoked_at || credential.is_current !== true) {
     return null;
   }
 

@@ -26,6 +26,11 @@ import {
 } from "./event-actor";
 import { appendSigningEvent } from "./signing-events";
 import { SigningError } from "./errors";
+import {
+  assertSigningExternalAccessActive,
+  isCredentialEpochCurrent,
+  requireIssuanceAccessEpoch,
+} from "./external-access";
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { getSigningForActor } from "./operations";
 import { isUuid, type SigningActor } from "./types";
@@ -179,6 +184,7 @@ export async function createInPersonHandoffWithActor(
     .is("revoked_at", null);
   if (revokePriorError) throw new Error(revokePriorError.message);
 
+  const accessEpoch = await requireIssuanceAccessEpoch(admin);
   const rawHandoffToken = generateInPersonHandoffToken();
   const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString();
 
@@ -190,6 +196,7 @@ export async function createInPersonHandoffWithActor(
       created_by_user_id: actor.userId,
       handoff_token_hash: hashInPersonHandoffToken(rawHandoffToken),
       expires_at: expiresAt,
+      access_epoch: accessEpoch,
     })
     .select("id, expires_at")
     .single();
@@ -272,6 +279,10 @@ export async function validateInPersonHandoff(
   admin: SupabaseClient,
   rawHandoffToken: unknown,
 ): Promise<ValidatedInPersonHandoff | null> {
+  const currentEpoch = await assertSigningExternalAccessActive(admin);
+  if (!currentEpoch) {
+    return null;
+  }
   if (!isWellFormedInPersonHandoffToken(rawHandoffToken)) {
     return null;
   }
@@ -280,12 +291,20 @@ export async function validateInPersonHandoff(
   const { data: handoff, error } = await admin
     .from("signing_in_person_handoffs")
     .select(
-      "id, signing_id, signing_participant_id, handoff_token_hash, expires_at, consumed_at, revoked_at",
+      "id, signing_id, signing_participant_id, handoff_token_hash, expires_at, consumed_at, revoked_at, access_epoch",
     )
     .eq("handoff_token_hash", handoffTokenHash)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!handoff || !hashesMatch(handoffTokenHash, handoff.handoff_token_hash)) {
+    return null;
+  }
+  if (
+    !isCredentialEpochCurrent(
+      handoff.access_epoch as string | null,
+      currentEpoch,
+    )
+  ) {
     return null;
   }
   if (handoff.consumed_at || handoff.revoked_at) {

@@ -20,6 +20,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadRawParticipantCredentialToken } from "./credentials";
 import { SigningError } from "./errors";
+import { getSigningExternalAccessState } from "./external-access";
 import { isSigningWorkSuspended } from "./work-suspension";
 
 export const PARTICIPANT_INVITATION_WORK_TYPE =
@@ -321,6 +322,34 @@ export async function processParticipantInvitationWorkItem(options: {
     throw new SigningError("INVALID_INPUT", "Unsupported delivery work type.");
   }
 
+  // Access suspension parks after the work item is loaded so the item is
+  // requeued (not left PROCESSING until lease expiry). Finalization must not
+  // use this gate — evidence generation is independent of link authorization.
+  const accessStateEarly = await getSigningExternalAccessState(options.admin);
+  if (accessStateEarly.suspended) {
+    const detail =
+      "Signing external access is suspended; invitation was not sent.";
+    await options.admin
+      .from("signing_work_items")
+      .update({
+        processing_state: "FAILED",
+        last_error_safe: detail,
+        next_attempt_at: new Date(Date.now() + 300_000).toISOString(),
+        claimed_by: null,
+        claimed_until: null,
+      })
+      .eq("id", options.workItemId);
+    return {
+      workItemId: options.workItemId,
+      deliveryInstructionId: String(
+        ((workItem.reference_json ?? {}) as Record<string, unknown>)
+          .deliveryInstructionId ?? "",
+      ),
+      outcome: "FAILED",
+      failureDetailSafe: detail,
+    };
+  }
+
   const reference = (workItem.reference_json ?? {}) as Record<string, unknown>;
   const deliveryInstructionId = String(reference.deliveryInstructionId ?? "");
   const credentialId = String(
@@ -385,6 +414,43 @@ export async function processParticipantInvitationWorkItem(options: {
       deliveryInstructionId,
       outcome: "FAILED",
       failureDetailSafe: "Signing work is suspended; invitation was not sent.",
+    };
+  }
+
+  const accessBeforeSend = await getSigningExternalAccessState(options.admin);
+  if (accessBeforeSend.suspended) {
+    const { data: attemptCountRows } = await options.admin
+      .from("signing_delivery_attempts")
+      .select("attempt_number")
+      .eq("delivery_instruction_id", deliveryInstructionId)
+      .order("attempt_number", { ascending: false })
+      .limit(1);
+    const attemptNumber =
+      ((attemptCountRows?.[0]?.attempt_number as number | undefined) ?? 0) + 1;
+    const detail =
+      "Signing external access is suspended; invitation was not sent.";
+    await options.admin.from("signing_delivery_attempts").insert({
+      signing_id: workItem.signing_id as string,
+      delivery_instruction_id: deliveryInstructionId,
+      attempt_number: attemptNumber,
+      outcome: "FAILED",
+      failure_detail_safe: detail,
+    });
+    await options.admin
+      .from("signing_work_items")
+      .update({
+        processing_state: "FAILED",
+        last_error_safe: detail,
+        next_attempt_at: new Date(Date.now() + 300_000).toISOString(),
+        claimed_by: null,
+        claimed_until: null,
+      })
+      .eq("id", options.workItemId);
+    return {
+      workItemId: options.workItemId,
+      deliveryInstructionId,
+      outcome: "FAILED",
+      failureDetailSafe: detail,
     };
   }
 

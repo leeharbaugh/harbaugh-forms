@@ -8,6 +8,11 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SigningError } from "./errors";
+import {
+  assertSigningExternalAccessActive,
+  isCredentialEpochCurrent,
+  requireIssuanceAccessEpoch,
+} from "./external-access";
 import { isUuid, type SigningActor } from "./types";
 
 export const DEVICE_HANDOFF_LOCK_COOKIE_NAME = "hf_device_handoff_lock" as const;
@@ -158,6 +163,7 @@ export async function createDeviceHandoffLock(options: {
     .is("released_at", null);
   if (releasePriorError) throw new Error(releasePriorError.message);
 
+  const accessEpoch = await requireIssuanceAccessEpoch(options.admin);
   const rawLockToken = generateDeviceHandoffLockToken();
   const { data, error } = await options.admin
     .from("signing_device_handoff_locks")
@@ -168,6 +174,7 @@ export async function createDeviceHandoffLock(options: {
       lock_token_hash: hashDeviceHandoffLockToken(rawLockToken),
       expires_at: expiresAt,
       signing_in_person_handoff_id: options.handoffId ?? null,
+      access_epoch: accessEpoch,
     })
     .select("id, expires_at")
     .single();
@@ -197,6 +204,10 @@ export async function validateDeviceHandoffLock(
   admin: SupabaseClient,
   rawLockToken: unknown,
 ): Promise<ValidatedDeviceHandoffLock | null> {
+  const currentEpoch = await assertSigningExternalAccessActive(admin);
+  if (!currentEpoch) {
+    return null;
+  }
   if (!isWellFormedDeviceHandoffLockToken(rawLockToken)) {
     return null;
   }
@@ -205,12 +216,17 @@ export async function validateDeviceHandoffLock(
   const { data, error } = await admin
     .from("signing_device_handoff_locks")
     .select(
-      "id, signing_id, signing_participant_id, agent_user_id, lock_token_hash, expires_at, released_at",
+      "id, signing_id, signing_participant_id, agent_user_id, lock_token_hash, expires_at, released_at, access_epoch",
     )
     .eq("lock_token_hash", lockTokenHash)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data || !hashesMatch(lockTokenHash, data.lock_token_hash)) {
+    return null;
+  }
+  if (
+    !isCredentialEpochCurrent(data.access_epoch as string | null, currentEpoch)
+  ) {
     return null;
   }
   if (data.released_at) return null;

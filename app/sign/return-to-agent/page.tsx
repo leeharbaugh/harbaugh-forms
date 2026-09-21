@@ -15,7 +15,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { connection } from "next/server";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Return to agent | Harbaugh Forms",
@@ -28,24 +28,26 @@ export const instant = false;
  * Shared-device boundary after in-person ceremony.
  *
  * No document content. Unlock restores agent workspace access only.
+ * Invalid/expired/epoch-mismatched locks redirect to /sign/unavailable which
+ * clears device cookies so proxy cannot trap the agent after recovery bump.
  */
 export default async function ReturnToAgentPage() {
   await connection();
 
   if (!isNativeSigningEnabled()) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const cookieStore = await cookies();
   const rawLockToken = cookieStore.get(DEVICE_HANDOFF_LOCK_COOKIE_NAME)?.value;
   if (!rawLockToken) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const admin = createAdminClient();
   const lock = await validateDeviceHandoffLock(admin, rawLockToken);
   if (!lock) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const redirectPath = `/signings/${lock.signingId}`;

@@ -10,7 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { connection } from "next/server";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
@@ -38,7 +38,7 @@ async function PackageBody() {
   await connection();
 
   if (!isNativeSigningEnabled()) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const cookieStore = await cookies();
@@ -46,13 +46,13 @@ async function PackageBody() {
     SIGNING_COMPLETED_PACKAGE_COOKIE_NAME,
   )?.value;
   if (!rawSessionToken) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const admin = createAdminClient();
   const session = await validateCompletedPackageSession(admin, rawSessionToken);
   if (!session) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const artifacts = await listCompletedPackageArtifactsForSession({

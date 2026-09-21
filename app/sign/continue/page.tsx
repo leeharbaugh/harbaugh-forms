@@ -21,7 +21,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { connection } from "next/server";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
@@ -49,14 +49,14 @@ async function SignContinueBody() {
   await connection();
 
   if (!isNativeSigningEnabled()) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const cookieStore = await cookies();
   const rawEntryToken = cookieStore.get(SIGNING_ENTRY_COOKIE_NAME)?.value;
   const rawHandoffToken = cookieStore.get(SIGNING_HANDOFF_COOKIE_NAME)?.value;
   if (!rawEntryToken && !rawHandoffToken) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const admin = createAdminClient();
@@ -87,7 +87,7 @@ async function SignContinueBody() {
   }
 
   if (!signingId || !signingParticipantId) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   const context = await loadPreAffirmationContext({
@@ -97,7 +97,7 @@ async function SignContinueBody() {
     mode,
   });
   if (!context) {
-    notFound();
+    redirect("/sign/unavailable");
   }
 
   return (
