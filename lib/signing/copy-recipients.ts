@@ -165,6 +165,9 @@ export async function addCopyRecipientWithActor(
     initiatedByUserId: actor.userId,
   });
 
+  const { kickSigningWorkProcessing } = await import("./signing-worker-kick");
+  kickSigningWorkProcessing({ admin, signingId: bundle.signing.id });
+
   await appendSigningEvent(admin, {
     signingId: bundle.signing.id,
     eventType: "COPY_RECIPIENT_ADDED",

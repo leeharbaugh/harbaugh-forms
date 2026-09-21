@@ -1,6 +1,7 @@
 "use client";
 
 import { ListPageHeader } from "@/components/list-page-header";
+import { SigningCompletedOpsPanel } from "@/components/signings/signing-completed-ops-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,10 @@ import {
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { startInPersonHandoffAction } from "@/lib/signing/ceremony-agent-actions";
+import {
+  NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE,
+  NATIVE_SIGNING_TYPED_ONLY_NOTICE,
+} from "@/lib/signing/capacity-notices";
 import type { SigningDashboard } from "@/lib/signing/dashboard";
 import type { DocumentSourceStatus } from "@/lib/signing/source-drift";
 import {
@@ -259,6 +264,13 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
       ) : null}
 
       {isDraft ? (
+        <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+          <p>{NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE}</p>
+          <p>{NATIVE_SIGNING_TYPED_ONLY_NOTICE}</p>
+        </div>
+      ) : null}
+
+      {isDraft ? (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -438,6 +450,12 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         </CardContent>
       </Card>
 
+      <SigningCompletedOpsPanel
+        signingId={signingId}
+        lifecycleState={dashboard.signing.lifecycleState}
+        finalizationCondition={dashboard.signing.finalizationCondition}
+      />
+
       <ConfirmDialog
         open={pendingActivation !== null}
         title={
@@ -447,8 +465,8 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         }
         message={
           pendingActivation?.mode === "IN_PERSON"
-            ? "This freezes the documents exactly as prepared and starts the Signing. No invitation email is sent."
-            : "This freezes the documents exactly as prepared, starts the Signing, and emails each participant a personal signing link."
+            ? `This freezes the documents exactly as prepared and starts the Signing. No invitation email is sent. ${NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE}`
+            : `This freezes the documents exactly as prepared, starts the Signing, and emails each participant a personal signing link. ${NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE}`
         }
         confirmLabel={
           pendingActivation?.mode === "IN_PERSON"

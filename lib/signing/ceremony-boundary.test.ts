@@ -211,6 +211,7 @@ describe("Native Signing ceremony boundaries", () => {
       "CEREMONY_FORBIDDEN",
       "CONSENT_REQUIRED",
       "MARK_LOCKED",
+      "DRAWN_MARK_UNSUPPORTED",
       "ALREADY_FINISHED",
       "DECLINED",
       "AMENDMENT_LOCKED",

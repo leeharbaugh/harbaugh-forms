@@ -139,6 +139,9 @@ export async function requestFinalizationRetryWithActor(
     .eq("finalization_condition", "FAILED");
   if (conditionError) throw new Error(conditionError.message);
 
+  const { kickSigningWorkProcessing } = await import("./signing-worker-kick");
+  kickSigningWorkProcessing({ admin, signingId });
+
   return {
     signingId,
     finalizationCondition: "READY",

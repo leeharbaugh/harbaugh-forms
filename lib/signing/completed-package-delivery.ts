@@ -772,6 +772,9 @@ export async function resendCompletedPackageWithActor(
     },
   });
 
+  const { kickSigningWorkProcessing } = await import("./signing-worker-kick");
+  kickSigningWorkProcessing({ admin, signingId: bundle.signing.id });
+
   return enqueued;
 }
 

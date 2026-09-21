@@ -5200,3 +5200,52 @@ Worker suspension alone left invitation, ceremony, and completed-package hashes 
 * Credential/session modules under `lib/signing/`
 * `project_status.md`; `security.md` (local R12)
 * This file: **Signing recovery preserves evidence and begins in a non-delivering safe mode** (2026-09-14); **Native Signing pre-production blocker audit sequencing** (2026-09-20)
+
+### Native Signing production-readiness design audit (2026-09-21)
+
+**Status:** Accepted for planning — read-only audit; no production mutations performed.
+
+**Context:** Recovery-access gate is merged to `main` (bookkeeping `b074d7f`; squash `cd63d26`). Native Signing remains unavailable in production. This audit establishes the remaining code/config work and the safest rollout sequence.
+
+**Durable operational rules confirmed:**
+
+* Control triad remains distinct: `NATIVE_SIGNING_ENABLED` (product/UI/`/sign/*` entry), `work_suspended` / `SIGNING_WORK_SUSPENDED` (workers), `access_suspended` / `SIGNING_ACCESS_SUSPENDED` + `access_epoch` (external bearer/session auth + invitation/package email parking).
+* Worker POST `/api/internal/signing-worker` currently does **not** check the feature flag; production must keep work suspended whenever the feature is off until a scaffolding change adds fail-closed feature-off behavior.
+* Recovery migration `20260920180000` seeds `access_suspended=false` on the existing default row for development usability. Production apply must **immediately** force `access_suspended=true`, bump a fresh access epoch, verify the prior epoch is retired, and keep the feature off.
+* Migration count is **20** Native Signing SQL files (Stage 2 has none). Apply in timestamp order after `20260913200000_scope_brokerage_settings_to_organization.sql`. No unrelated post-Signing migrations exist after recovery.
+* Cron remains unimplemented (POST-only worker; no `vercel.json`). Production needs a GET Cron adapter that reuses `processSigningWorkBatch` without duplicating logic.
+* Disclosure seed is an explicit development placeholder (`is_production_ready=false`). Production ceremony fails closed via `assertProductionDisclosureReady` when `VERCEL_ENV=production`.
+* Post-Complete delivery server APIs exist; manage UI does not. First Lee-only Signing may use a minimal UI or a trusted ops path — Lee must decide.
+* Signing secrets are loaded lazily at use (wrap/event-chain/worker verify); app build/start with feature OFF does not require Signing cryptographic env vars. Email fails closed if Resend unset when a send is attempted.
+* Bearer tokens appear in `/sign/[token]` and `/sign/completed/[token]` path segments before cookie exchange. Application code does not log tokens; platform request-path logging risk remains an external verification research item before enablement.
+* Rollback after evidentiary use must be forward-fix; do not down-migrate Native Signing schema. After any Vercel rollback/promotion workflow, re-verify Auto-assign Custom Production Domains is disabled.
+
+**Recommended next implementation stage:** Production-readiness scaffolding only (Cron GET adapter + vercel.json; read-only production-readiness validator; worker feature-off fail-closed; minimal delivery/ops path or documented ops; optional DRAWN reject at adopt; production-gated suspend+bump helper). Do not apply production migrations or configure production secrets/Cron/Resend from that stage.
+
+**Lee decisions still required:** (1) Signing email From/domain identity; (2) disclosure approval source/process; (3) whether minimal delivery/ops UI is required before first real Signing; (4) typed-only / personal-capacity-only first-rollout acceptance.
+
+**Related:** `project_status.md` (production-readiness audit section); local `security.md` R13; this file's recovery-access and completion-delivery decisions.
+
+### Native Signing production-readiness scaffolding (2026-09-21)
+
+**Status:** Accepted for implementation on `feat/native-signing-production-readiness` (PR #44 review fixes applied; not merged; no production rollout).
+
+**Cron architecture:** Dedicated GET `/api/internal/cron/signing-worker` authenticates with `Authorization: Bearer CRON_SECRET` (Vercel-native), invokes existing `processSigningWorkBatch` with fixed batch size 5, accepts no Signing IDs or work-type overrides. Tracked `vercel.json` schedule `0 14 * * *` (Hobby-compatible daily UTC). Manual POST `/api/internal/signing-worker` retains `x-signing-worker-secret` / `SIGNING_WORKER_SECRET`. Two secrets are intentional (distinct rotation/scope).
+
+**Worker latency architecture (durable decision):** Cron is a recovery/sweep schedule, not the primary processor. Participant invitations remain inline on Send/Begin (`deliverEnqueuedParticipantInvitations`). After Finish (when `FINALIZE_SIGNING` is enqueued), Retry Finalization, completed-package Resend/Replace, and Add Copy Recipient, the server schedules `kickSigningWorkProcessing` via Next.js `after()` into the same `processSigningWorkBatch` (kick batch limit 10, Signing-scoped when known). `after()`/`waitUntil` are best-effort within the invocation `maxDuration`; durable queue + daily Cron remain authoritative if a kick fails. Do not rely on fire-and-forget promises outside `after()`.
+
+**Feature-OFF worker behavior:** `processSigningWorkBatch` returns `FEATURE_DISABLED` without claiming work when `NATIVE_SIGNING_ENABLED !== "true"`. Queue rows remain intact. Precedence: feature then work suspension then claim/process. Distinct from `access_suspended` (handler-level email/auth deny; finalization may proceed when work/feature allow).
+
+**Readiness validator:** `validate:native-signing-production-readiness --target=dev|prod` is read-only, requires explicit target, verifies observed Supabase project ref (`ewxsxwzezhkeawnjvigx` / `eetonalyyyssvkyfdoxh`), supports PRE_MIGRATION `NOT_INSTALLED`, and never prints secret values. A present `vercel.json` Cron declaration is code/config only — not proof Cron is live in production.
+
+**Production migrate helper:** `plan:native-signing-production-migrate` dry-run by default; requires `--production`, exact prod ref, and confirmation phrase; execute path intentionally unimplemented in scaffolding. Plan order: all migrations then `work_suspended=true` then access epoch bump (access remains suspended) then verify; feature stays OFF.
+
+**Minimal post-Complete ops UI:** Signing dashboard completed-ops panel for authorized managers (PRIMARY/CO_AGENT/active TC/ORG_ADMIN via `canManageCompletedSigningOperations`) on COMPLETE only for delivery actions; Retry Finalization when finalization FAILED (may still be IN_PROGRESS). Delivery labels: Pending / Processing / Provider Accepted / Failed (`ACCEPTED` is not Delivered). Global Admin read-only `/admin/signing-controls` for feature/work/access posture (no business Signing management; no epoch/secrets).
+
+**Personal-capacity restriction:** Create/Send UI surfaces durable notice that entity/trustee/POA/representative capacity is unsupported. Warning-only is sufficient for Lee-only rollout because there is no entity/company participant type path to hard-block.
+
+**DRAWN server rejection:** `adoptCeremonyMark` validates then throws `DRAWN_MARK_UNSUPPORTED` before insert/update; Stage 6 finalization fail-closed retained.
+
+**Bearer path logging (production enablement blocker):** Official Vercel docs (2026-09-21 re-check): Runtime Logs expose `requestPath` (actual path); Log Drains expose `proxy.path` including query. No Runtime Logs field redaction; Analytics `beforeSend` does not cover Runtime/Drains. Retention: Hobby 1h / Pro 1d (+ Observability Plus 30d). Completed-package bearers are non-expiring until revoked and are the highest exposure. PR #44 may merge; do not enable Native Signing in production until a focused transport-hardening PR (preferred: public credential id in path + secret in URL fragment exchanged client-side to HttpOnly session, or short-lived one-time exchange ticket then durable session). Application does not log raw URLs/tokens; no `@vercel/analytics` / middleware path capture.
+
+**Related:** `project_status.md`; local `security.md` R13; `lib/signing/bearer-path-logging.ts`; `lib/signing/signing-worker-kick.ts`.

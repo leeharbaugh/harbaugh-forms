@@ -3,7 +3,7 @@ import Link from "next/link";
 import { navLinkClass } from "@/lib/ui/nav-styles";
 
 type AdminSectionNavProps = {
-  active: "users" | "organizations" | "audit";
+  active: "users" | "organizations" | "audit" | "signing-controls";
   className?: string;
 };
 
@@ -36,6 +36,13 @@ export function AdminSectionNav({ active, className }: AdminSectionNavProps) {
         aria-current={active === "audit" ? "page" : undefined}
       >
         Audit Log
+      </Link>
+      <Link
+        href="/admin/signing-controls"
+        className={navLinkClass(active === "signing-controls")}
+        aria-current={active === "signing-controls" ? "page" : undefined}
+      >
+        Signing controls
       </Link>
     </nav>
   );

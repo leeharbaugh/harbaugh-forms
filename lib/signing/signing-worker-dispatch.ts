@@ -1,8 +1,11 @@
 /**
  * Internal Signing worker batch dispatch.
  *
- * Requires a shared worker secret (constant-time compare). Honors recovery-safe
- * work suspension before claiming any work.
+ * Requires a shared worker secret (constant-time compare). Honors:
+ * - Native Signing feature gate (FEATURE_DISABLED — queue unchanged)
+ * - recovery-safe work suspension (SUSPENDED — queue unchanged)
+ *
+ * Access suspension is enforced inside invitation/completed-package handlers.
  */
 import { timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -21,6 +24,7 @@ import {
   processNextFinalizationWorkItem,
   type FinalizationWorkerResult,
 } from "./finalization-worker";
+import { isNativeSigningEnabled } from "./feature-gate";
 import {
   claimSigningWorkItem,
   newWorkerId,
@@ -30,9 +34,11 @@ import { isSigningWorkSuspended } from "./work-suspension";
 export const SIGNING_WORKER_SECRET_HEADER = "x-signing-worker-secret" as const;
 export const SIGNING_WORKER_SECRET_ENV = "SIGNING_WORKER_SECRET" as const;
 export const DEFAULT_SIGNING_WORKER_BATCH_LIMIT = 5;
+/** Fixed Cron batch size — no query/body override on the Cron route. */
+export const SIGNING_CRON_WORKER_BATCH_LIMIT = 5;
 
 export type SigningWorkerBatchResult = {
-  status: "OK" | "SUSPENDED" | "DENIED";
+  status: "OK" | "SUSPENDED" | "DENIED" | "FEATURE_DISABLED";
   processed: Array<Record<string, unknown>>;
   detail?: string;
 };
@@ -92,9 +98,18 @@ export async function processSigningWorkBatch(options: {
   limit?: number;
   secretOk: boolean;
   signingId?: string;
+  env?: NodeJS.ProcessEnv;
 }): Promise<SigningWorkerBatchResult> {
   if (!options.secretOk) {
     return { status: "DENIED", processed: [], detail: "Invalid worker secret." };
+  }
+
+  if (!isNativeSigningEnabled(options.env)) {
+    return {
+      status: "FEATURE_DISABLED",
+      processed: [],
+      detail: "Native Signing is not enabled; queue left unchanged.",
+    };
   }
 
   if (await isSigningWorkSuspended(options.admin)) {
