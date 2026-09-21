@@ -101,6 +101,13 @@ describe("production readiness helpers", () => {
       }).severity,
       "READY",
     );
+    assert.equal(
+      evaluateSiteUrl({
+        target: "prod",
+        siteUrl: `${NATIVE_SIGNING_PRODUCTION_SITE_URL}/`,
+      }).severity,
+      "READY",
+    );
     assert.match(
       evaluateDisclosure({
         target: "prod",

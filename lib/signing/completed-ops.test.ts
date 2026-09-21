@@ -116,5 +116,11 @@ describe("completed ops authority surface", () => {
     assert.doesNotMatch(actions, /rawToken|token_wrapped|token_hash/);
     assert.doesNotMatch(panel, /rawToken|token_wrapped|hf_signing/);
     assert.equal(mapDeliveryStateToLabel("ACCEPTED"), "Provider Accepted");
+    assert.match(panel, /showFinalizationRetry/);
+    assert.match(panel, /lifecycleState === "COMPLETE"/);
+    assert.doesNotMatch(
+      panel,
+      /showFinalization\s*=\s*\n?\s*lifecycleState === "IN_PROGRESS"/,
+    );
   });
 });

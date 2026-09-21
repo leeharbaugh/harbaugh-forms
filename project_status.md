@@ -8,22 +8,26 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 ### Native Signing production-readiness scaffolding (2026-09-21)
 
-**Status:** Implemented on `feat/native-signing-production-readiness` (PR pending review). **Code only** — no production migrations, secrets, Cron install, Resend, disclosure ready-mark, feature enablement, or Vercel promotion.
+**Status:** Implemented on `feat/native-signing-production-readiness` (PR [#44](https://github.com/leeharbaugh/harbaugh-forms/pull/44)). **Code only** — no production migrations, secrets, Cron install, Resend, disclosure ready-mark, feature enablement, or Vercel promotion.
 
 | Item | Result |
 |------|--------|
 | Cron route | `GET /api/internal/cron/signing-worker` — `Authorization: Bearer CRON_SECRET` → `processSigningWorkBatch` (batch 5) |
-| Cron declaration | `vercel.json` schedule `0 14 * * *` (Hobby-compatible daily; document Pro for tighter cadence) |
+| Cron declaration | `vercel.json` schedule `0 14 * * *` (Hobby daily **sweep**; not the primary latency path) |
+| Request-driven kick | Finish / Retry Finalization / Resend / Replace / Add Copy → `after()` → same batch processor (kick limit 10) |
+| Invitation latency | Send/Begin still delivers invitations **inline** via `deliverEnqueuedParticipantInvitations` |
 | Worker feature-OFF | `FEATURE_DISABLED` — no claim/process; queue intact |
 | Controls remain distinct | feature / work_suspended / access_suspended+epoch |
-| Readiness validator | `validate:native-signing-production-readiness --target=dev\|prod` (read-only; ref-guarded) |
+| Readiness validator | `validate:native-signing-production-readiness --target=dev\|prod` (read-only; ref-guarded; `vercel.json` ≠ live Cron proof) |
 | Migrate helper | `plan:native-signing-production-migrate` dry-run; execute unimplemented |
-| Ops UI | Completed-package panel on Signing dashboard; `/admin/signing-controls` read-only |
+| Ops UI | Completed-package panel only on COMPLETE (or failed-finalization retry); `/admin/signing-controls` read-only |
 | DRAWN | Server reject `DRAWN_MARK_UNSUPPORTED` at adopt |
-| Capacity notice | Personal-capacity / typed-only on Draft + Send confirm |
-| Bearer path logging | Documented production constraint (Vercel `requestPath` / Log Drain `proxy.path`) |
+| Capacity notice | Personal-capacity / typed-only on Draft + Send confirm (warning only; no entity participant type) |
+| Bearer path logging | **Hard production-enablement blocker** (Vercel Runtime Logs `requestPath` / Log Drain `proxy.path`). Merge OK; enablement requires separate transport hardening PR |
 
-**Recommended next:** Focused architecture/security/operations review of this PR before merge. Do not apply production migrations or configure production secrets/Cron/Resend/enablement.
+**Hard production blockers (enablement):** 20 migrations + suspend/bump; secrets; counsel disclosure; Resend/site URL; **bearer-path logging mitigation**; feature remains OFF until deliberate enablement.
+
+**Recommended next after review:** Squash-merge PR #44, then implement bearer-link transport hardening as a focused pre-production security stage. Do not apply production migrations or configure production secrets/Cron/Resend/enablement.
 
 ### Native Signing production-readiness design audit (2026-09-21, read-only)
 

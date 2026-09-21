@@ -136,11 +136,10 @@ export function SigningCompletedOpsPanel({
     setBusy(false);
   }
 
-  const showFinalization =
-    lifecycleState === "IN_PROGRESS" || Boolean(snapshot?.failedFinalization);
+  const showFinalizationRetry = Boolean(snapshot?.failedFinalization);
   const showCompleted = lifecycleState === "COMPLETE";
 
-  if (!showFinalization && !showCompleted) {
+  if (!showFinalizationRetry && !showCompleted) {
     return null;
   }
 

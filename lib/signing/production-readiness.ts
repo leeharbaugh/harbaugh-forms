@@ -93,25 +93,39 @@ export function evaluateSiteUrl(options: {
     };
   }
   if (options.target === "prod") {
-    if (raw !== NATIVE_SIGNING_PRODUCTION_SITE_URL) {
+    let normalized = raw.replace(/\/+$/, "");
+    try {
+      const parsed = new URL(normalized);
+      normalized = `${parsed.protocol}//${parsed.host}${parsed.pathname}`.replace(
+        /\/+$/,
+        "",
+      );
+      if (parsed.protocol !== "https:") {
+        return {
+          id: "site_url",
+          severity: "UNSAFE",
+          message: "Production site URL must use HTTPS.",
+        };
+      }
+      if (/\.vercel\.app$/i.test(parsed.hostname)) {
+        return {
+          id: "site_url",
+          severity: "UNSAFE",
+          message: "Production site URL must not be a Vercel preview hostname.",
+        };
+      }
+    } catch {
+      return {
+        id: "site_url",
+        severity: "UNSAFE",
+        message: "Production site URL is not a valid URL.",
+      };
+    }
+    if (normalized !== NATIVE_SIGNING_PRODUCTION_SITE_URL) {
       return {
         id: "site_url",
         severity: "UNSAFE",
         message: `Production site URL must be ${NATIVE_SIGNING_PRODUCTION_SITE_URL} (observed non-secret host rejected).`,
-      };
-    }
-    if (!raw.startsWith("https://")) {
-      return {
-        id: "site_url",
-        severity: "UNSAFE",
-        message: "Production site URL must use HTTPS.",
-      };
-    }
-    if (/\.vercel\.app$/i.test(new URL(raw).hostname)) {
-      return {
-        id: "site_url",
-        severity: "UNSAFE",
-        message: "Production site URL must not be a Vercel preview hostname.",
       };
     }
     return {
@@ -438,7 +452,7 @@ export function evaluateCronCodePosture(options: {
       id: "cron_declaration",
       severity: options.vercelCronDeclared ? "READY" : "NOT_CONFIGURED",
       message: options.vercelCronDeclared
-        ? "vercel.json declares Signing Cron schedule."
+        ? "vercel.json declares Signing Cron schedule (code/config only — not proof Cron is live in production)."
         : "vercel.json Cron declaration missing.",
     },
     {

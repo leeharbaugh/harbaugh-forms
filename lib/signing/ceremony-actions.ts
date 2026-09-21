@@ -321,6 +321,16 @@ export async function finishCeremonyAction(): Promise<SigningCeremonyActionResul
     );
     const result = await finishParticipantSigning({ admin, session });
 
+    if (result.finalizationEnqueued) {
+      const { kickSigningWorkProcessing } = await import(
+        "@/lib/signing/signing-worker-kick"
+      );
+      kickSigningWorkProcessing({
+        admin,
+        signingId: session.signingId,
+      });
+    }
+
     const cookieStore = await cookies();
     cookieStore.set(buildClearedSigningCeremonyCookieAttributes());
     cookieStore.set(buildClearedSigningHandoffCookieAttributes());
