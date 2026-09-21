@@ -5228,7 +5228,7 @@ Worker suspension alone left invitation, ceremony, and completed-package hashes 
 
 ### Native Signing production-readiness scaffolding (2026-09-21)
 
-**Status:** Accepted for implementation on `feat/native-signing-production-readiness` (PR #44 review fixes applied; not merged; no production rollout).
+**Status:** **Merged to `main`** via PR #44 squash `3ac16c9` (reviewed source `345fed3`) at `2026-09-21T19:01:16Z`. Code only — no production rollout.
 
 **Cron architecture:** Dedicated GET `/api/internal/cron/signing-worker` authenticates with `Authorization: Bearer CRON_SECRET` (Vercel-native), invokes existing `processSigningWorkBatch` with fixed batch size 5, accepts no Signing IDs or work-type overrides. Tracked `vercel.json` schedule `0 14 * * *` (Hobby-compatible daily UTC). Manual POST `/api/internal/signing-worker` retains `x-signing-worker-secret` / `SIGNING_WORKER_SECRET`. Two secrets are intentional (distinct rotation/scope).
 

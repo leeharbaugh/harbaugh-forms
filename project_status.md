@@ -1,20 +1,22 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-21 (Native Signing production-readiness scaffolding implemented on feature branch; production Native Signing unavailable)
+**As of:** 2026-09-21 (Native Signing production-readiness scaffolding merged; production Native Signing unavailable)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
-### Native Signing production-readiness scaffolding (2026-09-21)
+### Native Signing production-readiness scaffolding (2026-09-21; merged)
 
-**Status:** Implemented on `feat/native-signing-production-readiness` (PR [#44](https://github.com/leeharbaugh/harbaugh-forms/pull/44)). **Code only** — no production migrations, secrets, Cron install, Resend, disclosure ready-mark, feature enablement, or Vercel promotion.
+**Status:** **Code merged to `main`.** Development-only scaffolding. **Default-off feature gate still required.** **No production enablement, migrations, secrets, Cron activation, Resend, or disclosure rollout.** Bearer-path platform logging remains a **hard production-enablement blocker**.
 
 | Item | Result |
 |------|--------|
+| PR | [#44](https://github.com/leeharbaugh/harbaugh-forms/pull/44) squash-merged `2026-09-21T19:01:16Z` → `main` `3ac16c9` (from reviewed `345fed3`) |
+| Feature branch | `feat/native-signing-production-readiness` deleted after merge |
 | Cron route | `GET /api/internal/cron/signing-worker` — `Authorization: Bearer CRON_SECRET` → `processSigningWorkBatch` (batch 5) |
 | Cron declaration | `vercel.json` schedule `0 14 * * *` (Hobby daily **sweep**; not the primary latency path) |
-| Request-driven kick | Finish / Retry Finalization / Resend / Replace / Add Copy → `after()` → same batch processor (kick limit 10) |
+| Request-driven kick | Finish / Retry Finalization / Resend / Replace / Add Copy → `after()` → same batch processor (kick limit 10); durable queue remains authoritative if kick fails |
 | Invitation latency | Send/Begin still delivers invitations **inline** via `deliverEnqueuedParticipantInvitations` |
 | Worker feature-OFF | `FEATURE_DISABLED` — no claim/process; queue intact |
 | Controls remain distinct | feature / work_suspended / access_suspended+epoch |
@@ -23,11 +25,14 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Ops UI | Completed-package panel only on COMPLETE (or failed-finalization retry); `/admin/signing-controls` read-only |
 | DRAWN | Server reject `DRAWN_MARK_UNSUPPORTED` at adopt |
 | Capacity notice | Personal-capacity / typed-only on Draft + Send confirm (warning only; no entity participant type) |
-| Bearer path logging | **Hard production-enablement blocker** (Vercel Runtime Logs `requestPath` / Log Drain `proxy.path`). Merge OK; enablement requires separate transport hardening PR |
+| Bearer path logging | **Hard production-enablement blocker** (Vercel Runtime Logs `requestPath` / Log Drain `proxy.path`) — not a merge blocker; requires separate transport-hardening stage before enablement |
+| Production migrations | **Not applied**; production `eetonalyyyssvkyfdoxh` remains unlinked/untouched |
+| Production Vercel | Merge Ready deployment `dpl_8oWzhXn8qYfQvgErsMQfk8hoL8Z6` / `606elo9tg` — **not promoted** to custom domains |
+| Live custom domain | Remains prior approved deployment `dpl_2CMdac6EViudwyp6TgoQbHf8htiM` / `oh3z3x7r5`; Auto-assign Custom Production Domains remains disabled |
 
 **Hard production blockers (enablement):** 20 migrations + suspend/bump; secrets; counsel disclosure; Resend/site URL; **bearer-path logging mitigation**; feature remains OFF until deliberate enablement.
 
-**Recommended next after review:** Squash-merge PR #44, then implement bearer-link transport hardening as a focused pre-production security stage. Do not apply production migrations or configure production secrets/Cron/Resend/enablement.
+**Recommended next:** Re-baseline the merged production-readiness repository, then implement bearer-link transport hardening as a focused pre-production security stage before any production migration/configuration.
 
 ### Native Signing production-readiness design audit (2026-09-21, read-only)
 
