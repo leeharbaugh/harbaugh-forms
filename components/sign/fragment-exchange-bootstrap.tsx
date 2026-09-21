@@ -14,6 +14,9 @@ const EXCHANGE_PATH: Record<ExchangeKind, string> = {
   "completed-package": "/api/sign/completed-package-exchange",
 };
 
+/** Server returns only these absolute-path redirects. */
+const ALLOWED_REDIRECTS = new Set(["/sign/continue", "/sign/package"]);
+
 const SECRET_RE = /^[A-Za-z0-9_-]{43}$/;
 
 /** Keep in sync with SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE (no server import). */
@@ -27,6 +30,7 @@ export function FragmentExchangeBootstrap({
   publicId: string;
   kind: ExchangeKind;
 }) {
+  // Status text only — never store the fragment secret in React state.
   const [message, setMessage] = useState("Opening your Signing link…");
 
   useEffect(() => {
@@ -35,6 +39,8 @@ export function FragmentExchangeBootstrap({
       const hash = window.location.hash.startsWith("#")
         ? window.location.hash.slice(1)
         : window.location.hash;
+      // Clear fragment before any network I/O so address bar / history / Referer
+      // cannot retain the secret while the exchange request is in flight.
       window.history.replaceState(
         null,
         "",
@@ -63,7 +69,11 @@ export function FragmentExchangeBootstrap({
           ok?: boolean;
           redirectTo?: string;
         };
-        if (payload.ok && typeof payload.redirectTo === "string") {
+        if (
+          payload.ok &&
+          typeof payload.redirectTo === "string" &&
+          ALLOWED_REDIRECTS.has(payload.redirectTo)
+        ) {
           window.location.replace(payload.redirectTo);
           return;
         }

@@ -37,11 +37,18 @@ export async function POST(request: Request): Promise<Response> {
   const publicId = body.publicId;
   const secret = body.secret;
   const admin = createAdminClient();
-  const credential = await validateParticipantCredentialByPublicIdAndSecret(
-    admin,
-    publicId,
-    secret,
-  );
+
+  let credential;
+  try {
+    credential = await validateParticipantCredentialByPublicIdAndSecret(
+      admin,
+      publicId,
+      secret,
+    );
+  } catch {
+    // Infra/DB failures must not surface distinct status from auth failures.
+    return exchangeUnavailableJson();
+  }
   if (!credential) {
     return exchangeUnavailableJson();
   }

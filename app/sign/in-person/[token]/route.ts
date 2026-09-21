@@ -1,10 +1,13 @@
 /**
- * Supervised in-person handoff exchange.
+ * Supervised in-person handoff exchange (path-bearer residual).
  *
- * Mirrors the Stage 4 `/sign/{token}` credential exchange: `/sign/in-person/
- * {rawHandoffToken}` is a server-only redirector that validates the handoff,
- * moves the token out of the URL into an HttpOnly cookie scoped to `/sign`, and
- * redirects to `/sign/continue` for identity affirmation.
+ * Unlike emailed invitation/package links (UUID path + fragment secret + POST
+ * exchange), device handoff still uses `/sign/in-person/{rawHandoffToken}` as a
+ * server-only redirector: validate handoff → HttpOnly cookie scoped to `/sign`
+ * → `/sign/continue`. Tokens are agent-issued for supervised device handoff
+ * (not emailed), TTL-bounded (~15 min), epoch-bound, superseded on reissue, and
+ * consumed at identity affirmation — accepted residual vs emailed long-lived
+ * credentials (see decisions.md / security.md R14).
  *
  * Failures return a generic unavailable message. The token is never logged.
  */

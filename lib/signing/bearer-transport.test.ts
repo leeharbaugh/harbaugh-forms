@@ -75,8 +75,46 @@ describe("bearer transport", () => {
     );
     assert.match(bootstrap, /history\.replaceState/);
     assert.match(bootstrap, /location\.hash/);
+    assert.match(bootstrap, /ALLOWED_REDIRECTS/);
+    assert.match(bootstrap, /\/sign\/continue/);
+    assert.match(bootstrap, /\/sign\/package/);
     assert.doesNotMatch(bootstrap, /localStorage|sessionStorage/);
+    assert.doesNotMatch(bootstrap, /console\.(log|debug|info|warn|error)/);
     assert.doesNotMatch(entryExchange, /validateParticipantCredential\(/);
+    assert.match(entryExchange, /exchangeUnavailableJson/);
+    assert.match(packageExchange, /exchangeUnavailableJson/);
+  });
+
+  it("keeps /sign CSP compatible with Next.js hydration", () => {
+    const nextConfig = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
+    assert.match(nextConfig, /Content-Security-Policy/);
+    assert.match(nextConfig, /script-src 'self' 'unsafe-inline'/);
+    assert.match(nextConfig, /connect-src 'self'/);
+    assert.match(nextConfig, /base-uri 'none'/);
+    assert.match(nextConfig, /frame-ancestors 'none'/);
+  });
+
+  it("documents in-person path-bearer as supervised residual", () => {
+    const handoffRoute = readFileSync(
+      join(process.cwd(), "app/sign/in-person/[token]/route.ts"),
+      "utf8",
+    );
+    const handoff = readFileSync(
+      join(process.cwd(), "lib/signing/in-person-handoff.ts"),
+      "utf8",
+    );
+    const agentActions = readFileSync(
+      join(process.cwd(), "lib/signing/ceremony-agent-actions.ts"),
+      "utf8",
+    );
+    assert.match(handoffRoute, /validateInPersonHandoff/);
+    assert.match(handoffRoute, /buildSigningHandoffCookieAttributes/);
+    assert.match(handoff, /SIGNING_HANDOFF_TTL_MINUTES = 15/);
+    assert.match(agentActions, /handoffPath: `\/sign\/in-person\/\$\{handoff\.rawHandoffToken\}`/);
+    assert.match(
+      readFileSync(join(process.cwd(), "lib/signing/bearer-path-logging.ts"), "utf8"),
+      /in-person/,
+    );
   });
 
   it("declares Pro Cron every 2 minutes", () => {

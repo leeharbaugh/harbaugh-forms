@@ -5272,8 +5272,8 @@ Vercel Runtime Logs and Log Drains capture request path (and query for drains). 
 * Old `/sign/<43-char-bearer>` and `/sign/completed/<43-char-bearer>` links fail closed (GET never authenticates; malformed UUID leads to generic unavailable). Re-issue invitations/package links after deploy in environments that had legacy links.
 * Resend / Replace / Revoke / access-epoch semantics are unchanged: Resend unwraps `#secret` when wrap is recoverable; Replace issues a new credential UUID + secret.
 * Replay semantics unchanged: credentials remain reusable while valid; package links non-expiring until revoke/replace/epoch; browser sessions stay short-lived.
-* Residual enablement note: `/sign/in-person/[token]` remains path-bearer for device handoff (out of emailed-link scope).
-* `/sign` headers include a tight CSP (`default-src 'none'`; `script-src`/`connect-src`/`style-src` `'self'`; `base-uri 'none'`; `form-action 'self'`) plus existing no-referrer / no-store / X-Robots-Tag.
+* Residual enablement note: `/sign/in-person/[token]` remains path-bearer for supervised device handoff (out of emailed-link scope). Classification: **acceptable controlled residual** — agent-issued relative path (not emailed), ~15 min TTL, epoch-bound, superseded on reissue, consumed at identity affirmation; log exposure lifetime is short vs non-expiring package credentials.
+* `/sign` headers include a tight CSP (`default-src 'none'`; `script-src 'self' 'unsafe-inline'` required for Next.js App Router hydration without per-request nonces; `connect-src 'self'`; `style-src 'self' 'unsafe-inline'`; `base-uri 'none'`; `form-action 'self'`; `frame-ancestors 'none'`) plus existing no-referrer / no-store / X-Robots-Tag.
 
 **Related files:** `lib/signing/bearer-transport.ts`; `components/sign/fragment-exchange-bootstrap.tsx`; `app/sign/[publicId]/page.tsx`; `app/sign/completed/[publicId]/page.tsx`; `app/api/sign/entry-exchange/route.ts`; `app/api/sign/completed-package-exchange/route.ts`; `next.config.ts`; local `security.md` R14.
 
@@ -5296,3 +5296,16 @@ Hobby daily Cron left multi-hour recovery gaps when kicks fail. Pro every-2-minu
 * Production Cron env / feature enablement remain separately gated.
 
 **Related files:** `vercel.json`; `lib/signing/admin-signing-worker.ts`; `components/admin/admin-signing-worker-controls.tsx`; `app/admin/signing-controls/page.tsx`.
+
+### Bearer transport security review conclusions (2026-09-21)
+
+**Date:** 2026-09-21
+
+**Decision:**
+Focused security review of PR #45 confirms emailed participant and completed-package reusable secrets no longer appear in HTTP path or query. Official Vercel Runtime Logs expose `requestPath` and query/search params, not request bodies; Log Drains expose `proxy.path` (path + query) and application `message`/`stdout` — not POST JSON bodies by default. Application exchange routes do not log bodies, URLs, or secrets. Therefore the original emailed bearer-path logging blocker is **closed** for invitation and completed-package links.
+
+In-person `/sign/in-person/[token]` remains a path bearer and is classified as an **acceptable controlled residual** for this stage (not a production blocker for emailed-link enablement, and not hardened in this PR because it is architecturally device-handoff local rather than email transport).
+
+Reliability semantics: request-driven kick + inline invitations remain the primary latency path; Cron `*/2` is a recovery sweep (target ~2 minute lag, not a contractual hard SLA); Global Admin Run Worker Now is immediate manual recovery. Transient provider/platform failures may exceed the target.
+
+**Related:** local `security.md` R14 review addendum; `lib/signing/bearer-path-logging.ts`.

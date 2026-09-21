@@ -20,8 +20,8 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | Legacy path bearers | Old `/sign/<43-char-token>` links fail closed (not a UUID); re-issue invitations/package links in dev after deploy |
 | Cron declaration | `vercel.json` schedule `*/2 * * * *` (Pro; **recovery sweep ≤2 min**; primary path remains inline invite + `kickSigningWorkProcessing`) |
 | Run Worker Now | Global Admin only on `/admin/signing-controls` → `processSigningWorkBatch` (batch 5); honors feature/work suspension; admin audit `signing_worker_manual_run` |
-| Bearer-path logging (emailed links) | **Closed for transport** — secrets never in HTTP path/query for invitation/package emails |
-| Residual | `/sign/in-person/[token]` remains path-bearer for device handoff (out of this stage’s minimum scope) |
+| Bearer-path logging (emailed links) | **Closed** — path/query UUID-only; secrets in fragment + POST body; Vercel Runtime/Drains do not auto-log POST bodies |
+| Residual | `/sign/in-person/[token]` path-bearer — **acceptable controlled residual** (supervised, ~15 min, not emailed; not a production blocker for emailed-link enablement) |
 | Production | **Untouched** (`eetonalyyyssvkyfdoxh`); no Cron env / feature enablement from this stage |
 
 **Hard production blockers (enablement) remaining:** 20 migrations + suspend/bump; secrets; counsel disclosure; Resend/site URL; focused security review; feature remains OFF until deliberate enablement. Emailed bearer-path logging mitigation is done for invitation/package links.

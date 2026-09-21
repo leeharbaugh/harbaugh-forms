@@ -23,10 +23,13 @@ const nextConfig: NextConfig = {
           { key: "Cache-Control", value: "no-store" },
           { key: "X-Robots-Tag", value: "noindex, nofollow" },
           {
+            // Next.js App Router without per-request nonces requires
+            // script-src 'unsafe-inline' for framework bootstrap/hydration.
+            // Keep first-party only; no third-party script hosts.
             key: "Content-Security-Policy",
             value: [
               "default-src 'none'",
-              "script-src 'self'",
+              "script-src 'self' 'unsafe-inline'",
               "connect-src 'self'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data:",

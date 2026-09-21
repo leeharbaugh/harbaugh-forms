@@ -35,12 +35,18 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const admin = createAdminClient();
-  const credential =
-    await validateCompletedPackageCredentialByPublicIdAndSecret(
+
+  let credential;
+  try {
+    credential = await validateCompletedPackageCredentialByPublicIdAndSecret(
       admin,
       body.publicId,
       body.secret,
     );
+  } catch {
+    // Infra/DB failures must not surface distinct status from auth failures.
+    return exchangeUnavailableJson();
+  }
   if (!credential) {
     return exchangeUnavailableJson();
   }
