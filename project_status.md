@@ -1,32 +1,36 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-20 (Native Signing recovery access gate in progress on `feat/native-signing-recovery-access`; production Native Signing unavailable)
+**As of:** 2026-09-21 (Native Signing recovery access gate merged to `main`; production Native Signing unavailable)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
-### Native Signing recovery credential/session access gate (2026-09-20)
+### Native Signing recovery credential/session access gate (2026-09-20; merged 2026-09-21)
 
-**Status:** **Implementation on `feat/native-signing-recovery-access`** (based on `main` `f5844ba`). Development migration intended for `harbaugh-forms-dev` only. **No production enablement.** Completes the non-authorizing half of the approved recovery decision (work suspension already existed).
+**Status:** **Code merged to `main`.** Development migrations applied to `harbaugh-forms-dev` only. **Default-off feature gate still required.** **No production enablement, Cron, secrets, Resend, or disclosure rollout.** Completes the non-authorizing half of the approved recovery decision (work suspension already existed).
 
 | Item | Result |
 |------|--------|
-| Branch | `feat/native-signing-recovery-access` |
-| Migration (dev) | `20260920180000_native_signing_recovery_access.sql` + `20260920190000_native_signing_recovery_access_controls_guard.sql` applied to `ewxsxwzezhkeawnjvigx` |
+| PR | [#43](https://github.com/leeharbaugh/harbaugh-forms/pull/43) squash-merged `2026-09-21T15:02:08Z` → `main` `cd63d26` (from reviewed `bd613a3`) |
+| Feature branch | `feat/native-signing-recovery-access` deleted after merge |
+| Migrations (dev) | `20260920180000_native_signing_recovery_access.sql` + `20260920190000_native_signing_recovery_access_controls_guard.sql` applied to `ewxsxwzezhkeawnjvigx` |
 | Production migrations | **Not applied**; production remains unlinked/untouched |
 | Access gate | `signing_system_controls.access_suspended` **OR** `SIGNING_ACCESS_SUSPENDED=true`; missing controls row = deny |
 | Access epoch | Stamped onto credentials/sessions/handoffs at issuance; immutable on those rows; bump invalidates prior bearers |
 | Epoch anti-rollback | Retired epochs in `signing_access_epoch_history`; controls epoch cannot be restored to a retired value; controls row cannot be deleted |
 | Pre-migration rows | Backfilled to sentinel `pre-recovery-access-v0` (fail closed) |
-| Dev seed | Epoch generated + `access_suspended=false` on default row so new Stage issuances work; production apply of `20260920180000` must immediately suspend + bump before enablement |
+| Dev seed caveat | `20260920180000` sets existing default row `access_suspended=false` for active development; **production apply must immediately suspend + bump epoch before any enablement** |
 | Email workers | Invitation + completed-package park/requeue on access suspension; finalization/combined do **not** block on access suspension alone |
+| Device-lock recovery | `/sign/unavailable` clears entry/ceremony/handoff/package/device-lock cookies; return-to-agent/ceremony forbidden → unavailable |
 | Work suspension | Unchanged (`work_suspended` / `SIGNING_WORK_SUSPENDED`) |
+| Production Vercel | Merge Ready deployment `dpl_9NBku1spZRNznq9Be63BAQCzaB4Y` / `ozc8enchb` — **not promoted** to custom domains |
+| Live custom domain | Remains prior approved deployment; Auto-assign Custom Production Domains remains disabled |
 | Validators | `validate:native-signing-recovery-access-dev`; `test:native-signing-recovery-access` |
 
-**Deferred:** production enablement; production worker cron/secrets/Resend; drawn evidence v2; representative signing; polished delivery UI; provider webhooks; DAST.
+**Deferred:** production enablement; production worker cron/secrets/Resend; production recovery migrations; drawn evidence v2; representative signing; polished delivery UI; provider webhooks; DAST.
 
-**Recommended next:** Review and squash-merge PR #43. Do not begin production Cron/secrets/disclosure rollout until the merge is complete and repository state is re-baselined.
+**Recommended next:** Re-baseline the merged recovery-access repository and prepare the production-readiness implementation/design stage. Do not apply production migrations or configure production Native Signing yet.
 
 ### Native Signing completion delivery + copy recipients (2026-09-19; merged 2026-09-20)
 
@@ -79,7 +83,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Deferred after Stage 6 (partially addressed by completion-delivery merge):** production rollout/enablement; reminders; representative signing model; drawn-mark evidence schema upgrade (UI remains typed-only; server DRAWN accept + finalizer fail-closed); polished TC UI; admin artifact remediation; authenticated DAST; external timestamp anchoring; full restore credential/session gate; durable production worker scheduling/secrets.
 
-**Recommended next:** Implement the **recovery credential/session access gate** next (epoch + access suspension), then production readiness scaffolding (keys/cron/Resend/docs), then focused pre-production security, then controlled Lee-only production enablement. Do not begin production enablement or drawn-signature implementation until an explicit prompt is issued.
+**Recommended next:** Re-baseline after recovery-access merge and prepare production-readiness scaffolding (keys/cron/Resend/docs + recovery suspend+bump checklist). Do not begin production enablement or drawn-signature implementation until an explicit prompt is issued.
 
 ### Native Signing pre-production blocker audit (2026-09-20, read-only)
 
@@ -87,7 +91,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Hard blockers before any production Native Signing enablement:**
 
-1. ~~Recovery **credential/session access gate**~~ — implemented on `feat/native-signing-recovery-access` (dev); still must be merged/reviewed and included in production migration plan.
+1. ~~Recovery **credential/session access gate**~~ — merged to `main` `cd63d26` (reviewed `bd613a3`); still must be included in production migration plan with immediate suspend+bump after apply.
 2. Production Native Signing migrations (Stages 1–6 + TC + completion delivery + recovery access) not applied.
 3. Production secrets/config: event-chain HMAC, participant wrap, completed-package wrap, worker secret, `NEXT_PUBLIC_SITE_URL`, Resend, feature gate still off.
 4. Production worker scheduling (no `vercel.json` cron; worker route is POST-only so Cron needs an authenticated GET→batch adapter).
@@ -101,9 +105,9 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Optional later / case-specific:** drawn v2 (typed-only ships); representative signing (product-approved model exists, unimplemented — blocks representative cases only); external timestamping.
 
-**Recommended next implementation stage:** **A — Recovery credential/session access gate** (environment access epoch + access suspension; preserve work suspension; no evidence rewrite).
+**Recommended next implementation stage:** **B — Production-readiness scaffolding** (cron adapter, secrets inventory, disclosure publication path, ops checklist including recovery suspend+bump after migrate). Do not apply production Native Signing migrations or enable the feature until an explicit prompt.
 
-**Recommended full sequence:** recovery access gate → production readiness scaffolding (cron adapter, secrets inventory, disclosure publication path, ops checklist) → focused pre-production security → controlled Lee-only production enablement → representative signing as needed → drawn v2 later.
+**Recommended full sequence:** ~~recovery access gate~~ → production readiness scaffolding (cron adapter, secrets inventory, disclosure publication path, ops checklist) → focused pre-production security → controlled Lee-only production enablement → representative signing as needed → drawn v2 later.
 
 ### Transaction Coordinator / operator authority foundation (2026-09-18)
 
@@ -1399,7 +1403,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signing recovery-access PR review (next):** Focused architecture/security/recovery review of `feat/native-signing-recovery-access` before merge. Do not begin production Cron/secrets/disclosure rollout.
+1. **Native Signing production-readiness scaffolding (next):** Cron adapter, secrets inventory, disclosure publication path, ops checklist including recovery suspend+bump after production migrate. Do not apply production migrations or configure production Native Signing yet.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically
