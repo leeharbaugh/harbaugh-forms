@@ -29,7 +29,7 @@
  * durable session. Completed-package non-expiring bearers are highest risk.
  */
 export const BEARER_PATH_LOGGING_PRODUCTION_BLOCKER =
-  "Vercel Runtime Logs requestPath and Log Drain proxy.path can capture bearer URL path segments; app code cannot redact them." as const;
+  "Resolved for emailed participant/package links: path holds nonsecret credential UUID only; secret travels in URL fragment and POSTs to exchange endpoints. Residual: /sign/in-person/[token] still path-bearer for device handoff." as const;
 
 export const BEARER_PATH_LOGGING_SOURCES = [
   "https://vercel.com/docs/logs/runtime",

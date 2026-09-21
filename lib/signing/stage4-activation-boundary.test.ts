@@ -108,10 +108,13 @@ describe("Native Signing Stage 4 activation boundary contracts", () => {
   });
 
   it("authenticates on token_hash only and never decrypts to authenticate", () => {
-    const validate = credentials.slice(
-      credentials.indexOf("export async function validateParticipantCredential"),
-      credentials.indexOf("/** Constant-time hash comparison"),
+    const start = credentials.indexOf(
+      "export async function validateParticipantCredential(",
     );
+    const end = credentials.indexOf(
+      "export async function validateParticipantCredentialByPublicIdAndSecret",
+    );
+    const validate = credentials.slice(start, end);
     assert.ok(validate.length > 0);
     assert.match(validate, /hashParticipantCredentialToken\(rawToken\)/);
     assert.doesNotMatch(validate, /token_wrapped/);
@@ -217,8 +220,12 @@ describe("Native Signing Stage 4 activation boundary contracts", () => {
   });
 
   it("builds invitation links as a path segment and does not log them", () => {
-    const url = buildParticipantInviteUrl("Zm9vYmFy");
-    assert.match(url, /\/sign\/Zm9vYmFy$/);
+    const url = buildParticipantInviteUrl(
+      "11111111-1111-4111-8111-111111111111",
+      "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+    );
+    assert.match(url, /\/sign\/11111111-1111-4111-8111-111111111111#/);
+    assert.doesNotMatch(url.split("#")[0] ?? "", /abcdefghijklmnopqrstuvwxyz/);
     assert.doesNotMatch(url, /\?/);
     assert.doesNotMatch(delivery, /console\.log/);
     const logCalls = delivery.match(/console\.error\([^)]*\)/g) ?? [];

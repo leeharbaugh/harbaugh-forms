@@ -131,7 +131,11 @@ describe("Native Signing recovery access gate", () => {
       assert.ok(start >= 0, `${label}: missing ${validateFn}`);
       const body = source.slice(start, start + 1800);
       const suspensionAt = body.indexOf("assertSigningExternalAccessActive");
-      const epochAt = body.indexOf("isCredentialEpochCurrent");
+      const epochAt = Math.max(
+        body.indexOf("isCredentialEpochCurrent"),
+        body.indexOf("finalizeValidatedParticipantCredential"),
+        body.indexOf("finalizeValidatedCompletedPackageCredential"),
+      );
       assert.ok(suspensionAt >= 0, `${label}: missing suspension check`);
       assert.ok(epochAt > suspensionAt, `${label}: epoch must follow suspension`);
       // Look for the runtime revoke/lifecycle gate (not column names in .select()).

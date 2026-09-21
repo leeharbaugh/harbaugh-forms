@@ -1,10 +1,10 @@
 /**
  * Native Signing Stage 4 participant entry sessions.
  *
- * The invitation link is `/sign/{rawCredentialToken}`. Opening it exchanges the
- * bearer credential for a short-lived entry session held in an HttpOnly cookie
- * and redirects to `/sign/continue`, so the raw credential does not linger in
- * the address bar, browser history, bookmarks, or a Referer header.
+ * The invitation link is `/sign/{credentialId}#{secret}`. Opening it exchanges
+ * the fragment secret (via POST) for a short-lived entry session held in an
+ * HttpOnly cookie and continues to `/sign/continue`, so the raw credential does
+ * not linger in the address bar, browser history, bookmarks, or a Referer header.
  *
  * This is access plumbing only — no ceremony, no consent, no signer evidence:
  *

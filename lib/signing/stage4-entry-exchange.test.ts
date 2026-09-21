@@ -23,7 +23,9 @@ describe("Native Signing Stage 4 participant entry exchange", () => {
     `supabase/migrations/${NATIVE_SIGNING_STAGE4_MIGRATIONS[3]}.sql`,
   );
   const sessions = read("lib/signing/entry-sessions.ts");
-  const exchangeRoute = read("app/sign/[token]/route.ts");
+  const exchangeRoute = read("app/api/sign/entry-exchange/route.ts");
+  const entryPage = read("app/sign/[publicId]/page.tsx");
+  const bootstrap = read("components/sign/fragment-exchange-bootstrap.tsx");
   const continuePage = read("app/sign/continue/page.tsx");
   const signLayout = read("app/sign/layout.tsx");
   const nextConfig = read("next.config.ts");
@@ -70,24 +72,26 @@ describe("Native Signing Stage 4 participant entry exchange", () => {
     assert.match(migration, /not participant ceremony evidence/);
   });
 
-  it("keeps the invitation link on /sign/{token} and exchanges it on open", () => {
-    const url = buildParticipantInviteUrl("Zm9vYmFy");
-    assert.match(url, /\/sign\/Zm9vYmFy$/);
+  it("keeps the invitation link on /sign/{publicId}#secret and exchanges via POST", () => {
+    const publicId = "11111111-1111-4111-8111-111111111111";
+    const secret = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
+    const url = buildParticipantInviteUrl(publicId, secret);
+    assert.match(url, new RegExp(`/sign/${publicId}#`));
+    assert.ok(url.endsWith(`#${secret}`));
+    assert.doesNotMatch(url.split("#")[0] ?? "", new RegExp(secret));
     assert.doesNotMatch(url, /\?/);
 
-    assert.match(exchangeRoute, /validateParticipantCredential/);
+    assert.match(entryPage, /FragmentExchangeBootstrap/);
+    assert.match(bootstrap, /history\.replaceState/);
+    assert.match(exchangeRoute, /validateParticipantCredentialByPublicIdAndSecret/);
     assert.match(exchangeRoute, /createSigningEntrySession/);
-    assert.match(exchangeRoute, /Location: CONTINUE_PATH/);
-    assert.match(exchangeRoute, /status: 303/);
-    assert.match(exchangeRoute, /"\/sign\/continue"/);
     assert.match(exchangeRoute, /buildSigningEntryCookieAttributes/);
-    // Failures use a generic unavailable response (no epoch/token leakage).
-    assert.match(exchangeRoute, /status: 503/);
+    assert.match(exchangeRoute, /SIGNING_CONTINUE_PATH|\/sign\/continue/);
+    assert.match(exchangeRoute, /isNativeSigningEnabled/);
     assert.match(
       exchangeRoute,
-      /SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE/,
+      /SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE|exchangeUnavailableJson/,
     );
-    assert.match(exchangeRoute, /isNativeSigningEnabled/);
   });
 
   it("issues an HttpOnly, Secure, SameSite=Lax cookie scoped to /sign", () => {

@@ -1,38 +1,60 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-21 (Native Signing production-readiness scaffolding merged; production Native Signing unavailable)
+**As of:** 2026-09-21 (Native Signing bearer-link transport hardening + Pro Cron recovery sweep on feature branch; production Native Signing unavailable)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
+### Native Signing bearer-link transport + Pro Cron recovery (2026-09-21; code/dev only)
+
+**Status:** **Implemented on feature branch `feat/native-signing-bearer-transport` (from `main` `0b0f64b`).** Development code/docs only. **Default-off feature gate still required.** **No production enablement, migrations, secrets, Resend, disclosure, or domain promotion.** Do **not** merge until review.
+
+| Item | Result |
+|------|--------|
+| Branch | `feat/native-signing-bearer-transport` from `main` `0b0f64b` |
+| Invitation URL | `{base}/sign/{credentialUuid}#{rawSecret}` — path is nonsecret public UUID only |
+| Completed-package URL | `{base}/sign/completed/{credentialUuid}#{rawSecret}` |
+| Exchange | Client fragment bootstrap → `POST /api/sign/entry-exchange` or `POST /api/sign/completed-package-exchange` → existing HttpOnly sessions → clean `/sign/continue` or `/sign/package` |
+| GET landings | Minimal bootstrap pages; **never** authenticate from path alone |
+| Legacy path bearers | Old `/sign/<43-char-token>` links fail closed (not a UUID); re-issue invitations/package links in dev after deploy |
+| Cron declaration | `vercel.json` schedule `*/2 * * * *` (Pro; **recovery sweep ≤2 min**; primary path remains inline invite + `kickSigningWorkProcessing`) |
+| Run Worker Now | Global Admin only on `/admin/signing-controls` → `processSigningWorkBatch` (batch 5); honors feature/work suspension; admin audit `signing_worker_manual_run` |
+| Bearer-path logging (emailed links) | **Closed for transport** — secrets never in HTTP path/query for invitation/package emails |
+| Residual | `/sign/in-person/[token]` remains path-bearer for device handoff (out of this stage’s minimum scope) |
+| Production | **Untouched** (`eetonalyyyssvkyfdoxh`); no Cron env / feature enablement from this stage |
+
+**Hard production blockers (enablement) remaining:** 20 migrations + suspend/bump; secrets; counsel disclosure; Resend/site URL; focused security review; feature remains OFF until deliberate enablement. Emailed bearer-path logging mitigation is done for invitation/package links.
+
+**Recommended next:** Focused security review of the transport PR before merge; do **not** begin production migration/configuration from this stage.
+
 ### Native Signing production-readiness scaffolding (2026-09-21; merged)
 
-**Status:** **Code merged to `main`.** Development-only scaffolding. **Default-off feature gate still required.** **No production enablement, migrations, secrets, Cron activation, Resend, or disclosure rollout.** Bearer-path platform logging remains a **hard production-enablement blocker**.
+**Status:** **Code merged to `main`.** Development-only scaffolding. **Default-off feature gate still required.** **No production enablement, migrations, secrets, Cron activation, Resend, or disclosure rollout.** Emailed bearer-path logging was a hard enablement blocker at merge time; transport hardening is the follow-on stage above.
 
 | Item | Result |
 |------|--------|
 | PR | [#44](https://github.com/leeharbaugh/harbaugh-forms/pull/44) squash-merged `2026-09-21T19:01:16Z` → `main` `3ac16c9` (from reviewed `345fed3`) |
 | Feature branch | `feat/native-signing-production-readiness` deleted after merge |
 | Cron route | `GET /api/internal/cron/signing-worker` — `Authorization: Bearer CRON_SECRET` → `processSigningWorkBatch` (batch 5) |
-| Cron declaration | `vercel.json` schedule `0 14 * * *` (Hobby daily **sweep**; not the primary latency path) |
+| Cron declaration (at merge) | `vercel.json` schedule `0 14 * * *` (Hobby daily **sweep**); superseded on transport branch by Pro `*/2 * * * *` |
 | Request-driven kick | Finish / Retry Finalization / Resend / Replace / Add Copy → `after()` → same batch processor (kick limit 10); durable queue remains authoritative if kick fails |
 | Invitation latency | Send/Begin still delivers invitations **inline** via `deliverEnqueuedParticipantInvitations` |
 | Worker feature-OFF | `FEATURE_DISABLED` — no claim/process; queue intact |
 | Controls remain distinct | feature / work_suspended / access_suspended+epoch |
 | Readiness validator | `validate:native-signing-production-readiness --target=dev\|prod` (read-only; ref-guarded; `vercel.json` ≠ live Cron proof) |
 | Migrate helper | `plan:native-signing-production-migrate` dry-run; execute unimplemented |
-| Ops UI | Completed-package panel only on COMPLETE (or failed-finalization retry); `/admin/signing-controls` read-only |
+| Ops UI | Completed-package panel only on COMPLETE (or failed-finalization retry); `/admin/signing-controls` read-only at merge (transport branch adds Run Worker Now) |
 | DRAWN | Server reject `DRAWN_MARK_UNSUPPORTED` at adopt |
 | Capacity notice | Personal-capacity / typed-only on Draft + Send confirm (warning only; no entity participant type) |
-| Bearer path logging | **Hard production-enablement blocker** (Vercel Runtime Logs `requestPath` / Log Drain `proxy.path`) — not a merge blocker; requires separate transport-hardening stage before enablement |
+| Bearer path logging (at merge) | Hard production-enablement blocker for emailed links — addressed by transport stage above |
 | Production migrations | **Not applied**; production `eetonalyyyssvkyfdoxh` remains unlinked/untouched |
 | Production Vercel | Merge Ready deployment `dpl_8oWzhXn8qYfQvgErsMQfk8hoL8Z6` / `606elo9tg` — **not promoted** to custom domains |
 | Live custom domain | Remains prior approved deployment `dpl_2CMdac6EViudwyp6TgoQbHf8htiM` / `oh3z3x7r5`; Auto-assign Custom Production Domains remains disabled |
 
-**Hard production blockers (enablement):** 20 migrations + suspend/bump; secrets; counsel disclosure; Resend/site URL; **bearer-path logging mitigation**; feature remains OFF until deliberate enablement.
+**Hard production blockers (enablement):** 20 migrations + suspend/bump; secrets; counsel disclosure; Resend/site URL; feature remains OFF until deliberate enablement.
 
-**Recommended next:** Re-baseline the merged production-readiness repository, then implement bearer-link transport hardening as a focused pre-production security stage before any production migration/configuration.
+**Recommended next:** See bearer-link transport stage above.
 
 ### Native Signing production-readiness design audit (2026-09-21, read-only)
 
@@ -53,7 +75,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 1. Apply all 20 Native Signing migrations to production (with immediate recovery suspend+bump).
 2. Install secrets: event-chain HMAC, participant wrap, completed-package wrap, worker secret, `CRON_SECRET`; set `NEXT_PUBLIC_SITE_URL`; Resend From/domain.
 3. Counsel-approved disclosure with `is_production_ready=true`.
-4. Resolve/accept bearer-path platform logging risk (ticket exchange or log-access controls).
+4. ~~Resolve emailed bearer-path platform logging~~ — closed on transport branch (UUID path + fragment secret); residual in-person path-bearer remains documented.
 5. Focused manual security pass; unique Vercel URL then promote (auto-assign custom domains stays disabled).
 
 **Genuine Lee decisions remaining:** (1) Signing email From/domain identity; (2) disclosure approval source/process; (3) confirm typed-only / personal-capacity-only first rollout.
@@ -1455,7 +1477,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signing production-readiness scaffolding (next):** Cron adapter, secrets inventory, disclosure publication path, ops checklist including recovery suspend+bump after production migrate. Do not apply production migrations or configure production Native Signing yet.
+1. **Native Signing bearer-transport PR:** focused security review, then merge when ready. Do **not** begin production migrations/secrets/Cron env/Resend/disclosure/feature enablement from that merge alone.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically

@@ -1,5 +1,7 @@
 import { requireAppAdminPage } from "@/lib/admin/require-app-admin-page";
 import { AdminSectionNav } from "@/components/admin/admin-section-nav";
+import { AdminSigningWorkerControls } from "@/components/admin/admin-signing-worker-controls";
+import { getSigningWorkerQueueSnapshot } from "@/lib/signing/admin-signing-worker";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import { getSigningExternalAccessState } from "@/lib/signing/external-access";
 import { isSigningWorkSuspended } from "@/lib/signing/work-suspension";
@@ -15,8 +17,8 @@ import {
 } from "@/components/ui/card";
 
 /**
- * Global Admin read-only Native Signing control posture.
- * No business-user toggles — operational changes remain trusted runbook/SQL.
+ * Global Admin Native Signing control posture + technical worker sweep.
+ * Does not grant business Signing management authority.
  */
 export default async function AdminSigningControlsPage() {
   await requireAppAdminPage();
@@ -26,6 +28,7 @@ export default async function AdminSigningControlsPage() {
   let accessSuspended: boolean | null = null;
   let controlsPresent = false;
   let loadError: string | null = null;
+  let queue = null;
 
   try {
     const admin = createAdminClient();
@@ -33,6 +36,7 @@ export default async function AdminSigningControlsPage() {
     const access = await getSigningExternalAccessState(admin);
     accessSuspended = access.suspended;
     controlsPresent = true;
+    queue = await getSigningWorkerQueueSnapshot(admin);
   } catch {
     loadError =
       "Native Signing controls are unavailable (schema may be uninstalled).";
@@ -42,7 +46,7 @@ export default async function AdminSigningControlsPage() {
     <div className="flex flex-col gap-6">
       <ListPageHeader
         title="Native Signing controls"
-        description="Read-only operational posture for Global Admins. Suspension toggles are not available here."
+        description="Operational posture for Global Admins. Suspension toggles are not available here. Run Worker is a system recovery action only."
       />
       <AdminSectionNav active="signing-controls" />
       <Card>
@@ -102,6 +106,19 @@ export default async function AdminSigningControlsPage() {
           <p className="text-xs text-muted-foreground">
             Controls row present: {controlsPresent ? "yes" : "no"}
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Worker recovery</CardTitle>
+          <CardDescription>
+            Uses the same bounded batch processor as Cron. Does not select
+            arbitrary Signings or bypass feature/work suspension.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AdminSigningWorkerControls initialQueue={queue} />
         </CardContent>
       </Card>
     </div>
