@@ -5309,3 +5309,24 @@ In-person `/sign/in-person/[token]` remains a path bearer and is classified as a
 Reliability semantics: request-driven kick + inline invitations remain the primary latency path; Cron `*/2` is a recovery sweep (target ~2 minute lag, not a contractual hard SLA); Global Admin Run Worker Now is immediate manual recovery. Transient provider/platform failures may exceed the target.
 
 **Related:** local `security.md` R14 review addendum; `lib/signing/bearer-path-logging.ts`.
+
+### Native Signing production rollout gates (2026-09-21)
+
+**Date:** 2026-09-21
+
+**Decision:**
+No additional Native Signing **code** stage is required before production migration/configuration. Remaining work is configuration, legal/content, and operational execution under explicit Gates:
+
+* **Gate A** — backup/checkpoint + migration preflight (no DB mutation yet)
+* **Gate B** — apply 20 Native Signing migrations to `eetonalyyyssvkyfdoxh` then **immediate** `work_suspended=true` + access-epoch bump (leaves `access_suspended=true`); verify; feature remains OFF
+* **Gate C** — install Production secrets/config; deploy current app to unique Vercel URL; Cron/manual FEATURE_DISABLED or SUSPENDED smokes; production-ready disclosure; Resend/DNS/From verified; readiness PASS except feature deliberately OFF
+* **Gate D** — synthetic Lee-owned production Signing full lifecycle
+* **Gate E** — first real client Signing only after Lee explicit approval
+
+**Migration execution:** `plan:native-signing-production-migrate` remains dry-run/planning only (`--execute` refused). Actual apply uses guarded Supabase CLI against verified ref `eetonalyyyssvkyfdoxh` after Gate A approval — never blind `db push` without ref verification and status check.
+
+**Enablement order (final transition):** Keep `NATIVE_SIGNING_ENABLED` unset/`false` until Gate C complete. Then set feature ON while `work_suspended` and `access_suspended` remain true; validate admin controls + Cron auth (expect SUSPENDED / no claim). Resume **access** and **work** together (or access then immediately work) only when ready to run synthetic Send — never leave a window where invitation email can send before site URL/disclosure/Resend are verified.
+
+**Deploy vs migrate:** Additive schema with feature OFF is compatible with the current live app. Prefer migrate+suspend+bump first, then deploy current `main` to a unique Production URL with secrets installed (feature OFF), validate, then manually promote custom domains.
+
+**Related:** `project_status.md` rollout checkpoint; local `security.md` R15.

@@ -1,10 +1,25 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-21 (Native Signing bearer-link transport hardening + Pro Cron recovery merged; production Native Signing unavailable)
+**As of:** 2026-09-21 (Native Signing production rollout checkpoint complete; no production mutation; production Native Signing unavailable)
 
 ## Current State
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
+
+### Native Signing production rollout checkpoint (2026-09-21; audit only)
+
+**Status:** Read-only checkpoint on `main` `fa669c4` (PR #45 squash `01ce26d`). **No production mutation.** **No code blocker remains** before Gate A.
+
+| Item | Result |
+|------|--------|
+| Code blocker | **None** — bearer transport, Cron `*/2`, manual worker, readiness/migrate-plan helpers are merged |
+| Prod readiness `--target=prod` | Refuses when local env points at dev (`ewxsxwzezhkeawnjvigx` ≠ `eetonalyyyssvkyfdoxh`) — correct fail-closed; does not mutate |
+| Migrate helper | Dry-run planning OK; `--execute` intentionally refused |
+| Remaining blockers | CONFIGURATION + LEGAL/CONTENT + OPERATIONAL (migrations, suspend+bump, secrets, Cron, Resend/DNS/From, site URL, disclosure, backup, security pass, synthetic Signing, deliberate enablement) |
+| In-person residual | Classification B retained (not a production enablement blocker) |
+| Production | Untouched |
+
+**Gates:** A backup/preflight → B migrate+suspend+bump → C secrets/deploy/email/disclosure → D synthetic Signing → E first real client (Lee approval).
 
 ### Native Signing bearer-link transport + Pro Cron recovery (2026-09-21; merged)
 
@@ -30,7 +45,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 
 **Hard production blockers (enablement) remaining:** 20 migrations + suspend/bump; secrets; counsel disclosure; Resend/site URL; feature remains OFF until deliberate enablement. Emailed bearer-path logging mitigation is done for invitation/package links.
 
-**Recommended next:** Re-baseline the merged Native Signing repository and review the remaining production blockers and rollout sequence before performing any production migration or configuration.
+**Recommended next:** Begin **Gate A** production rollout preparation (backup/checkpoint verification and final production migration preflight). Do **not** execute migrations until Lee explicitly approves.
 
 ### Native Signing production-readiness scaffolding (2026-09-21; merged)
 
@@ -1481,7 +1496,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Native Signing production blockers review:** Re-baseline after PR #45 merge, then review remaining production blockers and rollout sequence. Do **not** begin production migrations/secrets/Cron env/Resend/disclosure/feature enablement until explicitly authorized.
+1. **Gate A production rollout preparation:** backup/checkpoint verification and final production migration preflight. Do **not** execute migrations until Lee explicitly approves.
 2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 4. Monitor real-world Lee-only production use; review runtime logs periodically
