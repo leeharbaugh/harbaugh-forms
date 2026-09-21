@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
-  NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE,
+  NATIVE_SIGNING_REPRESENTATIVE_NOTICE,
   NATIVE_SIGNING_TYPED_ONLY_NOTICE,
 } from "./capacity-notices";
 import { mapDeliveryStateToLabel } from "./completed-ops";
@@ -32,12 +32,13 @@ describe("production scaffolding wiring", () => {
     assert.match(adopted, /Drawn signatures and initials are not available yet/);
   });
 
-  it("surfaces personal-capacity and typed-only notices on create/Send UI", () => {
+  it("surfaces representative and typed-only notices on create/Send UI", () => {
     const dashboard = read("components/signings/signing-dashboard-page.tsx");
-    assert.match(dashboard, /NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE/);
+    assert.match(dashboard, /NATIVE_SIGNING_REPRESENTATIVE_NOTICE/);
     assert.match(dashboard, /NATIVE_SIGNING_TYPED_ONLY_NOTICE/);
-    assert.match(NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE, /personal capacity/);
+    assert.match(NATIVE_SIGNING_REPRESENTATIVE_NOTICE, /Representative signing/);
     assert.match(NATIVE_SIGNING_TYPED_ONLY_NOTICE, /typed/);
+    assert.doesNotMatch(dashboard, /NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE/);
   });
 
   it("wires completed ops UI through authorized actors only", () => {

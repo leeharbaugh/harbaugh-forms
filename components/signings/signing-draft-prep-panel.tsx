@@ -11,9 +11,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  SIGNING_CAPACITY_LABEL_OPTIONS,
+  type SigningCapacityLabel,
+  type SigningCapacityMode,
+  suggestCapacityWording,
+} from "@/lib/signing/capacity-notices";
+import {
   addDraftSigningDocumentAction,
   addDraftSigningParticipantAction,
   listPacketFormsForDraftAction,
+  removeDraftSigningParticipantAction,
   upsertDraftSigningFieldAction,
 } from "@/lib/signing/stage3-actions";
 import { useCallback, useEffect, useState } from "react";
@@ -25,21 +32,33 @@ type PacketFormOption = {
   packetLabel: string | null;
 };
 
+const DEFAULT_CAPACITY_LABEL: SigningCapacityLabel = "ATTORNEY_IN_FACT";
+
 export function SigningDraftPrepPanel({
   signingId,
   canManage,
   firstDocumentId,
+  participants,
   participantsMissingFields,
   onChanged,
 }: {
   signingId: string;
   canManage: boolean;
   firstDocumentId: string | null;
+  participants: { id: string; fullName: string }[];
   participantsMissingFields: { id: string; fullName: string }[];
   onChanged: () => Promise<void>;
 }) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [signingCapacityMode, setSigningCapacityMode] =
+    useState<SigningCapacityMode>("PERSONAL");
+  const [representedPartyName, setRepresentedPartyName] = useState("");
+  const [capacityLabel, setCapacityLabel] =
+    useState<SigningCapacityLabel>(DEFAULT_CAPACITY_LABEL);
+  const [capacityWording, setCapacityWording] = useState("");
+  const [capacityWordingTouched, setCapacityWordingTouched] = useState(false);
+
   const [packetForms, setPacketForms] = useState<PacketFormOption[]>([]);
   const [selectedPacketFormId, setSelectedPacketFormId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -54,19 +73,56 @@ export function SigningDraftPrepPanel({
     }
     const rows = (result.data as PacketFormOption[] | undefined) ?? [];
     setPacketForms(rows);
-    if (rows.length > 0 && !selectedPacketFormId) {
-      setSelectedPacketFormId(String(rows[0].id));
-    }
-  }, [selectedPacketFormId, signingId]);
+    setSelectedPacketFormId((previous) => {
+      if (rows.length === 0) return "";
+      if (previous && rows.some((row) => String(row.id) === previous)) {
+        return previous;
+      }
+      return String(rows[0].id);
+    });
+  }, [signingId]);
 
   useEffect(() => {
     if (!canManage) return;
     void loadPacketForms();
   }, [canManage, loadPacketForms]);
 
+  useEffect(() => {
+    if (signingCapacityMode !== "REPRESENTATIVE") return;
+    if (capacityWordingTouched) return;
+    const suggested = suggestCapacityWording({
+      signatoryName: fullName,
+      representedPartyName,
+      capacityLabel,
+    });
+    setCapacityWording(suggested);
+  }, [
+    signingCapacityMode,
+    fullName,
+    representedPartyName,
+    capacityLabel,
+    capacityWordingTouched,
+  ]);
+
+  useEffect(() => {
+    if (signingCapacityMode === "PERSONAL") {
+      setCapacityWordingTouched(false);
+    }
+  }, [signingCapacityMode]);
+
   if (!canManage) {
     return null;
   }
+
+  const canAddRepresentative =
+    representedPartyName.trim().length > 0 &&
+    capacityWording.trim().length > 0;
+
+  const canAddParticipant =
+    fullName.trim().length > 0 &&
+    (signingCapacityMode === "PERSONAL" || canAddRepresentative);
+
+  const noPacketForms = packetForms.length === 0;
 
   async function addParticipant() {
     setBusy(true);
@@ -75,14 +131,44 @@ export function SigningDraftPrepPanel({
     const result = await addDraftSigningParticipantAction({
       signingId,
       fullName,
-      email,
+      email: email.trim() ? email : undefined,
+      signingCapacityMode,
+      ...(signingCapacityMode === "REPRESENTATIVE"
+        ? {
+            representedPartyName,
+            capacityLabel,
+            capacityWording,
+          }
+        : {}),
     });
     if (!result.ok) {
       setError(result.error);
     } else {
       setFullName("");
       setEmail("");
+      setSigningCapacityMode("PERSONAL");
+      setRepresentedPartyName("");
+      setCapacityLabel(DEFAULT_CAPACITY_LABEL);
+      setCapacityWording("");
+      setCapacityWordingTouched(false);
       setNotice("Participant added.");
+      await onChanged();
+    }
+    setBusy(false);
+  }
+
+  async function removeParticipant(participantId: string) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = await removeDraftSigningParticipantAction({
+      signingId,
+      participantId,
+    });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      setNotice("Participant removed.");
       await onChanged();
     }
     setBusy(false);
@@ -160,7 +246,7 @@ export function SigningDraftPrepPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Draft preparation</CardTitle>
+        <CardTitle>Prepare Signing</CardTitle>
         <CardDescription>
           Add participants and Packet Form documents, then place default typed
           signature fields so the Signing can become Ready.
@@ -185,7 +271,7 @@ export function SigningDraftPrepPanel({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="participant-email">Email</Label>
+              <Label htmlFor="participant-email">Email (optional)</Label>
               <Input
                 id="participant-email"
                 type="email"
@@ -195,22 +281,114 @@ export function SigningDraftPrepPanel({
               />
             </div>
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="signing-capacity-mode">Signing as</Label>
+            <select
+              id="signing-capacity-mode"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              value={signingCapacityMode}
+              onChange={(event) =>
+                setSigningCapacityMode(
+                  event.target.value as SigningCapacityMode,
+                )
+              }
+              disabled={busy}
+            >
+              <option value="PERSONAL">Personal</option>
+              <option value="REPRESENTATIVE">Representative</option>
+            </select>
+          </div>
+
+          {signingCapacityMode === "REPRESENTATIVE" ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="represented-party">Representing</Label>
+                <Input
+                  id="represented-party"
+                  value={representedPartyName}
+                  onChange={(event) =>
+                    setRepresentedPartyName(event.target.value)
+                  }
+                  disabled={busy}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="capacity-label">Capacity</Label>
+                <select
+                  id="capacity-label"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  value={capacityLabel}
+                  onChange={(event) => {
+                    setCapacityWordingTouched(false);
+                    setCapacityLabel(
+                      event.target.value as SigningCapacityLabel,
+                    );
+                  }}
+                  disabled={busy}
+                >
+                  {SIGNING_CAPACITY_LABEL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="capacity-wording">Exact execution wording</Label>
+                <Input
+                  id="capacity-wording"
+                  value={capacityWording}
+                  onChange={(event) => {
+                    setCapacityWordingTouched(true);
+                    setCapacityWording(event.target.value);
+                  }}
+                  disabled={busy}
+                />
+              </div>
+            </div>
+          ) : null}
+
           <Button
             type="button"
             size="sm"
-            disabled={busy || !fullName.trim() || !email.trim()}
+            disabled={busy || !canAddParticipant}
             onClick={() => void addParticipant()}
           >
             Add participant
           </Button>
         </div>
 
+        {participants.length > 0 ? (
+          <div className="space-y-3 rounded-lg border border-border p-3">
+            <p className="text-sm font-medium">Draft participants</p>
+            {participants.map((participant) => (
+              <div
+                key={participant.id}
+                className="flex flex-wrap items-center justify-between gap-2"
+              >
+                <span className="text-sm">{participant.fullName}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void removeParticipant(participant.id)}
+                >
+                  Remove participant
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         <div className="space-y-3 rounded-lg border border-border p-3">
           <p className="text-sm font-medium">Add document from Packet Form</p>
-          {packetForms.length === 0 ? (
+          {noPacketForms ? (
             <p className="text-sm text-muted-foreground">
               No available Packet Forms found on your Packets. Create or open a
-              Packet with an AVAILABLE form first.
+              Packet with an AVAILABLE form first, then return here to attach
+              it to this Signing.
             </p>
           ) : (
             <div className="space-y-2">
@@ -235,11 +413,22 @@ export function SigningDraftPrepPanel({
             type="button"
             size="sm"
             variant="outline"
-            disabled={busy || !selectedPacketFormId}
+            disabled={busy || noPacketForms || !selectedPacketFormId}
+            title={
+              noPacketForms
+                ? "Add an AVAILABLE Packet Form before attaching a document."
+                : undefined
+            }
             onClick={() => void addDocument()}
           >
             Add document
           </Button>
+          {noPacketForms ? (
+            <p className="text-xs text-muted-foreground">
+              Add document is unavailable until at least one Packet Form is
+              available.
+            </p>
+          ) : null}
         </div>
 
         {participantsMissingFields.length > 0 ? (
@@ -255,15 +444,26 @@ export function SigningDraftPrepPanel({
                 className="flex flex-wrap items-center justify-between gap-2"
               >
                 <span className="text-sm">{participant.fullName}</span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={busy || !firstDocumentId}
-                  onClick={() => void addDefaultFields(participant.id)}
-                >
-                  Add default fields
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={busy || !firstDocumentId}
+                    onClick={() => void addDefaultFields(participant.id)}
+                  >
+                    Add default fields
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void removeParticipant(participant.id)}
+                  >
+                    Remove participant
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

@@ -344,6 +344,25 @@ export async function activateSigningWithActor(
       );
     }
 
+    if (mode === "REMOTE_SEND") {
+      const { data: emailRows, error: emailError } = await admin
+        .from("signing_participants")
+        .select("id, email")
+        .eq("signing_id", signing.id)
+        .neq("participant_status", "REMOVED");
+      if (emailError) throw new Error(emailError.message);
+      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      for (const row of emailRows ?? []) {
+        const email = String(row.email ?? "").trim();
+        if (!emailRe.test(email)) {
+          throw new SigningError(
+            "NOT_READY",
+            "Every participant needs a valid email address before Send.",
+          );
+        }
+      }
+    }
+
     const promoted = await promotePackageRevisionFromDraftWithActor(
       actor,
       { signingId: signing.id, promotionReason: "INITIAL" },

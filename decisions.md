@@ -5318,7 +5318,7 @@ Reliability semantics: request-driven kick + inline invitations remain the prima
 No additional Native Signing **code** stage is required before production migration/configuration. Remaining work is configuration, legal/content, and operational execution under explicit Gates:
 
 * **Gate A** — backup/checkpoint + migration preflight (no DB mutation yet)
-* **Gate B** — apply 20 Native Signing migrations to `eetonalyyyssvkyfdoxh` then **immediate** `work_suspended=true` + access-epoch bump (leaves `access_suspended=true`); verify; feature remains OFF
+* **Gate B** — apply 21 Native Signing migrations to `eetonalyyyssvkyfdoxh` then **immediate** `work_suspended=true` + access-epoch bump (leaves `access_suspended=true`); verify; feature remains OFF
 * **Gate C** — install Production secrets/config; deploy current app to unique Vercel URL; Cron/manual FEATURE_DISABLED or SUSPENDED smokes; production-ready disclosure; Resend/DNS/From verified; readiness PASS except feature deliberately OFF
 * **Gate D** — synthetic Lee-owned production Signing full lifecycle
 * **Gate E** — first real client Signing only after Lee explicit approval
@@ -5341,4 +5341,20 @@ Manager-facing Native Signing requires a discoverable entry when `NATIVE_SIGNING
 **Reason:** Enabling the server feature gate alone left no manager navigation or Draft prep UI; Lee could not visually QA the workflow.
 
 **Related:** `project_status.md` local QA enablement note; local-only `.env.local` (`NATIVE_SIGNING_ENABLED=true`, `SIGNING_EMAIL_SANDBOX=true`).
+
+
+### Native Signing manager QA reconciles representative signing and Packet Create Signing (2026-09-21)
+
+**Date:** 2026-09-21
+
+**Decision:**
+Representative signing remains part of the **initial** Native Signing release per the earlier stated-capacity decisions. Temporary personal-capacity-only rollout notices are withdrawn. Manager UX adds Packet → **Create Signing**, Draft participant removal, corrected Packet Form picking, plain-language Signing Controls, and Create Signing / Prepare Signing wording while retaining internal `DRAFT` lifecycle vocabulary. Native Signing migration count is now **21** (representative capacity additive). Gate A production rollout remains paused until Lee re-QAs development.
+
+**Reason:** Lee's manager visual QA found product/UI gaps that blocked confident progression to production enablement.
+
+**Related:** `project_status.md` manager QA follow-up; migration `20260921200000_native_signing_representative_capacity.sql`; local `security.md` R16/R17.
+
+### Supersession note — representative signing not post-launch (2026-09-21)
+
+Earlier production-readiness scaffolding notes that deferred representative signing or treated personal-capacity-only as the first-rollout acceptance are superseded for product scope. Representative signing is restored for initial release. Production enablement remains gated by migrations/secrets/disclosure/ops — not by postponing representative capacity.
 

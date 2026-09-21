@@ -25,6 +25,7 @@ export const NATIVE_SIGNING_ALL_MIGRATIONS = [
   ...NATIVE_SIGNING_STAGE6_MIGRATIONS,
   ...NATIVE_SIGNING_COMPLETION_DELIVERY_MIGRATIONS,
   ...NATIVE_SIGNING_RECOVERY_ACCESS_MIGRATIONS,
+  "20260921200000_native_signing_representative_capacity",
 ] as const;
 
 export function listNativeSigningMigrationFilesFromDisk(

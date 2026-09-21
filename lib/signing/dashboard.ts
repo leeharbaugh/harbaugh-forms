@@ -12,6 +12,10 @@ import {
   type SigningReadinessBlocker,
 } from "./readiness";
 import { getDocumentSourceStatus, type DocumentSourceStatus } from "./source-drift";
+import type {
+  SigningCapacityLabel,
+  SigningCapacityMode,
+} from "./capacity-notices";
 import type { SigningActor, SigningSummary } from "./types";
 
 export type SigningDashboardDocument = {
@@ -34,6 +38,10 @@ export type SigningDashboardParticipant = {
   hasSignatureOrInitialsField: boolean;
   deliveryState: string | null;
   lastDeliveryFailureSafe: string | null;
+  capacityMode?: SigningCapacityMode;
+  representedPartyName?: string | null;
+  capacityLabel?: SigningCapacityLabel | null;
+  capacityWording?: string | null;
 };
 
 export type SigningDashboard = {
@@ -199,6 +207,16 @@ export async function loadSigningDashboardForActor(
     deliveryState: latestDeliveryByParticipantId.get(row.id as string) ?? null,
     lastDeliveryFailureSafe:
       failureByParticipantId.get(row.id as string) ?? null,
+    capacityMode:
+      (row.signing_capacity_mode as SigningCapacityMode | undefined) ??
+      undefined,
+    representedPartyName:
+      (row.represented_party_name as string | null | undefined) ?? undefined,
+    capacityLabel:
+      (row.capacity_label as SigningCapacityLabel | null | undefined) ??
+      undefined,
+    capacityWording:
+      (row.capacity_wording as string | null | undefined) ?? undefined,
   }));
 
   return {

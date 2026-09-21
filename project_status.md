@@ -1,8 +1,25 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-21 (Native Signing enabled for local QA; production Native Signing unavailable)
+**As of:** 2026-09-21 (Native Signing manager QA follow-up in development; Gate A paused; production Native Signing unavailable)
 
 ## Current State
+
+### Native Signing manager QA follow-up (2026-09-21; in progress on feat/native-signing-manager-qa)
+
+**Status:** Development-only UX/product reconciliation before Gate A. Production remains OFF/untouched.
+
+| Item | Result |
+|------|--------|
+| Representative signing | Restored as first-class initial-release model (stated capacity; no authority validation). Removed incorrect personal-capacity-only notice. |
+| Migration | `20260921200000_native_signing_representative_capacity.sql` applied on **dev** only (21 Native Signing migrations total). |
+| Packet → Create Signing | Packet detail **Create Signing** imports eligible Packet Forms + transaction parties |
+| Participant removal | Draft **Remove participant** via existing Stage 3 delete path |
+| Activated pre-freeze removal | Still unsupported end-to-end (document as follow-up UX gap) |
+| Add document | Root cause: picker filtered `packet_forms.status='AVAILABLE'` instead of `ACTIVE` + `availability_state='AVAILABLE'` — fixed |
+| Complete list visibility | List now also includes `original_sender_user_id` candidates |
+| Signing Controls | Plain-language posture + worker recovery copy |
+| User-facing Draft wording | Primary actions say **Create Signing** / **Prepare Signing**; lifecycle badge may still say Draft |
+| Gate A | Remains paused pending Lee re-QA |
 
 ### Native Signing local development QA enablement (2026-09-21)
 
@@ -105,7 +122,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | `access_suspended` / `SIGNING_ACCESS_SUSPENDED` + `access_epoch` | Denies external bearer/session auth; parks invitation/package email |
 
 **Hard blockers before production enablement:**
-1. Apply all 20 Native Signing migrations to production (with immediate recovery suspend+bump).
+1. Apply all 21 Native Signing migrations to production (with immediate recovery suspend+bump).
 2. Install secrets: event-chain HMAC, participant wrap, completed-package wrap, worker secret, `CRON_SECRET`; set `NEXT_PUBLIC_SITE_URL`; Resend From/domain.
 3. Counsel-approved disclosure with `is_production_ready=true`.
 4. ~~Resolve emailed bearer-path platform logging~~ — closed on transport branch (UUID path + fragment secret); residual in-person path-bearer remains documented.
