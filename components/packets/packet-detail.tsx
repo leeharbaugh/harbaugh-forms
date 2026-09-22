@@ -81,6 +81,7 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isCreatingSigning, setIsCreatingSigning] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [duplicateSigningDialogOpen, setDuplicateSigningDialogOpen] =
     useState(false);
   const [duplicateSigningMessage, setDuplicateSigningMessage] = useState("");
@@ -90,11 +91,16 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
     setLoadError(null);
 
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from("packets")
-      .select(PACKET_DETAIL_SELECT)
-      .eq("id", packetId)
-      .maybeSingle();
+    const [{ data, error }, authResult] = await Promise.all([
+      supabase
+        .from("packets")
+        .select(PACKET_DETAIL_SELECT)
+        .eq("id", packetId)
+        .maybeSingle(),
+      supabase.auth.getUser(),
+    ]);
+
+    setCurrentUserId(authResult.data.user?.id ?? null);
 
     if (error) {
       setLoadError(error.message);
@@ -369,6 +375,10 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
     ? getOrderedContactNames(agreement)
     : packetContactNames;
   const isDeleted = isPacketDeleted(packet);
+  const canCreateSigning =
+    !isDeleted &&
+    currentUserId != null &&
+    packet.owner_user_id === currentUserId;
   const documents = sortPacketForms(
     [...(packet.packet_forms ?? [])].filter((document) =>
       isDeleted
@@ -466,14 +476,16 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
               <Button variant="outline" asChild>
                 <Link href={`/packets/${packetId}/edit`}>Edit packet</Link>
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isCreatingSigning || isDeleting || isRestoring}
-                onClick={() => void handleCreateSigning(false)}
-              >
-                {isCreatingSigning ? "Creating…" : "Create Signing"}
-              </Button>
+              {canCreateSigning ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isCreatingSigning || isDeleting || isRestoring}
+                  onClick={() => void handleCreateSigning(false)}
+                >
+                  {isCreatingSigning ? "Creating…" : "Create Signing"}
+                </Button>
+              ) : null}
               <Button
                 variant="destructive"
                 onClick={openDeleteDialog}

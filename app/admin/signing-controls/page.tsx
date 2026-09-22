@@ -61,13 +61,13 @@ export default async function AdminSigningControlsPage() {
           ) : null}
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">Native Signing enabled</span>
+              <span className="font-medium">Signings enabled</span>
               <Badge variant={featureEnabled ? "success" : "secondary"}>
                 {featureEnabled ? "Yes" : "No"}
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              Whether Native Signing is available to users in this environment.
+              Whether Signings are available to users in this environment.
             </p>
           </div>
           <div className="space-y-1">

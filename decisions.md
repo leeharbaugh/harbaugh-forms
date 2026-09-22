@@ -5358,3 +5358,63 @@ Representative signing remains part of the **initial** Native Signing release pe
 
 Earlier production-readiness scaffolding notes that deferred representative signing or treated personal-capacity-only as the first-rollout acceptance are superseded for product scope. Representative signing is restored for initial release. Production enablement remains gated by migrations/secrets/disclosure/ops — not by postponing representative capacity.
 
+### Product UI uses Signing/Signings; Native Signing is internal architecture terminology (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+“Native Signing” names the built-in Signing architecture (as opposed to an external provider). Normal user-facing UI uses **Signing**, **Signings**, **Create Signing**, **Send**, **Signing In Progress**, and **Signing Complete**. Admin Signing Controls label the feature gate **Signings enabled**. Internal code, env vars (`NATIVE_SIGNING_*`), migrations, and schema keep Native Signing naming.
+
+**Reason:** Lee’s manager QA found “Native” confusing in ordinary product copy.
+
+**Related:** `app/admin/signing-controls/page.tsx`; manager-facing Signings pages.
+
+### Draft document preparation supports whole-Packet and individual-document addition (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+From Draft preparation, managers may **Add entire packet** (all remaining eligible Packet Forms) or **Add individual document**. Eligibility matches Packet → Create Signing (`ACTIVE` + `availability_state='AVAILABLE'` + storage path; owned Packet; source-packet constraint when set). Duplicates are skipped. Every add uses the existing Draft document + source-snapshot path; no Revision 1 before Send / Begin In-Person. Draft **Remove document** uses the existing Stage 3 Draft removal path.
+
+**Reason:** Manager QA needed coherent document intake without a second import pipeline.
+
+**Related:** `lib/signing/draft-documents.ts` (`addRemainingPacketDocumentsWithActor`); `components/signings/signing-draft-prep-panel.tsx`.
+
+### Readiness user-facing wording is direct status language (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+User-facing Readiness copy uses **“This Signing is ready to send.”** / **“This Signing is not ready to send.”** with blocker detail beneath. Ready remains a derived evaluation, not a stored lifecycle state.
+
+**Reason:** Technical “calculated from Draft” framing confused managers.
+
+### In Progress participant-link operations are manager-facing (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+While a remote Signing is In Progress, managers with business manage authority may **Resend**, **Replace**, or **Revoke** a participant’s signing link. Resend reuses the current credential; Replace issues a new credential and invalidates the prior link; Revoke ends access without replacement. Raw bearer URLs/secrets are never shown. In-person Signings continue to use supervised handoff instead of emailed-link ops.
+
+**Reason:** After Send, managers could not recover delivery/access without leaving the product.
+
+**Related:** `lib/signing/participant-credential-recovery.ts`; Signing dashboard In Progress panel.
+
+### Pre-first-mark amendment remains a pre-production product gap (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+Exclusive amendment locks and first-mark freeze enforcement exist in the trusted server layer, but manager UI for In Progress pre-first-mark amendment (add/remove documents or participants, edit participant/capacity, adjust fields without mutating Revision 1 in place) is **not** shipped in the manager QA PR. After first accepted Signature/Initial, material correction requires a new Signing. Do not fake amendment by mutating Revision 1. Ship amendment workflow as a focused follow-up PR before production enablement.
+
+**Reason:** Implementing full amendment safely is substantial and must not balloon the manager QA PR.
+
+### Completed-copy recipients remain Complete-only for now (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+Copy recipients receive the completed package only. Current add path issues completed-package credentials and enqueues delivery, so configuration remains COMPLETE-only. Pre-Complete recipient lists would require a separate store-without-deliver path; deferred as a focused follow-up. Post-Complete add/remove remains available.
+
+**Reason:** Generalizing earlier without weakening evidence/delivery boundaries needs an explicit design, not a UI-only unlock.
+

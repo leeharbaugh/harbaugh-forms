@@ -5,6 +5,7 @@ import "server-only";
 import { requireSigningActor } from "@/lib/signing/actor";
 import {
   addDraftSigningDocumentWithActor,
+  addRemainingPacketDocumentsWithActor,
   removeDraftSigningDocumentWithActor,
   reorderDraftSigningDocumentsWithActor,
   updateDraftSigningDocumentMetadataWithActor,
@@ -78,6 +79,15 @@ export async function removeDraftSigningDocumentAction(input: {
     await removeDraftSigningDocumentWithActor(actor, input, admin);
     return null;
   });
+}
+
+export async function addRemainingPacketDocumentsAction(input: {
+  signingId: unknown;
+  packetId?: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    addRemainingPacketDocumentsWithActor(actor, input, admin),
+  );
 }
 
 export async function reorderDraftSigningDocumentsAction(input: {
@@ -221,25 +231,41 @@ export async function listPacketFormsForDraftAction(input: {
       ]),
     );
 
+    const { data: includedDocs, error: includedError } = await admin
+      .from("signing_documents")
+      .select("source_packet_form_id")
+      .eq("signing_id", signing.id)
+      .eq("included_in_draft", true)
+      .not("source_packet_form_id", "is", null);
+    if (includedError) throw new Error(includedError.message);
+    const includedFormIds = new Set(
+      (includedDocs ?? [])
+        .map((row) => row.source_packet_form_id as number | null)
+        .filter((id): id is number => id != null),
+    );
+
     const { data: forms, error: formError } = await admin
       .from("packet_forms")
       .select(
-        "id, packet_id, document_name, status, availability_state, storage_path",
+        "id, packet_id, document_name, status, availability_state, storage_path, sort_order",
       )
       .in("packet_id", packetIds)
       .eq("status", "ACTIVE")
       .eq("availability_state", "AVAILABLE")
-      .order("id", { ascending: false })
-      .limit(100);
+      .order("sort_order", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(200);
     if (formError) throw new Error(formError.message);
 
     return (forms ?? [])
       .filter((form) => Boolean(form.storage_path))
+      .filter((form) => !includedFormIds.has(form.id as number))
       .map((form) => ({
         id: form.id as number,
         packetId: form.packet_id as number,
         documentName: String(form.document_name ?? "Document"),
         packetLabel: packetLabelById.get(form.packet_id as number) ?? null,
+        alreadyIncluded: false,
       }));
   });
 }

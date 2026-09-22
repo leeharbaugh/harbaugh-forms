@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Signings | Harbaugh Forms",
-  description: "Prepare and manage Native Signings",
+  description: "Prepare and manage Signings",
 };
 
 export const instant = false;

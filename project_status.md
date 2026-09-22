@@ -1,8 +1,24 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-21 (Native Signing manager QA follow-up in development; Gate A paused; production Native Signing unavailable)
+**As of:** 2026-09-22 (Native Signing manager QA pass 2 on PR #46; Gate A paused; production Native Signing unavailable)
 
 ## Current State
+
+### Native Signing manager QA pass 2 (2026-09-22; PR #46)
+
+**Status:** Development-only UX/product reconciliation. Production remains OFF/untouched. Do not merge until Lee re-QAs.
+
+| Item | Result |
+|------|--------|
+| Product terminology | User-facing UI uses Signing/Signings; “Native Signing” reserved for internal architecture. Admin → **Signings enabled**. |
+| Packet → Create Signing | Owner-only retained. Create action shown only when `packets.owner_user_id` matches the current user (avoids predictable FORBIDDEN). |
+| Documents section | Add documents + picker + current Documents list are one continuous Draft section; **Remove document** via Draft path. |
+| Add entire packet | Remaining eligible Packet Forms via existing Draft snapshot path; no duplicates; source-packet and standalone modes. |
+| Readiness / Send copy | Direct ready/not-ready status language; concise Send confirmation (no representative prose). |
+| In Progress ops | Manager panel: delivery status, Resend / Replace / Revoke signing link (no bearer secrets). |
+| Copy recipients | Still COMPLETE-only (architectural: add issues completed-package credential + delivery). Pre-Complete config deferred. |
+| Pre-first-mark amendment | Backend locks exist; manager amendment UI still missing — next focused PR before production. |
+| Gate A | Remains paused |
 
 ### Native Signing manager QA follow-up (2026-09-21; in progress on feat/native-signing-manager-qa)
 
@@ -38,6 +54,7 @@
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
 ### Native Signing production rollout checkpoint (2026-09-21; audit only)
+
 
 **Status:** Read-only checkpoint on `main` `fa669c4` (PR #45 squash `01ce26d`). **No production mutation.** **No code blocker remains** before Gate A.
 

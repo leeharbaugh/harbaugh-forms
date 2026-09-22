@@ -38,6 +38,7 @@ export type SigningDashboardParticipant = {
   hasSignatureOrInitialsField: boolean;
   deliveryState: string | null;
   lastDeliveryFailureSafe: string | null;
+  hasActiveInvitationLink: boolean;
   capacityMode?: SigningCapacityMode;
   representedPartyName?: string | null;
   capacityLabel?: SigningCapacityLabel | null;
@@ -70,6 +71,7 @@ export async function loadSigningDashboardForActor(
     { data: participantRows, error: participantError },
     { data: draftFieldRows, error: draftFieldError },
     { data: deliveryRows, error: deliveryError },
+    { data: credentialRows, error: credentialError },
   ] = await Promise.all([
     admin
       .from("signings")
@@ -98,6 +100,12 @@ export async function loadSigningDashboardForActor(
       .eq("signing_id", summary.id)
       .eq("purpose", "INVITATION")
       .order("create_date", { ascending: true }),
+    admin
+      .from("signing_participant_credentials")
+      .select("signing_participant_id")
+      .eq("signing_id", summary.id)
+      .eq("is_current", true)
+      .is("revoked_at", null),
   ]);
 
   if (activationError) throw new Error(activationError.message);
@@ -105,6 +113,7 @@ export async function loadSigningDashboardForActor(
   if (participantError) throw new Error(participantError.message);
   if (draftFieldError) throw new Error(draftFieldError.message);
   if (deliveryError) throw new Error(deliveryError.message);
+  if (credentialError) throw new Error(credentialError.message);
 
   const isDraft = summary.lifecycleState === "DRAFT";
 
@@ -190,6 +199,10 @@ export async function loadSigningDashboardForActor(
     }
   }
 
+  const participantsWithActiveLink = new Set(
+    (credentialRows ?? []).map((row) => row.signing_participant_id as string),
+  );
+
   const participants: SigningDashboardParticipant[] = (
     participantRows ?? []
   ).map((row) => ({
@@ -207,6 +220,7 @@ export async function loadSigningDashboardForActor(
     deliveryState: latestDeliveryByParticipantId.get(row.id as string) ?? null,
     lastDeliveryFailureSafe:
       failureByParticipantId.get(row.id as string) ?? null,
+    hasActiveInvitationLink: participantsWithActiveLink.has(row.id as string),
     capacityMode:
       (row.signing_capacity_mode as SigningCapacityMode | undefined) ??
       undefined,
