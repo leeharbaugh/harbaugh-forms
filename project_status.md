@@ -1,8 +1,20 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-22 (Native Signing manager QA pass 2 on PR #46; Gate A paused; production Native Signing unavailable)
+**As of:** 2026-09-23 (Native Signing manager QA pass 3 on PR #46 — Draft preview; Gate A paused; production Native Signing unavailable)
 
 ## Current State
+
+### Native Signing manager QA pass 3 (2026-09-23; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. Do not merge until Lee re-QAs Preview Signing.
+
+| Item | Result |
+|------|--------|
+| Preview Signing | Manager action near header + Readiness; renders selected Draft source snapshots with Signature/Initials/Date Signed overlays |
+| Preview evidence | Non-evidentiary — no revision/version/credential/work item created |
+| Field placement edit | Backend upsert/remove exist; manager UI still only **Add default fields** (fixed coords) — visual place/move/resize remains a pre-production gap |
+| Banner copy | Removed general representative-support and typed-adoption banners from Signings list/detail |
+| Gate A | Remains paused |
 
 ### Native Signing manager QA pass 2 (2026-09-22; PR #46)
 
@@ -21,6 +33,7 @@
 | Gate A | Remains paused |
 
 ### Native Signing manager QA follow-up (2026-09-21; in progress on feat/native-signing-manager-qa)
+
 
 **Status:** Development-only UX/product reconciliation before Gate A. Production remains OFF/untouched.
 

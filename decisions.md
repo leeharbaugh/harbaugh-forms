@@ -5418,3 +5418,17 @@ Copy recipients receive the completed package only. Current add path issues comp
 
 **Reason:** Generalizing earlier without weakening evidence/delivery boundaries needs an explicit design, not a UI-only unlock.
 
+### Managers preview Draft Signing documents with field placements before activation (2026-09-23)
+
+**Date:** 2026-09-23
+
+**Decision:**
+Before **Send** or **Begin In-Person Signing**, managers with Draft manage authority can open **Preview Signing**. Preview renders each included document from its **currently selected Draft source snapshot** (the same source activation would consume) and overlays current `signing_draft_fields` (Signature, Initials, Date Signed) with the human participant’s name. Preview is non-evidentiary: it must not create a package revision, `signing_document_version`, credentials, delivery work, or freeze the Signing. Live Packet Form drift must not silently change the preview once a snapshot is selected. Preview is not itself a readiness requirement.
+
+**Consequences:**
+* Document bytes are served through an authorized server route; browsers never gain direct `signing-artifacts` access.
+* Visual place/move/resize of Draft Signing fields remains a product gap if only “Add default fields” exists; preview must not hide that gap.
+* General manager-page banners promoting representative signing or typed adoption are unnecessary; capacity and ceremony instructions belong in participant setup and ceremony.
+
+**Related:** `lib/signing/preview.ts`; `app/signings/[signingId]/preview/document/[documentId]/route.ts`; Signing dashboard Preview Signing.
+

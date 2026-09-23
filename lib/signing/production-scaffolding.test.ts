@@ -32,10 +32,13 @@ describe("production scaffolding wiring", () => {
     assert.match(adopted, /Drawn signatures and initials are not available yet/);
   });
 
-  it("surfaces representative and typed-only notices on create/Send UI", () => {
+  it("does not surface general representative or typed-adoption banners on manager pages", () => {
     const dashboard = read("components/signings/signing-dashboard-page.tsx");
-    assert.match(dashboard, /NATIVE_SIGNING_REPRESENTATIVE_NOTICE/);
-    assert.match(dashboard, /NATIVE_SIGNING_TYPED_ONLY_NOTICE/);
+    const list = read("components/signings/signings-list-page.tsx");
+    assert.doesNotMatch(dashboard, /NATIVE_SIGNING_REPRESENTATIVE_NOTICE/);
+    assert.doesNotMatch(dashboard, /NATIVE_SIGNING_TYPED_ONLY_NOTICE/);
+    assert.doesNotMatch(list, /NATIVE_SIGNING_REPRESENTATIVE_NOTICE/);
+    assert.doesNotMatch(list, /NATIVE_SIGNING_TYPED_ONLY_NOTICE/);
     assert.match(NATIVE_SIGNING_REPRESENTATIVE_NOTICE, /Representative signing/);
     assert.match(NATIVE_SIGNING_TYPED_ONLY_NOTICE, /typed/);
     assert.doesNotMatch(dashboard, /NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE/);

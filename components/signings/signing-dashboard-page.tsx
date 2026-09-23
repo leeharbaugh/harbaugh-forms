@@ -3,6 +3,7 @@
 import { ListPageHeader } from "@/components/list-page-header";
 import { SigningCompletedOpsPanel } from "@/components/signings/signing-completed-ops-panel";
 import { SigningDraftPrepPanel } from "@/components/signings/signing-draft-prep-panel";
+import { SigningPreviewDialog } from "@/components/signings/signing-preview-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,11 +15,7 @@ import {
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { startInPersonHandoffAction } from "@/lib/signing/ceremony-agent-actions";
-import {
-  NATIVE_SIGNING_REPRESENTATIVE_NOTICE,
-  NATIVE_SIGNING_TYPED_ONLY_NOTICE,
-  SIGNING_CAPACITY_LABEL_OPTIONS,
-} from "@/lib/signing/capacity-notices";
+import { SIGNING_CAPACITY_LABEL_OPTIONS } from "@/lib/signing/capacity-notices";
 import type { SigningDashboard } from "@/lib/signing/dashboard";
 import {
   activateSigningAction,
@@ -76,6 +73,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     path: string;
     expiresAt: string;
   } | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const reload = useCallback(async () => {
     const result = await getSigningDashboardAction({ signingId });
@@ -271,6 +269,14 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
               <Button
                 type="button"
                 variant="outline"
+                disabled={!canManage || dashboard.documents.length === 0}
+                onClick={() => setPreviewOpen(true)}
+              >
+                Preview Signing
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
                 disabled={!canActivate}
                 onClick={() =>
                   setPendingActivation({
@@ -301,13 +307,6 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {notice ? (
         <p className="text-sm text-muted-foreground">{notice}</p>
-      ) : null}
-
-      {isDraft ? (
-        <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
-          <p>{NATIVE_SIGNING_REPRESENTATIVE_NOTICE}</p>
-          <p>{NATIVE_SIGNING_TYPED_ONLY_NOTICE}</p>
-        </div>
       ) : null}
 
       {isDraft && canManage ? (
@@ -351,17 +350,33 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
               <CardDescription>
                 Resolve the items below before Send or Begin In-Person.
               </CardDescription>
-            ) : null}
+            ) : (
+              <CardDescription>
+                Open Preview Signing to verify documents and field placements
+                before Send or Begin In-Person.
+              </CardDescription>
+            )}
           </CardHeader>
-          {dashboard.blockers.length > 0 ? (
-            <CardContent>
+          <CardContent className="space-y-3">
+            {dashboard.blockers.length > 0 ? (
               <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                 {dashboard.blockers.map((blocker, index) => (
                   <li key={`${blocker.code}-${index}`}>{blocker.message}</li>
                 ))}
               </ul>
-            </CardContent>
-          ) : null}
+            ) : null}
+            {canManage ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={dashboard.documents.length === 0}
+                onClick={() => setPreviewOpen(true)}
+              >
+                Preview Signing
+              </Button>
+            ) : null}
+          </CardContent>
         </Card>
       ) : null}
 
@@ -616,6 +631,12 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         signingId={signingId}
         lifecycleState={dashboard.signing.lifecycleState}
         finalizationCondition={dashboard.signing.finalizationCondition}
+      />
+
+      <SigningPreviewDialog
+        open={previewOpen}
+        signingId={signingId}
+        onClose={() => setPreviewOpen(false)}
       />
 
       <ConfirmDialog

@@ -99,15 +99,24 @@ describe("manager QA wiring", () => {
       /This freezes all the documents and emails each participant a signing link\./,
     );
     assert.match(dashboard, /Send this Signing\?/);
-    // Representative notice remains on the Draft page, not in Send confirmation.
+    assert.doesNotMatch(dashboard, /NATIVE_SIGNING_REPRESENTATIVE_NOTICE/);
+    assert.doesNotMatch(dashboard, /NATIVE_SIGNING_TYPED_ONLY_NOTICE/);
     const sendConfirmSlice = dashboard.slice(
       dashboard.indexOf("Send this Signing?"),
     );
-    assert.doesNotMatch(sendConfirmSlice, /NATIVE_SIGNING_REPRESENTATIVE_NOTICE/);
     assert.doesNotMatch(
       sendConfirmSlice,
       /representative capacity|signing as a representative/i,
     );
+  });
+
+  it("exposes Preview Signing from selected Draft snapshots", () => {
+    const dashboard = read("components/signings/signing-dashboard-page.tsx");
+    const preview = read("lib/signing/preview.ts");
+    assert.match(dashboard, /Preview Signing/);
+    assert.match(dashboard, /SigningPreviewDialog/);
+    assert.match(preview, /renderPreparedPdfFromSelectedDraftSnapshot/);
+    assert.doesNotMatch(preview, /promotePackageRevisionFromDraftWithActor/);
   });
 
   it("exposes In Progress resend/replace/revoke without bearer secrets", () => {
