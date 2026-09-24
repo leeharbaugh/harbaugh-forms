@@ -1,8 +1,23 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-23 (Native Signing manager QA pass 3 on PR #46 — Draft preview; Gate A paused; production Native Signing unavailable)
+**As of:** 2026-09-23 (Native Signing manager QA pass 4 on PR #46 — ad hoc PDF + visual prepare + pre-Complete copy recipients; Gate A paused; production Native Signing unavailable)
 
 ## Current State
+
+### Native Signing manager QA pass 4 (2026-09-23; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. Do not merge until Lee QAs the full Draft document-preparation workflow.
+
+| Item | Result |
+|------|--------|
+| Ad hoc PDF upload | Draft-only Upload PDF → Signing-owned `AD_HOC_PDF` + `draft-ad-hoc/` snapshot; no Packet/Form/evidence/revision |
+| Visual Prepare Documents | Same workspace as Preview; place/move/resize/remove Signature/Initials/Date Signed via `signing_draft_fields` |
+| Preview Signing | Remains read-only view of the same Draft source + fields |
+| Add default fields | Demoted to optional quick fixture only |
+| Copy recipients | Configurable in Draft / In Progress / Complete; credentials + delivery only after Complete; fan-out includes preconfigured ACTIVE recipients |
+| Migration | `20260923200000_native_signing_ad_hoc_documents.sql` (dev only) |
+| In Progress amendment | Still missing manager UI — backend locks exist; do not mutate Revision 1 |
+| Gate A | Remains paused |
 
 ### Native Signing manager QA pass 3 (2026-09-23; PR #46)
 

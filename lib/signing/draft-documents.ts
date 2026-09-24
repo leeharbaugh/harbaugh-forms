@@ -15,6 +15,7 @@ import { isUuid } from "./types";
 export type SigningDocumentRow = {
   id: string;
   signing_id: string;
+  source_kind?: "PACKET_FORM" | "AD_HOC_PDF" | string | null;
   source_packet_form_id: number | null;
   display_order: number;
   logical_label: string | null;
@@ -185,6 +186,7 @@ export async function addDraftSigningDocumentWithActor(
     .from("signing_documents")
     .insert({
       signing_id: signing.id,
+      source_kind: "PACKET_FORM",
       source_packet_form_id: packetFormId,
       display_order: displayOrder,
       logical_label: logicalLabel,

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  buildAdHocDraftSourceObjectKey,
   buildDraftSourceObjectKey,
   renderPreparedPdfFromDraftSnapshot,
   type DraftSourceSnapshotRow,
@@ -11,6 +12,7 @@ import { SigningError } from "./errors";
 import { buildPreparedVersionObjectKey } from "./prepare-pdf";
 import { compareDraftSourceFingerprints } from "./source-drift";
 import {
+  isAdHocDraftSourceObjectKey,
   isDraftSourceObjectKey,
   isPreparedVersionObjectKey,
   NATIVE_SIGNING_STAGE4_MIGRATIONS,
@@ -93,17 +95,26 @@ describe("Native Signing Stage 4 draft source snapshot contracts", () => {
       ...ids,
       snapshotId: "33333333-3333-4333-8333-333333333333",
     });
+    const adHocKey = buildAdHocDraftSourceObjectKey({
+      ...ids,
+      snapshotId: "55555555-5555-4555-8555-555555555555",
+    });
     const versionKey = buildPreparedVersionObjectKey({
       ...ids,
       versionId: "44444444-4444-4444-8444-444444444444",
     });
 
     assert.match(draftKey, /\/draft-snapshots\//);
+    assert.match(adHocKey, /\/draft-ad-hoc\//);
     assert.match(versionKey, /\/versions\//);
 
     // Immutable bytes in either namespace, but only one namespace is evidence.
     assert.ok(isDraftSourceObjectKey(draftKey));
+    assert.ok(isDraftSourceObjectKey(adHocKey));
+    assert.ok(isAdHocDraftSourceObjectKey(adHocKey));
+    assert.ok(!isAdHocDraftSourceObjectKey(draftKey));
     assert.ok(!isPreparedVersionObjectKey(draftKey));
+    assert.ok(!isPreparedVersionObjectKey(adHocKey));
     assert.ok(isPreparedVersionObjectKey(versionKey));
     assert.ok(!isDraftSourceObjectKey(versionKey));
 

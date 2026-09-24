@@ -34,7 +34,10 @@ import {
 } from "./integrity";
 import { sha256Hex } from "./prepare-pdf";
 import { SIGNING_ARTIFACTS_BUCKET } from "./stage1-schema";
-import { enqueueInitialCompletedPackageFanOut } from "./completed-package-delivery";
+import {
+  enqueueInitialCompletedPackageFanOut,
+  enqueueInitialCopyRecipientFanOut,
+} from "./completed-package-delivery";
 import {
   claimSigningWorkItem,
   completeWorkItem,
@@ -609,6 +612,15 @@ export async function processNextFinalizationWorkItem(options: {
       // Delivery must never fail or roll back Complete.
       console.error(
         "[native-signing-completion-delivery] initial fan-out failed:",
+        fanOutError instanceof Error ? fanOutError.message : "unknown error",
+      );
+    }
+
+    try {
+      await enqueueInitialCopyRecipientFanOut(options.admin, signingId);
+    } catch (fanOutError) {
+      console.error(
+        "[native-signing-completion-delivery] copy-recipient fan-out failed:",
         fanOutError instanceof Error ? fanOutError.message : "unknown error",
       );
     }

@@ -41,7 +41,9 @@ describe("Signing manager Draft preview", () => {
     assert.match(dialog, /Previous document/);
     assert.match(dialog, /Next document/);
     assert.match(dialog, /representing/);
-    assert.match(dialog, /Placement editing is not available/);
+    assert.match(dialog, /pointer-events-none/);
+    assert.match(dialog, /Prepare Documents/);
+    assert.match(dialog, /mode === "prepare"/);
     assert.doesNotMatch(dialog, /rawToken|token_wrapped|signing-artifacts/);
   });
 

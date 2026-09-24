@@ -28,6 +28,14 @@ export type SigningPreviewField = {
   capacityMode: SigningCapacityMode;
   representedPartyName: string | null;
   capacityLabel: SigningCapacityLabel | null;
+  linkedSignatureFieldId: string | null;
+};
+
+export type SigningPreviewParticipant = {
+  id: string;
+  fullName: string;
+  capacityMode: SigningCapacityMode;
+  representedPartyName: string | null;
 };
 
 export type SigningPreviewDocument = {
@@ -43,6 +51,7 @@ export type SigningPreviewModel = {
   signingId: string;
   title: string;
   documents: SigningPreviewDocument[];
+  participants: SigningPreviewParticipant[];
 };
 
 async function requireDraftPreviewAuthority(
@@ -105,7 +114,7 @@ export async function loadSigningPreviewForActor(
     admin
       .from("signing_draft_fields")
       .select(
-        "id, signing_document_id, signing_participant_id, field_type, is_required, page_number, x, y, width, height",
+        "id, signing_document_id, signing_participant_id, field_type, is_required, page_number, x, y, width, height, linked_signature_draft_field_id",
       )
       .eq("signing_id", signingId),
   ]);
@@ -152,9 +161,22 @@ export async function loadSigningPreviewForActor(
       capacityMode: participant.capacityMode,
       representedPartyName: participant.representedPartyName,
       capacityLabel: participant.capacityLabel,
+      linkedSignatureFieldId:
+        (row.linked_signature_draft_field_id as string | null) ?? null,
     });
     fieldsByDocument.set(documentId, list);
   }
+
+  const participants: SigningPreviewParticipant[] = (participantRows ?? []).map(
+    (row) => ({
+      id: row.id as string,
+      fullName: row.full_name as string,
+      capacityMode:
+        (row.signing_capacity_mode as SigningCapacityMode | null) ?? "PERSONAL",
+      representedPartyName:
+        (row.represented_party_name as string | null) ?? null,
+    }),
+  );
 
   const documents: SigningPreviewDocument[] = (documentRows ?? []).map(
     (row) => {
@@ -182,6 +204,7 @@ export async function loadSigningPreviewForActor(
     signingId,
     title: bundle.signing.title,
     documents,
+    participants,
   };
 }
 

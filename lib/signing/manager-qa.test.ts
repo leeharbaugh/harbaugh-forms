@@ -74,11 +74,14 @@ describe("manager QA wiring", () => {
     const prep = read("components/signings/signing-draft-prep-panel.tsx");
     const stage3 = read("lib/signing/stage3-actions.ts");
     const draftDocs = read("lib/signing/draft-documents.ts");
-    assert.match(prep, /Remove document/);
+    assert.match(prep, /Remove/);
+    assert.match(prep, /removeDraftSigningDocumentAction/);
     assert.match(prep, /removeDraftSigningDocumentAction/);
     assert.match(prep, /Add all remaining packet documents|Add entire packet/);
-    assert.match(prep, /Add individual document/);
-    assert.match(prep, /Add documents/);
+    assert.match(prep, /Add document from packet/);
+    assert.match(prep, /Upload PDF/);
+    assert.match(prep, />Documents</);
+    assert.match(prep, /Included documents/);
     assert.match(prep, /Documents/);
     assert.match(stage3, /addRemainingPacketDocumentsAction/);
     assert.match(draftDocs, /addRemainingPacketDocumentsWithActor/);
@@ -136,14 +139,28 @@ describe("manager QA wiring", () => {
     assert.match(recovery, /IN_PROGRESS/);
   });
 
-  it("keeps copy recipients Complete-only and completed ops intact", () => {
+  it("allows copy recipients before Complete and keeps completed ops intact", () => {
     const copy = read("lib/signing/copy-recipients.ts");
     const completed = read("components/signings/signing-completed-ops-panel.tsx");
-    const authority = read("lib/signing/completed-package-authority.ts");
-    assert.match(copy, /requireCompletedManageableSigning/);
-    assert.match(authority, /lifecycleState !== "COMPLETE"/);
-    assert.match(completed, /Copy recipients/);
-    assert.match(completed, /addCopyRecipientAction/);
+    const panel = read("components/signings/signing-copy-recipients-panel.tsx");
+    assert.match(copy, /DRAFT/);
+    assert.match(copy, /IN_PROGRESS/);
+    assert.match(copy, /COMPLETE/);
+    assert.match(copy, /ensureCompletedPackageCredential/);
+    assert.match(panel, /Copy recipients/);
+    assert.match(completed, /SigningCopyRecipientsPanel/);
+    assert.match(completed, /Completed package delivery/);
+  });
+
+  it("exposes visual Prepare Documents and demotes Add default fields", () => {
+    const prep = read("components/signings/signing-draft-prep-panel.tsx");
+    const dialog = read("components/signings/signing-preview-dialog.tsx");
+    assert.match(prep, /Prepare Documents/);
+    assert.match(prep, /Upload PDF/);
+    assert.match(prep, /Optional quick fields/);
+    assert.match(prep, /Add default fields/);
+    assert.match(dialog, /Prepare Documents/);
+    assert.match(dialog, /upsertDraftSigningFieldAction/);
   });
 
   it("does not fake In Progress amendment via Revision 1 mutation", () => {

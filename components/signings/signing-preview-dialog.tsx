@@ -12,18 +12,39 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { getSigningPreviewAction } from "@/lib/signing/preview-actions";
 import type {
   SigningPreviewDocument,
   SigningPreviewField,
   SigningPreviewModel,
 } from "@/lib/signing/preview";
+import {
+  removeDraftSigningFieldAction,
+  upsertDraftSigningFieldAction,
+} from "@/lib/signing/stage3-actions";
 import { acquirePdfWorker, releasePdfWorker } from "@/lib/pdfjs-setup";
+import {
+  clickToPdfCoordinates,
+  renderRectToPdfPlacement,
+  type PageMetrics,
+} from "@/lib/types/template-pdf-field";
 import { cn } from "@/lib/utils";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
+import { Rnd } from "react-rnd";
 
-function fieldTypeLabel(type: SigningPreviewField["fieldType"]): string {
+export type SigningDocumentWorkspaceMode = "preview" | "prepare";
+
+type FieldType = SigningPreviewField["fieldType"];
+
+const DEFAULT_SIZES: Record<FieldType, { width: number; height: number }> = {
+  SIGNATURE: { width: 160, height: 40 },
+  INITIALS: { width: 80, height: 40 },
+  DATE_SIGNED: { width: 100, height: 24 },
+};
+
+function fieldTypeLabel(type: FieldType): string {
   switch (type) {
     case "SIGNATURE":
       return "Signature";
@@ -35,7 +56,7 @@ function fieldTypeLabel(type: SigningPreviewField["fieldType"]): string {
 }
 
 function fieldTypeVariant(
-  type: SigningPreviewField["fieldType"],
+  type: FieldType,
 ): "info" | "secondary" | "outline" {
   switch (type) {
     case "SIGNATURE":
@@ -47,69 +68,162 @@ function fieldTypeVariant(
   }
 }
 
+function fieldCompactLabel(field: SigningPreviewField): string {
+  return `${field.participantFullName} — ${fieldTypeLabel(field.fieldType)}`;
+}
+
 function SigningFieldOverlay({
   field,
-  pageWidth,
-  pageHeight,
-  renderedWidth,
-  renderedHeight,
+  metrics,
+  editable,
+  selected,
+  busy,
+  onSelect,
+  onMoveOrResize,
+  onRemove,
 }: {
   field: SigningPreviewField;
-  pageWidth: number;
-  pageHeight: number;
-  renderedWidth: number;
-  renderedHeight: number;
+  metrics: PageMetrics;
+  editable: boolean;
+  selected: boolean;
+  busy: boolean;
+  onSelect: (fieldId: string) => void;
+  onMoveOrResize: (
+    field: SigningPreviewField,
+    rect: { x: number; y: number; width: number; height: number },
+  ) => void;
+  onRemove: (fieldId: string) => void;
 }) {
-  const left = (field.x / pageWidth) * renderedWidth;
-  const top = (field.y / pageHeight) * renderedHeight;
-  const width = (field.width / pageWidth) * renderedWidth;
-  const height = (field.height / pageHeight) * renderedHeight;
+  const left = (field.x / metrics.originalWidth) * metrics.renderedWidth;
+  const top = (field.y / metrics.originalHeight) * metrics.renderedHeight;
+  const width = (field.width / metrics.originalWidth) * metrics.renderedWidth;
+  const height =
+    (field.height / metrics.originalHeight) * metrics.renderedHeight;
+
+  const title =
+    field.capacityMode === "REPRESENTATIVE" && field.representedPartyName
+      ? `${fieldCompactLabel(field)} · representing ${field.representedPartyName}`
+      : fieldCompactLabel(field);
+
+  if (!editable) {
+    return (
+      <div
+        className={cn(
+          "pointer-events-none absolute box-border rounded border-2 bg-background/80 px-1 py-0.5 shadow-sm",
+          field.fieldType === "SIGNATURE" && "border-sky-600",
+          field.fieldType === "INITIALS" && "border-emerald-600",
+          field.fieldType === "DATE_SIGNED" && "border-amber-600",
+        )}
+        style={{
+          left,
+          top,
+          width: Math.max(width, 48),
+          height: Math.max(height, 24),
+        }}
+        title={title}
+      >
+        <div className="flex h-full flex-col justify-center overflow-hidden">
+          <span className="truncate text-[10px] font-semibold leading-tight">
+            {fieldCompactLabel(field)}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div
+    <Rnd
+      bounds="parent"
+      size={{ width: Math.max(width, 48), height: Math.max(height, 24) }}
+      position={{ x: left, y: top }}
+      minWidth={48}
+      minHeight={20}
+      disableDragging={busy}
+      enableResizing={
+        busy
+          ? false
+          : {
+              top: true,
+              right: true,
+              bottom: true,
+              left: true,
+              topRight: true,
+              bottomRight: true,
+              bottomLeft: true,
+              topLeft: true,
+            }
+      }
       className={cn(
-        "pointer-events-none absolute box-border rounded border-2 bg-background/80 px-1 py-0.5 shadow-sm",
+        "absolute box-border rounded border-2 bg-background/85 px-1 py-0.5 shadow-sm",
         field.fieldType === "SIGNATURE" && "border-sky-600",
         field.fieldType === "INITIALS" && "border-emerald-600",
         field.fieldType === "DATE_SIGNED" && "border-amber-600",
+        selected && "ring-2 ring-offset-1 ring-foreground/40",
       )}
-      style={{
-        left,
-        top,
-        width: Math.max(width, 48),
-        height: Math.max(height, 24),
+      onClick={(event: MouseEvent) => {
+        event.stopPropagation();
+        onSelect(field.id);
       }}
-      title={
-        field.capacityMode === "REPRESENTATIVE" && field.representedPartyName
-          ? `${field.participantFullName} · ${fieldTypeLabel(field.fieldType)} · representing ${field.representedPartyName}`
-          : `${field.participantFullName} · ${fieldTypeLabel(field.fieldType)}`
-      }
+      onDragStop={(_event, data) => {
+        onMoveOrResize(field, {
+          x: data.x,
+          y: data.y,
+          width: Math.max(width, 48),
+          height: Math.max(height, 24),
+        });
+      }}
+      onResizeStop={(_event, _dir, ref, _delta, position) => {
+        onMoveOrResize(field, {
+          x: position.x,
+          y: position.y,
+          width: ref.offsetWidth,
+          height: ref.offsetHeight,
+        });
+      }}
+      title={title}
     >
-      <div className="flex h-full flex-col justify-center gap-0.5 overflow-hidden">
+      <div className="flex h-full items-start justify-between gap-1 overflow-hidden">
         <span className="truncate text-[10px] font-semibold leading-tight">
-          {field.participantFullName}
+          {fieldCompactLabel(field)}
         </span>
-        <span className="truncate text-[9px] leading-tight text-muted-foreground">
-          {fieldTypeLabel(field.fieldType)}
-          {field.isRequired ? " · required" : ""}
-        </span>
+        {selected ? (
+          <button
+            type="button"
+            className="shrink-0 text-[10px] text-destructive underline"
+            disabled={busy}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove(field.id);
+            }}
+          >
+            Remove
+          </button>
+        ) : null}
       </div>
-    </div>
+    </Rnd>
   );
 }
 
 export function SigningPreviewDialog({
   open,
   signingId,
+  mode = "preview",
+  initialDocumentId = null,
   onClose,
+  onChanged,
 }: {
   open: boolean;
   signingId: string;
+  mode?: SigningDocumentWorkspaceMode;
+  initialDocumentId?: string | null;
   onClose: () => void;
+  onChanged?: () => Promise<void>;
 }) {
   const titleId = useId();
+  const editable = mode === "prepare";
   const [model, setModel] = useState<SigningPreviewModel | null>(null);
   const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [documentIndex, setDocumentIndex] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
@@ -118,6 +232,11 @@ export function SigningPreviewDialog({
     width: number;
     height: number;
   } | null>(null);
+  const [selectedParticipantId, setSelectedParticipantId] = useState("");
+  const [selectedFieldType, setSelectedFieldType] =
+    useState<FieldType>("SIGNATURE");
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const placingRef = useRef(false);
   const renderedWidth = 720;
 
   const load = useCallback(async () => {
@@ -132,12 +251,28 @@ export function SigningPreviewDialog({
     }
     const data = result.data as SigningPreviewModel;
     setModel(data);
-    setDocumentIndex(0);
+    setSelectedParticipantId((previous) => {
+      if (previous && data.participants.some((row) => row.id === previous)) {
+        return previous;
+      }
+      return data.participants[0]?.id ?? "";
+    });
+    setDocumentIndex((previous) => {
+      if (initialDocumentId) {
+        const index = data.documents.findIndex(
+          (document) => document.id === initialDocumentId,
+        );
+        if (index >= 0) return index;
+      }
+      if (previous < data.documents.length) return previous;
+      return 0;
+    });
     setPageNumber(1);
     setPageCount(1);
     setPageSize(null);
+    setSelectedFieldId(null);
     setLoading(false);
-  }, [signingId]);
+  }, [signingId, initialDocumentId]);
 
   useEffect(() => {
     if (!open) return;
@@ -176,6 +311,193 @@ export function SigningPreviewDialog({
     );
   }, [currentDocument, pageNumber]);
 
+  const metrics: PageMetrics | null = pageSize
+    ? {
+        originalWidth: pageSize.width,
+        originalHeight: pageSize.height,
+        renderedWidth,
+        renderedHeight: (pageSize.height / pageSize.width) * renderedWidth,
+      }
+    : null;
+
+  async function persistFieldPlacement(
+    field: SigningPreviewField,
+    pdf: { x: number; y: number; width: number; height: number },
+  ) {
+    if (!currentDocument) return;
+    setBusy(true);
+    setError(null);
+    const result = await upsertDraftSigningFieldAction({
+      signingId,
+      fieldId: field.id,
+      signingDocumentId: currentDocument.id,
+      signingParticipantId: field.participantId,
+      fieldType: field.fieldType,
+      isRequired: field.isRequired,
+      pageNumber: field.pageNumber,
+      x: pdf.x,
+      y: pdf.y,
+      width: pdf.width,
+      height: pdf.height,
+      linkedSignatureDraftFieldId: field.linkedSignatureFieldId ?? undefined,
+    });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      await load();
+      if (onChanged) await onChanged();
+    }
+    setBusy(false);
+  }
+
+  async function placeFieldAt(clientX: number, clientY: number, pageEl: HTMLElement) {
+    if (!editable || !currentDocument || !metrics || !selectedParticipantId) {
+      return;
+    }
+    if (placingRef.current || busy) return;
+    placingRef.current = true;
+    setBusy(true);
+    setError(null);
+
+    const rect = pageEl.getBoundingClientRect();
+    const clickX = clientX - rect.left;
+    const clickY = clientY - rect.top;
+    const pdfPoint = clickToPdfCoordinates(clickX, clickY, metrics);
+    const size = DEFAULT_SIZES[selectedFieldType];
+    const x = Math.max(0, pdfPoint.x - size.width / 2);
+    const y = Math.max(0, pdfPoint.y - size.height / 2);
+
+    let linkedSignatureDraftFieldId: string | undefined;
+    if (selectedFieldType === "DATE_SIGNED") {
+      const signatures = currentDocument.fields.filter(
+        (field) =>
+          field.fieldType === "SIGNATURE" &&
+          field.participantId === selectedParticipantId,
+      );
+      const preferred =
+        signatures.find((field) => field.pageNumber === pageNumber) ??
+        signatures[signatures.length - 1];
+      if (!preferred) {
+        setError(
+          "Place a Signature for this participant before adding Date Signed.",
+        );
+        setBusy(false);
+        placingRef.current = false;
+        return;
+      }
+      linkedSignatureDraftFieldId = preferred.id;
+    }
+
+    const result = await upsertDraftSigningFieldAction({
+      signingId,
+      signingDocumentId: currentDocument.id,
+      signingParticipantId: selectedParticipantId,
+      fieldType: selectedFieldType,
+      pageNumber,
+      x,
+      y,
+      width: size.width,
+      height: size.height,
+      linkedSignatureDraftFieldId,
+    });
+
+    if (!result.ok) {
+      setError(result.error);
+      setBusy(false);
+      placingRef.current = false;
+      return;
+    }
+
+    // Signature placement also creates a linked Date Signed to the right when
+    // the architecture requires linkage and none exists yet for this signature.
+    if (selectedFieldType === "SIGNATURE") {
+      const signatureId = (result.data as { id?: string } | undefined)?.id;
+      if (signatureId) {
+        await upsertDraftSigningFieldAction({
+          signingId,
+          signingDocumentId: currentDocument.id,
+          signingParticipantId: selectedParticipantId,
+          fieldType: "DATE_SIGNED",
+          linkedSignatureDraftFieldId: signatureId,
+          pageNumber,
+          x: x + size.width + 12,
+          y,
+          width: DEFAULT_SIZES.DATE_SIGNED.width,
+          height: DEFAULT_SIZES.DATE_SIGNED.height,
+        });
+      }
+    }
+
+    await load();
+    if (onChanged) await onChanged();
+    setBusy(false);
+    placingRef.current = false;
+  }
+
+  async function removeField(fieldId: string) {
+    setBusy(true);
+    setError(null);
+    const result = await removeDraftSigningFieldAction({
+      signingId,
+      fieldId,
+    });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      setSelectedFieldId(null);
+      await load();
+      if (onChanged) await onChanged();
+    }
+    setBusy(false);
+  }
+
+  async function reassignSelectedField(participantId: string) {
+    if (!selectedFieldId || !currentDocument || !model) return;
+    const field = currentDocument.fields.find((row) => row.id === selectedFieldId);
+    if (!field) return;
+    setBusy(true);
+    setError(null);
+
+    let linkedSignatureDraftFieldId = field.linkedSignatureFieldId ?? undefined;
+    if (field.fieldType === "DATE_SIGNED") {
+      const signatures = currentDocument.fields.filter(
+        (row) =>
+          row.fieldType === "SIGNATURE" && row.participantId === participantId,
+      );
+      const preferred = signatures[signatures.length - 1];
+      if (!preferred) {
+        setError(
+          "Reassign Date Signed only to a participant who already has a Signature.",
+        );
+        setBusy(false);
+        return;
+      }
+      linkedSignatureDraftFieldId = preferred.id;
+    }
+
+    const result = await upsertDraftSigningFieldAction({
+      signingId,
+      fieldId: field.id,
+      signingDocumentId: currentDocument.id,
+      signingParticipantId: participantId,
+      fieldType: field.fieldType,
+      isRequired: field.isRequired,
+      pageNumber: field.pageNumber,
+      x: field.x,
+      y: field.y,
+      width: field.width,
+      height: field.height,
+      linkedSignatureDraftFieldId,
+    });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      await load();
+      if (onChanged) await onChanged();
+    }
+    setBusy(false);
+  }
+
   if (!open) return null;
 
   return (
@@ -189,10 +511,13 @@ export function SigningPreviewDialog({
         <CardHeader className="shrink-0 space-y-2 border-b border-border pb-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0 space-y-1">
-              <CardTitle id={titleId}>Preview Signing</CardTitle>
+              <CardTitle id={titleId}>
+                {editable ? "Prepare Documents" : "Preview Signing"}
+              </CardTitle>
               <CardDescription>
-                Inspect documents and Signing fields exactly as prepared. This
-                does not send or freeze the Signing.
+                {editable
+                  ? "Place Signature, Initials, and Date Signed fields on the prepared documents. Changes save to Draft preparation only."
+                  : "Inspect documents and Signing fields exactly as prepared. This does not send or freeze the Signing."}
               </CardDescription>
             </div>
             <Button type="button" variant="outline" onClick={onClose}>
@@ -210,6 +535,7 @@ export function SigningPreviewDialog({
                   setDocumentIndex((value) => Math.max(0, value - 1));
                   setPageNumber(1);
                   setPageSize(null);
+                  setSelectedFieldId(null);
                 }}
               >
                 Previous document
@@ -233,27 +559,105 @@ export function SigningPreviewDialog({
                   );
                   setPageNumber(1);
                   setPageSize(null);
+                  setSelectedFieldId(null);
                 }}
               >
                 Next document
               </Button>
             </div>
           ) : null}
+          {editable && model ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="prepare-participant">Participant</Label>
+                <select
+                  id="prepare-participant"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  value={selectedParticipantId}
+                  onChange={(event) =>
+                    setSelectedParticipantId(event.target.value)
+                  }
+                  disabled={busy || model.participants.length === 0}
+                >
+                  {model.participants.length === 0 ? (
+                    <option value="">Add a participant first</option>
+                  ) : (
+                    model.participants.map((participant) => (
+                      <option key={participant.id} value={participant.id}>
+                        {participant.fullName}
+                        {participant.capacityMode === "REPRESENTATIVE" &&
+                        participant.representedPartyName
+                          ? ` (for ${participant.representedPartyName})`
+                          : ""}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="prepare-field-type">Field type</Label>
+                <select
+                  id="prepare-field-type"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  value={selectedFieldType}
+                  onChange={(event) =>
+                    setSelectedFieldType(event.target.value as FieldType)
+                  }
+                  disabled={busy}
+                >
+                  <option value="SIGNATURE">Signature</option>
+                  <option value="INITIALS">Initials</option>
+                  <option value="DATE_SIGNED">Date Signed</option>
+                </select>
+              </div>
+            </div>
+          ) : null}
+          {editable && selectedFieldId && model ? (
+            <div className="space-y-1">
+              <Label htmlFor="reassign-participant">
+                Reassign selected field
+              </Label>
+              <select
+                id="reassign-participant"
+                className="flex h-9 w-full max-w-md rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                value={
+                  currentDocument?.fields.find(
+                    (field) => field.id === selectedFieldId,
+                  )?.participantId ?? ""
+                }
+                onChange={(event) =>
+                  void reassignSelectedField(event.target.value)
+                }
+                disabled={busy}
+              >
+                {model.participants.map((participant) => (
+                  <option key={participant.id} value={participant.id}>
+                    {participant.fullName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent className="min-h-0 flex-1 overflow-auto py-4">
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading preview…</p>
+            <p className="text-sm text-muted-foreground">
+              {editable ? "Loading documents…" : "Loading preview…"}
+            </p>
           ) : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {!loading && !error && model && model.documents.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Add at least one document before previewing.
+              Add at least one document before{" "}
+              {editable ? "preparing fields" : "previewing"}.
             </p>
           ) : null}
-          {!loading && currentDocument && !currentDocument.hasSelectedSnapshot ? (
+          {!loading &&
+          currentDocument &&
+          !currentDocument.hasSelectedSnapshot ? (
             <p className="text-sm text-destructive">
               This document has no prepared Draft source snapshot yet. Add or
-              re-capture the document before previewing.
+              re-capture the document before continuing.
             </p>
           ) : null}
           {!loading && currentDocument?.hasSelectedSnapshot && pdfUrl ? (
@@ -293,6 +697,14 @@ export function SigningPreviewDialog({
                 </div>
               </div>
 
+              {editable ? (
+                <p className="text-xs text-muted-foreground">
+                  Choose a participant and field type, then click the PDF to
+                  place. Drag or resize a placement to adjust. Signature also
+                  places a linked Date Signed.
+                </p>
+              ) : null}
+
               <div className="relative inline-block max-w-full overflow-auto rounded border border-border bg-muted/20">
                 <Document
                   file={pdfUrl}
@@ -303,7 +715,7 @@ export function SigningPreviewDialog({
                   }
                   error={
                     <p className="p-4 text-sm text-destructive">
-                      Could not load this Signing document preview.
+                      Could not load this Signing document.
                     </p>
                   }
                   onLoadSuccess={(pdf) => {
@@ -313,7 +725,23 @@ export function SigningPreviewDialog({
                     );
                   }}
                 >
-                  <div className="relative">
+                  <div
+                    className={cn(
+                      "relative",
+                      editable && selectedParticipantId
+                        ? "cursor-crosshair"
+                        : null,
+                    )}
+                    onClick={(event) => {
+                      if (!editable) return;
+                      const target = event.currentTarget;
+                      void placeFieldAt(
+                        event.clientX,
+                        event.clientY,
+                        target,
+                      );
+                    }}
+                  >
                     <Page
                       pageNumber={pageNumber}
                       width={renderedWidth}
@@ -327,17 +755,24 @@ export function SigningPreviewDialog({
                         });
                       }}
                     />
-                    {pageSize
+                    {metrics
                       ? pageFields.map((field) => (
                           <SigningFieldOverlay
                             key={field.id}
                             field={field}
-                            pageWidth={pageSize.width}
-                            pageHeight={pageSize.height}
-                            renderedWidth={renderedWidth}
-                            renderedHeight={
-                              (pageSize.height / pageSize.width) * renderedWidth
-                            }
+                            metrics={metrics}
+                            editable={editable}
+                            selected={selectedFieldId === field.id}
+                            busy={busy}
+                            onSelect={setSelectedFieldId}
+                            onMoveOrResize={(moved, rect) => {
+                              const pdf = renderRectToPdfPlacement(
+                                rect,
+                                metrics,
+                              );
+                              void persistFieldPlacement(moved, pdf);
+                            }}
+                            onRemove={(fieldId) => void removeField(fieldId)}
                           />
                         ))
                       : null}
@@ -347,9 +782,9 @@ export function SigningPreviewDialog({
 
               {currentDocument.fields.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No Signing fields are placed on this document yet. Use Add
-                  default fields on the preparation panel, then return here to
-                  verify placements.
+                  {editable
+                    ? "No Signing fields on this document yet. Place Signature, Initials, or Date Signed above."
+                    : "No Signing fields are placed on this document yet."}
                 </p>
               ) : pageFields.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
@@ -373,10 +808,6 @@ export function SigningPreviewDialog({
                   ))}
                 </ul>
               )}
-              <p className="text-xs text-muted-foreground">
-                Placement editing is not available in this preview yet. Adjust
-                fields from Prepare Signing (Add default fields) before Send.
-              </p>
             </div>
           ) : null}
         </CardContent>

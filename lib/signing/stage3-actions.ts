@@ -11,6 +11,10 @@ import {
   updateDraftSigningDocumentMetadataWithActor,
 } from "@/lib/signing/draft-documents";
 import {
+  addAdHocDraftSigningDocumentWithActor,
+  readPdfBytesFromUnknown,
+} from "@/lib/signing/ad-hoc-documents";
+import {
   addDraftSigningParticipantWithActor,
   removeDraftSigningParticipantWithActor,
   updateDraftSigningParticipantWithActor,
@@ -88,6 +92,27 @@ export async function addRemainingPacketDocumentsAction(input: {
   return withAuthorizedAdmin((actor, admin) =>
     addRemainingPacketDocumentsWithActor(actor, input, admin),
   );
+}
+
+export async function addAdHocDraftSigningDocumentAction(input: {
+  signingId: unknown;
+  filename?: unknown;
+  displayName?: unknown;
+  pdfFile: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin(async (actor, admin) => {
+    const pdfBytes = await readPdfBytesFromUnknown(input.pdfFile);
+    return addAdHocDraftSigningDocumentWithActor(
+      actor,
+      {
+        signingId: input.signingId,
+        filename: input.filename,
+        displayName: input.displayName,
+        pdfBytes,
+      },
+      admin,
+    );
+  });
 }
 
 export async function reorderDraftSigningDocumentsAction(input: {

@@ -17,6 +17,7 @@ import {
   suggestCapacityWording,
 } from "@/lib/signing/capacity-notices";
 import {
+  addAdHocDraftSigningDocumentAction,
   addDraftSigningDocumentAction,
   addDraftSigningParticipantAction,
   addRemainingPacketDocumentsAction,
@@ -25,7 +26,7 @@ import {
   removeDraftSigningParticipantAction,
   upsertDraftSigningFieldAction,
 } from "@/lib/signing/stage3-actions";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type PacketFormOption = {
   id: number;
@@ -39,6 +40,7 @@ type DraftDocument = {
   displayName: string;
   sourceStatus: string;
   selectedDraftSourceSnapshotId: string | null;
+  sourceKind?: string | null;
 };
 
 const DEFAULT_CAPACITY_LABEL: SigningCapacityLabel = "ATTORNEY_IN_FACT";
@@ -54,6 +56,7 @@ export function SigningDraftPrepPanel({
   onChanged,
   onResolveDrift,
   busyDocumentId,
+  onPrepareDocument,
 }: {
   signingId: string;
   canManage: boolean;
@@ -68,6 +71,7 @@ export function SigningDraftPrepPanel({
     choice: "KEEP_CURRENT" | "UPDATE_TO_LATEST",
   ) => Promise<void>;
   busyDocumentId: string | null;
+  onPrepareDocument: (documentId: string | null) => void;
 }) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -85,6 +89,7 @@ export function SigningDraftPrepPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const packetOptions = useMemo(() => {
     const byId = new Map<number, string | null>();
@@ -315,6 +320,26 @@ export function SigningDraftPrepPanel({
     setBusy(false);
   }
 
+  async function uploadPdf(file: File | null) {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = await addAdHocDraftSigningDocumentAction({
+      signingId,
+      filename: file.name,
+      pdfFile: file,
+    });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      setNotice("PDF uploaded to this Signing.");
+      await onChanged();
+    }
+    setBusy(false);
+    if (uploadInputRef.current) uploadInputRef.current.value = "";
+  }
+
   async function addDefaultFields(participantId: string) {
     if (!firstDocumentId) {
       setError("Add a document before placing signature fields.");
@@ -371,8 +396,9 @@ export function SigningDraftPrepPanel({
       <CardHeader>
         <CardTitle>Prepare Signing</CardTitle>
         <CardDescription>
-          Add documents and participants, then place default typed signature
-          fields so the Signing can become ready to send.
+          Add Packet documents or upload a PDF, add participants, then use
+          Prepare Documents to place Signature, Initials, and Date Signed
+          fields visually.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -382,7 +408,7 @@ export function SigningDraftPrepPanel({
         ) : null}
 
         <div className="space-y-3 rounded-lg border border-border p-3">
-          <p className="text-sm font-medium">Add documents</p>
+          <p className="text-sm font-medium">Documents</p>
           {sourcePacketId == null ? (
             <div className="space-y-2">
               <Label htmlFor="source-packet">Packet</Label>
@@ -415,7 +441,7 @@ export function SigningDraftPrepPanel({
             <p className="text-sm text-muted-foreground">
               {documents.length > 0
                 ? "All eligible Packet documents are already in this Signing, or none remain available."
-                : "No available Packet Forms found on your Packets. Create or open a Packet with an available form first."}
+                : "No available Packet Forms found on your Packets. Create or open a Packet with an available form first, or upload a PDF."}
             </p>
           ) : (
             <div className="space-y-2">
@@ -456,12 +482,38 @@ export function SigningDraftPrepPanel({
               disabled={busy || noPacketForms || !selectedPacketFormId}
               onClick={() => void addDocument()}
             >
-              Add individual document
+              Add document from packet
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => uploadInputRef.current?.click()}
+            >
+              Upload PDF
+            </Button>
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              className="hidden"
+              onChange={(event) =>
+                void uploadPdf(event.target.files?.[0] ?? null)
+              }
+            />
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || documents.length === 0}
+              onClick={() => onPrepareDocument(null)}
+            >
+              Prepare Documents
             </Button>
           </div>
 
           <div className="space-y-2 border-t border-border pt-3">
-            <p className="text-sm font-medium">Documents</p>
+            <p className="text-sm font-medium">Included documents</p>
             {documents.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No documents have been added yet.
@@ -477,11 +529,13 @@ export function SigningDraftPrepPanel({
                       {document.displayName}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {document.sourceStatus === "CURRENT"
-                        ? "Current source"
-                        : document.sourceStatus === "SOURCE_CHANGED"
-                          ? "Source changed"
-                          : "Source unavailable"}
+                      {document.sourceKind === "AD_HOC_PDF"
+                        ? "Uploaded PDF"
+                        : document.sourceStatus === "CURRENT"
+                          ? "Current source"
+                          : document.sourceStatus === "SOURCE_CHANGED"
+                            ? "Source changed"
+                            : "Source unavailable"}
                       {document.selectedDraftSourceSnapshotId
                         ? null
                         : " · No prepared source captured"}
@@ -515,12 +569,24 @@ export function SigningDraftPrepPanel({
                     ) : null}
                     <Button
                       type="button"
+                      size="sm"
+                      disabled={
+                        busy ||
+                        busyDocumentId === document.id ||
+                        !document.selectedDraftSourceSnapshotId
+                      }
+                      onClick={() => onPrepareDocument(document.id)}
+                    >
+                      Open / Prepare
+                    </Button>
+                    <Button
+                      type="button"
                       variant="outline"
                       size="sm"
                       disabled={busy || busyDocumentId === document.id}
                       onClick={() => void removeDocument(document.id)}
                     >
-                      Remove document
+                      Remove
                     </Button>
                   </div>
                 </div>
@@ -655,10 +721,11 @@ export function SigningDraftPrepPanel({
 
         {participantsMissingFields.length > 0 ? (
           <div className="space-y-3 rounded-lg border border-border p-3">
-            <p className="text-sm font-medium">Signature fields</p>
+            <p className="text-sm font-medium">Optional quick fields</p>
             <p className="text-sm text-muted-foreground">
-              Place a default typed Signature + Date Signed pair on page 1 of
-              the first document.
+              Prefer Prepare Documents for visual placement. Add default fields
+              remains available as a quick fixture that places a typed Signature
+              + Date Signed pair on page 1 of the first document.
             </p>
             {participantsMissingFields.map((participant) => (
               <div
@@ -666,26 +733,15 @@ export function SigningDraftPrepPanel({
                 className="flex flex-wrap items-center justify-between gap-2"
               >
                 <span className="text-sm">{participant.fullName}</span>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy || !firstDocumentId}
-                    onClick={() => void addDefaultFields(participant.id)}
-                  >
-                    Add default fields
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => void removeParticipant(participant.id)}
-                  >
-                    Remove participant
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || !firstDocumentId}
+                  onClick={() => void addDefaultFields(participant.id)}
+                >
+                  Add default fields
+                </Button>
               </div>
             ))}
           </div>

@@ -23,6 +23,7 @@ export type SigningDashboardDocument = {
   displayName: string;
   filename: string | null;
   displayOrder: number;
+  sourceKind: string | null;
   sourcePacketFormId: number | null;
   selectedDraftSourceSnapshotId: string | null;
   sourceStatus: DocumentSourceStatus;
@@ -151,6 +152,9 @@ export async function loadSigningDashboardForActor(
       displayName: row.display_name ?? row.logical_label ?? "Document",
       filename: row.filename,
       displayOrder: row.display_order,
+      sourceKind:
+        (row.source_kind as string | null | undefined) ??
+        (row.source_packet_form_id != null ? "PACKET_FORM" : "AD_HOC_PDF"),
       sourcePacketFormId: row.source_packet_form_id,
       selectedDraftSourceSnapshotId:
         row.selected_draft_source_snapshot_id ?? null,

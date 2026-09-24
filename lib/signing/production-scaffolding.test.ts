@@ -46,11 +46,15 @@ describe("production scaffolding wiring", () => {
 
   it("wires completed ops UI through authorized actors only", () => {
     const panel = read("components/signings/signing-completed-ops-panel.tsx");
+    const copyPanel = read(
+      "components/signings/signing-copy-recipients-panel.tsx",
+    );
     const actions = read("lib/signing/completed-ops-actions.ts");
     assert.match(panel, /Resend Package/);
     assert.match(panel, /Replace Link/);
     assert.match(panel, /Revoke Link/);
-    assert.match(panel, /Add Copy Recipient/);
+    assert.match(panel, /SigningCopyRecipientsPanel/);
+    assert.match(copyPanel, /Add Copy Recipient/);
     assert.match(panel, /Provider Accepted/);
     assert.doesNotMatch(panel, /rawToken|bearer|token_wrapped/);
     assert.match(actions, /canManageCompletedSigningOperations|resendCompletedPackageWithActor/);

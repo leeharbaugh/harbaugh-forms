@@ -2,6 +2,7 @@
 
 import { ListPageHeader } from "@/components/list-page-header";
 import { SigningCompletedOpsPanel } from "@/components/signings/signing-completed-ops-panel";
+import { SigningCopyRecipientsPanel } from "@/components/signings/signing-copy-recipients-panel";
 import { SigningDraftPrepPanel } from "@/components/signings/signing-draft-prep-panel";
 import { SigningPreviewDialog } from "@/components/signings/signing-preview-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +75,12 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     expiresAt: string;
   } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [workspaceMode, setWorkspaceMode] = useState<"preview" | "prepare">(
+    "preview",
+  );
+  const [workspaceDocumentId, setWorkspaceDocumentId] = useState<string | null>(
+    null,
+  );
 
   const reload = useCallback(async () => {
     const result = await getSigningDashboardAction({ signingId });
@@ -270,7 +277,11 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                 type="button"
                 variant="outline"
                 disabled={!canManage || dashboard.documents.length === 0}
-                onClick={() => setPreviewOpen(true)}
+                onClick={() => {
+                  setWorkspaceMode("preview");
+                  setWorkspaceDocumentId(null);
+                  setPreviewOpen(true);
+                }}
               >
                 Preview Signing
               </Button>
@@ -321,6 +332,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
             sourceStatus: document.sourceStatus,
             selectedDraftSourceSnapshotId:
               document.selectedDraftSourceSnapshotId,
+            sourceKind: document.sourceKind,
           }))}
           participants={dashboard.participants.map((participant) => ({
             id: participant.id,
@@ -335,6 +347,19 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
           onChanged={reload}
           onResolveDrift={resolveDrift}
           busyDocumentId={busyDocumentId}
+          onPrepareDocument={(documentId) => {
+            setWorkspaceMode("prepare");
+            setWorkspaceDocumentId(documentId);
+            setPreviewOpen(true);
+          }}
+        />
+      ) : null}
+
+      {isDraft && canManage ? (
+        <SigningCopyRecipientsPanel
+          signingId={signingId}
+          lifecycleState={dashboard.signing.lifecycleState}
+          canManage={canManage}
         />
       ) : null}
 
@@ -371,7 +396,11 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                 variant="outline"
                 size="sm"
                 disabled={dashboard.documents.length === 0}
-                onClick={() => setPreviewOpen(true)}
+                onClick={() => {
+                  setWorkspaceMode("preview");
+                  setWorkspaceDocumentId(null);
+                  setPreviewOpen(true);
+                }}
               >
                 Preview Signing
               </Button>
@@ -524,6 +553,14 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         </Card>
       ) : null}
 
+      {isInProgress && canManage ? (
+        <SigningCopyRecipientsPanel
+          signingId={signingId}
+          lifecycleState={dashboard.signing.lifecycleState}
+          canManage={canManage}
+        />
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Participants</CardTitle>
@@ -636,7 +673,13 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
       <SigningPreviewDialog
         open={previewOpen}
         signingId={signingId}
-        onClose={() => setPreviewOpen(false)}
+        mode={workspaceMode}
+        initialDocumentId={workspaceDocumentId}
+        onClose={() => {
+          setPreviewOpen(false);
+          setWorkspaceDocumentId(null);
+        }}
+        onChanged={reload}
       />
 
       <ConfirmDialog

@@ -12,6 +12,69 @@ Each decision should include:
 
 ---
 
+## Signing-owned ad hoc PDFs are first-class Draft documents
+
+**Date:** 2026-09-23
+
+**Decision:**
+Managers may upload a PDF directly onto a Draft Signing as a Signing-owned document (`source_kind = AD_HOC_PDF`). Ad hoc PDFs do **not** create Packet Forms, Forms, Form Templates, or generated Packet documents. Uploaded bytes become a Signing-owned Draft source snapshot under the private `signing-artifacts` namespace `.../draft-ad-hoc/{snapshotId}/source.pdf`, fingerprinted and verified on every render/activation. They remain preparation state until activation promotes immutable `signing_document_version` evidence. Opening or uploading never creates Revision 1, credentials, email, or completed evidence.
+
+**Reason:**
+Agents often need one-off PDFs (addenda, disclosures, third-party docs) that do not belong in the Packet Form library. Forcing Packet/Form rows merely to reuse document-add code would pollute Forms inventory and blur ownership.
+
+**Consequences:**
+* `signing_documents.source_kind` distinguishes `PACKET_FORM` vs `AD_HOC_PDF`.
+* Packet provenance columns stay nullable for ad hoc documents; same-Signing FK integrity remains.
+* Evidence-free Draft removal may delete ad hoc snapshot storage; historical evidence follows soft-exclusion.
+
+**Related:**
+* `supabase/migrations/20260923200000_native_signing_ad_hoc_documents.sql`
+* `lib/signing/ad-hoc-documents.ts`, `lib/signing/draft-source-snapshots.ts`
+
+---
+
+## Managers visually place Signature, Initials, and Date Signed before activation
+
+**Date:** 2026-09-23
+
+**Decision:**
+Draft Signing preparation uses a visual Prepare Documents workspace (built on the same Draft-source Preview surface) where managers choose a participant and field type, click to place Signature / Initials / Date Signed, then move, resize, remove, or reassign. Placements persist only through trusted `signing_draft_fields` server actions. Preview Signing remains a read-only view of the same Draft state. **Add default fields** may remain as an optional fixture but is not the primary preparation path. Date Signed remains linked to a same-participant Signature.
+
+**Reason:**
+Fixed-coordinate “Add default fields” is insufficient for real packages. Agents must see what Send will freeze.
+
+**Consequences:**
+* Prepare and Preview share one rendering model (selected Draft snapshots + current draft fields).
+* Browser never writes evidence tables.
+* In Progress material field editing remains unavailable until a proper amendment revision workflow ships.
+
+**Related:**
+* `components/signings/signing-preview-dialog.tsx`
+* `lib/signing/draft-fields.ts`, `lib/signing/preview.ts`
+
+---
+
+## Copy recipients may be configured before Complete; delivery remains post-Complete only
+
+**Date:** 2026-09-23
+
+**Decision:**
+Authorized managers may add or soft-remove ACTIVE **Copy recipients** while a Signing is Draft, In Progress, or Complete. Copy recipients never sign, never receive ceremony credentials, never affect Readiness or participant completion, and never access In Progress documents. Completed-package credentials and delivery are created only after the Signing is Complete (including completion fan-out for preconfigured ACTIVE recipients, and late add after Complete). Removing a recipient before Complete means no package is sent and no revocation email is required for an unsent recipient.
+
+**Reason:**
+Agents know who needs a completed copy during preparation, but issuing completed-package credentials before there is a completed package would create dangling access.
+
+**Consequences:**
+* Application lifecycle gating allows Draft/In Progress configuration; credential issuance stays Complete-gated.
+* Completion fan-out enqueues ACTIVE copy recipients after participant fan-out; email failure never rolls back Complete.
+* Copy-recipient changes never alter package revision, amendment lock, or frozen evidence.
+
+**Related:**
+* `lib/signing/copy-recipients.ts`, `lib/signing/completed-package-delivery.ts`
+* `components/signings/signing-copy-recipients-panel.tsx`
+
+---
+
 ## Transaction Coordinators are delegated operators, not fake agents or signers
 
 **Date:** 2026-09-17
