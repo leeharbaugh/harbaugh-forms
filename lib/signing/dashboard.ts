@@ -12,6 +12,10 @@ import {
   type SigningReadinessBlocker,
 } from "./readiness";
 import { getDocumentSourceStatus, type DocumentSourceStatus } from "./source-drift";
+import type {
+  SigningCapacityLabel,
+  SigningCapacityMode,
+} from "./capacity-notices";
 import type { SigningActor, SigningSummary } from "./types";
 
 export type SigningDashboardDocument = {
@@ -19,6 +23,7 @@ export type SigningDashboardDocument = {
   displayName: string;
   filename: string | null;
   displayOrder: number;
+  sourceKind: string | null;
   sourcePacketFormId: number | null;
   selectedDraftSourceSnapshotId: string | null;
   sourceStatus: DocumentSourceStatus;
@@ -34,6 +39,11 @@ export type SigningDashboardParticipant = {
   hasSignatureOrInitialsField: boolean;
   deliveryState: string | null;
   lastDeliveryFailureSafe: string | null;
+  hasActiveInvitationLink: boolean;
+  capacityMode?: SigningCapacityMode;
+  representedPartyName?: string | null;
+  capacityLabel?: SigningCapacityLabel | null;
+  capacityWording?: string | null;
 };
 
 export type SigningDashboard = {
@@ -62,6 +72,7 @@ export async function loadSigningDashboardForActor(
     { data: participantRows, error: participantError },
     { data: draftFieldRows, error: draftFieldError },
     { data: deliveryRows, error: deliveryError },
+    { data: credentialRows, error: credentialError },
   ] = await Promise.all([
     admin
       .from("signings")
@@ -90,6 +101,12 @@ export async function loadSigningDashboardForActor(
       .eq("signing_id", summary.id)
       .eq("purpose", "INVITATION")
       .order("create_date", { ascending: true }),
+    admin
+      .from("signing_participant_credentials")
+      .select("signing_participant_id")
+      .eq("signing_id", summary.id)
+      .eq("is_current", true)
+      .is("revoked_at", null),
   ]);
 
   if (activationError) throw new Error(activationError.message);
@@ -97,6 +114,7 @@ export async function loadSigningDashboardForActor(
   if (participantError) throw new Error(participantError.message);
   if (draftFieldError) throw new Error(draftFieldError.message);
   if (deliveryError) throw new Error(deliveryError.message);
+  if (credentialError) throw new Error(credentialError.message);
 
   const isDraft = summary.lifecycleState === "DRAFT";
 
@@ -134,6 +152,9 @@ export async function loadSigningDashboardForActor(
       displayName: row.display_name ?? row.logical_label ?? "Document",
       filename: row.filename,
       displayOrder: row.display_order,
+      sourceKind:
+        (row.source_kind as string | null | undefined) ??
+        (row.source_packet_form_id != null ? "PACKET_FORM" : "AD_HOC_PDF"),
       sourcePacketFormId: row.source_packet_form_id,
       selectedDraftSourceSnapshotId:
         row.selected_draft_source_snapshot_id ?? null,
@@ -182,6 +203,10 @@ export async function loadSigningDashboardForActor(
     }
   }
 
+  const participantsWithActiveLink = new Set(
+    (credentialRows ?? []).map((row) => row.signing_participant_id as string),
+  );
+
   const participants: SigningDashboardParticipant[] = (
     participantRows ?? []
   ).map((row) => ({
@@ -199,6 +224,17 @@ export async function loadSigningDashboardForActor(
     deliveryState: latestDeliveryByParticipantId.get(row.id as string) ?? null,
     lastDeliveryFailureSafe:
       failureByParticipantId.get(row.id as string) ?? null,
+    hasActiveInvitationLink: participantsWithActiveLink.has(row.id as string),
+    capacityMode:
+      (row.signing_capacity_mode as SigningCapacityMode | undefined) ??
+      undefined,
+    representedPartyName:
+      (row.represented_party_name as string | null | undefined) ?? undefined,
+    capacityLabel:
+      (row.capacity_label as SigningCapacityLabel | null | undefined) ??
+      undefined,
+    capacityWording:
+      (row.capacity_wording as string | null | undefined) ?? undefined,
   }));
 
   return {

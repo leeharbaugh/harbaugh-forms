@@ -8,6 +8,11 @@ import { loadSigningDashboardForActor } from "@/lib/signing/dashboard";
 import { SigningError } from "@/lib/signing/errors";
 import { NativeSigningDisabledError } from "@/lib/signing/feature-gate";
 import {
+  replaceParticipantCredentialsWithActor,
+  resendParticipantInvitationWithActor,
+  revokeParticipantCredentialWithActor,
+} from "@/lib/signing/participant-credential-recovery";
+import {
   keepCurrentDraftSourceWithActor,
   updateDraftSourceToLatestWithActor,
 } from "@/lib/signing/source-drift";
@@ -93,4 +98,45 @@ export async function activateSigningAction(input: {
   return withAuthorizedAdmin((actor, admin) =>
     activateSigningWithActor(actor, input, admin),
   );
+}
+
+/** Resend the current invitation email (same signing link). */
+export async function resendParticipantInvitationAction(input: {
+  signingId: unknown;
+  participantId: unknown;
+}): Promise<SigningStage4ActionResult> {
+  return withAuthorizedAdmin(async (actor, admin) => {
+    await resendParticipantInvitationWithActor(actor, input, admin);
+    return null;
+  });
+}
+
+/** Replace the signing link and email the new invitation. */
+export async function replaceParticipantInvitationAction(input: {
+  signingId: unknown;
+  participantId: unknown;
+}): Promise<SigningStage4ActionResult> {
+  return withAuthorizedAdmin(async (actor, admin) => {
+    await replaceParticipantCredentialsWithActor(
+      actor,
+      {
+        signingId: input.signingId,
+        participantIds: [input.participantId],
+        enqueueInvitation: true,
+      },
+      admin,
+    );
+    return null;
+  });
+}
+
+/** Revoke the current signing link without issuing a replacement. */
+export async function revokeParticipantInvitationAction(input: {
+  signingId: unknown;
+  participantId: unknown;
+}): Promise<SigningStage4ActionResult> {
+  return withAuthorizedAdmin(async (actor, admin) => {
+    await revokeParticipantCredentialWithActor(actor, input, admin);
+    return null;
+  });
 }

@@ -7,7 +7,8 @@
  * a Signature freezes the package revision globally but does not lock that
  * participant's unused Initials, and never touches another participant's marks.
  *
- * Typed personal Signatures are exact-match to the displayed name only.
+ * Typed personal Signatures are exact-match to the displayed name.
+ * Representative Signatures are exact-match to frozen capacity_wording.
  * Typed Initials are suggested from the display name but may be edited until
  * first use; there is no OCR or PDF-name matching. The agent remains
  * responsible for preparing the document with the intended signer name before
@@ -245,11 +246,13 @@ export async function adoptCeremonyMark(options: {
   if (representationType === "TYPED") {
     if (markKind === "SIGNATURE") {
       typedText = parseTypedSignatureText(options.typedText);
-      const expected = context.displayedName.trim();
-      if (typedText !== expected) {
+      const expected = context.expectedTypedSignatureText.trim();
+      if (!expected || typedText !== expected) {
         throw new SigningError(
           "VALIDATION_FAILED",
-          `A typed signature must match your name on this Signing exactly: ${expected}`,
+          context.capacityMode === "REPRESENTATIVE"
+            ? `A typed signature must match the prepared execution wording exactly: ${expected || "(missing)"}`
+            : `A typed signature must match your name on this Signing exactly: ${expected || context.displayedName.trim()}`,
         );
       }
     } else {

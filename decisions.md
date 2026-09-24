@@ -12,6 +12,69 @@ Each decision should include:
 
 ---
 
+## Signing-owned ad hoc PDFs are first-class Draft documents
+
+**Date:** 2026-09-23
+
+**Decision:**
+Managers may upload a PDF directly onto a Draft Signing as a Signing-owned document (`source_kind = AD_HOC_PDF`). Ad hoc PDFs do **not** create Packet Forms, Forms, Form Templates, or generated Packet documents. Uploaded bytes become a Signing-owned Draft source snapshot under the private `signing-artifacts` namespace `.../draft-ad-hoc/{snapshotId}/source.pdf`, fingerprinted and verified on every render/activation. They remain preparation state until activation promotes immutable `signing_document_version` evidence. Opening or uploading never creates Revision 1, credentials, email, or completed evidence.
+
+**Reason:**
+Agents often need one-off PDFs (addenda, disclosures, third-party docs) that do not belong in the Packet Form library. Forcing Packet/Form rows merely to reuse document-add code would pollute Forms inventory and blur ownership.
+
+**Consequences:**
+* `signing_documents.source_kind` distinguishes `PACKET_FORM` vs `AD_HOC_PDF`.
+* Packet provenance columns stay nullable for ad hoc documents; same-Signing FK integrity remains.
+* Evidence-free Draft removal may delete ad hoc snapshot storage; historical evidence follows soft-exclusion.
+
+**Related:**
+* `supabase/migrations/20260923200000_native_signing_ad_hoc_documents.sql`
+* `lib/signing/ad-hoc-documents.ts`, `lib/signing/draft-source-snapshots.ts`
+
+---
+
+## Managers visually place Signature, Initials, and Date Signed before activation
+
+**Date:** 2026-09-23
+
+**Decision:**
+Draft Signing preparation uses a visual Prepare Documents workspace (built on the same Draft-source Preview surface) where managers choose a participant and field type, click to place Signature / Initials / Date Signed, then move, resize, remove, or reassign. Placements persist only through trusted `signing_draft_fields` server actions. Preview Signing remains a read-only view of the same Draft state. **Add default fields** may remain as an optional fixture but is not the primary preparation path. Date Signed remains linked to a same-participant Signature.
+
+**Reason:**
+Fixed-coordinate “Add default fields” is insufficient for real packages. Agents must see what Send will freeze.
+
+**Consequences:**
+* Prepare and Preview share one rendering model (selected Draft snapshots + current draft fields).
+* Browser never writes evidence tables.
+* In Progress material field editing remains unavailable until a proper amendment revision workflow ships.
+
+**Related:**
+* `components/signings/signing-preview-dialog.tsx`
+* `lib/signing/draft-fields.ts`, `lib/signing/preview.ts`
+
+---
+
+## Copy recipients may be configured before Complete; delivery remains post-Complete only
+
+**Date:** 2026-09-23
+
+**Decision:**
+Authorized managers may add or soft-remove ACTIVE **Copy recipients** while a Signing is Draft, In Progress, or Complete. Copy recipients never sign, never receive ceremony credentials, never affect Readiness or participant completion, and never access In Progress documents. Completed-package credentials and delivery are created only after the Signing is Complete (including completion fan-out for preconfigured ACTIVE recipients, and late add after Complete). Removing a recipient before Complete means no package is sent and no revocation email is required for an unsent recipient.
+
+**Reason:**
+Agents know who needs a completed copy during preparation, but issuing completed-package credentials before there is a completed package would create dangling access.
+
+**Consequences:**
+* Application lifecycle gating allows Draft/In Progress configuration; credential issuance stays Complete-gated.
+* Completion fan-out enqueues ACTIVE copy recipients after participant fan-out; email failure never rolls back Complete.
+* Copy-recipient changes never alter package revision, amendment lock, or frozen evidence.
+
+**Related:**
+* `lib/signing/copy-recipients.ts`, `lib/signing/completed-package-delivery.ts`
+* `components/signings/signing-copy-recipients-panel.tsx`
+
+---
+
 ## Transaction Coordinators are delegated operators, not fake agents or signers
 
 **Date:** 2026-09-17
@@ -5318,7 +5381,7 @@ Reliability semantics: request-driven kick + inline invitations remain the prima
 No additional Native Signing **code** stage is required before production migration/configuration. Remaining work is configuration, legal/content, and operational execution under explicit Gates:
 
 * **Gate A** — backup/checkpoint + migration preflight (no DB mutation yet)
-* **Gate B** — apply 20 Native Signing migrations to `eetonalyyyssvkyfdoxh` then **immediate** `work_suspended=true` + access-epoch bump (leaves `access_suspended=true`); verify; feature remains OFF
+* **Gate B** — apply 21 Native Signing migrations to `eetonalyyyssvkyfdoxh` then **immediate** `work_suspended=true` + access-epoch bump (leaves `access_suspended=true`); verify; feature remains OFF
 * **Gate C** — install Production secrets/config; deploy current app to unique Vercel URL; Cron/manual FEATURE_DISABLED or SUSPENDED smokes; production-ready disclosure; Resend/DNS/From verified; readiness PASS except feature deliberately OFF
 * **Gate D** — synthetic Lee-owned production Signing full lifecycle
 * **Gate E** — first real client Signing only after Lee explicit approval
@@ -5341,4 +5404,94 @@ Manager-facing Native Signing requires a discoverable entry when `NATIVE_SIGNING
 **Reason:** Enabling the server feature gate alone left no manager navigation or Draft prep UI; Lee could not visually QA the workflow.
 
 **Related:** `project_status.md` local QA enablement note; local-only `.env.local` (`NATIVE_SIGNING_ENABLED=true`, `SIGNING_EMAIL_SANDBOX=true`).
+
+
+### Native Signing manager QA reconciles representative signing and Packet Create Signing (2026-09-21)
+
+**Date:** 2026-09-21
+
+**Decision:**
+Representative signing remains part of the **initial** Native Signing release per the earlier stated-capacity decisions. Temporary personal-capacity-only rollout notices are withdrawn. Manager UX adds Packet → **Create Signing**, Draft participant removal, corrected Packet Form picking, plain-language Signing Controls, and Create Signing / Prepare Signing wording while retaining internal `DRAFT` lifecycle vocabulary. Native Signing migration count is now **21** (representative capacity additive). Gate A production rollout remains paused until Lee re-QAs development.
+
+**Reason:** Lee's manager visual QA found product/UI gaps that blocked confident progression to production enablement.
+
+**Related:** `project_status.md` manager QA follow-up; migration `20260921200000_native_signing_representative_capacity.sql`; local `security.md` R16/R17.
+
+### Supersession note — representative signing not post-launch (2026-09-21)
+
+Earlier production-readiness scaffolding notes that deferred representative signing or treated personal-capacity-only as the first-rollout acceptance are superseded for product scope. Representative signing is restored for initial release. Production enablement remains gated by migrations/secrets/disclosure/ops — not by postponing representative capacity.
+
+### Product UI uses Signing/Signings; Native Signing is internal architecture terminology (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+“Native Signing” names the built-in Signing architecture (as opposed to an external provider). Normal user-facing UI uses **Signing**, **Signings**, **Create Signing**, **Send**, **Signing In Progress**, and **Signing Complete**. Admin Signing Controls label the feature gate **Signings enabled**. Internal code, env vars (`NATIVE_SIGNING_*`), migrations, and schema keep Native Signing naming.
+
+**Reason:** Lee’s manager QA found “Native” confusing in ordinary product copy.
+
+**Related:** `app/admin/signing-controls/page.tsx`; manager-facing Signings pages.
+
+### Draft document preparation supports whole-Packet and individual-document addition (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+From Draft preparation, managers may **Add entire packet** (all remaining eligible Packet Forms) or **Add individual document**. Eligibility matches Packet → Create Signing (`ACTIVE` + `availability_state='AVAILABLE'` + storage path; owned Packet; source-packet constraint when set). Duplicates are skipped. Every add uses the existing Draft document + source-snapshot path; no Revision 1 before Send / Begin In-Person. Draft **Remove document** uses the existing Stage 3 Draft removal path.
+
+**Reason:** Manager QA needed coherent document intake without a second import pipeline.
+
+**Related:** `lib/signing/draft-documents.ts` (`addRemainingPacketDocumentsWithActor`); `components/signings/signing-draft-prep-panel.tsx`.
+
+### Readiness user-facing wording is direct status language (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+User-facing Readiness copy uses **“This Signing is ready to send.”** / **“This Signing is not ready to send.”** with blocker detail beneath. Ready remains a derived evaluation, not a stored lifecycle state.
+
+**Reason:** Technical “calculated from Draft” framing confused managers.
+
+### In Progress participant-link operations are manager-facing (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+While a remote Signing is In Progress, managers with business manage authority may **Resend**, **Replace**, or **Revoke** a participant’s signing link. Resend reuses the current credential; Replace issues a new credential and invalidates the prior link; Revoke ends access without replacement. Raw bearer URLs/secrets are never shown. In-person Signings continue to use supervised handoff instead of emailed-link ops.
+
+**Reason:** After Send, managers could not recover delivery/access without leaving the product.
+
+**Related:** `lib/signing/participant-credential-recovery.ts`; Signing dashboard In Progress panel.
+
+### Pre-first-mark amendment remains a pre-production product gap (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+Exclusive amendment locks and first-mark freeze enforcement exist in the trusted server layer, but manager UI for In Progress pre-first-mark amendment (add/remove documents or participants, edit participant/capacity, adjust fields without mutating Revision 1 in place) is **not** shipped in the manager QA PR. After first accepted Signature/Initial, material correction requires a new Signing. Do not fake amendment by mutating Revision 1. Ship amendment workflow as a focused follow-up PR before production enablement.
+
+**Reason:** Implementing full amendment safely is substantial and must not balloon the manager QA PR.
+
+### Completed-copy recipients remain Complete-only for now (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+Copy recipients receive the completed package only. Current add path issues completed-package credentials and enqueues delivery, so configuration remains COMPLETE-only. Pre-Complete recipient lists would require a separate store-without-deliver path; deferred as a focused follow-up. Post-Complete add/remove remains available.
+
+**Reason:** Generalizing earlier without weakening evidence/delivery boundaries needs an explicit design, not a UI-only unlock.
+
+### Managers preview Draft Signing documents with field placements before activation (2026-09-23)
+
+**Date:** 2026-09-23
+
+**Decision:**
+Before **Send** or **Begin In-Person Signing**, managers with Draft manage authority can open **Preview Signing**. Preview renders each included document from its **currently selected Draft source snapshot** (the same source activation would consume) and overlays current `signing_draft_fields` (Signature, Initials, Date Signed) with the human participant’s name. Preview is non-evidentiary: it must not create a package revision, `signing_document_version`, credentials, delivery work, or freeze the Signing. Live Packet Form drift must not silently change the preview once a snapshot is selected. Preview is not itself a readiness requirement.
+
+**Consequences:**
+* Document bytes are served through an authorized server route; browsers never gain direct `signing-artifacts` access.
+* Visual place/move/resize of Draft Signing fields remains a product gap if only “Add default fields” exists; preview must not hide that gap.
+* General manager-page banners promoting representative signing or typed adoption are unnecessary; capacity and ceremony instructions belong in participant setup and ceremony.
+
+**Related:** `lib/signing/preview.ts`; `app/signings/[signingId]/preview/document/[documentId]/route.ts`; Signing dashboard Preview Signing.
 

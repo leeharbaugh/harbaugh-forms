@@ -1,8 +1,69 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-21 (Native Signing enabled for local QA; production Native Signing unavailable)
+**As of:** 2026-09-23 (Native Signing manager QA pass 4 on PR #46 — ad hoc PDF + visual prepare + pre-Complete copy recipients; Gate A paused; production Native Signing unavailable)
 
 ## Current State
+
+### Native Signing manager QA pass 4 (2026-09-23; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. Do not merge until Lee QAs the full Draft document-preparation workflow.
+
+| Item | Result |
+|------|--------|
+| Ad hoc PDF upload | Draft-only Upload PDF → Signing-owned `AD_HOC_PDF` + `draft-ad-hoc/` snapshot; no Packet/Form/evidence/revision |
+| Visual Prepare Documents | Same workspace as Preview; place/move/resize/remove Signature/Initials/Date Signed via `signing_draft_fields` |
+| Preview Signing | Remains read-only view of the same Draft source + fields |
+| Add default fields | Demoted to optional quick fixture only |
+| Copy recipients | Configurable in Draft / In Progress / Complete; credentials + delivery only after Complete; fan-out includes preconfigured ACTIVE recipients |
+| Migration | `20260923200000_native_signing_ad_hoc_documents.sql` (dev only) |
+| In Progress amendment | Still missing manager UI — backend locks exist; do not mutate Revision 1 |
+| Gate A | Remains paused |
+
+### Native Signing manager QA pass 3 (2026-09-23; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. Do not merge until Lee re-QAs Preview Signing.
+
+| Item | Result |
+|------|--------|
+| Preview Signing | Manager action near header + Readiness; renders selected Draft source snapshots with Signature/Initials/Date Signed overlays |
+| Preview evidence | Non-evidentiary — no revision/version/credential/work item created |
+| Field placement edit | Backend upsert/remove exist; manager UI still only **Add default fields** (fixed coords) — visual place/move/resize remains a pre-production gap |
+| Banner copy | Removed general representative-support and typed-adoption banners from Signings list/detail |
+| Gate A | Remains paused |
+
+### Native Signing manager QA pass 2 (2026-09-22; PR #46)
+
+**Status:** Development-only UX/product reconciliation. Production remains OFF/untouched. Do not merge until Lee re-QAs.
+
+| Item | Result |
+|------|--------|
+| Product terminology | User-facing UI uses Signing/Signings; “Native Signing” reserved for internal architecture. Admin → **Signings enabled**. |
+| Packet → Create Signing | Owner-only retained. Create action shown only when `packets.owner_user_id` matches the current user (avoids predictable FORBIDDEN). |
+| Documents section | Add documents + picker + current Documents list are one continuous Draft section; **Remove document** via Draft path. |
+| Add entire packet | Remaining eligible Packet Forms via existing Draft snapshot path; no duplicates; source-packet and standalone modes. |
+| Readiness / Send copy | Direct ready/not-ready status language; concise Send confirmation (no representative prose). |
+| In Progress ops | Manager panel: delivery status, Resend / Replace / Revoke signing link (no bearer secrets). |
+| Copy recipients | Still COMPLETE-only (architectural: add issues completed-package credential + delivery). Pre-Complete config deferred. |
+| Pre-first-mark amendment | Backend locks exist; manager amendment UI still missing — next focused PR before production. |
+| Gate A | Remains paused |
+
+### Native Signing manager QA follow-up (2026-09-21; in progress on feat/native-signing-manager-qa)
+
+
+**Status:** Development-only UX/product reconciliation before Gate A. Production remains OFF/untouched.
+
+| Item | Result |
+|------|--------|
+| Representative signing | Restored as first-class initial-release model (stated capacity; no authority validation). Removed incorrect personal-capacity-only notice. |
+| Migration | `20260921200000_native_signing_representative_capacity.sql` applied on **dev** only (21 Native Signing migrations total). |
+| Packet → Create Signing | Packet detail **Create Signing** imports eligible Packet Forms + transaction parties |
+| Participant removal | Draft **Remove participant** via existing Stage 3 delete path |
+| Activated pre-freeze removal | Still unsupported end-to-end (document as follow-up UX gap) |
+| Add document | Root cause: picker filtered `packet_forms.status='AVAILABLE'` instead of `ACTIVE` + `availability_state='AVAILABLE'` — fixed |
+| Complete list visibility | List now also includes `original_sender_user_id` candidates |
+| Signing Controls | Plain-language posture + worker recovery copy |
+| User-facing Draft wording | Primary actions say **Create Signing** / **Prepare Signing**; lifecycle badge may still say Draft |
+| Gate A | Remains paused pending Lee re-QA |
 
 ### Native Signing local development QA enablement (2026-09-21)
 
@@ -21,6 +82,7 @@
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
 ### Native Signing production rollout checkpoint (2026-09-21; audit only)
+
 
 **Status:** Read-only checkpoint on `main` `fa669c4` (PR #45 squash `01ce26d`). **No production mutation.** **No code blocker remains** before Gate A.
 
@@ -105,7 +167,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | `access_suspended` / `SIGNING_ACCESS_SUSPENDED` + `access_epoch` | Denies external bearer/session auth; parks invitation/package email |
 
 **Hard blockers before production enablement:**
-1. Apply all 20 Native Signing migrations to production (with immediate recovery suspend+bump).
+1. Apply all 21 Native Signing migrations to production (with immediate recovery suspend+bump).
 2. Install secrets: event-chain HMAC, participant wrap, completed-package wrap, worker secret, `CRON_SECRET`; set `NEXT_PUBLIC_SITE_URL`; Resend From/domain.
 3. Counsel-approved disclosure with `is_production_ready=true`.
 4. ~~Resolve emailed bearer-path platform logging~~ — closed on transport branch (UUID path + fragment secret); residual in-person path-bearer remains documented.

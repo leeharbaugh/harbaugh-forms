@@ -39,20 +39,26 @@ export function AdminSigningWorkerControls({
 
   return (
     <div className="space-y-3 text-sm">
-      <p className="text-xs text-muted-foreground">
-        Cron recovery sweep: every 2 minutes. Request-driven kicks remain the
-        primary latency path.
-      </p>
       {queue ? (
         <ul className="space-y-1 text-xs text-muted-foreground">
-          <li>Pending: {queue.pendingCount}</li>
-          <li>Failed (retryable): {queue.failedCount}</li>
-          <li>Processing: {queue.processingCount}</li>
           <li>
-            Oldest pending age:{" "}
+            <span className="font-medium text-foreground">Pending:</span>{" "}
+            {queue.pendingCount} — waiting to run
+          </li>
+          <li>
+            <span className="font-medium text-foreground">Failed/retryable:</span>{" "}
+            {queue.failedCount} — failed earlier and eligible to retry
+          </li>
+          <li>
+            <span className="font-medium text-foreground">Processing:</span>{" "}
+            {queue.processingCount} — currently claimed by a worker
+          </li>
+          <li>
+            <span className="font-medium text-foreground">Oldest pending age:</span>{" "}
             {queue.oldestPendingAgeSeconds == null
               ? "n/a"
-              : `${queue.oldestPendingAgeSeconds}s`}
+              : `${queue.oldestPendingAgeSeconds}s`}{" "}
+            — how long the oldest waiting job has been pending
           </li>
         </ul>
       ) : (

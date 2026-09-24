@@ -2,7 +2,9 @@
 
 import { ListPageHeader } from "@/components/list-page-header";
 import { SigningCompletedOpsPanel } from "@/components/signings/signing-completed-ops-panel";
+import { SigningCopyRecipientsPanel } from "@/components/signings/signing-copy-recipients-panel";
 import { SigningDraftPrepPanel } from "@/components/signings/signing-draft-prep-panel";
+import { SigningPreviewDialog } from "@/components/signings/signing-preview-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,36 +16,20 @@ import {
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { startInPersonHandoffAction } from "@/lib/signing/ceremony-agent-actions";
-import {
-  NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE,
-  NATIVE_SIGNING_TYPED_ONLY_NOTICE,
-} from "@/lib/signing/capacity-notices";
+import { SIGNING_CAPACITY_LABEL_OPTIONS } from "@/lib/signing/capacity-notices";
 import type { SigningDashboard } from "@/lib/signing/dashboard";
-import type { DocumentSourceStatus } from "@/lib/signing/source-drift";
 import {
   activateSigningAction,
   getSigningDashboardAction,
   keepCurrentDraftSourceAction,
+  replaceParticipantInvitationAction,
+  resendParticipantInvitationAction,
+  revokeParticipantInvitationAction,
   updateDraftSourceToLatestAction,
 } from "@/lib/signing/stage4-actions";
 import { useCallback, useEffect, useState } from "react";
 
 type ActivationMode = "REMOTE_SEND" | "IN_PERSON";
-
-const SOURCE_STATUS_LABEL: Record<DocumentSourceStatus, string> = {
-  CURRENT: "Current",
-  SOURCE_CHANGED: "Source changed",
-  SOURCE_UNAVAILABLE: "Source unavailable",
-};
-
-const SOURCE_STATUS_VARIANT: Record<
-  DocumentSourceStatus,
-  "success" | "warning" | "destructive"
-> = {
-  CURRENT: "success",
-  SOURCE_CHANGED: "warning",
-  SOURCE_UNAVAILABLE: "destructive",
-};
 
 function newClientRequestId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -52,12 +38,29 @@ function newClientRequestId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function deliveryLabel(state: string | null): string {
+  if (!state) return "No delivery yet";
+  switch (state) {
+    case "QUEUED":
+      return "Invitation queued";
+    case "ACCEPTED":
+      return "Invitation delivered";
+    case "FAILED":
+      return "Invitation delivery failed";
+    default:
+      return `Invitation ${state.toLowerCase()}`;
+  }
+}
+
 export function SigningDashboardPage({ signingId }: { signingId: string }) {
   const [dashboard, setDashboard] = useState<SigningDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
+  const [busyParticipantId, setBusyParticipantId] = useState<string | null>(
+    null,
+  );
   const [pendingActivation, setPendingActivation] = useState<{
     mode: ActivationMode;
     clientRequestId: string;
@@ -71,6 +74,13 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     path: string;
     expiresAt: string;
   } | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [workspaceMode, setWorkspaceMode] = useState<"preview" | "prepare">(
+    "preview",
+  );
+  const [workspaceDocumentId, setWorkspaceDocumentId] = useState<string | null>(
+    null,
+  );
 
   const reload = useCallback(async () => {
     const result = await getSigningDashboardAction({ signingId });
@@ -152,12 +162,6 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     setActivating(false);
   }
 
-  /**
-   * Hand the shared device to a participant for in-person signing.
-   *
-   * The returned path carries a single-use handoff token, so it is shown once,
-   * here, and is consumed when the participant affirms their identity.
-   */
   async function startHandoff(participantId: string) {
     setHandoffBusyParticipantId(participantId);
     setError(null);
@@ -181,6 +185,43 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     setHandoffBusyParticipantId(null);
   }
 
+  async function runInvitationOp(
+    participantId: string,
+    op: "resend" | "replace" | "revoke",
+  ) {
+    setBusyParticipantId(participantId);
+    setError(null);
+    setNotice(null);
+    const result =
+      op === "resend"
+        ? await resendParticipantInvitationAction({
+            signingId,
+            participantId,
+          })
+        : op === "replace"
+          ? await replaceParticipantInvitationAction({
+              signingId,
+              participantId,
+            })
+          : await revokeParticipantInvitationAction({
+              signingId,
+              participantId,
+            });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      setNotice(
+        op === "resend"
+          ? "Signing link resent to this participant."
+          : op === "replace"
+            ? "Signing link replaced and emailed to this participant. The previous link no longer works."
+            : "Signing link revoked. This participant can no longer open the previous link.",
+      );
+      await reload();
+    }
+    setBusyParticipantId(null);
+  }
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading Signing…</p>;
   }
@@ -194,14 +235,17 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
   }
 
   const isDraft = dashboard.signing.lifecycleState === "DRAFT";
+  const isInProgress = dashboard.signing.lifecycleState === "IN_PROGRESS";
   const canManage = dashboard.signing.canManage;
   const canActivate = isDraft && canManage && dashboard.ready;
-  // Supervised handoff is an in-person concern only, and only once the package
-  // is actionable.
   const canStartHandoff =
     canManage &&
-    dashboard.signing.lifecycleState === "IN_PROGRESS" &&
+    isInProgress &&
     dashboard.signing.activationMode === "IN_PERSON";
+  const canManageRemoteLinks =
+    canManage &&
+    isInProgress &&
+    dashboard.signing.activationMode === "REMOTE_SEND";
 
   return (
     <div className="flex flex-col gap-6">
@@ -229,6 +273,18 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         action={
           isDraft ? (
             <>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!canManage || dashboard.documents.length === 0}
+                onClick={() => {
+                  setWorkspaceMode("preview");
+                  setWorkspaceDocumentId(null);
+                  setPreviewOpen(true);
+                }}
+              >
+                Preview Signing
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -264,18 +320,24 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         <p className="text-sm text-muted-foreground">{notice}</p>
       ) : null}
 
-      {isDraft ? (
-        <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
-          <p>{NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE}</p>
-          <p>{NATIVE_SIGNING_TYPED_ONLY_NOTICE}</p>
-        </div>
-      ) : null}
-
       {isDraft && canManage ? (
         <SigningDraftPrepPanel
           signingId={signingId}
           canManage={canManage}
+          sourcePacketId={dashboard.signing.sourcePacketId}
           firstDocumentId={dashboard.documents[0]?.id ?? null}
+          documents={dashboard.documents.map((document) => ({
+            id: document.id,
+            displayName: document.displayName,
+            sourceStatus: document.sourceStatus,
+            selectedDraftSourceSnapshotId:
+              document.selectedDraftSourceSnapshotId,
+            sourceKind: document.sourceKind,
+          }))}
+          participants={dashboard.participants.map((participant) => ({
+            id: participant.id,
+            fullName: participant.fullName,
+          }))}
           participantsMissingFields={dashboard.participants
             .filter((participant) => !participant.hasSignatureOrInitialsField)
             .map((participant) => ({
@@ -283,101 +345,221 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
               fullName: participant.fullName,
             }))}
           onChanged={reload}
+          onResolveDrift={resolveDrift}
+          busyDocumentId={busyDocumentId}
+          onPrepareDocument={(documentId) => {
+            setWorkspaceMode("prepare");
+            setWorkspaceDocumentId(documentId);
+            setPreviewOpen(true);
+          }}
+        />
+      ) : null}
+
+      {isDraft && canManage ? (
+        <SigningCopyRecipientsPanel
+          signingId={signingId}
+          lifecycleState={dashboard.signing.lifecycleState}
+          canManage={canManage}
         />
       ) : null}
 
       {isDraft ? (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Readiness
-              <Badge variant={dashboard.ready ? "success" : "warning"}>
-                {dashboard.ready ? "Ready" : "Not ready"}
-              </Badge>
+            <CardTitle>
+              {dashboard.ready
+                ? "This Signing is ready to send."
+                : "This Signing is not ready to send."}
             </CardTitle>
-            <CardDescription>
-              Readiness is calculated from the current Draft. It is not a saved
-              status.
-            </CardDescription>
+            {dashboard.blockers.length > 0 ? (
+              <CardDescription>
+                Resolve the items below before Send or Begin In-Person.
+              </CardDescription>
+            ) : (
+              <CardDescription>
+                Open Preview Signing to verify documents and field placements
+                before Send or Begin In-Person.
+              </CardDescription>
+            )}
           </CardHeader>
-          {dashboard.blockers.length > 0 ? (
-            <CardContent>
+          <CardContent className="space-y-3">
+            {dashboard.blockers.length > 0 ? (
               <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                 {dashboard.blockers.map((blocker, index) => (
                   <li key={`${blocker.code}-${index}`}>{blocker.message}</li>
                 ))}
               </ul>
-            </CardContent>
-          ) : null}
+            ) : null}
+            {canManage ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={dashboard.documents.length === 0}
+                onClick={() => {
+                  setWorkspaceMode("preview");
+                  setWorkspaceDocumentId(null);
+                  setPreviewOpen(true);
+                }}
+              >
+                Preview Signing
+              </Button>
+            ) : null}
+          </CardContent>
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Documents</CardTitle>
-          <CardDescription>
-            Each document is prepared from its own captured source. Editing the
-            Packet Form later never changes a prepared document on its own.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {dashboard.documents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No documents have been added yet.
-            </p>
-          ) : (
-            dashboard.documents.map((document) => (
-              <div
-                key={document.id}
-                className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0 space-y-1">
+      {!isDraft ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Documents</CardTitle>
+            <CardDescription>
+              {isInProgress
+                ? "Documents are frozen in Revision 1. Material document changes require a new Signing after the first accepted Signature or Initial. Pre-first-mark amendment is not available in this manager yet."
+                : "Documents frozen for this Signing."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {dashboard.documents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No documents on this Signing.
+              </p>
+            ) : (
+              dashboard.documents.map((document) => (
+                <div
+                  key={document.id}
+                  className="rounded-lg border border-border p-3"
+                >
                   <p className="truncate text-sm font-medium">
                     {document.displayName}
                   </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant={SOURCE_STATUS_VARIANT[document.sourceStatus]}
-                    >
-                      {SOURCE_STATUS_LABEL[document.sourceStatus]}
-                    </Badge>
-                    {document.selectedDraftSourceSnapshotId ? null : (
-                      <span className="text-xs text-muted-foreground">
-                        No prepared source captured
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {canManageRemoteLinks ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>In Progress — participant access</CardTitle>
+            <CardDescription>
+              Manage emailed signing links. Links themselves are never shown
+              here. Resend uses the current link; Replace issues a new link and
+              invalidates the previous one; Revoke stops access without sending
+              a replacement.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {dashboard.participants.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No participants on this Signing.
+              </p>
+            ) : (
+              dashboard.participants.map((participant) => {
+                const finished =
+                  participant.participantStatus === "FINISHED" ||
+                  participant.participantStatus === "DECLINED";
+                const busy = busyParticipantId === participant.id;
+                return (
+                  <div
+                    key={participant.id}
+                    className="space-y-2 rounded-lg border border-border p-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {participant.fullName}
                       </span>
+                      <Badge variant="secondary">
+                        {participant.participantStatus.replace(/_/g, " ")}
+                      </Badge>
+                      <Badge
+                        variant={
+                          participant.deliveryState === "ACCEPTED"
+                            ? "success"
+                            : participant.deliveryState === "FAILED"
+                              ? "destructive"
+                              : "info"
+                        }
+                      >
+                        {deliveryLabel(participant.deliveryState)}
+                      </Badge>
+                      <Badge variant="outline">
+                        {participant.hasActiveInvitationLink
+                          ? "Active signing link"
+                          : "No active signing link"}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {participant.email}
+                    </p>
+                    {participant.lastDeliveryFailureSafe ? (
+                      <p className="text-xs text-destructive">
+                        {participant.lastDeliveryFailureSafe}
+                      </p>
+                    ) : null}
+                    {!finished ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={
+                            busy || !participant.hasActiveInvitationLink
+                          }
+                          onClick={() =>
+                            void runInvitationOp(participant.id, "resend")
+                          }
+                        >
+                          Resend signing link
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() =>
+                            void runInvitationOp(participant.id, "replace")
+                          }
+                        >
+                          Replace signing link
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={
+                            busy || !participant.hasActiveInvitationLink
+                          }
+                          onClick={() =>
+                            void runInvitationOp(participant.id, "revoke")
+                          }
+                        >
+                          Revoke signing link
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Invitation link management is unavailable after this
+                        participant finishes or declines.
+                      </p>
                     )}
                   </div>
-                </div>
-                {isDraft &&
-                canManage &&
-                document.sourceStatus === "SOURCE_CHANGED" ? (
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={busyDocumentId === document.id}
-                      onClick={() => void resolveDrift(document.id, "KEEP_CURRENT")}
-                    >
-                      Keep Current
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={busyDocumentId === document.id}
-                      onClick={() =>
-                        void resolveDrift(document.id, "UPDATE_TO_LATEST")
-                      }
-                    >
-                      Update to Latest
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {isInProgress && canManage ? (
+        <SigningCopyRecipientsPanel
+          signingId={signingId}
+          lifecycleState={dashboard.signing.lifecycleState}
+          canManage={canManage}
+        />
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -401,6 +583,22 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                   {participant.optionalRole ? (
                     <Badge variant="outline">{participant.optionalRole}</Badge>
                   ) : null}
+                  {participant.capacityMode === "REPRESENTATIVE" ? (
+                    <Badge variant="outline">
+                      Representative
+                      {participant.capacityLabel
+                        ? ` · ${
+                            SIGNING_CAPACITY_LABEL_OPTIONS.find(
+                              (option) =>
+                                option.value === participant.capacityLabel,
+                            )?.label ?? participant.capacityLabel
+                          }`
+                        : null}
+                      {participant.representedPartyName
+                        ? ` · ${participant.representedPartyName}`
+                        : null}
+                    </Badge>
+                  ) : null}
                   <Badge variant="secondary">
                     {participant.participantStatus.replace(/_/g, " ")}
                   </Badge>
@@ -414,7 +612,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                             : "info"
                       }
                     >
-                      Invitation {participant.deliveryState.toLowerCase()}
+                      {deliveryLabel(participant.deliveryState)}
                     </Badge>
                   ) : null}
                 </div>
@@ -472,6 +670,18 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         finalizationCondition={dashboard.signing.finalizationCondition}
       />
 
+      <SigningPreviewDialog
+        open={previewOpen}
+        signingId={signingId}
+        mode={workspaceMode}
+        initialDocumentId={workspaceDocumentId}
+        onClose={() => {
+          setPreviewOpen(false);
+          setWorkspaceDocumentId(null);
+        }}
+        onChanged={reload}
+      />
+
       <ConfirmDialog
         open={pendingActivation !== null}
         title={
@@ -481,8 +691,8 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         }
         message={
           pendingActivation?.mode === "IN_PERSON"
-            ? `This freezes the documents exactly as prepared and starts the Signing. No invitation email is sent. ${NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE}`
-            : `This freezes the documents exactly as prepared, starts the Signing, and emails each participant a personal signing link. ${NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE}`
+            ? "This freezes all the documents and starts in-person signing. No invitation email is sent."
+            : "This freezes all the documents and emails each participant a signing link."
         }
         confirmLabel={
           pendingActivation?.mode === "IN_PERSON"

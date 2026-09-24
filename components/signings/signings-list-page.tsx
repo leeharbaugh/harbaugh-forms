@@ -17,10 +17,6 @@ import {
   createDraftSigningAction,
   listSigningsAction,
 } from "@/lib/signing/actions";
-import {
-  NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE,
-  NATIVE_SIGNING_TYPED_ONLY_NOTICE,
-} from "@/lib/signing/capacity-notices";
 import type { SigningSummary } from "@/lib/signing/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -102,14 +98,9 @@ export function SigningsListPage() {
         description="Prepare Draft Signings, send invitations, or begin in-person signing."
       />
 
-      <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
-        <p>{NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE}</p>
-        <p>{NATIVE_SIGNING_TYPED_ONLY_NOTICE}</p>
-      </div>
-
       <Card>
         <CardHeader>
-          <CardTitle>New Draft Signing</CardTitle>
+          <CardTitle>Create Signing</CardTitle>
           <CardDescription>
             Creates a Draft you can prepare with documents, participants, and
             fields.
@@ -131,7 +122,7 @@ export function SigningsListPage() {
             disabled={creating || title.trim().length === 0}
             onClick={() => void createDraft()}
           >
-            {creating ? "Creating…" : "Create Draft"}
+            {creating ? "Creating…" : "Create Signing"}
           </Button>
         </CardContent>
       </Card>

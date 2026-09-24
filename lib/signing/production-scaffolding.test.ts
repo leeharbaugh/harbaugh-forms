@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
-  NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE,
+  NATIVE_SIGNING_REPRESENTATIVE_NOTICE,
   NATIVE_SIGNING_TYPED_ONLY_NOTICE,
 } from "./capacity-notices";
 import { mapDeliveryStateToLabel } from "./completed-ops";
@@ -32,21 +32,29 @@ describe("production scaffolding wiring", () => {
     assert.match(adopted, /Drawn signatures and initials are not available yet/);
   });
 
-  it("surfaces personal-capacity and typed-only notices on create/Send UI", () => {
+  it("does not surface general representative or typed-adoption banners on manager pages", () => {
     const dashboard = read("components/signings/signing-dashboard-page.tsx");
-    assert.match(dashboard, /NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE/);
-    assert.match(dashboard, /NATIVE_SIGNING_TYPED_ONLY_NOTICE/);
-    assert.match(NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE, /personal capacity/);
+    const list = read("components/signings/signings-list-page.tsx");
+    assert.doesNotMatch(dashboard, /NATIVE_SIGNING_REPRESENTATIVE_NOTICE/);
+    assert.doesNotMatch(dashboard, /NATIVE_SIGNING_TYPED_ONLY_NOTICE/);
+    assert.doesNotMatch(list, /NATIVE_SIGNING_REPRESENTATIVE_NOTICE/);
+    assert.doesNotMatch(list, /NATIVE_SIGNING_TYPED_ONLY_NOTICE/);
+    assert.match(NATIVE_SIGNING_REPRESENTATIVE_NOTICE, /Representative signing/);
     assert.match(NATIVE_SIGNING_TYPED_ONLY_NOTICE, /typed/);
+    assert.doesNotMatch(dashboard, /NATIVE_SIGNING_PERSONAL_CAPACITY_NOTICE/);
   });
 
   it("wires completed ops UI through authorized actors only", () => {
     const panel = read("components/signings/signing-completed-ops-panel.tsx");
+    const copyPanel = read(
+      "components/signings/signing-copy-recipients-panel.tsx",
+    );
     const actions = read("lib/signing/completed-ops-actions.ts");
     assert.match(panel, /Resend Package/);
     assert.match(panel, /Replace Link/);
     assert.match(panel, /Revoke Link/);
-    assert.match(panel, /Add Copy Recipient/);
+    assert.match(panel, /SigningCopyRecipientsPanel/);
+    assert.match(copyPanel, /Add Copy Recipient/);
     assert.match(panel, /Provider Accepted/);
     assert.doesNotMatch(panel, /rawToken|bearer|token_wrapped/);
     assert.match(actions, /canManageCompletedSigningOperations|resendCompletedPackageWithActor/);

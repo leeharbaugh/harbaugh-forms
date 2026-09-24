@@ -253,9 +253,11 @@ describe("Native Signing completion delivery", () => {
 
   it("wires fan-out after Complete without failing finalization", () => {
     assert.match(finalization, /enqueueInitialCompletedPackageFanOut/);
+    assert.match(finalization, /enqueueInitialCopyRecipientFanOut/);
     assert.match(finalization, /must never fail or roll back Complete/);
     assert.match(finalization, /isSigningWorkSuspended/);
     assert.match(delivery, /enqueueInitialCompletedPackageFanOut/);
+    assert.match(delivery, /enqueueInitialCopyRecipientFanOut/);
     assert.match(delivery, /frozen_email/);
     assert.match(delivery, /COMPLETED_PACKAGE_SENT/);
     assert.match(delivery, /COMPLETED_PACKAGE_RESEND_REQUESTED/);

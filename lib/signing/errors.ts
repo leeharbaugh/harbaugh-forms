@@ -12,6 +12,7 @@ export type SigningErrorCode =
   | "NOT_FOUND"
   | "INVALID_INPUT"
   | "INVALID_PACKET"
+  | "CONFIRM_DUPLICATE"
   | "CONFLICT"
   | "STALE_SOURCE"
   | "INTEGRITY_MISMATCH"

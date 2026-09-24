@@ -575,6 +575,7 @@ export async function listSigningsForActor(
   const [
     { data: agentRows, error: agentError },
     { data: operatorRows, error: operatorError },
+    { data: senderRows, error: senderError },
     orgResult,
   ] = await Promise.all([
     admin
@@ -585,6 +586,10 @@ export async function listSigningsForActor(
       .from("signing_operator_associations")
       .select("signing_id")
       .eq("operator_user_id", actor.userId),
+    admin
+      .from("signings")
+      .select("id")
+      .eq("original_sender_user_id", actor.userId),
     adminOrgIds.length > 0
       ? admin
           .from("signings")
@@ -595,6 +600,7 @@ export async function listSigningsForActor(
 
   if (agentError) throw new Error(agentError.message);
   if (operatorError) throw new Error(operatorError.message);
+  if (senderError) throw new Error(senderError.message);
   if (orgResult.error) throw new Error(orgResult.error.message);
 
   const candidateIds = new Set<string>();
@@ -603,6 +609,9 @@ export async function listSigningsForActor(
   }
   for (const row of operatorRows ?? []) {
     if (typeof row.signing_id === "string") candidateIds.add(row.signing_id);
+  }
+  for (const row of senderRows ?? []) {
+    if (typeof row.id === "string") candidateIds.add(row.id);
   }
   for (const row of orgResult.data ?? []) {
     if (typeof row.id === "string") candidateIds.add(row.id);

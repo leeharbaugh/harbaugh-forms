@@ -203,6 +203,13 @@ export function CeremonyShell({
         <p className="mt-1 text-sm text-muted-foreground">
           Signing as {overview.displayedName}
         </p>
+        {overview.capacityMode === "REPRESENTATIVE" ? (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Representing {overview.representedPartyName}. Execution wording is
+            prepared by the sending agent; Harbaugh Forms does not verify legal
+            authority.
+          </p>
+        ) : null}
       </div>
 
       {error ? (
@@ -257,15 +264,18 @@ export function CeremonyShell({
           <CardHeader>
             <CardTitle className="text-base">Adopt your marks</CardTitle>
             <CardDescription>
-              Type your name exactly as it appears on this Signing. Your
-              signature and initials are adopted separately.
+              {overview.capacityMode === "REPRESENTATIVE"
+                ? "Type the prepared execution wording exactly. Your signature and initials are adopted separately. Capacity cannot be changed here."
+                : "Type your name exactly as it appears on this Signing. Your signature and initials are adopted separately."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {needsSignature ? (
               <div className="space-y-2">
                 <Label htmlFor="typed-signature">
-                  Typed signature (must be {overview.displayedName})
+                  Typed signature (must be{" "}
+                  {overview.expectedTypedSignatureText || overview.displayedName}
+                  )
                 </Label>
                 <Input
                   id="typed-signature"

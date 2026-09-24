@@ -2,15 +2,19 @@ import { FragmentExchangeBootstrap } from "@/components/sign/fragment-exchange-b
 import { isSigningCredentialPublicId } from "@/lib/signing/bearer-transport";
 import { SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE } from "@/lib/signing/external-access";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
+import { connection } from "next/server";
 
 /**
  * Completed-package landing: path holds nonsecret public credential id.
  */
+export const instant = false;
+
 export default async function CompletedPackageLandingPage({
   params,
 }: {
   params: Promise<{ publicId: string }>;
 }) {
+  await connection();
   if (!isNativeSigningEnabled()) {
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">

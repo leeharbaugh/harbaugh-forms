@@ -67,12 +67,6 @@ export async function ensurePreparedDocumentVersion(options: {
   if (!document) {
     throw new SigningError("NOT_FOUND", "Signing document not found.");
   }
-  if (!document.source_packet_form_id) {
-    throw new SigningError(
-      "VALIDATION_FAILED",
-      "Signing document is missing a source Packet Form.",
-    );
-  }
 
   const snapshotId = requireSelectedDraftSourceSnapshotId(document);
   const snapshot = await loadDraftSourceSnapshotById(

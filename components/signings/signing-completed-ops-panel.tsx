@@ -1,5 +1,6 @@
 "use client";
 
+import { SigningCopyRecipientsPanel } from "@/components/signings/signing-copy-recipients-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,12 +11,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  addCopyRecipientAction,
   getCompletedOpsSnapshotAction,
-  removeCopyRecipientAction,
   replaceCompletedPackageLinkAction,
   resendCompletedPackageAction,
   revokeCompletedPackageLinkAction,
@@ -28,7 +25,6 @@ type ConfirmKind =
   | { type: "resend"; credentialId: string }
   | { type: "replace"; credentialId: string }
   | { type: "revoke"; credentialId: string }
-  | { type: "remove-copy"; copyRecipientId: string }
   | { type: "retry-finalization" }
   | null;
 
@@ -46,9 +42,6 @@ export function SigningCompletedOpsPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmKind>(null);
-  const [copyEmail, setCopyEmail] = useState("");
-  const [copyName, setCopyName] = useState("");
-  const [copyRole, setCopyRole] = useState("");
 
   const reload = useCallback(async () => {
     const result = await getCompletedOpsSnapshotAction({ signingId });
@@ -91,16 +84,6 @@ export function SigningCompletedOpsPanel({
         credentialId: confirm.credentialId,
       });
       if (result.ok) setNotice("Completed-package link revoked.");
-    } else if (confirm.type === "remove-copy") {
-      result = await removeCopyRecipientAction({
-        signingId,
-        copyRecipientId: confirm.copyRecipientId,
-      });
-      if (result.ok) {
-        setNotice(
-          "Copy recipient removed. Access revoked; history retained; pending delivery parked.",
-        );
-      }
     } else {
       result = await retryFinalizationAction({ signingId });
       if (result.ok) setNotice("Finalization retry requested.");
@@ -109,28 +92,6 @@ export function SigningCompletedOpsPanel({
       setError(result.error);
     } else {
       setConfirm(null);
-      await reload();
-    }
-    setBusy(false);
-  }
-
-  async function addCopy() {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    const result = await addCopyRecipientAction({
-      signingId,
-      email: copyEmail,
-      displayName: copyName || undefined,
-      roleLabel: copyRole || undefined,
-    });
-    if (!result.ok) {
-      setError(result.error);
-    } else {
-      setNotice("Copy recipient added. Package delivery will be queued.");
-      setCopyEmail("");
-      setCopyName("");
-      setCopyRole("");
       await reload();
     }
     setBusy(false);
@@ -200,13 +161,17 @@ export function SigningCompletedOpsPanel({
                 snapshot.deliveries.map((row) => (
                   <div
                     key={row.credentialId}
-                    className="space-y-2 rounded-lg border border-border p-3"
+                    className="flex flex-col gap-2 rounded-lg border border-border p-3"
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium">
                         {row.recipientName}
                       </span>
-                      <Badge variant="outline">{row.recipientKind}</Badge>
+                      <Badge variant="outline">
+                        {row.recipientKind === "COPY"
+                          ? "Copy recipient"
+                          : "Participant"}
+                      </Badge>
                       <Badge
                         variant={
                           row.deliveryLabel === "Failed"
@@ -219,7 +184,7 @@ export function SigningCompletedOpsPanel({
                         {row.deliveryLabel}
                       </Badge>
                       {!row.isCurrent || row.revokedAt ? (
-                        <Badge variant="destructive">Revoked</Badge>
+                        <Badge variant="secondary">Revoked</Badge>
                       ) : null}
                     </div>
                     <p className="text-sm text-muted-foreground">
@@ -281,76 +246,12 @@ export function SigningCompletedOpsPanel({
               )}
             </div>
 
-            <div className="space-y-3">
-              <h3 className="text-sm font-medium">Copy recipients</h3>
-              {snapshot.copyRecipients.map((row) => (
-                <div
-                  key={row.id}
-                  className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="text-sm font-medium">
-                      {row.displayName ?? row.email}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{row.email}</p>
-                    {row.roleLabel ? (
-                      <Badge variant="outline">{row.roleLabel}</Badge>
-                    ) : null}
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() =>
-                      setConfirm({
-                        type: "remove-copy",
-                        copyRecipientId: row.id,
-                      })
-                    }
-                  >
-                    Soft-remove
-                  </Button>
-                </div>
-              ))}
-              <div className="grid gap-2 sm:grid-cols-3">
-                <div className="space-y-1">
-                  <Label htmlFor="copy-email">Email</Label>
-                  <Input
-                    id="copy-email"
-                    value={copyEmail}
-                    onChange={(event) => setCopyEmail(event.target.value)}
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="copy-name">Name (optional)</Label>
-                  <Input
-                    id="copy-name"
-                    value={copyName}
-                    onChange={(event) => setCopyName(event.target.value)}
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="copy-role">Role label (optional)</Label>
-                  <Input
-                    id="copy-role"
-                    value={copyRole}
-                    onChange={(event) => setCopyRole(event.target.value)}
-                    autoComplete="off"
-                  />
-                </div>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy || !copyEmail.trim()}
-                onClick={() => void addCopy()}
-              >
-                Add Copy Recipient
-              </Button>
-            </div>
+            <SigningCopyRecipientsPanel
+              signingId={signingId}
+              lifecycleState={lifecycleState}
+              canManage={Boolean(snapshot?.canManage)}
+              embedded
+            />
           </>
         ) : null}
       </CardContent>
@@ -362,40 +263,32 @@ export function SigningCompletedOpsPanel({
             ? "Replace completed-package link?"
             : confirm?.type === "revoke"
               ? "Revoke completed-package link?"
-              : confirm?.type === "remove-copy"
-                ? "Soft-remove copy recipient?"
-                : confirm?.type === "retry-finalization"
-                  ? "Retry finalization?"
-                  : "Resend completed package?"
+              : confirm?.type === "retry-finalization"
+                ? "Retry finalization?"
+                : "Resend completed package?"
         }
         message={
           confirm?.type === "replace"
             ? "The old link becomes invalid immediately. A new package link will be issued and sent. Certificate and completed documents remain unchanged."
             : confirm?.type === "revoke"
               ? "This invalidates the current credential and sessions. Recipient history is retained. Certificate and documents are unchanged."
-              : confirm?.type === "remove-copy"
-                ? "Access is revoked and pending delivery for this recipient is parked. History is retained. Certificate and documents are unchanged."
-                : confirm?.type === "retry-finalization"
-                  ? "Re-queues recoverable finalization work. Does not manually mark the Signing Complete."
-                  : "Creates a new intentional send using the current link when recoverable. If the link cannot be recovered, use Replace Link instead."
+              : confirm?.type === "retry-finalization"
+                ? "Re-queues recoverable finalization work. Does not manually mark the Signing Complete."
+                : "Creates a new intentional send using the current link when recoverable. If the link cannot be recovered, use Replace Link instead."
         }
         confirmLabel={
           confirm?.type === "replace"
             ? "Replace Link"
             : confirm?.type === "revoke"
               ? "Revoke Link"
-              : confirm?.type === "remove-copy"
-                ? "Soft-remove"
-                : confirm?.type === "retry-finalization"
-                  ? "Retry Finalization"
-                  : "Resend Package"
+              : confirm?.type === "retry-finalization"
+                ? "Retry Finalization"
+                : "Resend Package"
         }
         confirmingLabel="Working…"
         isConfirming={busy}
+        onCancel={() => setConfirm(null)}
         onConfirm={() => void runConfirmed()}
-        onCancel={() => {
-          if (!busy) setConfirm(null);
-        }}
       />
     </Card>
   );
