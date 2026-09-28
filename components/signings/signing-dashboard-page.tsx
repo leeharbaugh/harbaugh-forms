@@ -75,9 +75,6 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     expiresAt: string;
   } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [workspaceMode, setWorkspaceMode] = useState<"preview" | "prepare">(
-    "preview",
-  );
   const [workspaceDocumentId, setWorkspaceDocumentId] = useState<string | null>(
     null,
   );
@@ -276,18 +273,6 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
               <Button
                 type="button"
                 variant="outline"
-                disabled={!canManage || dashboard.documents.length === 0}
-                onClick={() => {
-                  setWorkspaceMode("preview");
-                  setWorkspaceDocumentId(null);
-                  setPreviewOpen(true);
-                }}
-              >
-                Preview Signing
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
                 disabled={!canActivate}
                 onClick={() =>
                   setPendingActivation({
@@ -345,7 +330,6 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
           onResolveDrift={resolveDrift}
           busyDocumentId={busyDocumentId}
           onPrepareDocument={(documentId) => {
-            setWorkspaceMode("prepare");
             setWorkspaceDocumentId(documentId);
             setPreviewOpen(true);
           }}
@@ -374,7 +358,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
               </CardDescription>
             ) : (
               <CardDescription>
-                Open Preview Signing to verify documents and field placements
+                Review documents and field placements in Prepare Documents
                 before Send or Begin In-Person.
               </CardDescription>
             )}
@@ -386,21 +370,6 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                   <li key={`${blocker.code}-${index}`}>{blocker.message}</li>
                 ))}
               </ul>
-            ) : null}
-            {canManage ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={dashboard.documents.length === 0}
-                onClick={() => {
-                  setWorkspaceMode("preview");
-                  setWorkspaceDocumentId(null);
-                  setPreviewOpen(true);
-                }}
-              >
-                Preview Signing
-              </Button>
             ) : null}
           </CardContent>
         </Card>
@@ -672,7 +641,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
       <SigningPreviewDialog
         open={previewOpen}
         signingId={signingId}
-        mode={workspaceMode}
+        mode="prepare"
         initialDocumentId={workspaceDocumentId}
         onClose={() => {
           setPreviewOpen(false);

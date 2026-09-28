@@ -10,7 +10,6 @@ import {
 } from "@/lib/pdf-text-layout";
 import { suggestTypedInitialsFromDisplayName as suggestFromCeremony } from "@/lib/signing/adopted-marks";
 import {
-  DRAFT_FIELD_DEFAULT_SIZES,
   addField,
   clampRectToPage,
   draftFieldCompactLabel,
@@ -24,7 +23,19 @@ import {
   removeFields,
   replaceFieldId,
 } from "@/lib/signing/draft-field-editor-state";
+import {
+  DATE_SIGNED_DEFAULT_SIZE,
+  DATE_SIGNED_SAMPLE,
+  DRAFT_FIELD_WIDTH_BOUNDS,
+  caveatTextWidth,
+  dateSignedFontSize,
+  defaultDraftFieldSize,
+  draftMarkFontSize,
+  expectedDraftMarkText,
+  type DraftMarkSigner,
+} from "@/lib/signing/draft-field-sizing";
 import { suggestTypedInitialsFromDisplayName } from "@/lib/signing/initials-suggestion";
+import { renderRectToPdfPlacement } from "@/lib/types/template-pdf-field";
 import type {
   SigningPreviewField,
   SigningPreviewModel,
@@ -54,6 +65,7 @@ function field(
     capacityMode: "PERSONAL",
     representedPartyName: null,
     capacityLabel: null,
+    capacityWording: null,
     linkedSignatureFieldId: null,
     ...extra,
   };
@@ -64,8 +76,8 @@ function model(fields: SigningPreviewField[]): SigningPreviewModel {
     signingId: "s1",
     title: "Signing",
     participants: [
-      { id: "p1", fullName: "Bea Buyer", capacityMode: "PERSONAL", representedPartyName: null },
-      { id: "p2", fullName: "Cal Buyer", capacityMode: "PERSONAL", representedPartyName: null },
+      { id: "p1", fullName: "Bea Buyer", capacityMode: "PERSONAL", representedPartyName: null, capacityWording: null },
+      { id: "p2", fullName: "Cal Buyer", capacityMode: "PERSONAL", representedPartyName: null, capacityWording: null },
     ],
     documents: [
       {
@@ -161,32 +173,114 @@ describe("Prepare Documents local editor state", () => {
     assert.deepEqual([below.x, below.y], [440, 648]);
   });
 
-  it("uses compact defaults that fit the completed-PDF renderer", () => {
-    assert.deepEqual(DRAFT_FIELD_DEFAULT_SIZES.SIGNATURE, { width: 150, height: 28 });
-    assert.deepEqual(DRAFT_FIELD_DEFAULT_SIZES.INITIALS, { width: 40, height: 20 });
-    assert.deepEqual(DRAFT_FIELD_DEFAULT_SIZES.DATE_SIGNED, { width: 72, height: 18 });
+  it("places the linked Date Signed beside the Signature on its baseline, else below", () => {
+    const page = { width: 612, height: 792 };
+    const size = defaultDraftFieldSize("SIGNATURE", { fullName: "Lee Harbaugh" });
+    const signature = { x: 72, y: 600, ...size };
+    const date = pairedDatePlacement(signature, page);
+    assert.equal(date.x, 72 + size.width + 12);
+    assert.equal(date.y + date.height, signature.y + signature.height);
+    assert.deepEqual([date.width, date.height], [DATE_SIGNED_DEFAULT_SIZE.width, DATE_SIGNED_DEFAULT_SIZE.height]);
+    const nearEdge = pairedDatePlacement({ ...signature, x: 612 - size.width - 4 }, page);
+    assert.equal(nearEdge.x, 612 - size.width - 4);
+    assert.equal(nearEdge.y, 600 + size.height + 8);
+  });
+});
+
+const lee: DraftMarkSigner = { fullName: "Lee Harbaugh", capacityMode: "PERSONAL" };
+const REP_WORDING = "Jane Q. Public, Attorney-in-Fact for John Q. Public";
+const rep: DraftMarkSigner = {
+  fullName: "Jane Q. Public",
+  capacityMode: "REPRESENTATIVE",
+  capacityWording: REP_WORDING,
+};
+
+describe("Content-driven default field sizes", () => {
+  it("derives the expected mark text the renderer will draw", () => {
+    assert.equal(expectedDraftMarkText("INITIALS", lee), "LH");
+    assert.equal(expectedDraftMarkText("SIGNATURE", lee), "Lee Harbaugh");
+    assert.equal(expectedDraftMarkText("SIGNATURE", rep), REP_WORDING);
+    assert.equal(
+      expectedDraftMarkText("SIGNATURE", { ...rep, capacityWording: "  " }),
+      "Jane Q. Public",
+    );
+    assert.equal(expectedDraftMarkText("DATE_SIGNED", lee), DATE_SIGNED_SAMPLE);
+    assert.match(DATE_SIGNED_SAMPLE, /^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("places the default Date Signed beside the default Signature on its baseline", () => {
-    const page = { width: 612, height: 792 };
-    const signature = { x: 72, y: 600, ...DRAFT_FIELD_DEFAULT_SIZES.SIGNATURE };
-    const date = pairedDatePlacement(signature, page);
-    assert.equal(date.x, 72 + 150 + 12);
-    assert.equal(date.y + date.height, signature.y + signature.height);
-    assert.deepEqual([date.width, date.height], [72, 18]);
-    const nearEdge = pairedDatePlacement({ ...signature, x: 420 }, page);
-    assert.deepEqual([nearEdge.x, nearEdge.y], [420, 600 + 28 + 8]);
+  it("sizes LH initials compactly and keeps longer initials bounded", () => {
+    const lh = defaultDraftFieldSize("INITIALS", lee);
+    assert.ok(lh.width <= 22 && lh.height <= 16, JSON.stringify(lh));
+    const four = defaultDraftFieldSize("INITIALS", { fullName: "Mary Jane Kate Smith" });
+    assert.equal(expectedDraftMarkText("INITIALS", { fullName: "Mary Jane Kate Smith" }), "MJKS");
+    assert.ok(four.width > lh.width);
+    assert.ok(four.width <= DRAFT_FIELD_WIDTH_BOUNDS.INITIALS.max);
+    assert.equal(four.height, lh.height);
+  });
+
+  it("makes a short signature narrower than a long name and caps very long names", () => {
+    const short = defaultDraftFieldSize("SIGNATURE", { fullName: "Al Li" });
+    const normal = defaultDraftFieldSize("SIGNATURE", lee);
+    const long = defaultDraftFieldSize("SIGNATURE", { fullName: "Lisa Ann Ellison Hernandez" });
+    const huge = defaultDraftFieldSize("SIGNATURE", {
+      fullName: "Maximiliana Alexandrina Wolfeschlegelsteinhausen-Bergerdorff",
+    });
+    assert.ok(short.width < normal.width && normal.width < long.width);
+    assert.ok(short.width >= DRAFT_FIELD_WIDTH_BOUNDS.SIGNATURE.min);
+    assert.equal(huge.width, DRAFT_FIELD_WIDTH_BOUNDS.SIGNATURE.max);
+    assert.ok(normal.width < 120 && normal.height <= 24, JSON.stringify(normal));
+  });
+
+  it("sizes representative signatures from the approved execution wording", () => {
+    const personal = defaultDraftFieldSize("SIGNATURE", { fullName: rep.fullName });
+    const representative = defaultDraftFieldSize("SIGNATURE", rep);
+    assert.ok(representative.width > personal.width);
+    assert.ok(representative.width <= DRAFT_FIELD_WIDTH_BOUNDS.SIGNATURE.max);
+    const size = draftMarkFontSize("SIGNATURE", REP_WORDING, representative);
+    assert.ok(size >= 6);
+    assert.ok(caveatTextWidth(REP_WORDING, size) <= representative.width + 0.01);
+  });
+
+  it("sizes Date Signed to the finalization date text", () => {
+    const date = DATE_SIGNED_DEFAULT_SIZE;
+    assert.ok(date.width <= 60 && date.height <= 18, JSON.stringify(date));
+    assert.equal(dateSignedFontSize(date.height), date.height * 0.55);
+  });
+
+  it("round-trips placement geometry through the rendered page scale", () => {
+    const metrics = { originalWidth: 612, originalHeight: 792, renderedWidth: 918, renderedHeight: 1188 };
+    const rect = { x: 72, y: 600, ...defaultDraftFieldSize("INITIALS", lee) };
+    const rendered = {
+      x: (rect.x / 612) * 918,
+      y: (rect.y / 792) * 1188,
+      width: (rect.width / 612) * 918,
+      height: (rect.height / 792) * 1188,
+    };
+    const back = renderRectToPdfPlacement(rendered, metrics);
+    for (const key of ["x", "y", "width", "height"] as const) {
+      assert.ok(Math.abs(back[key] - rect[key]) < 0.01, key);
+    }
   });
 });
 
 describe("Default placements fit the completed-PDF renderer", () => {
-  it("fits typed marks and the Date Signed text inside the default boxes", async () => {
+  it("matches the browser metrics table to the embedded Caveat font", async () => {
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit as Parameters<PDFDocument["registerFontkit"]>[0]);
+    const caveat = await doc.embedFont(readFileSync(join(root, "public/fonts/Caveat-Regular.ttf")));
+    for (const text of ["LH", "Lee Harbaugh", REP_WORDING, "O'Neil-Smith, Jr."]) {
+      const expected = caveat.widthOfTextAtSize(text, 16);
+      assert.ok(Math.abs(caveatTextWidth(text, 16) - expected) < 0.2, text);
+    }
+  });
+
+  it("draws every default mark inside its box without clipping", async () => {
     const doc = await PDFDocument.create();
     doc.registerFontkit(fontkit as Parameters<PDFDocument["registerFontkit"]>[0]);
     const caveat = await doc.embedFont(readFileSync(join(root, "public/fonts/Caveat-Regular.ttf")));
     const helvetica = await doc.embedFont(StandardFonts.Helvetica);
 
-    const fits = (text: string, box: { width: number; height: number }) => {
+    const drawn = (text: string, box: { width: number; height: number }) => {
       const base = typedSignatureFontSize(box.height);
       const size = fitTypedSignatureFontSize({
         text,
@@ -198,40 +292,34 @@ describe("Default placements fit the completed-PDF renderer", () => {
         caveat.heightAtSize(size, { descender: true }) -
           caveat.heightAtSize(size, { descender: false }),
       );
-      return {
-        size,
-        width: caveat.widthOfTextAtSize(text, size),
-        bottom: 1 + size + descent,
-      };
+      return { base, size, width: caveat.widthOfTextAtSize(text, size), bottom: 1 + size + descent };
     };
 
-    const signature = DRAFT_FIELD_DEFAULT_SIZES.SIGNATURE;
-    for (const text of [
-      "Lee Harbaugh",
-      "Lisa Ann Ellison Hernandez",
-      "Jane Q. Public, Attorney-in-Fact for John Q. Public",
-    ]) {
-      const drawn = fits(text, signature);
-      assert.ok(drawn.width <= signature.width + 0.01, `${text} width`);
-      assert.ok(drawn.bottom <= signature.height, `${text} height`);
+    const signers: Array<[DraftMarkSigner, "SIGNATURE" | "INITIALS"]> = [
+      [lee, "INITIALS"],
+      [{ fullName: "Mary Jane Kate Smith" }, "INITIALS"],
+      [{ fullName: "Al Li" }, "SIGNATURE"],
+      [lee, "SIGNATURE"],
+      [{ fullName: "Lisa Ann Ellison Hernandez" }, "SIGNATURE"],
+      [rep, "SIGNATURE"],
+    ];
+    for (const [signer, kind] of signers) {
+      const text = expectedDraftMarkText(kind, signer);
+      const box = defaultDraftFieldSize(kind, signer);
+      const mark = drawn(text, box);
+      assert.ok(mark.width <= box.width + 0.01, `${text} width`);
+      assert.ok(mark.bottom <= box.height, `${text} height`);
+      assert.ok(Math.abs(draftMarkFontSize(kind, text, box) - mark.size) < 0.05, `${text} size`);
+      if (text !== REP_WORDING) assert.equal(mark.size, mark.base, `${text} not shrunk`);
     }
-    assert.ok(fits("Lee Harbaugh", signature).size >= 18);
 
-    const initials = DRAFT_FIELD_DEFAULT_SIZES.INITIALS;
-    for (const text of ["LH", "JQP", "MJKS"]) {
-      const drawn = fits(text, initials);
-      assert.ok(drawn.width < initials.width, text);
-      assert.ok(drawn.bottom <= initials.height, text);
-    }
-
-    const date = DRAFT_FIELD_DEFAULT_SIZES.DATE_SIGNED;
-    const dateSize = Math.min(11, Math.max(7, date.height * 0.55));
-    const dateWidth = helvetica.widthOfTextAtSize("2026-09-28", dateSize);
-    assert.ok(dateWidth < date.width - 8);
+    const date = DATE_SIGNED_DEFAULT_SIZE;
+    const dateSize = dateSignedFontSize(date.height);
+    const dateWidth = helvetica.widthOfTextAtSize(DATE_SIGNED_SAMPLE, dateSize);
+    assert.ok(dateWidth <= date.width - 4);
     assert.ok(dateSize + 1 < date.height);
   });
 });
-
 describe("Prepare Documents compact field labels", () => {
   const dialog = read("components/signings/signing-preview-dialog.tsx");
   const lee = {
@@ -273,7 +361,8 @@ describe("Prepare Documents compact field labels", () => {
     assert.doesNotMatch(dialog, /Math\.max\(\s*\(field\.width/);
     assert.doesNotMatch(dialog, /Math\.max\(\s*\(field\.height/);
     assert.match(dialog, /onResizeStop/);
-    assert.match(dialog, /DRAFT_FIELD_DEFAULT_SIZES\[selectedFieldType\]/);
+    assert.match(dialog, /defaultDraftFieldSize\(selectedFieldType, participant\)/);
+    assert.match(dialog, /draftMarkFontSize\(field\.fieldType, markText, field\)/);
   });
 });
 

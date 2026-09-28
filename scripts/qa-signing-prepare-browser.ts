@@ -14,13 +14,24 @@ import { chromium, type Page } from "playwright";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import {
+  DATE_SIGNED_DEFAULT_SIZE,
+  defaultDraftFieldSize,
+} from "../lib/signing/draft-field-sizing.ts";
 
 const EXPECTED_REF = "ewxsxwzezhkeawnjvigx";
 const APP_ORIGIN = process.env.MANUAL_QA_ORIGIN?.trim() || "http://localhost:3000";
 const OUT_DIR = path.join("_audit_tmp", "signing-prepare-qa");
 const GENERATED_DOCUMENTS_BUCKET = "generated-documents";
 const SIGNING_ARTIFACTS_BUCKET = "signing-artifacts";
+const LONG_NAME = "Lisa Ann Ellison Hernandez";
+/** Buyer Rep-style printed lines on page 1 (PDF points, y from top). */
+const PRINTED = {
+  initials: { x: 470, width: 36, top: 740 },
+  signatureA: { x: 110, width: 216, top: 560 },
+  signatureB: { x: 110, width: 216, top: 640 },
+};
 
 class QaFailure extends Error {}
 function fail(message: string): never {
@@ -43,6 +54,24 @@ async function makePdf(label: string): Promise<Uint8Array> {
   for (let index = 1; index <= 2; index += 1) {
     const page = doc.addPage([612, 792]);
     page.drawText(`${label} — page ${index}`, { x: 72, y: 720, size: 18, font });
+    if (index !== 1) continue;
+    const line = (x: number, width: number, top: number) =>
+      page.drawLine({
+        start: { x, y: 792 - top },
+        end: { x: x + width, y: 792 - top },
+        thickness: 0.75,
+        color: rgb(0, 0, 0),
+      });
+    const text = (value: string, x: number, top: number) =>
+      page.drawText(value, { x, y: 792 - top + 2, size: 9, font });
+    for (const block of [PRINTED.signatureA, PRINTED.signatureB]) {
+      text("Buyer", 72, block.top);
+      line(block.x, block.width, block.top);
+      text("Date", 340, block.top);
+      line(368, 72, block.top);
+    }
+    text("Buyer Initials", 405, PRINTED.initials.top);
+    line(PRINTED.initials.x, PRINTED.initials.width, PRINTED.initials.top);
   }
   return doc.save();
 }
@@ -230,9 +259,9 @@ async function main() {
     // An ad hoc participant first; it must survive Packet selection.
     await page.getByRole("button", { name: "Use this Packet" }).waitFor({ timeout: 60000 });
     const participantList = page.locator('[data-testid="draft-participant-list"]');
-    await page.locator("#participant-name").fill("Ad Hoc Witness");
+    await page.locator("#participant-name").fill(LONG_NAME);
     await page.getByRole("button", { name: "Add participant", exact: true }).click();
-    await participantList.getByText("Ad Hoc Witness").waitFor({ timeout: 30000 });
+    await participantList.getByText(LONG_NAME).waitFor({ timeout: 30000 });
     ok("ad hoc participant added before choosing a Packet");
 
     // Select the Packet: its parties appear under Participants immediately.
@@ -240,7 +269,7 @@ async function main() {
     await page.getByRole("button", { name: "Use this Packet" }).click();
     await page.getByText(/Packet selected\. Added 2 participants/).waitFor({ timeout: 30000 });
     const listText = await participantList.innerText();
-    for (const name of ["Ad Hoc Witness", "Lee Harbaugh", "Cal Cobuyer"]) {
+    for (const name of [LONG_NAME, "Lee Harbaugh", "Cal Cobuyer"]) {
       const count = listText.split(name).length - 1;
       if (count !== 1) fail(`${name} appears ${count} times under Participants: ${listText}`);
     }
@@ -338,32 +367,37 @@ async function main() {
     }
     ok("Signature + linked Date Signed placed on page 2; scroll preserved");
     const scale = pageBox.width / 612;
-    if (
-      `${signature.width}x${signature.height}` !== "150x28" ||
-      `${pairedDate.width}x${pairedDate.height}` !== "72x18"
-    ) {
-      fail(`defaults: Signature ${signature.width}x${signature.height}, Date ${pairedDate.width}x${pairedDate.height}`);
+    const leeSig = defaultDraftFieldSize("SIGNATURE", { fullName: "Lee Harbaugh" });
+    const dateSize = DATE_SIGNED_DEFAULT_SIZE;
+    const sizeText = (row: { width: number; height: number }) => `${row.width}x${row.height}`;
+    if (sizeText(signature) !== sizeText(leeSig) || sizeText(pairedDate) !== sizeText(dateSize)) {
+      fail(`defaults: Signature ${sizeText(signature)} (want ${sizeText(leeSig)}), Date ${sizeText(pairedDate)} (want ${sizeText(dateSize)})`);
     }
     if (Math.abs(pairedDate.y + pairedDate.height - (signature.y + signature.height)) > 0.5) {
       fail("linked Date Signed must share the Signature's baseline");
     }
-    const sigBox = (await page.locator('.signing-field-overlay:has([data-field-type="SIGNATURE"])').first().boundingBox())!;
-    const dateBox = (await page.locator('.signing-field-overlay:has([data-field-type="DATE_SIGNED"])').first().boundingBox())!;
-    if (Math.abs(sigBox.width - 150 * scale) > 1.5 || Math.abs(sigBox.height - 28 * scale) > 1.5) {
-      fail(`Signature overlay ${sigBox.width}x${sigBox.height} does not match 150x28 at scale ${scale}`);
+    if (Math.abs(pairedDate.x - (signature.x + signature.width + 12)) > 0.5) {
+      fail("linked Date Signed must sit to the right of its Signature when it fits");
     }
-    if (Math.abs(dateBox.width - 72 * scale) > 1.5 || Math.abs(dateBox.height - 18 * scale) > 1.5) {
-      fail(`Date overlay ${dateBox.width}x${dateBox.height} does not match 72x18`);
-    }
+    const overlayBox = async (type: string) =>
+      (await page.locator(`.signing-field-overlay:has([data-field-type="${type}"])`).first().boundingBox())!;
+    const expectOverlay = (label: string, box: { width: number; height: number }, pt: { width: number; height: number }) => {
+      if (Math.abs(box.width - pt.width * scale) > 1.5 || Math.abs(box.height - pt.height * scale) > 1.5) {
+        fail(`${label} overlay ${box.width}x${box.height} px does not match ${sizeText(pt)} pt at scale ${scale}`);
+      }
+    };
+    const sigBox = await overlayBox("SIGNATURE");
+    const dateBox = await overlayBox("DATE_SIGNED");
+    expectOverlay("Signature", sigBox, leeSig);
+    expectOverlay("Date", dateBox, dateSize);
     const sigLabel = await page.locator('[data-field-type="SIGNATURE"]').first().getAttribute("data-field-label");
     const dateLabel = await page.locator('[data-field-type="DATE_SIGNED"]').first().getAttribute("data-field-label");
     if (sigLabel !== "Lee Harbaugh" || dateLabel !== "Date") fail(`labels: ${sigLabel} / ${dateLabel}`);
-    ok(`Signature 150x28 pt (${Math.round(sigBox.width)}x${Math.round(sigBox.height)} px) and smaller linked Date 72x18 pt on its baseline; labels "${sigLabel}" / "${dateLabel}"`);
+    ok(`content-sized Signature ${sizeText(leeSig)} pt and linked Date ${sizeText(dateSize)} pt on its baseline, to the right; labels "${sigLabel}" / "${dateLabel}"`);
     await page.screenshot({
       path: path.join(OUT_DIR, "03b-signature-date-closeup.png"),
       clip: { x: sigBox.x - 20, y: sigBox.y - 30, width: sigBox.width + dateBox.width + 60, height: sigBox.height + 60 },
-    });
-    await shot(page, "03-placed");
+    });    await shot(page, "03-placed");
 
     // Drag the Signature.
     const sigOverlay = page.locator('.signing-field-overlay:has([data-field-type="SIGNATURE"])').first();
@@ -400,7 +434,7 @@ async function main() {
     ok(`resize persisted width ${moved.width} -> ${resized.width}`);
 
     // Clicking a field (no movement) selects it without saving anything.
-    await sigOverlay.click({ position: { x: 10, y: 10 } });
+    await sigOverlay.click();
     await page.waitForTimeout(800);
     if ((await draftFields()).length !== 2) fail("click-select changed fields");
     await assertStable("select");
@@ -429,24 +463,23 @@ async function main() {
     const withInitials = await draftFields();
     if (withInitials.length !== 3) fail("Initials were not placed");
     const initialsRow = withInitials.find((row) => row.field_type === "INITIALS")!;
-    if (`${initialsRow.width}x${initialsRow.height}` !== "40x20") {
-      fail(`Initials default ${initialsRow.width}x${initialsRow.height}`);
+    const leeInitials = defaultDraftFieldSize("INITIALS", { fullName: "Lee Harbaugh" });
+    if (sizeText(initialsRow) !== sizeText(leeInitials)) {
+      fail(`Initials default ${sizeText(initialsRow)} (want ${sizeText(leeInitials)})`);
     }
     const initialsOverlay = page.locator('.signing-field-overlay:has([data-field-type="INITIALS"])').first();
     const initialsBox = (await initialsOverlay.boundingBox())!;
-    if (Math.abs(initialsBox.width - 40 * scale) > 1.5 || Math.abs(initialsBox.height - 20 * scale) > 1.5) {
-      fail(`Initials overlay ${initialsBox.width}x${initialsBox.height} does not match 40x20`);
-    }
+    expectOverlay("Initials", initialsBox, leeInitials);
     const initialsText = (await initialsOverlay.locator('[data-field-type="INITIALS"]').innerText()).trim();
     const initialsAria = await initialsOverlay.locator('[data-field-type="INITIALS"]').getAttribute("aria-label");
     if (initialsText !== "LH") fail(`Initials label must be LH, got "${initialsText}"`);
     if (initialsAria !== "Initials for Lee Harbaugh") fail(`Initials aria-label: ${initialsAria}`);
-    ok(`Initials 40x20 pt (${Math.round(initialsBox.width)}x${Math.round(initialsBox.height)} px) labelled "LH"; aria "${initialsAria}"`);
+    ok(`Initials ${sizeText(leeInitials)} pt (${Math.round(initialsBox.width)}x${Math.round(initialsBox.height)} px) labelled "LH"; aria "${initialsAria}"`);
     await page.screenshot({
       path: path.join(OUT_DIR, "03c-initials-closeup.png"),
       clip: { x: initialsBox.x - 30, y: initialsBox.y - 30, width: initialsBox.width + 60, height: initialsBox.height + 60 },
     });
-    await initialsOverlay.click({ position: { x: 30, y: 14 } });
+    await initialsOverlay.click();
     await initialsOverlay.locator(".signing-field-remove").click();
     await waitSaved();
     rows = await draftFields();
@@ -457,7 +490,7 @@ async function main() {
     ok("Initials removed independently");
 
     // Remove the Signature from its overlay: paired Date Signed goes too.
-    await sigOverlay.click({ position: { x: 30, y: 14 } });
+    await sigOverlay.click();
     await sigOverlay.locator(".signing-field-remove").click();
     await waitSaved();
     rows = await draftFields();
@@ -472,19 +505,62 @@ async function main() {
     }
     ok("Remove deleted the Signature and its Date Signed; no refresh, scroll kept");
 
-    // Place Initials + a Signature pair on page 1, close, and compare Preview.
+    // Buyer Rep-style printed lines on page 1: LH initials, short and long signatures.
     const firstPage = page.locator(".react-pdf__Page").first();
     await firstPage.scrollIntoViewIfNeeded();
-    await page.locator("#prepare-field-type").selectOption("INITIALS");
-    await firstPage.click({ position: { x: 500, y: 700 } });
-    await waitSaved();
-    await page.locator("#prepare-field-type").selectOption("SIGNATURE");
-    await firstPage.click({ position: { x: 150, y: 500 } });
-    await waitSaved();
-    const overlayRects = async (selector: string) => {
-      const pageRect = (await firstPage.boundingBox())!;
+    const placeOnLine = async (
+      participant: string,
+      type: "SIGNATURE" | "INITIALS",
+      line: { x: number; top: number },
+      size: { width: number; height: number },
+    ) => {
+      await page.locator("#prepare-participant").selectOption({ label: participant });
+      await page.locator("#prepare-field-type").selectOption(type);
+      await firstPage.click({
+        position: {
+          x: (line.x + size.width / 2) * scale,
+          y: (line.top - size.height / 2) * scale,
+        },
+      });
+      await waitSaved();
+    };
+    const calSig = defaultDraftFieldSize("SIGNATURE", { fullName: "Cal Cobuyer" });
+    const lisaSig = defaultDraftFieldSize("SIGNATURE", { fullName: LONG_NAME });
+    await placeOnLine("Lee Harbaugh", "INITIALS", PRINTED.initials, leeInitials);
+    await placeOnLine("Cal Cobuyer", "SIGNATURE", PRINTED.signatureA, calSig);
+    await placeOnLine(LONG_NAME, "SIGNATURE", PRINTED.signatureB, lisaSig);
+    rows = await draftFields();
+    const onPage1 = rows.filter((row) => row.y > 400);
+    const ini = onPage1.find((row) => row.field_type === "INITIALS");
+    const sigs = onPage1.filter((row) => row.field_type === "SIGNATURE").sort((a, b) => a.width - b.width);
+    const dates = onPage1.filter((row) => row.field_type === "DATE_SIGNED");
+    if (!ini || sigs.length !== 2 || dates.length !== 2) fail(`page-1 placements: ${JSON.stringify(onPage1)}`);
+    if (sizeText(ini) !== sizeText(leeInitials)) fail(`LH initials ${sizeText(ini)}`);
+    if (ini.width >= PRINTED.initials.width) fail(`LH initials ${ini.width}pt wider than the ${PRINTED.initials.width}pt printed line`);
+    if (Math.abs(ini.y + ini.height - PRINTED.initials.top) > 1.5) fail("LH initials must sit on the printed line");
+    if (sizeText(sigs[0]) !== sizeText(calSig) || sizeText(sigs[1]) !== sizeText(lisaSig)) {
+      fail(`signature widths ${sizeText(sigs[0])} / ${sizeText(sigs[1])}, want ${sizeText(calSig)} / ${sizeText(lisaSig)}`);
+    }
+    if (!(sigs[0].width < sigs[1].width)) fail("a short name must be narrower than a long name");
+    for (const date of dates) {
+      if (sizeText(date) !== sizeText(dateSize)) fail(`Date ${sizeText(date)} is not compact`);
+    }
+    ok(`printed initials line ${PRINTED.initials.width}pt vs LH box ${sizeText(ini)}; Cal Cobuyer ${sizeText(sigs[0])} vs ${LONG_NAME} ${sizeText(sigs[1])} on ${PRINTED.signatureA.width}pt lines; Dates ${sizeText(dateSize)}`);
+    const pageRect = (await firstPage.boundingBox())!;
+    await page.screenshot({
+      path: path.join(OUT_DIR, "04a-buyer-rep-signature-block.png"),
+      clip: { x: pageRect.x + 60 * scale, y: pageRect.y + 520 * scale, width: 400 * scale, height: 140 * scale },
+    });
+    await page.screenshot({
+      path: path.join(OUT_DIR, "04b-buyer-rep-initials.png"),
+      clip: { x: pageRect.x + 395 * scale, y: pageRect.y + 715 * scale, width: 130 * scale, height: 40 * scale },
+    });
+    ok("screenshots of the printed Buyer Rep block captured");
+
+    const overlayRects = async () => {
+      const origin = (await firstPage.boundingBox())!;
       return page.$$eval(
-        selector,
+        "[data-field-type]",
         (nodes, origin) =>
           nodes
             .map((node) => {
@@ -498,34 +574,53 @@ async function main() {
               };
             })
             .filter((rect) => rect.y >= 0 && rect.y < origin.height)
-            .sort((a, b) => String(a.type).localeCompare(String(b.type))),
-        { x: pageRect.x, y: pageRect.y, height: pageRect.height },
+            .sort((a, b) => String(a.type).localeCompare(String(b.type)) || a.y - b.y),
+        { x: origin.x, y: origin.y, height: origin.height },
       );
     };
-    const prepareRects = await overlayRects("[data-field-type]");
-    if (prepareRects.length !== 3) fail(`expected 3 page-1 fields, got ${JSON.stringify(prepareRects)}`);
+    const prepareRects = await overlayRects();
+    if (prepareRects.length !== 5) fail(`expected 5 page-1 fields, got ${JSON.stringify(prepareRects)}`);
     await shot(page, "04-before-close");
+
+    // Close: no standalone Preview Signing; Send and Prepare Documents remain.
     await page.getByRole("button", { name: "Close", exact: true }).click();
-    await page.getByRole("button", { name: "Preview Signing" }).first().click();
-    await page.getByRole("heading", { name: "Preview Signing" }).waitFor();
+    await page.getByRole("heading", { name: "Prepare Documents" }).waitFor({ state: "detached" });
+    if ((await page.getByRole("button", { name: /Preview Signing/ }).count()) !== 0) {
+      fail("standalone Preview Signing button is still on the Draft page");
+    }
+    if ((await page.getByText(/previewed/i).count()) !== 0) fail("no preview acknowledgment may appear");
+    await page.getByRole("button", { name: "Send", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Begin In-Person Signing" }).waitFor();
+    const sendEnabled = await page.getByRole("button", { name: "Send", exact: true }).isEnabled();
+    if (sendEnabled) {
+      await page.getByRole("button", { name: "Send", exact: true }).click();
+      await page.getByText("Send this Signing?").waitFor();
+      await page
+        .getByText("This freezes all the documents and emails each participant a signing link.")
+        .waitFor();
+      await page.getByRole("button", { name: "Cancel" }).click();
+      ok("Send confirmation copy unchanged (cancelled, not sent)");
+    } else {
+      ok("Send remains (disabled by derived readiness, not by any preview step)");
+    }
+    await shot(page, "05-draft-page-no-preview");
+    ok("Draft page has no Preview Signing button; Send and Begin In-Person remain");
+
+    // Reopen Prepare Documents: the same Draft source and geometry render.
+    await page.getByRole("button", { name: "Prepare Documents", exact: true }).first().click();
+    await page.getByRole("heading", { name: "Prepare Documents" }).waitFor();
     await page.locator(".react-pdf__Page canvas").first().waitFor({ timeout: 60000 });
     await page.waitForTimeout(1500);
-    if ((await page.locator(".signing-field-overlay").count()) !== 0) {
-      fail("Preview must be read-only");
-    }
-    const previewRects = await overlayRects("[data-field-type]");
-    if (JSON.stringify(previewRects) !== JSON.stringify(prepareRects)) {
-      const close = previewRects.length === prepareRects.length && previewRects.every((rect, index) => {
-        const other = prepareRects[index];
-        return rect.type === other.type && ["x", "y", "w", "h"].every(
-          (key) => Math.abs((rect as Record<string, number | string | null>)[key] as number - ((other as Record<string, number | string | null>)[key] as number)) <= 2,
-        );
-      });
-      if (!close) fail(`Preview geometry differs: ${JSON.stringify(prepareRects)} vs ${JSON.stringify(previewRects)}`);
-    }
-    ok(`Preview shows Initials, Signature, and Date at the same geometry read-only: ${JSON.stringify(previewRects)}`);
-    await shot(page, "05-preview");
-
+    const reopenedRects = await overlayRects();
+    const same = reopenedRects.length === prepareRects.length && reopenedRects.every((rect, index) => {
+      const other = prepareRects[index];
+      return rect.type === other.type && (["x", "y", "w", "h"] as const).every(
+        (key) => Math.abs(rect[key] - other[key]) <= 2,
+      );
+    });
+    if (!same) fail(`reopened geometry differs: ${JSON.stringify(prepareRects)} vs ${JSON.stringify(reopenedRects)}`);
+    ok(`reopened Prepare Documents renders the same geometry: ${JSON.stringify(reopenedRects)}`);
+    await shot(page, "06-prepare-reopened");
     console.log("\nPrepare Documents browser QA: all checks passed.");
   } finally {
     await browser.close();

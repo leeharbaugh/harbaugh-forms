@@ -27,6 +27,10 @@ import {
   removeDraftSigningFieldWithActor,
   upsertDraftSigningFieldWithActor,
 } from "../lib/signing/draft-fields.ts";
+import {
+  DATE_SIGNED_DEFAULT_SIZE,
+  defaultDraftFieldSize,
+} from "../lib/signing/draft-field-sizing.ts";
 import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
 import { SigningError } from "../lib/signing/errors.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
@@ -759,7 +763,12 @@ async function main() {
     const buyerParticipant = buyerRows[0].id as string;
     const coBuyerParticipant = coBuyerRow.id as string;
 
-    const geometry = { pageNumber: 1, width: 150, height: 28 };
+    const geometry = {
+      pageNumber: 1,
+      ...defaultDraftFieldSize("SIGNATURE", { fullName: "Lee Harbaugh" }),
+    };
+    const dateGeometry = DATE_SIGNED_DEFAULT_SIZE;
+    const initialsGeometry = defaultDraftFieldSize("INITIALS", { fullName: "Lee Harbaugh" });
     const signature = await upsertDraftSigningFieldWithActor(
       agent,
       {
@@ -784,8 +793,7 @@ async function main() {
         x: 250,
         y: 600,
         pageNumber: 1,
-        width: 72,
-        height: 18,
+        ...dateGeometry,
       },
       admin,
     );
@@ -813,10 +821,13 @@ async function main() {
       const row = sized?.find((entry) => entry.id === id);
       return `${Number(row?.width)}x${Number(row?.height)}`;
     };
-    if (sizeOf(signature.id) !== "150x28" || sizeOf(pairedDate.id) !== "72x18") {
+    if (
+      sizeOf(signature.id) !== `${geometry.width}x${geometry.height}` ||
+      sizeOf(pairedDate.id) !== `${dateGeometry.width}x${dateGeometry.height}`
+    ) {
       fail(`default geometry must persist exactly: ${sizeOf(signature.id)}, ${sizeOf(pairedDate.id)}`);
     }
-    ok("compact default Signature and Date Signed geometry persists exactly");
+    ok(`content-sized Signature ${geometry.width}x${geometry.height} and Date Signed ${dateGeometry.width}x${dateGeometry.height} persist exactly`);
 
     const afterReassign = await fieldsOf(signingId);
     const movedDate = afterReassign.find((row) => row.id === pairedDate.id);
@@ -835,8 +846,7 @@ async function main() {
         x: 400,
         y: 100,
         pageNumber: 1,
-        width: 40,
-        height: 20,
+        ...initialsGeometry,
       },
       admin,
     );
@@ -891,8 +901,7 @@ async function main() {
         x: 250,
         y: 500,
         pageNumber: 1,
-        width: 72,
-        height: 18,
+        ...dateGeometry,
       },
       admin,
     );

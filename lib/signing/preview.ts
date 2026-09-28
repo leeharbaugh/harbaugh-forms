@@ -28,6 +28,7 @@ export type SigningPreviewField = {
   capacityMode: SigningCapacityMode;
   representedPartyName: string | null;
   capacityLabel: SigningCapacityLabel | null;
+  capacityWording: string | null;
   linkedSignatureFieldId: string | null;
 };
 
@@ -36,6 +37,7 @@ export type SigningPreviewParticipant = {
   fullName: string;
   capacityMode: SigningCapacityMode;
   representedPartyName: string | null;
+  capacityWording: string | null;
 };
 
 export type SigningPreviewDocument = {
@@ -107,7 +109,7 @@ export async function loadSigningPreviewForActor(
     admin
       .from("signing_participants")
       .select(
-        "id, full_name, signing_capacity_mode, represented_party_name, capacity_label",
+        "id, full_name, signing_capacity_mode, represented_party_name, capacity_label, capacity_wording",
       )
       .eq("signing_id", signingId)
       .neq("participant_status", "REMOVED"),
@@ -135,6 +137,7 @@ export async function loadSigningPreviewForActor(
           (row.represented_party_name as string | null) ?? null,
         capacityLabel:
           (row.capacity_label as SigningCapacityLabel | null) ?? null,
+        capacityWording: (row.capacity_wording as string | null) ?? null,
       },
     ]),
   );
@@ -161,6 +164,7 @@ export async function loadSigningPreviewForActor(
       capacityMode: participant.capacityMode,
       representedPartyName: participant.representedPartyName,
       capacityLabel: participant.capacityLabel,
+      capacityWording: participant.capacityWording,
       linkedSignatureFieldId:
         (row.linked_signature_draft_field_id as string | null) ?? null,
     });
@@ -175,6 +179,7 @@ export async function loadSigningPreviewForActor(
         (row.signing_capacity_mode as SigningCapacityMode | null) ?? "PERSONAL",
       representedPartyName:
         (row.represented_party_name as string | null) ?? null,
+      capacityWording: (row.capacity_wording as string | null) ?? null,
     }),
   );
 

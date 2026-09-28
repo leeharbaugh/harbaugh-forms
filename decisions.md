@@ -12,6 +12,44 @@ Each decision should include:
 
 ---
 
+## Prepare Documents is the canonical pre-send visual review
+
+**Date:** 2026-09-28
+
+**Decision:**
+The manager's editable Prepare Documents workspace is also the primary visual verification surface before activation. A separate standalone Draft Preview action is unnecessary.
+
+Prepare Documents renders each included document from its selected Draft source snapshot, the same source activation consumes, with the current `signing_draft_fields` overlaid. Readiness stays derived from Draft state; there is no required preview step and no "previewed" acknowledgment. The read-only preview renderer, route, and dialog mode remain available internally; only the standalone Draft-page action is removed.
+
+**Reason:**
+Managers already see the exact documents and placements while preparing them; a second read-only pass added a step without adding verification.
+
+**Consequences:**
+* The Draft page offers Prepare Documents, Send, and Begin In-Person; no Preview Signing button.
+* The Send confirmation is unchanged ("Send this Signing?" — "This freezes all the documents and emails each participant a signing link.").
+* Supersedes the Draft-page Preview Signing action in "Managers preview Draft Signing documents with field placements before activation" (2026-09-23).
+
+**Related:** `components/signings/signing-dashboard-page.tsx`; `components/signings/signing-preview-dialog.tsx`; `lib/signing/preview.ts`.
+
+---
+
+## Draft field defaults are sized from their expected rendered content
+
+**Date:** 2026-09-28
+
+**Decision:**
+A newly placed Draft Signature, Initials, or Date Signed box approximates the footprint of the mark the completed-PDF renderer will draw, not a generic fixed size. Its width is measured with the renderer's own font metrics for the expected text — the participant's signing name (personal), the frozen representative execution wording (representative), the shared suggested initials, or the finalization date format — at a comfortable target font size, plus modest padding, clamped to per-type minimum and maximum widths. Long representative wording is capped and shrinks to fit, exactly as the renderer does. Canvas labels show that expected text in the renderer's font at the renderer's fitted size; participant and type details live in the tooltip, accessible label, and sidebar. Managers can still resize any field.
+
+**Reason:**
+Fixed defaults were visibly larger than the printed signature and initials lines on real forms.
+
+**Consequences:**
+* Browser metrics are a generated table (`scripts/generate-signing-mark-metrics.ts`) verified against the embedded font in tests.
+* The linked Date Signed uses the content-sized Date box, to the right of its Signature on the same bottom edge when it fits, otherwise below.
+
+**Related:** `lib/signing/draft-field-sizing.ts`; `lib/signing/mark-metrics-data.ts`; `lib/signing/completed-pdf.ts`; `lib/pdf-text-layout.ts`.
+
+---
 ## Packet selection and Packet-party population are one Draft preparation action
 
 **Date:** 2026-09-28
@@ -141,7 +179,7 @@ Agents often need one-off PDFs (addenda, disclosures, third-party docs) that do 
 **Date:** 2026-09-23
 
 **Decision:**
-Draft Signing preparation uses a visual Prepare Documents workspace (built on the same Draft-source Preview surface) where managers choose a participant and field type, click to place Signature / Initials / Date Signed, then move, resize, remove, or reassign. Placements persist only through trusted `signing_draft_fields` server actions. Preview Signing remains a read-only view of the same Draft state. **Add default fields** may remain as an optional fixture but is not the primary preparation path. Date Signed remains linked to a same-participant Signature.
+Draft Signing preparation uses a visual Prepare Documents workspace (built on the same Draft-source Preview surface) where managers choose a participant and field type, click to place Signature / Initials / Date Signed, then move, resize, remove, or reassign. Placements persist only through trusted `signing_draft_fields` server actions. A read-only preview mode of the same Draft state remains internally; Prepare Documents is the canonical pre-send visual review (2026-09-28). **Add default fields** may remain as an optional fixture but is not the primary preparation path. Date Signed remains linked to a same-participant Signature.
 
 **Reason:**
 Fixed-coordinate “Add default fields” is insufficient for real packages. Agents must see what Send will freeze.
@@ -5589,7 +5627,7 @@ Copy recipients receive the completed package only. Current add path issues comp
 **Date:** 2026-09-23
 
 **Decision:**
-Before **Send** or **Begin In-Person Signing**, managers with Draft manage authority can open **Preview Signing**. Preview renders each included document from its **currently selected Draft source snapshot** (the same source activation would consume) and overlays current `signing_draft_fields` (Signature, Initials, Date Signed) with the human participant’s name. Preview is non-evidentiary: it must not create a package revision, `signing_document_version`, credentials, delivery work, or freeze the Signing. Live Packet Form drift must not silently change the preview once a snapshot is selected. Preview is not itself a readiness requirement.
+*(Superseded 2026-09-28: the standalone Draft-page Preview Signing action was removed; Prepare Documents is the canonical pre-send visual review. The read-only renderer and route below remain.)* Before **Send** or **Begin In-Person Signing**, managers with Draft manage authority can open **Preview Signing**. Preview renders each included document from its **currently selected Draft source snapshot** (the same source activation would consume) and overlays current `signing_draft_fields` (Signature, Initials, Date Signed) with the human participant’s name. Preview is non-evidentiary: it must not create a package revision, `signing_document_version`, credentials, delivery work, or freeze the Signing. Live Packet Form drift must not silently change the preview once a snapshot is selected. Preview is not itself a readiness requirement.
 
 **Consequences:**
 * Document bytes are served through an authorized server route; browsers never gain direct `signing-artifacts` access.

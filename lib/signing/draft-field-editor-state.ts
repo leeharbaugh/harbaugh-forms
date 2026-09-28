@@ -4,7 +4,7 @@
  * same change and the returned rows reconcile local state. Mirrors the server
  * rules in `draft-fields.ts` (paired Date Signed follows its Signature).
  */
-import { suggestTypedInitialsFromDisplayName } from "./initials-suggestion";
+import { DATE_SIGNED_DEFAULT_SIZE, expectedDraftMarkText } from "./draft-field-sizing";
 import type { SigningPreviewField, SigningPreviewModel } from "./preview";
 
 export type DraftFieldType = SigningPreviewField["fieldType"];
@@ -23,24 +23,20 @@ export function draftFieldTypeLabel(type: DraftFieldType): string {
 type LabelledField = Pick<
   SigningPreviewField,
   "fieldType" | "participantFullName" | "capacityMode" | "representedPartyName"
->;
+> & { capacityWording?: string | null };
 
 /**
- * Short on-page label. Always the human signer, never the represented party;
- * Initials show the ceremony's suggested initials (visual only).
+ * On-page label: the mark the renderer will draw (suggested initials, the
+ * personal signing name or representative execution wording) or "Date".
+ * Visual only; type and participant details live in the tooltip/sidebar.
  */
 export function draftFieldCompactLabel(field: LabelledField): string {
-  switch (field.fieldType) {
-    case "INITIALS":
-      return (
-        suggestTypedInitialsFromDisplayName(field.participantFullName) ||
-        "Initials"
-      );
-    case "SIGNATURE":
-      return field.participantFullName;
-    case "DATE_SIGNED":
-      return "Date";
-  }
+  if (field.fieldType === "DATE_SIGNED") return "Date";
+  return expectedDraftMarkText(field.fieldType, {
+    fullName: field.participantFullName,
+    capacityMode: field.capacityMode,
+    capacityWording: field.capacityWording,
+  });
 }
 
 /** Full description for tooltips and assistive technology. */
@@ -50,15 +46,6 @@ export function draftFieldDescription(field: LabelledField): string {
     ? `${base}, representing ${field.representedPartyName}`
     : base;
 }
-
-export const DRAFT_FIELD_DEFAULT_SIZES: Record<
-  DraftFieldType,
-  { width: number; height: number }
-> = {
-  SIGNATURE: { width: 150, height: 28 },
-  INITIALS: { width: 40, height: 20 },
-  DATE_SIGNED: { width: 72, height: 18 },
-};
 
 /** Pointer travel (CSS px) below which a drag stop is treated as a click. */
 export const DRAG_MOVE_THRESHOLD_PX = 3;
@@ -100,7 +87,7 @@ export function pairedDatePlacement(
   signature: PdfRect,
   page: { width: number; height: number },
 ): PdfRect {
-  const size = DRAFT_FIELD_DEFAULT_SIZES.DATE_SIGNED;
+  const size = DATE_SIGNED_DEFAULT_SIZE;
   const right = signature.x + signature.width + 12;
   const candidate =
     right + size.width <= page.width
@@ -237,6 +224,7 @@ export function reassignField(
     participantFullName: participant.fullName,
     capacityMode: participant.capacityMode,
     representedPartyName: participant.representedPartyName,
+    capacityWording: participant.capacityWording,
   };
   return {
     ...model,

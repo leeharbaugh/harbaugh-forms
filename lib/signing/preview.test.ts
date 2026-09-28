@@ -29,10 +29,10 @@ describe("Signing manager Draft preview", () => {
     assert.match(actions, /Does not create revisions/);
   });
 
-  it("wires Preview Signing UI with Signature/Initials/Date Signed overlays", () => {
+  it("renders Draft snapshots with Signature/Initials/Date Signed overlays in Prepare Documents", () => {
     const dialog = read("components/signings/signing-preview-dialog.tsx");
     const dashboard = read("components/signings/signing-dashboard-page.tsx");
-    assert.match(dashboard, /Preview Signing/);
+    assert.doesNotMatch(dashboard, /Preview Signing/);
     assert.match(dashboard, /SigningPreviewDialog/);
     assert.match(dialog, /Signature/);
     assert.match(dialog, /Initials/);

@@ -113,10 +113,12 @@ describe("manager QA wiring", () => {
     );
   });
 
-  it("exposes Preview Signing from selected Draft snapshots", () => {
+  it("reviews Draft snapshots in Prepare Documents without a standalone Preview", () => {
     const dashboard = read("components/signings/signing-dashboard-page.tsx");
     const preview = read("lib/signing/preview.ts");
-    assert.match(dashboard, /Preview Signing/);
+    assert.doesNotMatch(dashboard, /Preview Signing/);
+    assert.match(dashboard, /mode="prepare"/);
+    assert.match(dashboard, /Review documents and field placements in Prepare Documents/);
     assert.match(dashboard, /SigningPreviewDialog/);
     assert.match(preview, /renderPreparedPdfFromSelectedDraftSnapshot/);
     assert.doesNotMatch(preview, /promotePackageRevisionFromDraftWithActor/);

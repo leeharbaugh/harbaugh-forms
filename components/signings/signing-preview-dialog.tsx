@@ -17,7 +17,6 @@ import {
 } from "@/lib/pdf-editor-zoom";
 import type { SigningDraftFieldRow } from "@/lib/signing/draft-fields";
 import {
-  DRAFT_FIELD_DEFAULT_SIZES,
   addField,
   clampRectToPage,
   dragExceededThreshold,
@@ -35,6 +34,10 @@ import {
   type DraftFieldType,
   type PdfRect,
 } from "@/lib/signing/draft-field-editor-state";
+import {
+  defaultDraftFieldSize,
+  draftMarkFontSize,
+} from "@/lib/signing/draft-field-sizing";
 import { getSigningPreviewAction } from "@/lib/signing/preview-actions";
 import type {
   SigningPreviewDocument,
@@ -71,6 +74,12 @@ const ADOPTION_BOUNDARY_COPY =
   "Place signing fields for each participant. Participants adopt their signatures and initials when they sign.";
 
 const fieldTypeLabel = draftFieldTypeLabel;
+
+/**
+ * The renderer puts the baseline 1pt + font size below the box top; a
+ * line-height:1 CSS box puts it about 0.84em down, so pad the difference.
+ */
+const BASELINE_OFFSET_EM = 0.16;
 
 /** Exact PDF geometry scaled to the rendered page; never inflated. */
 function toRenderRect(field: SigningPreviewField, metrics: PageMetrics): PdfRect {
@@ -109,18 +118,31 @@ function SigningFieldOverlay({
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const description = draftFieldDescription(field);
+  const markText = draftFieldCompactLabel(field);
+  const scale = metrics.renderedWidth / metrics.originalWidth;
+  const markFontPt = draftMarkFontSize(field.fieldType, markText, field);
+  const markFontPx = markFontPt * scale;
+  const typed = field.fieldType !== "DATE_SIGNED";
   const label = (
     <div
-      className="flex h-full items-center overflow-hidden"
+      className={cn(
+        "flex h-full items-start overflow-hidden",
+        typed ? "justify-start" : "justify-center",
+      )}
       aria-label={description}
       data-field-type={field.fieldType}
-      data-field-label={draftFieldCompactLabel(field)}
+      data-field-label={markText}
+      style={{ paddingTop: (1 + BASELINE_OFFSET_EM * markFontPt) * scale }}
     >
       <span
         aria-hidden
-        className="truncate text-[10px] font-semibold leading-none"
+        className="whitespace-nowrap leading-none text-foreground/80"
+        style={{
+          fontSize: markFontPx,
+          fontFamily: typed ? "Caveat, cursive" : "Helvetica, Arial, sans-serif",
+        }}
       >
-        {draftFieldCompactLabel(field)}
+        {markText}
       </span>
     </div>
   );
@@ -129,7 +151,7 @@ function SigningFieldOverlay({
     return (
       <div
         className={cn(
-          "pointer-events-none absolute box-border rounded-sm border bg-background/80 px-0.5",
+          "pointer-events-none absolute box-border rounded-sm border bg-background/80",
           FIELD_BORDER[field.fieldType],
         )}
         style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
@@ -149,7 +171,7 @@ function SigningFieldOverlay({
       minHeight={8}
       cancel=".signing-field-remove"
       className={cn(
-        "signing-field-overlay absolute box-border rounded-sm border-2 bg-background/85 px-0.5",
+        "signing-field-overlay absolute box-border rounded-sm border bg-background/85",
         FIELD_BORDER[field.fieldType],
         selected && "z-10 ring-2 ring-foreground/50 ring-offset-1",
       )}
@@ -451,6 +473,7 @@ export function SigningPreviewDialog({
       capacityMode: participant.capacityMode,
       representedPartyName: participant.representedPartyName,
       capacityLabel: null,
+      capacityWording: participant.capacityWording,
       linkedSignatureFieldId,
     };
   }
@@ -481,7 +504,11 @@ export function SigningPreviewDialog({
       metrics,
     );
     const page = { width: metrics.originalWidth, height: metrics.originalHeight };
-    const size = DRAFT_FIELD_DEFAULT_SIZES[selectedFieldType];
+    const participant = model.participants.find(
+      (row) => row.id === selectedParticipantId,
+    );
+    if (!participant) return;
+    const size = defaultDraftFieldSize(selectedFieldType, participant);
     const rect = clampRectToPage(
       {
         x: point.x - size.width / 2,
