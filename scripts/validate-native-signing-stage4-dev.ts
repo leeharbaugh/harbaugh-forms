@@ -46,6 +46,12 @@ import {
   validateSigningEntrySession,
 } from "../lib/signing/entry-sessions.ts";
 import { PRE_RECOVERY_ACCESS_EPOCH_SENTINEL } from "../lib/signing/external-access.ts";
+import { loadSigningDashboardForActor } from "../lib/signing/dashboard.ts";
+import {
+  replaceParticipantInvitationWithActor,
+  resendParticipantInvitationWithActor,
+  revokeParticipantCredentialWithActor,
+} from "../lib/signing/participant-credential-recovery.ts";
 import { evaluateSigningReadiness } from "../lib/signing/readiness.ts";
 import {
   getDocumentSourceStatus,
@@ -1096,6 +1102,146 @@ async function main() {
       fail("a revoked entry session still validated");
     }
     ok("revoking a credential's entry sessions invalidates them");
+
+    // 9c. Manager Resend / Replace / Revoke semantics (sandboxed delivery).
+    process.env.SIGNING_EMAIL_SANDBOX = "true";
+    const currentCredentialRow = async () => {
+      const { data, error } = await admin
+        .from("signing_participant_credentials")
+        .select("id")
+        .eq("signing_id", signing.id)
+        .eq("signing_participant_id", participant.id)
+        .eq("is_current", true)
+        .is("revoked_at", null)
+        .maybeSingle();
+      if (error) fail(error.message);
+      return (data?.id as string | undefined) ?? null;
+    };
+    const instructionsBefore = await countRows(admin, "signing_delivery_instructions", signing.id);
+    const credentialsBefore = await countRows(admin, "signing_participant_credentials", signing.id);
+
+    const resent = await resendParticipantInvitationWithActor(
+      agent,
+      { signingId: signing.id, participantId: participant.id },
+      admin,
+    );
+    if ((await currentCredentialRow()) !== remoteCredential.id) {
+      fail("Resend changed the current credential");
+    }
+    if ((await countRows(admin, "signing_participant_credentials", signing.id)) !== credentialsBefore) {
+      fail("Resend issued a new credential");
+    }
+    if ((await countRows(admin, "signing_delivery_instructions", signing.id)) !== instructionsBefore + 1) {
+      fail("Resend did not enqueue a new invitation instruction");
+    }
+    if (!resent.emailSandboxed || resent.deliveryState !== "ACCEPTED") {
+      fail(`Resend delivery state unexpected (${resent.deliveryState})`);
+    }
+    if (!(await validateParticipantCredential(admin, remoteRawToken))) {
+      fail("Resend invalidated the existing link");
+    }
+    ok("Resend reuses the current credential and queues a new invitation");
+
+    const preReplaceCredential = await validateParticipantCredential(admin, remoteRawToken);
+    if (!preReplaceCredential) fail("current credential missing before Replace");
+    const preReplaceSession = await createSigningEntrySession({
+      admin,
+      credential: preReplaceCredential,
+    });
+    const replaced = await replaceParticipantInvitationWithActor(
+      agent,
+      { signingId: signing.id, participantId: participant.id },
+      admin,
+    );
+    const { data: oldCredential } = await admin
+      .from("signing_participant_credentials")
+      .select("is_current, revoked_at, revoked_reason, replaced_by_credential_id")
+      .eq("id", remoteCredential.id as string)
+      .single();
+    const newCredentialId = await currentCredentialRow();
+    if (
+      !oldCredential ||
+      oldCredential.is_current !== false ||
+      !oldCredential.revoked_at ||
+      oldCredential.revoked_reason !== "REPLACED_BY_MANAGER"
+    ) {
+      fail("Replace did not revoke the prior credential");
+    }
+    if (!newCredentialId || newCredentialId === remoteCredential.id) {
+      fail("Replace did not issue a new current credential");
+    }
+    if (oldCredential.replaced_by_credential_id !== newCredentialId) {
+      fail("Replace did not link the prior credential to its replacement");
+    }
+    if (await validateParticipantCredential(admin, remoteRawToken)) {
+      fail("the replaced link still validates");
+    }
+    if (await validateSigningEntrySession(admin, preReplaceSession.rawSessionToken)) {
+      fail("an entry session from the replaced link still validates");
+    }
+    if ((await countRows(admin, "signing_delivery_instructions", signing.id)) !== instructionsBefore + 2) {
+      fail("Replace did not enqueue a new invitation instruction");
+    }
+    if (!replaced.emailSandboxed || replaced.deliveryState !== "ACCEPTED") {
+      fail(`Replace delivery state unexpected (${replaced.deliveryState})`);
+    }
+    const newRawToken = await loadRawParticipantCredentialToken({
+      admin,
+      signingId: signing.id,
+      credentialId: newCredentialId,
+    });
+    if (!newRawToken || !(await validateParticipantCredential(admin, newRawToken))) {
+      fail("the replacement link does not validate");
+    }
+    ok("Replace revokes the old link and its sessions, issues and queues a new link");
+
+    const afterReplace = await loadSigningDashboardForActor(agent, signing.id, admin);
+    const replacedAccess = afterReplace.participants.find((row) => row.id === participant.id)?.access;
+    if (
+      replacedAccess?.linkState !== "ACTIVE" ||
+      !replacedAccess.lastReplacedAt ||
+      !replacedAccess.lastAttemptSandboxed ||
+      !afterReplace.emailSandboxed
+    ) {
+      fail("dashboard access status did not reflect Replace");
+    }
+    const dashboardJson = JSON.stringify(afterReplace);
+    for (const secret of [remoteRawToken, newRawToken, remoteCredential.id as string, newCredentialId, "sandbox:"]) {
+      if (dashboardJson.includes(secret)) fail("dashboard exposes a credential or provider reference");
+    }
+    ok("dashboard shows Active link + replacement time without secrets");
+
+    const replacementSession = await createSigningEntrySession({
+      admin,
+      credential: (await validateParticipantCredential(admin, newRawToken))!,
+    });
+    const instructionsBeforeRevoke = await countRows(admin, "signing_delivery_instructions", signing.id);
+    const credentialsBeforeRevoke = await countRows(admin, "signing_participant_credentials", signing.id);
+    await revokeParticipantCredentialWithActor(
+      agent,
+      { signingId: signing.id, participantId: participant.id },
+      admin,
+    );
+    if (await currentCredentialRow()) fail("Revoke left a current credential");
+    if ((await countRows(admin, "signing_participant_credentials", signing.id)) !== credentialsBeforeRevoke) {
+      fail("Revoke issued a replacement credential");
+    }
+    if ((await countRows(admin, "signing_delivery_instructions", signing.id)) !== instructionsBeforeRevoke) {
+      fail("Revoke queued an invitation");
+    }
+    if (await validateParticipantCredential(admin, newRawToken)) {
+      fail("the revoked link still validates");
+    }
+    if (await validateSigningEntrySession(admin, replacementSession.rawSessionToken)) {
+      fail("an entry session from the revoked link still validates");
+    }
+    const afterRevoke = await loadSigningDashboardForActor(agent, signing.id, admin);
+    const revokedAccess = afterRevoke.participants.find((row) => row.id === participant.id)?.access;
+    if (revokedAccess?.linkState !== "REVOKED" || !revokedAccess.revokedAt) {
+      fail("dashboard access status did not reflect Revoke");
+    }
+    ok("Revoke stops access without a replacement and the dashboard shows Revoked");
+    delete process.env.SIGNING_EMAIL_SANDBOX;
 
     // 9b. Corrupted snapshot bytes must never reach a package revision.
     const corrupted = await createDraftSigningWithActor(

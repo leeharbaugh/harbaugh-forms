@@ -17,8 +17,19 @@ import {
 } from "@/lib/pdf-editor-zoom";
 import type { SigningDraftFieldRow } from "@/lib/signing/draft-fields";
 import {
+  PASTE_OFFSET_PT,
   addField,
+  clampGroupDelta,
   clampRectToPage,
+  copyPlacements,
+  expandRemovalIds,
+  groupMoveIds,
+  isSelectionToggle,
+  isTypingTarget,
+  moveGroup,
+  planPaste,
+  toggleSelection,
+  type PlacementClipboardItem,
   dragExceededThreshold,
   draftFieldCompactLabel,
   draftFieldDescription,
@@ -28,7 +39,6 @@ import {
   pairedDatePlacement,
   preferredSignatureForDate,
   reassignField,
-  removalIds,
   removeFields,
   replaceFieldId,
   type DraftFieldType,
@@ -102,21 +112,30 @@ function SigningFieldOverlay({
   metrics,
   editable,
   selected,
-  onSelect,
-  onCommit,
+  showRemove,
+  offset,
+  onPress,
+  onDragMove,
+  onDragEnd,
+  onResizeCommit,
   onRemove,
 }: {
   field: SigningPreviewField;
   metrics: PageMetrics;
   editable: boolean;
   selected: boolean;
-  onSelect: (fieldId: string) => void;
-  onCommit: (fieldId: string, renderRect: PdfRect) => void;
+  showRemove: boolean;
+  /** Live group-drag offset (render px) for selected followers. */
+  offset: { dx: number; dy: number } | null;
+  onPress: (fieldId: string, toggle: boolean) => void;
+  onDragMove: (fieldId: string, delta: { dx: number; dy: number }) => void;
+  /** `renderRect` is null when the drag stop was a click without movement. */
+  onDragEnd: (fieldId: string, renderRect: PdfRect | null) => void;
+  onResizeCommit: (fieldId: string, renderRect: PdfRect) => void;
   onRemove: (fieldId: string) => void;
 }) {
   const rect = toRenderRect(field, metrics);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
-
   const description = draftFieldDescription(field);
   const markText = draftFieldCompactLabel(field);
   const scale = metrics.renderedWidth / metrics.originalWidth;
@@ -166,18 +185,19 @@ function SigningFieldOverlay({
     <Rnd
       bounds="parent"
       size={{ width: rect.width, height: rect.height }}
-      position={{ x: rect.x, y: rect.y }}
+      position={{ x: rect.x + (offset?.dx ?? 0), y: rect.y + (offset?.dy ?? 0) }}
       minWidth={12}
       minHeight={8}
       cancel=".signing-field-remove"
       className={cn(
         "signing-field-overlay absolute box-border rounded-sm border bg-background/85",
         FIELD_BORDER[field.fieldType],
-        selected && "z-10 ring-2 ring-foreground/50 ring-offset-1",
+        selected && "z-10 bg-sky-50/90 ring-2 ring-sky-500 ring-offset-1",
       )}
+      data-selected={selected ? "true" : undefined}
       onMouseDown={(event: MouseEvent) => {
         event.stopPropagation();
-        onSelect(field.id);
+        onPress(field.id, isSelectionToggle(event));
       }}
       onClick={(event: MouseEvent) => {
         event.stopPropagation();
@@ -185,22 +205,25 @@ function SigningFieldOverlay({
       onDragStart={(_event, data) => {
         dragStartRef.current = { x: data.x, y: data.y };
       }}
+      onDrag={(_event, data) => {
+        const start = dragStartRef.current ?? { x: rect.x, y: rect.y };
+        onDragMove(field.id, { dx: data.x - start.x, dy: data.y - start.y });
+      }}
       onDragStop={(_event, data) => {
         const start = dragStartRef.current ?? { x: rect.x, y: rect.y };
         dragStartRef.current = null;
         // react-draggable reports a drag stop on every click; only real
         // movement persists.
-        if (!dragExceededThreshold(start, { x: data.x, y: data.y })) return;
-        onCommit(field.id, {
-          x: data.x,
-          y: data.y,
-          width: rect.width,
-          height: rect.height,
-        });
+        onDragEnd(
+          field.id,
+          dragExceededThreshold(start, { x: data.x, y: data.y })
+            ? { x: data.x, y: data.y, width: rect.width, height: rect.height }
+            : null,
+        );
       }}
-      onResizeStart={() => onSelect(field.id)}
+      onResizeStart={() => onPress(field.id, false)}
       onResizeStop={(_event, _dir, ref, _delta, position) => {
-        onCommit(field.id, {
+        onResizeCommit(field.id, {
           x: position.x,
           y: position.y,
           width: ref.offsetWidth,
@@ -210,7 +233,7 @@ function SigningFieldOverlay({
       title={description}
     >
       {label}
-      {selected ? (
+      {showRemove ? (
         <button
           type="button"
           className="signing-field-remove absolute -top-5 right-0 whitespace-nowrap rounded border border-border bg-background px-1 text-[10px] leading-4 text-destructive shadow-sm"
@@ -228,7 +251,6 @@ function SigningFieldOverlay({
     </Rnd>
   );
 }
-
 export function SigningPreviewDialog({
   open,
   signingId,
@@ -253,7 +275,19 @@ export function SigningPreviewDialog({
   const [selectedParticipantId, setSelectedParticipantId] = useState("");
   const [selectedFieldType, setSelectedFieldType] =
     useState<DraftFieldType>("SIGNATURE");
-  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
+  const selectedFieldId = selectedFieldIds.length === 1 ? selectedFieldIds[0] : null;
+  const [groupDrag, setGroupDrag] = useState<{
+    ids: string[];
+    dx: number;
+    dy: number;
+  } | null>(null);
+  const [clipboard, setClipboard] = useState<{
+    items: PlacementClipboardItem[];
+    pastes: number;
+  } | null>(null);
+  const [editorNotice, setEditorNotice] = useState<string | null>(null);
+  const pressRef = useRef<{ id: string; toggle: boolean; wasSelected: boolean } | null>(null);
   const [pageSizes, setPageSizes] = useState<
     Record<string, { width: number; height: number }>
   >({});
@@ -293,7 +327,9 @@ export function SigningPreviewDialog({
     let cancelled = false;
     setInitialLoading(true);
     setError(null);
-    setSelectedFieldId(null);
+    setSelectedFieldIds([]);
+    setClipboard(null);
+    setEditorNotice(null);
     idMapRef.current = new Map();
     dirtyRef.current = false;
     void (async () => {
@@ -399,8 +435,8 @@ export function SigningPreviewDialog({
     if (!result.ok) return;
     const data = result.data as SigningPreviewModel;
     replaceModel(data);
-    setSelectedFieldId((previous) =>
-      previous && findField(data, resolveId(previous)) ? resolveId(previous) : null,
+    setSelectedFieldIds((previous) =>
+      previous.map(resolveId).filter((id) => findField(data, id) !== null),
     );
   }, [signingId, resolveId, replaceModel]);
 
@@ -489,6 +525,11 @@ export function SigningPreviewDialog({
       return;
     }
     if ((event.target as HTMLElement).closest(".signing-field-overlay")) return;
+    // With placements selected, a click on empty page area clears the selection.
+    if (selectedFieldIds.length > 0) {
+      setSelectedFieldIds([]);
+      return;
+    }
     if (!selectedParticipantId) {
       setError("Add a participant before placing fields.");
       return;
@@ -560,45 +601,120 @@ export function SigningPreviewDialog({
       const withField = addField(current, documentId, field);
       return pairedDate ? addField(withField, documentId, pairedDate) : withField;
     });
-    setSelectedFieldId(fieldId);
+    persistNewFields(documentId, pairedDate ? [field, pairedDate] : [field]);
+  }
 
-    const create = async (local: SigningPreviewField): Promise<boolean> => {
-      const result = await upsertDraftSigningFieldAction({
-        signingId,
-        signingDocumentId: documentId,
-        signingParticipantId: local.participantId,
-        fieldType: local.fieldType,
-        pageNumber: local.pageNumber,
-        x: local.x,
-        y: local.y,
-        width: local.width,
-        height: local.height,
-        linkedSignatureDraftFieldId: local.linkedSignatureFieldId
-          ? resolveId(local.linkedSignatureFieldId)
-          : undefined,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        await reconcile();
-        return false;
-      }
-      const row = result.data as SigningDraftFieldRow;
-      idMapRef.current.set(local.id, row.id);
-      updateModel((current) => replaceFieldId(current, local.id, row.id));
-      setSelectedFieldId((previous) => (previous === local.id ? row.id : previous));
-      return true;
-    };
-
-    enqueue(async () => {
-      // The field may have been removed locally before it was persisted.
-      const stillPresent = (id: string) =>
-        modelRef.current ? findField(modelRef.current, id) !== null : false;
-      if (!stillPresent(fieldId)) return;
-      const latest = findField(modelRef.current!, fieldId)!.field;
-      const created = await create(latest);
-      if (!created || !pairedDate || !stillPresent(pairedDate.id)) return;
-      await create(findField(modelRef.current!, pairedDate.id)!.field);
+  async function createField(
+    documentId: string,
+    local: SigningPreviewField,
+  ): Promise<boolean> {
+    const result = await upsertDraftSigningFieldAction({
+      signingId,
+      signingDocumentId: documentId,
+      signingParticipantId: local.participantId,
+      fieldType: local.fieldType,
+      isRequired: local.isRequired,
+      pageNumber: local.pageNumber,
+      x: local.x,
+      y: local.y,
+      width: local.width,
+      height: local.height,
+      linkedSignatureDraftFieldId: local.linkedSignatureFieldId
+        ? resolveId(local.linkedSignatureFieldId)
+        : undefined,
     });
+    if (!result.ok) {
+      setError(result.error);
+      await reconcile();
+      return false;
+    }
+    const row = result.data as SigningDraftFieldRow;
+    idMapRef.current.set(local.id, row.id);
+    updateModel((current) => replaceFieldId(current, local.id, row.id));
+    setSelectedFieldIds((previous) =>
+      previous.map((id) => (id === local.id ? row.id : id)),
+    );
+    return true;
+  }
+
+  /** Persist new local fields in order; a Date waits for its Signature's id. */
+  function persistNewFields(documentId: string, fields: SigningPreviewField[]) {
+    enqueue(async () => {
+      for (const local of fields) {
+        // The field may have been removed locally before it was persisted.
+        const located = modelRef.current ? findField(modelRef.current, local.id) : null;
+        if (!located) continue;
+        const link = located.field.linkedSignatureFieldId;
+        if (link && resolveId(link).startsWith("local-")) continue;
+        if (!(await createField(documentId, located.field))) return;
+      }
+    });
+  }
+
+  function pressField(fieldId: string, toggle: boolean) {
+    const wasSelected = selectedFieldIds.includes(fieldId);
+    pressRef.current = { id: fieldId, toggle, wasSelected };
+    if (toggle) {
+      setSelectedFieldIds((previous) => toggleSelection(previous, fieldId));
+    } else if (!wasSelected) {
+      setSelectedFieldIds([fieldId]);
+    }
+  }
+
+  /** Placements that move with a drag of `anchorId` and their page metrics. */
+  function dragGroup(anchorId: string) {
+    if (!model) return null;
+    const located = findField(model, anchorId);
+    if (!located) return null;
+    const metrics = metricsFor(located.documentId, located.field.pageNumber);
+    if (!metrics) return null;
+    return {
+      located,
+      metrics,
+      ids: groupMoveIds(model, selectedFieldIds, anchorId),
+      page: { width: metrics.originalWidth, height: metrics.originalHeight },
+    };
+  }
+
+  function dragFieldMove(anchorId: string, deltaPx: { dx: number; dy: number }) {
+    const group = dragGroup(anchorId);
+    if (!group || group.ids.length < 2 || !model) {
+      if (groupDrag) setGroupDrag(null);
+      return;
+    }
+    const { metrics, ids, page } = group;
+    const toPt = metrics.originalWidth / metrics.renderedWidth;
+    const rects = ids.map((id) => findField(model, id)!.field);
+    const clamped = clampGroupDelta(
+      rects,
+      { dx: deltaPx.dx * toPt, dy: deltaPx.dy * toPt },
+      page,
+    );
+    setGroupDrag({
+      ids: ids.filter((id) => id !== anchorId),
+      dx: clamped.dx / toPt,
+      dy: clamped.dy / toPt,
+    });
+  }
+
+  function dragFieldEnd(anchorId: string, renderRect: PdfRect | null) {
+    setGroupDrag(null);
+    const press = pressRef.current;
+    pressRef.current = null;
+    if (!renderRect) {
+      // A plain click on an already-selected placement selects only it.
+      if (press && press.id === anchorId && !press.toggle && press.wasSelected) {
+        setSelectedFieldIds([anchorId]);
+      }
+      return;
+    }
+    const group = dragGroup(anchorId);
+    if (!group) return;
+    const { located, metrics, ids, page } = group;
+    const pdf = renderRectToPdfPlacement(renderRect, metrics);
+    const delta = { dx: pdf.x - located.field.x, dy: pdf.y - located.field.y };
+    updateModel((current) => moveGroup(current, ids, delta, page));
+    for (const id of ids) persistField(id);
   }
 
   function commitGeometry(fieldId: string, renderRect: PdfRect) {
@@ -616,30 +732,82 @@ export function SigningPreviewDialog({
     persistField(fieldId);
   }
 
-  function removeField(fieldId: string) {
-    if (!model) return;
-    const ids = removalIds(model, fieldId);
+  /** Remove placements (a Signature takes its Date Signed) via trusted writes. */
+  function removeSelectedFields(fieldIds: readonly string[]) {
+    if (!model || fieldIds.length === 0) return;
+    const ids = expandRemovalIds(model, fieldIds);
     if (ids.length === 0) return;
     setError(null);
+    setEditorNotice(null);
     updateModel((current) => removeFields(current, ids));
-    setSelectedFieldId(null);
+    setSelectedFieldIds([]);
+    const primary = [...fieldIds];
     enqueue(async () => {
-      const realId = resolveId(fieldId);
-      if (realId.startsWith("local-")) return;
-      const result = await removeDraftSigningFieldAction({
-        signingId,
-        fieldId: realId,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        await reconcile();
-        return;
+      for (const fieldId of primary) {
+        const realId = resolveId(fieldId);
+        if (realId.startsWith("local-")) continue;
+        const result = await removeDraftSigningFieldAction({
+          signingId,
+          fieldId: realId,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          await reconcile();
+          return;
+        }
+        const removed =
+          (result.data as { removedFieldIds?: string[] } | undefined)
+            ?.removedFieldIds ?? [];
+        updateModel((current) => removeFields(current, removed));
       }
-      const removed =
-        (result.data as { removedFieldIds?: string[] } | undefined)
-          ?.removedFieldIds ?? [];
-      updateModel((current) => removeFields(current, removed));
     });
+  }
+
+  function removeField(fieldId: string) {
+    removeSelectedFields([fieldId]);
+  }
+
+  function copySelection() {
+    if (!model || selectedFieldIds.length === 0) return;
+    const items = copyPlacements(model, selectedFieldIds);
+    setClipboard({ items, pastes: 0 });
+    setError(null);
+    setEditorNotice(
+      `Copied ${items.length} placement${items.length === 1 ? "" : "s"}.`,
+    );
+  }
+
+  function pasteClipboard() {
+    if (!model || !currentDocument || !clipboard || clipboard.items.length === 0) return;
+    const documentPageSizes: Record<number, { width: number; height: number }> = {};
+    for (let pageNumber = 1; pageNumber <= numPages; pageNumber += 1) {
+      const size = pageSizes[`${currentDocument.id}:${pageNumber}`];
+      if (size) documentPageSizes[pageNumber] = size;
+    }
+    const pastes = clipboard.pastes + 1;
+    const plan = planPaste({
+      model,
+      documentId: currentDocument.id,
+      clipboard: clipboard.items,
+      pageSizes: documentPageSizes,
+      offset: PASTE_OFFSET_PT * pastes,
+      newId: newLocalId,
+    });
+    setError(plan.rejected.length > 0 ? plan.rejected.join(" ") : null);
+    if (plan.fields.length === 0) {
+      setEditorNotice(null);
+      return;
+    }
+    const documentId = currentDocument.id;
+    setClipboard({ ...clipboard, pastes });
+    updateModel((current) =>
+      plan.fields.reduce((next, field) => addField(next, documentId, field), current),
+    );
+    setSelectedFieldIds(plan.fields.map((field) => field.id));
+    setEditorNotice(
+      `Pasted ${plan.fields.length} placement${plan.fields.length === 1 ? "" : "s"}.`,
+    );
+    persistNewFields(documentId, plan.fields);
   }
 
   function reassignSelectedField(participantId: string) {
@@ -675,7 +843,7 @@ export function SigningPreviewDialog({
   }
 
   function selectField(fieldId: string, scroll = false) {
-    setSelectedFieldId(fieldId);
+    setSelectedFieldIds([fieldId]);
     if (!scroll || !model || !workspaceEl) return;
     const located = findField(model, fieldId);
     const pageEl = located ? pageRefs.current[located.field.pageNumber] : null;
@@ -684,7 +852,7 @@ export function SigningPreviewDialog({
 
   function goToDocument(documentId: string) {
     setCurrentDocumentId(documentId);
-    setSelectedFieldId(null);
+    setSelectedFieldIds([]);
     pageRefs.current = {};
     if (workspaceEl) workspaceEl.scrollTop = 0;
   }
@@ -700,31 +868,33 @@ export function SigningPreviewDialog({
   useEffect(() => {
     if (!open) return;
     function onKeyDown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      const typing =
-        target?.closest("input, select, textarea, [contenteditable=true]") != null;
       if (event.key === "Escape") {
-        if (selectedFieldId) {
-          setSelectedFieldId(null);
+        if (selectedFieldIds.length > 0) {
+          setSelectedFieldIds([]);
         } else {
           handleClose();
         }
         return;
       }
-      if (
-        editable &&
-        !typing &&
-        selectedFieldId &&
-        (event.key === "Delete" || event.key === "Backspace")
-      ) {
+      if (!editable || isTypingTarget(event.target)) return;
+      const command = event.ctrlKey || event.metaKey;
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (selectedFieldIds.length === 0) return;
         event.preventDefault();
-        removeField(selectedFieldId);
+        removeSelectedFields(selectedFieldIds);
+      } else if (command && event.key.toLowerCase() === "c") {
+        if (selectedFieldIds.length === 0) return;
+        event.preventDefault();
+        copySelection();
+      } else if (command && event.key.toLowerCase() === "v") {
+        if (!clipboard) return;
+        event.preventDefault();
+        pasteClipboard();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   });
-
   if (!open) return null;
 
   const zoomLabel = basePage
@@ -981,9 +1151,17 @@ export function SigningPreviewDialog({
                                   field={field}
                                   metrics={metrics}
                                   editable={editable}
-                                  selected={selectedFieldId === field.id}
-                                  onSelect={(id) => selectField(id)}
-                                  onCommit={commitGeometry}
+                                  selected={selectedFieldIds.includes(field.id)}
+                                  showRemove={selectedFieldId === field.id}
+                                  offset={
+                                    groupDrag?.ids.includes(field.id)
+                                      ? { dx: groupDrag.dx, dy: groupDrag.dy }
+                                      : null
+                                  }
+                                  onPress={pressField}
+                                  onDragMove={dragFieldMove}
+                                  onDragEnd={dragFieldEnd}
+                                  onResizeCommit={commitGeometry}
                                   onRemove={removeField}
                                 />
                               ))
@@ -1045,8 +1223,61 @@ export function SigningPreviewDialog({
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Click the page to place. Drag or resize to adjust. A
-                    Signature also places its Date Signed.
+                    Signature also places its Date Signed. Ctrl-click (⌘-click
+                    on Mac) selects several; Ctrl/⌘+C and Ctrl/⌘+V copy and
+                    paste; Delete removes the selection.
                   </p>
+                </div>
+              ) : null}
+
+              {model ? (
+                <div className="space-y-2" data-testid="prepare-selection">
+                  <p className="text-sm font-medium" aria-live="polite">
+                    {selectedFieldIds.length === 0
+                      ? "No placements selected"
+                      : `${selectedFieldIds.length} placement${selectedFieldIds.length === 1 ? "" : "s"} selected`}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={selectedFieldIds.length === 0}
+                      onClick={copySelection}
+                    >
+                      Copy
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!clipboard || clipboard.items.length === 0}
+                      onClick={pasteClipboard}
+                    >
+                      Paste
+                    </Button>
+                    {selectedFieldIds.length > 1 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => removeSelectedFields(selectedFieldIds)}
+                      >
+                        Remove selected
+                      </Button>
+                    ) : null}
+                  </div>
+                  {selectedFieldIds.length > 1 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Drag any selected placement to move the selected
+                      placements on that page together.
+                    </p>
+                  ) : null}
+                  {editorNotice ? (
+                    <p className="text-xs text-muted-foreground" role="status">
+                      {editorNotice}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -1105,7 +1336,7 @@ export function SigningPreviewDialog({
                       type="button"
                       className={cn(
                         "w-full rounded px-2 py-1 text-left hover:bg-muted",
-                        selectedFieldId === field.id && "bg-muted",
+                        selectedFieldIds.includes(field.id) && "bg-muted",
                       )}
                       onClick={() => selectField(field.id, true)}
                     >

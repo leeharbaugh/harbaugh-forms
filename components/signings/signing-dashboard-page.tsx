@@ -18,6 +18,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { startInPersonHandoffAction } from "@/lib/signing/ceremony-agent-actions";
 import { SIGNING_CAPACITY_LABEL_OPTIONS } from "@/lib/signing/capacity-notices";
 import type { SigningDashboard } from "@/lib/signing/dashboard";
+import { invitationStatusLabel } from "@/lib/signing/participant-access-status";
 import {
   activateSigningAction,
   getSigningDashboardAction,
@@ -38,19 +39,29 @@ function newClientRequestId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function deliveryLabel(state: string | null): string {
-  if (!state) return "No delivery yet";
-  switch (state) {
-    case "QUEUED":
-      return "Invitation queued";
-    case "ACCEPTED":
-      return "Invitation delivered";
-    case "FAILED":
-      return "Invitation delivery failed";
-    default:
-      return `Invitation ${state.toLowerCase()}`;
-  }
+function formatWhen(value: string | null): string | null {
+  return value ? new Date(value).toLocaleString() : null;
 }
+
+type LinkOp = "resend" | "replace" | "revoke";
+
+const LINK_OP_CONFIRM: Record<
+  Exclude<LinkOp, "resend">,
+  { title: string; message: string; confirmLabel: string }
+> = {
+  replace: {
+    title: "Replace signing link?",
+    message:
+      "The participant\u2019s current link will stop working and a new signing link will be sent.",
+    confirmLabel: "Replace signing link",
+  },
+  revoke: {
+    title: "Revoke signing link?",
+    message:
+      "The participant\u2019s current link will stop working. No new link is sent.",
+    confirmLabel: "Revoke signing link",
+  },
+};
 
 export function SigningDashboardPage({ signingId }: { signingId: string }) {
   const [dashboard, setDashboard] = useState<SigningDashboard | null>(null);
@@ -61,6 +72,15 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
   const [busyParticipantId, setBusyParticipantId] = useState<string | null>(
     null,
   );
+  const [pendingLinkOp, setPendingLinkOp] = useState<{
+    participantId: string;
+    op: Exclude<LinkOp, "resend">;
+  } | null>(null);
+  const [linkOpStatus, setLinkOpStatus] = useState<{
+    participantId: string;
+    tone: "success" | "error";
+    lines: string[];
+  } | null>(null);
   const [pendingActivation, setPendingActivation] = useState<{
     mode: ActivationMode;
     clientRequestId: string;
@@ -182,43 +202,59 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     setHandoffBusyParticipantId(null);
   }
 
-  async function runInvitationOp(
-    participantId: string,
-    op: "resend" | "replace" | "revoke",
-  ) {
+  async function runInvitationOp(participantId: string, op: LinkOp) {
     setBusyParticipantId(participantId);
     setError(null);
     setNotice(null);
+    setLinkOpStatus(null);
+    const input = { signingId, participantId };
     const result =
       op === "resend"
-        ? await resendParticipantInvitationAction({
-            signingId,
-            participantId,
-          })
+        ? await resendParticipantInvitationAction(input)
         : op === "replace"
-          ? await replaceParticipantInvitationAction({
-              signingId,
-              participantId,
-            })
-          : await revokeParticipantInvitationAction({
-              signingId,
-              participantId,
-            });
+          ? await replaceParticipantInvitationAction(input)
+          : await revokeParticipantInvitationAction(input);
     if (!result.ok) {
-      setError(result.error);
+      setLinkOpStatus({ participantId, tone: "error", lines: [result.error] });
     } else {
-      setNotice(
-        op === "resend"
-          ? "Signing link resent to this participant."
-          : op === "replace"
-            ? "Signing link replaced and emailed to this participant. The previous link no longer works."
-            : "Signing link revoked. This participant can no longer open the previous link.",
-      );
+      const data = (result.data ?? {}) as {
+        deliveryState?: string | null;
+        emailSandboxed?: boolean;
+      };
+      const lines =
+        op === "replace"
+          ? [
+              "Signing link replaced.",
+              data.deliveryState === "FAILED"
+                ? "The previous link no longer works. The new link could not be emailed; use Resend signing link to try again."
+                : "The previous link no longer works. A new link has been queued for delivery.",
+            ]
+          : op === "resend"
+            ? [
+                "Signing link resent.",
+                data.deliveryState === "FAILED"
+                  ? "The current link still works, but the email could not be sent."
+                  : "The current link still works and has been queued for delivery again.",
+              ]
+            : [
+                "Signing link revoked.",
+                "The previous link no longer works. No new link was sent.",
+              ];
+      if (op !== "revoke" && data.emailSandboxed) {
+        lines.push("Email delivery is sandboxed in development.");
+      }
+      setLinkOpStatus({ participantId, tone: "success", lines });
       await reload();
     }
     setBusyParticipantId(null);
   }
 
+  async function confirmLinkOp() {
+    if (!pendingLinkOp) return;
+    const { participantId, op } = pendingLinkOp;
+    await runInvitationOp(participantId, op);
+    setPendingLinkOp(null);
+  }
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading Signing…</p>;
   }
@@ -415,6 +451,9 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
               here. Resend uses the current link; Replace issues a new link and
               invalidates the previous one; Revoke stops access without sending
               a replacement.
+              {dashboard.emailSandboxed
+                ? " Email delivery is sandboxed in development: invitations are accepted but not sent."
+                : null}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -442,24 +481,74 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                       </Badge>
                       <Badge
                         variant={
-                          participant.deliveryState === "ACCEPTED"
+                          participant.access.linkState === "ACTIVE"
                             ? "success"
-                            : participant.deliveryState === "FAILED"
+                            : participant.access.linkState === "REVOKED"
                               ? "destructive"
-                              : "info"
+                              : "outline"
+                        }
+                        data-testid="participant-link-state"
+                      >
+                        {participant.access.linkState === "ACTIVE"
+                          ? "Active link"
+                          : participant.access.linkState === "REVOKED"
+                            ? "Revoked"
+                            : "No active link"}
+                      </Badge>
+                      <Badge
+                        variant={
+                          participant.access.lastInvitationState === "FAILED"
+                            ? "destructive"
+                            : "info"
                         }
                       >
-                        {deliveryLabel(participant.deliveryState)}
-                      </Badge>
-                      <Badge variant="outline">
-                        {participant.hasActiveInvitationLink
-                          ? "Active signing link"
-                          : "No active signing link"}
+                        {invitationStatusLabel(participant.access)}
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {participant.email}
                     </p>
+                    <ul
+                      className="space-y-0.5 text-xs text-muted-foreground"
+                      data-testid="participant-link-history"
+                    >
+                      {participant.access.linkIssuedAt ? (
+                        <li>Current link issued {formatWhen(participant.access.linkIssuedAt)}</li>
+                      ) : null}
+                      {participant.access.lastReplacedAt ? (
+                        <li>Link replaced {formatWhen(participant.access.lastReplacedAt)}</li>
+                      ) : null}
+                      {participant.access.revokedAt ? (
+                        <li>Link revoked {formatWhen(participant.access.revokedAt)}</li>
+                      ) : null}
+                      {participant.access.lastInvitationQueuedAt ? (
+                        <li>Last invitation queued {formatWhen(participant.access.lastInvitationQueuedAt)}</li>
+                      ) : null}
+                      {participant.access.lastAttemptAt ? (
+                        <li>
+                          Last send attempt {formatWhen(participant.access.lastAttemptAt)}
+                          {participant.access.lastAttemptOutcome === "FAILED" ? " (failed)" : ""}
+                        </li>
+                      ) : null}
+                    </ul>
+                    {linkOpStatus?.participantId === participant.id ? (
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        data-testid="participant-link-status"
+                        className={
+                          linkOpStatus.tone === "error"
+                            ? "rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive"
+                            : "rounded-md border border-emerald-600/30 bg-emerald-50 p-2 text-sm text-emerald-900"
+                        }
+                      >
+                        {linkOpStatus.lines.map((line, index) => (
+                          <p key={index} className={index === 0 ? "font-medium" : undefined}>
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
                     {participant.lastDeliveryFailureSafe ? (
                       <p className="text-xs text-destructive">
                         {participant.lastDeliveryFailureSafe}
@@ -486,7 +575,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                           variant="outline"
                           disabled={busy}
                           onClick={() =>
-                            void runInvitationOp(participant.id, "replace")
+                            setPendingLinkOp({ participantId: participant.id, op: "replace" })
                           }
                         >
                           Replace signing link
@@ -499,7 +588,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                             busy || !participant.hasActiveInvitationLink
                           }
                           onClick={() =>
-                            void runInvitationOp(participant.id, "revoke")
+                            setPendingLinkOp({ participantId: participant.id, op: "revoke" })
                           }
                         >
                           Revoke signing link
@@ -569,17 +658,15 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                     <Badge variant="secondary">
                       {participant.participantStatus.replace(/_/g, " ")}
                     </Badge>
-                    {participant.deliveryState ? (
+                    {participant.access.lastInvitationState ? (
                       <Badge
                         variant={
-                          participant.deliveryState === "ACCEPTED"
-                            ? "success"
-                            : participant.deliveryState === "FAILED"
-                              ? "destructive"
-                              : "info"
+                          participant.access.lastInvitationState === "FAILED"
+                            ? "destructive"
+                            : "info"
                         }
                       >
-                        {deliveryLabel(participant.deliveryState)}
+                        {invitationStatusLabel(participant.access)}
                       </Badge>
                     ) : null}
                   </div>
@@ -648,6 +735,22 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
           setWorkspaceDocumentId(null);
         }}
         onChanged={reload}
+      />
+
+      <ConfirmDialog
+        open={pendingLinkOp !== null}
+        title={pendingLinkOp ? LINK_OP_CONFIRM[pendingLinkOp.op].title : ""}
+        message={pendingLinkOp ? LINK_OP_CONFIRM[pendingLinkOp.op].message : ""}
+        confirmLabel={
+          pendingLinkOp ? LINK_OP_CONFIRM[pendingLinkOp.op].confirmLabel : "Confirm"
+        }
+        confirmingLabel="Working…"
+        variant="destructive"
+        isConfirming={pendingLinkOp !== null && busyParticipantId === pendingLinkOp.participantId}
+        onConfirm={() => void confirmLinkOp()}
+        onCancel={() => {
+          if (!busyParticipantId) setPendingLinkOp(null);
+        }}
       />
 
       <ConfirmDialog

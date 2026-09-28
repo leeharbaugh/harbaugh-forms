@@ -1,8 +1,47 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-28 (Native Signing manager QA pass 7 on PR #46 — content-sized Signature/Initials/Date Signed defaults measured with the completed-PDF renderer's fonts; standalone Preview Signing removed, Prepare Documents is the canonical pre-send review; Gate A paused; production Native Signing unavailable)
+**As of:** 2026-09-28 (Native Signing manager QA pass 8 on PR #46 — Prepare Documents multi-select, group move, multi-delete, and in-editor copy/paste; Replace signing link confirmation, inline feedback, and honest participant link/invitation status; Signing Placement Templates designed, not implemented; Gate A paused; production Native Signing unavailable)
 
 ## Current State
+
+### Native Signing manager QA pass 8 (2026-09-28; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. PR #46 stays open — do not merge until Lee re-QAs multi-select / group move / copy / paste / delete, Replace signing link feedback, and the remaining Send / In Progress / participant-ceremony flows.
+
+| Item | Result |
+|------|--------|
+| Multi-select | Click selects one placement; Ctrl-click (Windows/Linux) or ⌘-click (macOS) toggles; Escape or a click on empty page area clears the selection (that click does not place a field); new placements are not auto-selected. Selected placements get a sky ring/fill; the sidebar shows "N placements selected" with Copy / Paste / Remove selected. No marquee |
+| Group move | Dragging any selected placement moves the selected placements **on that page** together by one PDF-point delta, clamped as a group to the page so relative geometry is preserved; selected placements on other pages stay put (sidebar says so). No cross-page moves. Followers track live; each moved row persists through the trusted draft-field upsert; no reload, remount, or scroll reset |
+| Multi-delete | Delete / Backspace removes the selection via the trusted remove action (a Signature takes its linked Date Signed; Initials and Date Signed remove alone). Ignored while focus is in an input, select, textarea, or contenteditable |
+| Copy / paste | Ctrl/⌘+C and Ctrl/⌘+V (plus sidebar buttons) use an in-memory editor clipboard — never the OS clipboard. Paste keeps participant, type, required state, page, size, and relative offsets, shifted 12 pt per successive paste and clamped per page; target is the current document. New rows persist through trusted writes in order (Signatures before Dates) |
+| Signature/Date on paste | Copied pair → new linked pair; Signature alone → new paired Date Signed; Date alone → links to its original Signature if still present, else to an undated same-participant Signature on that page, else rejected: "Date Signed needs a Signature for {name}. Copy the Signature with its Date Signed, or place a Signature for {name} first." Never links across participants |
+| Geometry | All moves/pastes computed in PDF points via the existing render↔PDF helpers; zoom-independent; browser QA verifies group drag, paste, delete, and close/reopen geometry |
+| Replace semantics (audit) | Resend: same credential, new invitation instruction + work item. Replace: prior credential superseded (`is_current=false`, `revoked_at`, `REPLACED_BY_MANAGER`, `replaced_by_credential_id`), new credential in the current access epoch, invitation queued and sent inline; old entry and ceremony sessions fail validation, and old entry sessions are now also explicitly revoked. Revoke: credential revoked + entry sessions revoked, no replacement |
+| Replace fix | `replaceParticipantInvitationWithActor` now runs the same In Progress / REMOTE_SEND / active participant / email checks as Resend and Revoke **before** touching credentials (previously a participant without email was revoked and reissued before the enqueue failed) |
+| Why Lee saw nothing | The success notice rendered at the page top, away from the participant panel. Now: confirmation dialogs for Replace ("Replace signing link?" — "The participant’s current link will stop working and a new signing link will be sent.") and Revoke; inline status in the participant card ("Signing link replaced." / "The previous link no longer works. A new link has been queued for delivery." / "Email delivery is sandboxed in development."); the panel reloads immediately |
+| Access status | Participant card shows Active link / Revoked / No active link, current link issued time, link replaced / revoked times, last invitation queued, last send attempt. Invitation labels are honest: queued, accepted by the email service, accepted by the development sandbox (not sent), failed — never "delivered". No credential ids, tokens, links, or provider references reach the browser |
+| Coverage | `lib/signing/draft-multiselect.test.ts` (17); Stage 4 dev validator adds Resend / Replace / Revoke / dashboard-status checks (44 OK); browser QA `scripts/qa-signing-prepare-browser.ts` (multi-select, group drag, paste, typing guard, multi-delete, pair paste, orphan Date rejection, reopen) and new `scripts/qa-signing-link-ops-browser.ts` (Replace/Resend/Revoke UI + DB) |
+| Migration | None |
+| Gate A | Remains paused |
+
+#### Signing Placement Templates — design (not implemented in PR #46)
+
+Audit findings (code/migrations only):
+
+* **Form identity.** `forms` rows are immutable per version once Published; a new revision is a new row (`version_label`, same `form_family_key`, normalized upper-case from `form_code`). Signing documents trace `signing_documents.source_packet_form_id → packet_forms.form_id → forms.id`. Ad hoc uploads have `packet_forms.form_id = null` (and ad hoc Signing documents have no Packet Form).
+* **Participant roles.** Packet parties carry `PacketContactRole` (`BUYER`, `SELLER`, `TENANT`, `LANDLORD`, `PRIMARY`, `CO_CLIENT`, `SPOUSE`, `POWER_OF_ATTORNEY`, `OTHER`) from `packet_contacts.packet_role`, or from the representation agreement (BUYER_REP → Buyer, LISTING → Seller), ordered by `sort_order`. Agents/brokers/TCs are never ceremony participants. `signing_participants` keeps only `linked_contact_id` and a human `optional_role` label, not the role code or ordinal.
+* **Scope precedent.** `field_defaults` uses PRIVATE (owner) / ORGANIZATION (org) with Private overriding Organization, resolved via `primary_organization_id`.
+
+Recommended design (schema and slot names not locked):
+
+* **Key:** exact `forms.id` (the version row). `form_family_key` is used only to *suggest* a template from an older version ("Template saved for 2024 version — review before applying"), never to auto-apply across versions.
+* **Scope / precedence:** Organization templates (org admins) and Personal templates (owner); for a given form version Personal wins over Organization; the manager can choose either explicitly. No Global scope initially.
+* **Stored instructions:** per placement — participant slot, field type, page, x/y/width/height (PDF pt), required, linked-Date relationship (template-local id), optional display order. No Contact/User/participant ids, no names, no evidence.
+* **Slots:** derived from Packet roles plus ordinal — e.g. Buyer 1 / Buyer 2, Seller 1 / Seller 2, Tenant 1 / 2, Landlord 1 / 2, Client 1 / 2 (PRIMARY/CO_CLIENT). Needs participant role code + ordinal captured at Packet import (new nullable columns on `signing_participants`) so slots resolve without re-reading the live Packet.
+* **Save:** from Prepare Documents for a document with a Form version; manager names the template, picks scope, reviews the slot for each participant (defaulted from role + ordinal; unresolved/ad hoc participants must be mapped or excluded).
+* **Apply:** explicit "Apply template" per document; mapping dialog shows every slot → participant, highlights unresolved slots, never assigns silently; creates ordinary editable Draft placements through the trusted draft-field writes (Signature + linked Date preserved). No evidence, revisions, or Revision 1 effects. Auto-apply may come later as a suggestion once explicit Apply is proven.
+* **Ad hoc PDFs:** out of scope initially (no stable identity); revisit with a content fingerprint later.
+* **Next PR:** "Signing Placement Templates (explicit Save/Apply)": migration for `signing_placement_templates` + `signing_placement_template_fields` (deny-by-default RLS, service-role writes) and participant role/ordinal capture; trusted Save/Apply/list/delete actions with `requireSigningActor` + scope checks; Prepare Documents Save/Apply UI with slot mapping; unit, dev validator, and browser QA coverage.
 
 ### Native Signing manager QA pass 7 (2026-09-28; PR #46)
 

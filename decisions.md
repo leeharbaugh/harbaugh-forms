@@ -12,6 +12,52 @@ Each decision should include:
 
 ---
 
+## Prepare Documents multi-select and copy/paste are Draft editing conveniences
+
+**Date:** 2026-09-28
+
+**Decision:**
+Multi-select, group move, multi-delete, and copy/paste in Prepare Documents only produce ordinary Draft placements through the existing trusted draft-field server actions. They do not create evidence, package revisions, or any path to Revision 1, and they never bypass participant, document, or Signature/Date linkage validation. The editor clipboard is in memory only (never the OS clipboard). A group move is limited to the dragged placement's page and never moves placements across pages. A pasted Date Signed links only to a Signature for the same participant; otherwise it is rejected.
+
+**Reason:**
+Managers repeat identical placements across participants and pages; the convenience must not widen the Draft/evidence boundary.
+
+**Consequences:**
+* Selection state is local UI state; persistence is per placement through `upsertDraftSigningFieldAction` / `removeDraftSigningFieldAction`.
+* Delete/Backspace and copy/paste shortcuts are ignored while typing in form controls.
+
+**Related:** `lib/signing/draft-field-editor-state.ts`; `components/signings/signing-preview-dialog.tsx`.
+
+---
+
+## Replace signing link checks first, then revokes the old link; delivery status is never overstated
+
+**Date:** 2026-09-28
+
+**Decision:**
+Replace signing link runs the same In Progress, remote-mode, active-participant, and email checks as Resend and Revoke before changing any credential. It then supersedes and revokes the current credential (and its entry sessions), issues a new credential, and queues its invitation. Resend reuses the current credential; Revoke issues none. Replace and Revoke require confirmation; results show inline for the participant. Participant access status shows link state and times from credential rows and invitation state from delivery rows, labelled honestly: provider acceptance is not delivery, and the development sandbox says "not sent". Credential ids, tokens, links, and provider references are never sent to the browser.
+
+**Reason:**
+Lee could not tell whether Replace had worked, and a participant without email could lose their link before the replacement failed to send.
+
+**Related:** `lib/signing/participant-credential-recovery.ts`; `lib/signing/participant-access-status.ts`; `lib/signing/dashboard.ts`; `components/signings/signing-dashboard-page.tsx`.
+
+---
+
+## Signing Placement Templates are the approved next Prepare Documents feature
+
+**Date:** 2026-09-28
+
+**Decision:**
+Reusable placement templates are approved as the next feature, in their own PR, with this direction: keyed to an exact Form version row (the family only suggests), Organization and Personal scope with Personal taking precedence, stored as participant slots (derived from Packet roles and order) rather than Contact/User ids, and applied only by an explicit manager action that maps every slot to a participant, shows unresolved slots, and creates ordinary editable Draft placements. Ad hoc PDFs are out of scope initially. Table names, columns, and the exact slot vocabulary are intentionally not locked by this decision.
+
+**Reason:**
+Managers place the same fields on the same Form versions repeatedly; tying templates to people or auto-applying them would silently misassign signers.
+
+**Related:** `project_status.md` (pass 8 template design); `lib/signing/packet-to-signing.ts`; `supabase/migrations/20260715180000_field_defaults_scoped.sql`.
+
+---
+
 ## Prepare Documents is the canonical pre-send visual review
 
 **Date:** 2026-09-28

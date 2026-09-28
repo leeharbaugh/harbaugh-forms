@@ -12,6 +12,7 @@ import {
 import {
   deliverEnqueuedParticipantInvitations,
   enqueueParticipantInvitations,
+  signingEmailSandboxed,
   type EnqueuedParticipantInvitation,
 } from "./delivery";
 import { SigningError } from "./errors";
@@ -150,7 +151,9 @@ export async function resendParticipantInvitationWithActor(
   actor: SigningActor,
   input: { signingId: unknown; participantId: unknown },
   admin: SupabaseClient,
-): Promise<{ deliveryInstructionId: string; workItemId: string }> {
+): Promise<
+  { deliveryInstructionId: string; workItemId: string } & ParticipantLinkOperationResult
+> {
   const ctx = await requireInProgressManageableParticipant({
     actor,
     signingId: input.signingId,
@@ -252,6 +255,8 @@ export async function resendParticipantInvitationWithActor(
   return {
     deliveryInstructionId: instruction.id as string,
     workItemId: workItem.id as string,
+    deliveryState: await loadDeliveryState(admin, ctx.signingId, instruction.id as string),
+    emailSandboxed: signingEmailSandboxed(),
   };
 }
 
@@ -400,6 +405,80 @@ export async function replaceParticipantCredentialsWithActor(
   }
 
   return { issued, enqueued };
+}
+
+export type ParticipantLinkOperationResult = {
+  /** Invitation delivery state after the inline send attempt. */
+  deliveryState: string | null;
+  emailSandboxed: boolean;
+};
+
+async function loadDeliveryState(
+  admin: SupabaseClient,
+  signingId: string,
+  deliveryInstructionId: string | undefined,
+): Promise<string | null> {
+  if (!deliveryInstructionId) return null;
+  const { data, error } = await admin
+    .from("signing_delivery_instructions")
+    .select("delivery_state")
+    .eq("signing_id", signingId)
+    .eq("id", deliveryInstructionId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data?.delivery_state as string | undefined) ?? null;
+}
+
+/**
+ * Manager Replace signing link for one participant: the same In Progress,
+ * remote-mode, active-participant, and email checks as Resend/Revoke run
+ * before any credential changes; the old credential is revoked (and its entry
+ * sessions with it), a new credential is issued, and its invitation is queued.
+ */
+export async function replaceParticipantInvitationWithActor(
+  actor: SigningActor,
+  input: { signingId: unknown; participantId: unknown },
+  admin: SupabaseClient,
+): Promise<ParticipantLinkOperationResult> {
+  const ctx = await requireInProgressManageableParticipant({
+    actor,
+    signingId: input.signingId,
+    participantId: input.participantId,
+    admin,
+  });
+  const priorCredentialId = await loadCurrentCredentialId({
+    admin,
+    signingId: ctx.signingId,
+    participantId: ctx.participantId,
+  });
+
+  const { enqueued } = await replaceParticipantCredentialsWithActor(
+    actor,
+    {
+      signingId: ctx.signingId,
+      participantIds: [ctx.participantId],
+      enqueueInvitation: true,
+    },
+    admin,
+  );
+
+  if (priorCredentialId) {
+    await revokeSigningEntrySessionsForCredential({
+      admin,
+      signingId: ctx.signingId,
+      credentialId: priorCredentialId,
+      reason: "CREDENTIAL_REPLACED_BY_MANAGER",
+    });
+  }
+
+  return {
+    deliveryState: await loadDeliveryState(
+      admin,
+      ctx.signingId,
+      enqueued[0]?.deliveryInstructionId,
+    ),
+    emailSandboxed: signingEmailSandboxed(),
+  };
 }
 
 /**

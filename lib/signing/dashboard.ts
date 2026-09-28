@@ -6,7 +6,15 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SigningDocumentRow } from "./draft-documents";
+import { signingEmailSandboxed } from "./delivery";
 import { getSigningForActor } from "./operations";
+import {
+  summarizeParticipantAccess,
+  type CredentialStatusRow,
+  type InvitationAttemptRow,
+  type InvitationInstructionRow,
+  type ParticipantAccessStatus,
+} from "./participant-access-status";
 import {
   evaluateSigningReadiness,
   type SigningReadinessBlocker,
@@ -40,6 +48,7 @@ export type SigningDashboardParticipant = {
   deliveryState: string | null;
   lastDeliveryFailureSafe: string | null;
   hasActiveInvitationLink: boolean;
+  access: ParticipantAccessStatus;
   capacityMode?: SigningCapacityMode;
   representedPartyName?: string | null;
   capacityLabel?: SigningCapacityLabel | null;
@@ -52,6 +61,8 @@ export type SigningDashboard = {
     activatedAt: string | null;
   };
   ready: boolean;
+  /** Development email sandbox: invitations are accepted but not sent. */
+  emailSandboxed: boolean;
   blockers: SigningReadinessBlocker[];
   documents: SigningDashboardDocument[];
   participants: SigningDashboardParticipant[];
@@ -103,10 +114,8 @@ export async function loadSigningDashboardForActor(
       .order("create_date", { ascending: true }),
     admin
       .from("signing_participant_credentials")
-      .select("signing_participant_id")
-      .eq("signing_id", summary.id)
-      .eq("is_current", true)
-      .is("revoked_at", null),
+      .select("signing_participant_id, issued_at, is_current, revoked_at, revoked_reason")
+      .eq("signing_id", summary.id),
   ]);
 
   if (activationError) throw new Error(activationError.message);
@@ -171,14 +180,18 @@ export async function loadSigningDashboardForActor(
   }
 
   const failureByParticipantId = new Map<string, string>();
+  let attemptRows: InvitationAttemptRow[] = [];
   const instructionIds = (deliveryRows ?? []).map((row) => row.id as string);
   if (instructionIds.length > 0) {
     const { data: attempts, error: attemptError } = await admin
       .from("signing_delivery_attempts")
-      .select("delivery_instruction_id, outcome, failure_detail_safe, attempt_number")
+      .select(
+        "delivery_instruction_id, outcome, failure_detail_safe, attempt_number, attempted_at, provider_reference",
+      )
       .in("delivery_instruction_id", instructionIds)
       .order("attempt_number", { ascending: true });
     if (attemptError) throw new Error(attemptError.message);
+    attemptRows = (attempts ?? []) as unknown as InvitationAttemptRow[];
 
     const participantByInstructionId = new Map(
       (deliveryRows ?? []).map((row) => [
@@ -203,9 +216,13 @@ export async function loadSigningDashboardForActor(
     }
   }
 
+  const credentialStatusRows = (credentialRows ?? []) as unknown as CredentialStatusRow[];
   const participantsWithActiveLink = new Set(
-    (credentialRows ?? []).map((row) => row.signing_participant_id as string),
+    credentialStatusRows
+      .filter((row) => row.is_current && !row.revoked_at)
+      .map((row) => row.signing_participant_id),
   );
+  const instructionRows = (deliveryRows ?? []) as unknown as InvitationInstructionRow[];
 
   const participants: SigningDashboardParticipant[] = (
     participantRows ?? []
@@ -225,6 +242,12 @@ export async function loadSigningDashboardForActor(
     lastDeliveryFailureSafe:
       failureByParticipantId.get(row.id as string) ?? null,
     hasActiveInvitationLink: participantsWithActiveLink.has(row.id as string),
+    access: summarizeParticipantAccess(
+      row.id as string,
+      credentialStatusRows,
+      instructionRows,
+      attemptRows,
+    ),
     capacityMode:
       (row.signing_capacity_mode as SigningCapacityMode | undefined) ??
       undefined,
@@ -244,6 +267,7 @@ export async function loadSigningDashboardForActor(
       activatedAt: (activation?.activated_at as string | null) ?? null,
     },
     ready,
+    emailSandboxed: signingEmailSandboxed(),
     blockers,
     documents,
     participants,

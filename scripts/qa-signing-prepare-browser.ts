@@ -455,9 +455,16 @@ async function main() {
     await assertStable("reassign");
     ok("reassign moved the Signature and its Date Signed to Cal Cobuyer");
 
-    // Initials: place and remove independently.
+    // Initials: place and remove independently. With a placement selected, the
+    // first click on empty page area only clears the selection.
     await page.locator("#prepare-participant").selectOption({ label: "Lee Harbaugh" });
     await page.locator("#prepare-field-type").selectOption("INITIALS");
+    const selectionStatus = page.locator('[data-testid="prepare-selection"]');
+    await page2.click({ position: { x: 450, y: 650 } });
+    await selectionStatus.getByText("No placements selected").waitFor({ timeout: 5000 });
+    await page.waitForTimeout(500);
+    if ((await draftFields()).length !== 2) fail("a clearing click must not place a field");
+    ok("clicking empty canvas with a selection clears it without placing");
     await page2.click({ position: { x: 450, y: 650 } });
     await waitSaved();
     const withInitials = await draftFields();
@@ -621,6 +628,191 @@ async function main() {
     if (!same) fail(`reopened geometry differs: ${JSON.stringify(prepareRects)} vs ${JSON.stringify(reopenedRects)}`);
     ok(`reopened Prepare Documents renders the same geometry: ${JSON.stringify(reopenedRects)}`);
     await shot(page, "06-prepare-reopened");
+
+    // Multi-select, group drag, copy/paste, multi-delete (page 1).
+    await page.evaluate(() => {
+      document.querySelectorAll(".react-pdf__Page canvas").forEach((canvas) => {
+        (canvas as HTMLCanvasElement).dataset.qaStable = "1";
+      });
+    });
+    const { data: participantRows } = await admin
+      .from("signing_participants")
+      .select("id, full_name")
+      .eq("signing_id", signingId);
+    const pid = (name: string) =>
+      (participantRows ?? []).find((row) => row.full_name === name)!.id as string;
+    const overlayFor = (description: string, index = 0) =>
+      page.locator(`.signing-field-overlay:has([aria-label="${description}"])`).nth(index);
+    const expectSelected = (count: number) =>
+      selectionStatus
+        .getByText(count === 0 ? "No placements selected" : `${count} placement${count === 1 ? "" : "s"} selected`)
+        .waitFor({ timeout: 5000 });
+    const byParticipant = (all: Awaited<ReturnType<typeof draftFields>>, type: string, name: string) =>
+      all.filter((row) => row.field_type === type && row.signing_participant_id === pid(name));
+
+    const before = await draftFields();
+    const lhBefore = byParticipant(before, "INITIALS", "Lee Harbaugh")[0];
+    const calSigBefore = byParticipant(before, "SIGNATURE", "Cal Cobuyer")[0];
+    const calDateBefore = byParticipant(before, "DATE_SIGNED", "Cal Cobuyer")[0];
+
+    await overlayFor("Initials for Lee Harbaugh").click({ modifiers: ["Control"] });
+    await overlayFor("Signature for Cal Cobuyer").click({ modifiers: ["Control"] });
+    await expectSelected(2);
+    const selectedCount = await page.locator('.signing-field-overlay[data-selected="true"]').count();
+    if (selectedCount !== 2) fail(`expected 2 highlighted overlays, got ${selectedCount}`);
+    await overlayFor("Initials for Lee Harbaugh").click({ modifiers: ["Control"] });
+    await expectSelected(1);
+    await overlayFor("Initials for Lee Harbaugh").click({ modifiers: ["Control"] });
+    await expectSelected(2);
+    if ((await draftFields()).length !== before.length) fail("selecting changed fields");
+    await shot(page, "07-multi-select");
+    ok("Ctrl-click toggles placements; count and highlight shown; nothing saved");
+
+    const calBox = (await overlayFor("Signature for Cal Cobuyer").boundingBox())!;
+    await page.mouse.move(calBox.x + 15, calBox.y + calBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(calBox.x + 55, calBox.y + calBox.height / 2 - 30, { steps: 10 });
+    await page.mouse.up();
+    await waitSaved();
+    await page.waitForTimeout(800);
+    let after = await draftFields();
+    const lhMoved = after.find((row) => row.id === lhBefore.id)!;
+    const calMoved = after.find((row) => row.id === calSigBefore.id)!;
+    const dx = calMoved.x - calSigBefore.x;
+    const dy = calMoved.y - calSigBefore.y;
+    if (Math.abs(dx) < 10 || Math.abs(dy) < 10) fail(`group drag did not move: ${dx},${dy}`);
+    if (Math.abs(lhMoved.x - lhBefore.x - dx) > 0.5 || Math.abs(lhMoved.y - lhBefore.y - dy) > 0.5) {
+      fail(`group drag distorted offsets: sig ${dx},${dy} vs initials ${lhMoved.x - lhBefore.x},${lhMoved.y - lhBefore.y}`);
+    }
+    const calDateAfter = after.find((row) => row.id === calDateBefore.id)!;
+    if (calDateAfter.x !== calDateBefore.x || calDateAfter.y !== calDateBefore.y) {
+      fail("an unselected Date moved with the group");
+    }
+    await expectSelected(2);
+    await assertStable("group drag");
+    ok(`group drag moved both selected placements by (${dx.toFixed(1)}, ${dy.toFixed(1)}) pt and kept the selection`);
+
+    await page.keyboard.press("Control+c");
+    await page.getByText("Copied 2 placements.").waitFor({ timeout: 5000 });
+    await page.keyboard.press("Control+v");
+    await page.getByText("Pasted 3 placements.").waitFor({ timeout: 5000 });
+    await expectSelected(3);
+    await waitSaved();
+    await page.waitForTimeout(1000);
+    after = await draftFields();
+    if (after.length !== before.length + 3) fail(`paste created ${after.length - before.length} rows`);
+    const pastedLh = byParticipant(after, "INITIALS", "Lee Harbaugh").find((row) => row.id !== lhBefore.id)!;
+    const pastedCal = byParticipant(after, "SIGNATURE", "Cal Cobuyer").find((row) => row.id !== calSigBefore.id)!;
+    const pastedCalDate = byParticipant(after, "DATE_SIGNED", "Cal Cobuyer").find((row) => row.id !== calDateBefore.id)!;
+    if (!pastedLh || !pastedCal || !pastedCalDate) fail(`paste rows: ${JSON.stringify(after)}`);
+    for (const [label, pasted, source] of [
+      ["Initials", pastedLh, lhMoved],
+      ["Signature", pastedCal, calMoved],
+    ] as const) {
+      if (Math.abs(pasted.x - source.x - 12) > 0.5 || Math.abs(pasted.y - source.y - 12) > 0.5) {
+        fail(`${label} paste offset ${pasted.x - source.x},${pasted.y - source.y}`);
+      }
+      if (pasted.width !== source.width || pasted.height !== source.height) fail(`${label} paste size changed`);
+    }
+    if (pastedCalDate.linked_signature_draft_field_id !== pastedCal.id) {
+      fail("pasted Signature's Date Signed is not linked to the new Signature");
+    }
+    await assertStable("paste");
+    await shot(page, "08-pasted");
+    ok("Ctrl+C / Ctrl+V pasted Initials + Signature (+ new linked Date) 12 pt offset, participants kept");
+
+    // Delete is ignored while a form control has focus.
+    await page.locator("#prepare-participant").focus();
+    await page.keyboard.press("Delete");
+    await page.waitForTimeout(800);
+    if ((await draftFields()).length !== after.length) fail("Delete in a form control removed placements");
+    await expectSelected(3);
+    ok("Delete is ignored while a form control has focus");
+
+    await overlayFor("Initials for Lee Harbaugh", 1).click({ modifiers: ["Control"] });
+    await overlayFor("Initials for Lee Harbaugh", 1).click({ modifiers: ["Control"] });
+    await expectSelected(3);
+    await page.keyboard.press("Delete");
+    await expectSelected(0);
+    await waitSaved();
+    await page.waitForTimeout(1000);
+    after = await draftFields();
+    if (after.length !== before.length || after.some((row) => [pastedLh.id, pastedCal.id, pastedCalDate.id].includes(row.id))) {
+      fail(`multi-delete left rows: ${JSON.stringify(after)}`);
+    }
+    await assertStable("multi-delete");
+    ok("Delete removed the 3 selected placements through trusted actions; no refresh");
+
+    // A Signature + Date pair pastes as a new linked pair.
+    const lisaSigRow = byParticipant(after, "SIGNATURE", LONG_NAME)[0];
+    const lisaDateRow = byParticipant(after, "DATE_SIGNED", LONG_NAME)[0];
+    await overlayFor(`Signature for ${LONG_NAME}`).click();
+    await overlayFor(`Date Signed for ${LONG_NAME}`).click({ modifiers: ["Control"] });
+    await expectSelected(2);
+    await page.keyboard.press("Control+c");
+    await page.keyboard.press("Control+v");
+    await page.getByText("Pasted 2 placements.").waitFor({ timeout: 5000 });
+    await waitSaved();
+    await page.waitForTimeout(1000);
+    after = await draftFields();
+    const newLisaSig = byParticipant(after, "SIGNATURE", LONG_NAME).find((row) => row.id !== lisaSigRow.id)!;
+    const newLisaDate = byParticipant(after, "DATE_SIGNED", LONG_NAME).find((row) => row.id !== lisaDateRow.id)!;
+    if (!newLisaSig || !newLisaDate || newLisaDate.linked_signature_draft_field_id !== newLisaSig.id) {
+      fail(`pasted pair not linked: ${JSON.stringify(after)}`);
+    }
+    if (Math.abs(newLisaDate.x - newLisaSig.x - (lisaDateRow.x - lisaSigRow.x)) > 0.5) {
+      fail("pasted pair lost its relative geometry");
+    }
+    ok("copied Signature + Date pasted as a new linked pair with the same relative geometry");
+
+    // A Date whose Signature no longer exists (and no undated one) is rejected.
+    await overlayFor(`Date Signed for ${LONG_NAME}`, 0).click({ position: { x: 12, y: 8 } });
+    await expectSelected(1);
+    await page.keyboard.press("Control+c");
+    await page.getByText("Copied 1 placement.").waitFor({ timeout: 5000 });
+    const orphanSource = (await draftFields()).find((row) => row.field_type === "DATE_SIGNED" && row.signing_participant_id === pid(LONG_NAME) && row.id === lisaDateRow.id);
+    if (!orphanSource) fail("expected to copy the original Lisa Date");
+    await overlayFor(`Signature for ${LONG_NAME}`, 0).click({ position: { x: 4, y: 4 } });
+    await expectSelected(1);
+    await page.keyboard.press("Delete");
+    await waitSaved();
+    await page.waitForTimeout(1000);
+    const beforeOrphan = await draftFields();
+    if (beforeOrphan.some((row) => row.id === lisaSigRow.id || row.id === lisaDateRow.id)) {
+      fail("deleting the original Signature must remove its Date");
+    }
+    await page.keyboard.press("Control+v");
+    await page.getByText(`Date Signed needs a Signature for ${LONG_NAME}.`, { exact: false }).waitFor({ timeout: 5000 });
+    await page.waitForTimeout(800);
+    if ((await draftFields()).length !== beforeOrphan.length) fail("an orphan Date was pasted");
+    await shot(page, "09-orphan-date-rejected");
+    ok("orphan Date Signed paste rejected with clear feedback");
+
+    // Empty canvas click clears the selection without placing.
+    await overlayFor(`Signature for ${LONG_NAME}`, 0).click();
+    await expectSelected(1);
+    await firstPage.click({ position: { x: 40, y: 40 } });
+    await expectSelected(0);
+    await page.waitForTimeout(500);
+    if ((await draftFields()).length !== beforeOrphan.length) fail("clearing click placed a field");
+
+    const finalRects = await overlayRects();
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("heading", { name: "Prepare Documents" }).waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Prepare Documents", exact: true }).first().click();
+    await page.getByRole("heading", { name: "Prepare Documents" }).waitFor();
+    await page.locator(".react-pdf__Page canvas").first().waitFor({ timeout: 60000 });
+    await page.waitForTimeout(1500);
+    const reopenedAgain = await overlayRects();
+    const sameAgain = reopenedAgain.length === finalRects.length && reopenedAgain.every((rect, index) => {
+      const other = finalRects[index];
+      return rect.type === other.type && (["x", "y", "w", "h"] as const).every(
+        (key) => Math.abs(rect[key] - other[key]) <= 2,
+      );
+    });
+    if (!sameAgain) fail(`geometry after edits differs on reopen: ${JSON.stringify(finalRects)} vs ${JSON.stringify(reopenedAgain)}`);
+    await shot(page, "10-reopened-after-multi-edit");
+    ok(`geometry after group drag / paste / delete survives close and reopen (${finalRects.length} fields)`);
     console.log("\nPrepare Documents browser QA: all checks passed.");
   } finally {
     await browser.close();
