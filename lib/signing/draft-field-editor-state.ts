@@ -4,17 +4,60 @@
  * same change and the returned rows reconcile local state. Mirrors the server
  * rules in `draft-fields.ts` (paired Date Signed follows its Signature).
  */
+import { suggestTypedInitialsFromDisplayName } from "./initials-suggestion";
 import type { SigningPreviewField, SigningPreviewModel } from "./preview";
 
 export type DraftFieldType = SigningPreviewField["fieldType"];
+
+export function draftFieldTypeLabel(type: DraftFieldType): string {
+  switch (type) {
+    case "SIGNATURE":
+      return "Signature";
+    case "INITIALS":
+      return "Initials";
+    case "DATE_SIGNED":
+      return "Date Signed";
+  }
+}
+
+type LabelledField = Pick<
+  SigningPreviewField,
+  "fieldType" | "participantFullName" | "capacityMode" | "representedPartyName"
+>;
+
+/**
+ * Short on-page label. Always the human signer, never the represented party;
+ * Initials show the ceremony's suggested initials (visual only).
+ */
+export function draftFieldCompactLabel(field: LabelledField): string {
+  switch (field.fieldType) {
+    case "INITIALS":
+      return (
+        suggestTypedInitialsFromDisplayName(field.participantFullName) ||
+        "Initials"
+      );
+    case "SIGNATURE":
+      return field.participantFullName;
+    case "DATE_SIGNED":
+      return "Date";
+  }
+}
+
+/** Full description for tooltips and assistive technology. */
+export function draftFieldDescription(field: LabelledField): string {
+  const base = `${draftFieldTypeLabel(field.fieldType)} for ${field.participantFullName}`;
+  return field.capacityMode === "REPRESENTATIVE" && field.representedPartyName
+    ? `${base}, representing ${field.representedPartyName}`
+    : base;
+}
 
 export const DRAFT_FIELD_DEFAULT_SIZES: Record<
   DraftFieldType,
   { width: number; height: number }
 > = {
-  SIGNATURE: { width: 160, height: 40 },
-  INITIALS: { width: 80, height: 40 },
-  DATE_SIGNED: { width: 100, height: 24 },
+  SIGNATURE: { width: 150, height: 28 },
+  INITIALS: { width: 40, height: 20 },
+  DATE_SIGNED: { width: 72, height: 18 },
 };
 
 /** Pointer travel (CSS px) below which a drag stop is treated as a click. */
@@ -49,8 +92,9 @@ export function clampRectToPage(
 }
 
 /**
- * Default spot for the paired Date Signed: to the right of the Signature, or
- * below it when the right side would run off the page.
+ * Default spot for the paired Date Signed: to the right of the Signature on
+ * the same baseline (bottom-aligned), or below it when the right side would
+ * run off the page.
  */
 export function pairedDatePlacement(
   signature: PdfRect,
@@ -60,7 +104,11 @@ export function pairedDatePlacement(
   const right = signature.x + signature.width + 12;
   const candidate =
     right + size.width <= page.width
-      ? { x: right, y: signature.y, ...size }
+      ? {
+          x: right,
+          y: signature.y + signature.height - size.height,
+          ...size,
+        }
       : { x: signature.x, y: signature.y + signature.height + 8, ...size };
   return clampRectToPage(candidate, page);
 }

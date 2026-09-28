@@ -21,6 +21,9 @@ import {
   addField,
   clampRectToPage,
   dragExceededThreshold,
+  draftFieldCompactLabel,
+  draftFieldDescription,
+  draftFieldTypeLabel,
   findField,
   moveField,
   pairedDatePlacement,
@@ -67,39 +70,15 @@ export type SigningDocumentWorkspaceMode = "preview" | "prepare";
 const ADOPTION_BOUNDARY_COPY =
   "Place signing fields for each participant. Participants adopt their signatures and initials when they sign.";
 
-function fieldTypeLabel(type: DraftFieldType): string {
-  switch (type) {
-    case "SIGNATURE":
-      return "Signature";
-    case "INITIALS":
-      return "Initials";
-    case "DATE_SIGNED":
-      return "Date Signed";
-  }
-}
+const fieldTypeLabel = draftFieldTypeLabel;
 
-function fieldCompactLabel(field: SigningPreviewField): string {
-  return `${field.participantFullName} — ${fieldTypeLabel(field.fieldType)}`;
-}
-
-function fieldTitle(field: SigningPreviewField): string {
-  return field.capacityMode === "REPRESENTATIVE" && field.representedPartyName
-    ? `${fieldCompactLabel(field)} · representing ${field.representedPartyName}`
-    : fieldCompactLabel(field);
-}
-
+/** Exact PDF geometry scaled to the rendered page; never inflated. */
 function toRenderRect(field: SigningPreviewField, metrics: PageMetrics): PdfRect {
   return {
     x: (field.x / metrics.originalWidth) * metrics.renderedWidth,
     y: (field.y / metrics.originalHeight) * metrics.renderedHeight,
-    width: Math.max(
-      (field.width / metrics.originalWidth) * metrics.renderedWidth,
-      24,
-    ),
-    height: Math.max(
-      (field.height / metrics.originalHeight) * metrics.renderedHeight,
-      16,
-    ),
+    width: (field.width / metrics.originalWidth) * metrics.renderedWidth,
+    height: (field.height / metrics.originalHeight) * metrics.renderedHeight,
   };
 }
 
@@ -129,21 +108,34 @@ function SigningFieldOverlay({
   const rect = toRenderRect(field, metrics);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
+  const description = draftFieldDescription(field);
+  const label = (
+    <div
+      className="flex h-full items-center overflow-hidden"
+      aria-label={description}
+      data-field-type={field.fieldType}
+      data-field-label={draftFieldCompactLabel(field)}
+    >
+      <span
+        aria-hidden
+        className="truncate text-[10px] font-semibold leading-none"
+      >
+        {draftFieldCompactLabel(field)}
+      </span>
+    </div>
+  );
+
   if (!editable) {
     return (
       <div
         className={cn(
-          "pointer-events-none absolute box-border rounded border-2 bg-background/80 px-1 py-0.5 shadow-sm",
+          "pointer-events-none absolute box-border rounded-sm border bg-background/80 px-0.5",
           FIELD_BORDER[field.fieldType],
         )}
         style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
-        title={fieldTitle(field)}
+        title={description}
       >
-        <div className="flex h-full flex-col justify-center overflow-hidden">
-          <span className="truncate text-[10px] font-semibold leading-tight">
-            {fieldCompactLabel(field)}
-          </span>
-        </div>
+        {label}
       </div>
     );
   }
@@ -153,11 +145,11 @@ function SigningFieldOverlay({
       bounds="parent"
       size={{ width: rect.width, height: rect.height }}
       position={{ x: rect.x, y: rect.y }}
-      minWidth={24}
-      minHeight={16}
+      minWidth={12}
+      minHeight={8}
       cancel=".signing-field-remove"
       className={cn(
-        "signing-field-overlay absolute box-border rounded border-2 bg-background/85 px-1 py-0.5 shadow-sm",
+        "signing-field-overlay absolute box-border rounded-sm border-2 bg-background/85 px-0.5",
         FIELD_BORDER[field.fieldType],
         selected && "z-10 ring-2 ring-foreground/50 ring-offset-1",
       )}
@@ -193,28 +185,24 @@ function SigningFieldOverlay({
           height: ref.offsetHeight,
         });
       }}
-      title={fieldTitle(field)}
+      title={description}
     >
-      <div className="flex h-full items-start justify-between gap-1 overflow-hidden">
-        <span className="truncate text-[10px] font-semibold leading-tight">
-          {fieldCompactLabel(field)}
-        </span>
-        {selected ? (
-          <button
-            type="button"
-            className="signing-field-remove shrink-0 rounded px-0.5 text-[10px] text-destructive underline"
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              event.preventDefault();
-              onRemove(field.id);
-            }}
-          >
-            Remove
-          </button>
-        ) : null}
-      </div>
+      {label}
+      {selected ? (
+        <button
+          type="button"
+          className="signing-field-remove absolute -top-5 right-0 whitespace-nowrap rounded border border-border bg-background px-1 text-[10px] leading-4 text-destructive shadow-sm"
+          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            onRemove(field.id);
+          }}
+        >
+          Remove
+        </button>
+      ) : null}
     </Rnd>
   );
 }

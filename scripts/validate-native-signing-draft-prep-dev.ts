@@ -154,6 +154,7 @@ async function main() {
   const packetFormIds: number[] = [];
   const contactIds: number[] = [];
   const packetContactIds: number[] = [];
+  const agreementIds: number[] = [];
   const generatedPaths: string[] = [];
   const signingIds: string[] = [];
 
@@ -537,6 +538,155 @@ async function main() {
       () => loadDraftSourcePacketStateWithActor(outsider, { signingId }, admin),
     );
 
+    // --- Legacy Packet: parties stored on its representation agreement --------
+    // Root cause of the manager QA miss: such Packets have no packet_contacts.
+    const legacy = await createPacket(agent.userId, "Legacy Buyer Rep", 1);
+    const { data: agreement, error: agreementError } = await admin
+      .from("representation_agreements")
+      .insert({
+        agreement_type: "BUYER_REP",
+        effective_date: "2026-06-09",
+        owner_user_id: agent.userId,
+      })
+      .select("id")
+      .single();
+    if (agreementError || !agreement) fail(agreementError?.message ?? "agreement");
+    agreementIds.push(agreement.id as number);
+    const frank = await createContact(agent.userId, "Frank", "Hernandez", "frank@example.com");
+    const lisa = await createContact(agent.userId, "Lisa", "Hernandez", null);
+    const foreign = await createContact(outsider.userId, "Olive", "Outsider", "olive@example.com");
+    const { error: clientsError } = await admin
+      .from("representation_agreement_clients")
+      .insert([
+        { representation_agreement_id: agreement.id, contact_id: frank, sort_order: 0 },
+        { representation_agreement_id: agreement.id, contact_id: lisa, sort_order: 1 },
+        { representation_agreement_id: agreement.id, contact_id: foreign, sort_order: 2 },
+      ]);
+    if (clientsError) fail(clientsError.message);
+    const { error: linkAgreementError } = await admin
+      .from("packets")
+      .update({ representation_agreement_id: agreement.id })
+      .eq("id", legacy.packetId);
+    if (linkAgreementError) fail(linkAgreementError.message);
+
+    const legacySigningId = await createSigning(agent, "Draft prep legacy");
+    await addDraftSigningParticipantWithActor(
+      agent,
+      { signingId: legacySigningId, fullName: "Ad Hoc Legacy" },
+      admin,
+    );
+    const legacySelected = await selectDraftSourcePacketWithActor(
+      agent,
+      { signingId: legacySigningId, packetId: legacy.packetId },
+      admin,
+    );
+    if ((await sourcePacketOf(legacySigningId)) !== legacy.packetId) {
+      fail("legacy Packet selection must bind source_packet_id");
+    }
+    const legacyNames = legacySelected.participants.map((row) => row.fullName);
+    if (
+      legacySelected.addedParticipantCount !== 2 ||
+      legacySelected.participants.length !== 3 ||
+      !legacyNames.includes("Ad Hoc Legacy") ||
+      !legacyNames.includes("Frank Hernandez") ||
+      !legacyNames.includes("Lisa Hernandez")
+    ) {
+      fail(`legacy Packet parties must import with the ad hoc participant kept: ${legacyNames.join(", ")}`);
+    }
+    const legacyRows = await participantsOf(legacySigningId);
+    if (legacyRows.find((row) => row.linked_contact_id === lisa)?.email !== "") {
+      fail("legacy party without email must import with empty Draft email");
+    }
+    if (
+      legacyRows.some((row) => row.linked_contact_id === foreign) ||
+      !legacySelected.reviewNote?.includes("not available to you")
+    ) {
+      fail("a Packet party whose contact belongs to another User must be skipped with a note");
+    }
+    ok("Packet parties stored on a representation agreement import on selection (result carries the refreshed list)");
+
+    // --- Competing selections: one Packet wins, never a mix --------------------
+    const packetAContacts = new Set([buyer, coBuyer]);
+    const packetBContacts = new Set([packetBParty]);
+    const raceRounds = Number(process.env.DRAFT_PREP_RACE_ROUNDS ?? 3);
+    for (let round = 0; round < raceRounds; round += 1) {
+      const raceId = await createSigning(agent, `Draft prep race ${round}`);
+      const outcomes = await Promise.allSettled([
+        selectDraftSourcePacketWithActor(agent, { signingId: raceId, packetId: packetA.packetId }, admin),
+        selectDraftSourcePacketWithActor(agent, { signingId: raceId, packetId: packetB.packetId }, admin),
+      ]);
+      const winners = outcomes.filter((outcome) => outcome.status === "fulfilled");
+      for (const outcome of outcomes) {
+        if (
+          outcome.status === "rejected" &&
+          !(
+            outcome.reason instanceof SigningError &&
+            ["CONFLICT", "INVALID_PACKET"].includes(outcome.reason.code)
+          )
+        ) {
+          fail(`race loser threw unexpected error: ${String(outcome.reason)}`);
+        }
+      }
+      if (winners.length !== 1) fail(`race round ${round}: expected one winner, got ${winners.length}`);
+      const bound = await sourcePacketOf(raceId);
+      const expected = bound === packetA.packetId ? packetAContacts : packetBContacts;
+      const linked = (await participantsOf(raceId)).map((row) => row.linked_contact_id as number);
+      if (
+        linked.length !== expected.size ||
+        linked.some((contactId) => !expected.has(contactId))
+      ) {
+        fail(`race round ${round}: participants do not all come from bound Packet ${bound}`);
+      }
+    }
+    ok("competing Packet selections: exactly one wins; participants match the bound Packet");
+
+    const switchRaceId = await createSigning(agent, "Draft prep switch race");
+    const { data: holdPacket, error: holdPacketError } = await admin
+      .from("packets")
+      .insert({
+        owner_user_id: agent.userId,
+        label: `Hold packet ${stamp}`,
+        status: "ACTIVE",
+        packet_type: "custom",
+      })
+      .select("id")
+      .single();
+    if (holdPacketError || !holdPacket) fail(holdPacketError?.message ?? "packet");
+    packetIds.push(holdPacket.id as number);
+    await selectDraftSourcePacketWithActor(
+      agent,
+      { signingId: switchRaceId, packetId: holdPacket.id },
+      admin,
+    );
+    const switchOutcomes = await Promise.allSettled([
+      selectDraftSourcePacketWithActor(agent, { signingId: switchRaceId, packetId: packetA.packetId }, admin),
+      selectDraftSourcePacketWithActor(agent, { signingId: switchRaceId, packetId: packetB.packetId }, admin),
+    ]);
+    if (switchOutcomes.filter((outcome) => outcome.status === "fulfilled").length !== 1) {
+      fail("competing switches must produce exactly one winner");
+    }
+    const switchBound = await sourcePacketOf(switchRaceId);
+    const switchExpected = switchBound === packetA.packetId ? packetAContacts : packetBContacts;
+    const switchLinked = (await participantsOf(switchRaceId)).map((row) => row.linked_contact_id as number);
+    if (switchLinked.length !== switchExpected.size || switchLinked.some((id) => !switchExpected.has(id))) {
+      fail("competing switches mixed participants across Packets");
+    }
+    ok("competing switches from an empty source Packet: one wins, no mixed participants");
+
+    const { error: mixedInsertError } = await admin.from("signing_documents").insert({
+      signing_id: signingId,
+      source_kind: "PACKET_FORM",
+      source_packet_form_id: packetB.formIds[0],
+      display_order: 900,
+      display_name: "Mixed",
+      filename: "mixed.pdf",
+      included_in_draft: true,
+    });
+    if (!mixedInsertError?.message.includes("SOURCE_PACKET_DOCUMENT_MISMATCH")) {
+      fail("database must reject a Packet document from a different source Packet");
+    }
+    ok("database trigger rejects a Packet document from a different source Packet");
+
     // --- Switching allowed only before Packet-derived state -------------------
     const switchSigningId = await createSigning(agent, "Draft prep switch");
     const { data: emptyPacket, error: emptyPacketError } = await admin
@@ -609,7 +759,7 @@ async function main() {
     const buyerParticipant = buyerRows[0].id as string;
     const coBuyerParticipant = coBuyerRow.id as string;
 
-    const geometry = { pageNumber: 1, width: 160, height: 40 };
+    const geometry = { pageNumber: 1, width: 150, height: 28 };
     const signature = await upsertDraftSigningFieldWithActor(
       agent,
       {
@@ -634,8 +784,8 @@ async function main() {
         x: 250,
         y: 600,
         pageNumber: 1,
-        width: 100,
-        height: 24,
+        width: 72,
+        height: 18,
       },
       admin,
     );
@@ -654,6 +804,20 @@ async function main() {
       },
       admin,
     );
+    const { data: sized, error: sizedError } = await admin
+      .from("signing_draft_fields")
+      .select("id, width, height")
+      .in("id", [signature.id, pairedDate.id]);
+    if (sizedError) fail(sizedError.message);
+    const sizeOf = (id: string) => {
+      const row = sized?.find((entry) => entry.id === id);
+      return `${Number(row?.width)}x${Number(row?.height)}`;
+    };
+    if (sizeOf(signature.id) !== "150x28" || sizeOf(pairedDate.id) !== "72x18") {
+      fail(`default geometry must persist exactly: ${sizeOf(signature.id)}, ${sizeOf(pairedDate.id)}`);
+    }
+    ok("compact default Signature and Date Signed geometry persists exactly");
+
     const afterReassign = await fieldsOf(signingId);
     const movedDate = afterReassign.find((row) => row.id === pairedDate.id);
     if (movedDate?.signing_participant_id !== coBuyerParticipant) {
@@ -671,8 +835,8 @@ async function main() {
         x: 400,
         y: 100,
         pageNumber: 1,
-        width: 80,
-        height: 40,
+        width: 40,
+        height: 20,
       },
       admin,
     );
@@ -727,8 +891,8 @@ async function main() {
         x: 250,
         y: 500,
         pageNumber: 1,
-        width: 100,
-        height: 24,
+        width: 72,
+        height: 18,
       },
       admin,
     );
@@ -797,6 +961,17 @@ async function main() {
     }
     if (packetContactIds.length > 0) {
       await admin.from("packet_contacts").delete().in("id", packetContactIds);
+    }
+    if (agreementIds.length > 0) {
+      await admin
+        .from("packets")
+        .update({ representation_agreement_id: null })
+        .in("representation_agreement_id", agreementIds);
+      await admin
+        .from("representation_agreement_clients")
+        .delete()
+        .in("representation_agreement_id", agreementIds);
+      await admin.from("representation_agreements").delete().in("id", agreementIds);
     }
     if (contactIds.length > 0) {
       await admin.from("contacts").delete().in("id", contactIds);

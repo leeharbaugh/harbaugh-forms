@@ -71,6 +71,17 @@ export async function listIncludedPacketDocumentPacketIds(
   return Array.from(packetIds);
 }
 
+function isSourcePacketMismatch(message: string | undefined): boolean {
+  return message?.includes("SOURCE_PACKET_DOCUMENT_MISMATCH") ?? false;
+}
+
+function sourcePacketMismatchError(): SigningError {
+  return new SigningError(
+    "INVALID_PACKET",
+    "The Packet Form does not belong to this Signing's source Packet.",
+  );
+}
+
 /**
  * One source Packet per Signing. Binds an unbound Draft to `packetId` with a
  * compare-and-set so concurrent adds from different Packets cannot both win.
@@ -230,6 +241,9 @@ export async function addDraftSigningDocumentWithActor(
       .select("*")
       .single();
     if (reincludeError || !reincluded) {
+      if (isSourcePacketMismatch(reincludeError?.message)) {
+        throw sourcePacketMismatchError();
+      }
       throw new Error(
         reincludeError?.message ?? "Failed to re-include Signing document.",
       );
@@ -275,6 +289,9 @@ export async function addDraftSigningDocumentWithActor(
         "CONFLICT",
         "That Packet Form is already included in this Signing.",
       );
+    }
+    if (isSourcePacketMismatch(insertError?.message)) {
+      throw sourcePacketMismatchError();
     }
     throw new Error(insertError?.message ?? "Failed to add Signing document.");
   }

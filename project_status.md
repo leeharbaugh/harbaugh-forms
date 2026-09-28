@@ -1,8 +1,26 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-28 (Native Signing manager QA pass 5 on PR #46 — Draft prep workflow: one source Packet, auto participants, full-height refresh-free Prepare Documents; Gate A paused; production Native Signing unavailable)
+**As of:** 2026-09-28 (Native Signing manager QA pass 6 on PR #46 — Packet selection imports parties atomically incl. agreement-backed Packets, one Participants section, compact Signature/Initials/Date Signed defaults; Gate A paused; production Native Signing unavailable)
 
 ## Current State
+
+### Native Signing manager QA pass 6 (2026-09-28; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. PR #46 stays open — do not merge until Lee re-QAs Packet selection / participant population and the new placement defaults.
+
+| Item | Result |
+|------|--------|
+| Participant-import root cause | Lee's Packet #2 is a Buyer Rep Packet whose parties live in `representation_agreement_clients` (agreement #1); it has no `packet_contacts`. `deriveSigningParticipantsFromPacket` read only `packet_contacts`, derived zero parties, and the bind still committed → "Packet selected, participants missing". Validator fixtures used `packet_contacts`, so they passed |
+| Derivation | Now reads ACTIVE `packet_contacts` plus ACTIVE clients of the Packet's representation agreement (BUYER_REP → Buyer, LISTING → Seller); dedupe by contact id; contacts must be ACTIVE and owned by the actor (others skipped with a note) |
+| Bind + import | One transaction: parties derived/validated first, then `signing_select_source_packet` RPC (service role only) locks the Signing row, compare-and-sets `source_packet_id` against the value read, and inserts missing parties. Returns the refreshed participant list; the UI reloads before showing the notice |
+| Concurrency | Competing selections: exactly one wins; the loser gets CONFLICT/INVALID_PACKET; participants always match the bound Packet. Trigger `signing_documents_enforce_source_packet` rejects inserting/re-including a Packet document from any other Packet in a Draft |
+| Participants layout | One **Participants** section in Prepare Signing: Add participant card, then the participant list (role, representative capacity, email or "No email", field warning, Remove participant). The separate bottom Participants card is hidden for a manageable Draft |
+| Placement defaults | Signature 150×28, Initials 40×20, Date Signed 72×18 PDF pt (was 160×40 / 80×40 / 100×24), sized from the completed-PDF renderer (Caveat typed marks, Helvetica `YYYY-MM-DD`); linked Date sits right of the Signature on its baseline |
+| Labels | Initials show the ceremony's suggested initials (`LH`) via the shared `suggestTypedInitialsFromDisplayName` (moved to pure `lib/signing/initials-suggestion.ts`, re-exported from `adopted-marks.ts`); Signature shows the human signer name; Date shows "Date"; full detail in tooltip/aria/sidebar. Overlays render exact geometry (no minimum inflation) |
+| Coverage | `npm run test:native-signing-draft-prep`; `npm run validate:native-signing-draft-prep-dev` (26 checks incl. legacy agreement Packet, races, trigger); browser QA `scripts/qa-signing-prepare-browser.ts` on an agreement-backed Packet |
+| Migration | `20260928120000_native_signing_source_packet_selection.sql` (dev only; also binds legacy unbound Drafts whose Packet documents come from one Packet) |
+| Known gap | Existing Drafts already bound with Packet documents (e.g. Lee's two Packet #2 Drafts) are not back-filled; add participants manually or start a new Draft |
+| Gate A | Remains paused |
 
 ### Native Signing manager QA pass 5 (2026-09-28; PR #46)
 

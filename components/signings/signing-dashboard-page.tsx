@@ -334,10 +334,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
               document.selectedDraftSourceSnapshotId,
             sourceKind: document.sourceKind,
           }))}
-          participants={dashboard.participants.map((participant) => ({
-            id: participant.id,
-            fullName: participant.fullName,
-          }))}
+          participants={dashboard.participants}
           participantsMissingFields={dashboard.participants
             .filter((participant) => !participant.hasSignatureOrInitialsField)
             .map((participant) => ({
@@ -561,108 +558,110 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         />
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Participants</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {dashboard.participants.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No participants have been added yet.
-            </p>
-          ) : (
-            dashboard.participants.map((participant) => (
-              <div
-                key={participant.id}
-                className="flex flex-col gap-1 rounded-lg border border-border p-3"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">
-                    {participant.fullName}
-                  </span>
-                  {participant.optionalRole ? (
-                    <Badge variant="outline">{participant.optionalRole}</Badge>
-                  ) : null}
-                  {participant.capacityMode === "REPRESENTATIVE" ? (
-                    <Badge variant="outline">
-                      Representative
-                      {participant.capacityLabel
-                        ? ` · ${
-                            SIGNING_CAPACITY_LABEL_OPTIONS.find(
-                              (option) =>
-                                option.value === participant.capacityLabel,
-                            )?.label ?? participant.capacityLabel
-                          }`
-                        : null}
-                      {participant.representedPartyName
-                        ? ` · ${participant.representedPartyName}`
-                        : null}
+      {isDraft && canManage ? null : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Participants</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {dashboard.participants.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No participants have been added yet.
+              </p>
+            ) : (
+              dashboard.participants.map((participant) => (
+                <div
+                  key={participant.id}
+                  className="flex flex-col gap-1 rounded-lg border border-border p-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">
+                      {participant.fullName}
+                    </span>
+                    {participant.optionalRole ? (
+                      <Badge variant="outline">{participant.optionalRole}</Badge>
+                    ) : null}
+                    {participant.capacityMode === "REPRESENTATIVE" ? (
+                      <Badge variant="outline">
+                        Representative
+                        {participant.capacityLabel
+                          ? ` · ${
+                              SIGNING_CAPACITY_LABEL_OPTIONS.find(
+                                (option) =>
+                                  option.value === participant.capacityLabel,
+                              )?.label ?? participant.capacityLabel
+                            }`
+                          : null}
+                        {participant.representedPartyName
+                          ? ` · ${participant.representedPartyName}`
+                          : null}
+                      </Badge>
+                    ) : null}
+                    <Badge variant="secondary">
+                      {participant.participantStatus.replace(/_/g, " ")}
                     </Badge>
-                  ) : null}
-                  <Badge variant="secondary">
-                    {participant.participantStatus.replace(/_/g, " ")}
-                  </Badge>
-                  {participant.deliveryState ? (
-                    <Badge
-                      variant={
-                        participant.deliveryState === "ACCEPTED"
-                          ? "success"
-                          : participant.deliveryState === "FAILED"
-                            ? "destructive"
-                            : "info"
-                      }
-                    >
-                      {deliveryLabel(participant.deliveryState)}
-                    </Badge>
-                  ) : null}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {participant.email}
-                </p>
-                {isDraft && !participant.hasSignatureOrInitialsField ? (
-                  <p className="text-xs text-warning-foreground">
-                    Needs at least one Signature or Initials field.
-                  </p>
-                ) : null}
-                {participant.lastDeliveryFailureSafe ? (
-                  <p className="text-xs text-destructive">
-                    {participant.lastDeliveryFailureSafe}
-                  </p>
-                ) : null}
-                {canStartHandoff &&
-                participant.participantStatus !== "FINISHED" &&
-                participant.participantStatus !== "DECLINED" ? (
-                  <div className="mt-1 space-y-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={handoffBusyParticipantId === participant.id}
-                      onClick={() => void startHandoff(participant.id)}
-                    >
-                      {handoffBusyParticipantId === participant.id
-                        ? "Preparing…"
-                        : "Hand device to this participant"}
-                    </Button>
-                    {handoff?.participantId === participant.id ? (
-                      <p className="text-xs text-muted-foreground">
-                        <a
-                          className="text-primary underline-offset-4 hover:underline"
-                          href={handoff.path}
-                        >
-                          Open {participant.fullName}&rsquo;s signing session
-                        </a>
-                        {" · expires "}
-                        {new Date(handoff.expiresAt).toLocaleTimeString()}
-                      </p>
+                    {participant.deliveryState ? (
+                      <Badge
+                        variant={
+                          participant.deliveryState === "ACCEPTED"
+                            ? "success"
+                            : participant.deliveryState === "FAILED"
+                              ? "destructive"
+                              : "info"
+                        }
+                      >
+                        {deliveryLabel(participant.deliveryState)}
+                      </Badge>
                     ) : null}
                   </div>
-                ) : null}
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+                  <p className="text-sm text-muted-foreground">
+                    {participant.email}
+                  </p>
+                  {isDraft && !participant.hasSignatureOrInitialsField ? (
+                    <p className="text-xs text-warning-foreground">
+                      Needs at least one Signature or Initials field.
+                    </p>
+                  ) : null}
+                  {participant.lastDeliveryFailureSafe ? (
+                    <p className="text-xs text-destructive">
+                      {participant.lastDeliveryFailureSafe}
+                    </p>
+                  ) : null}
+                  {canStartHandoff &&
+                  participant.participantStatus !== "FINISHED" &&
+                  participant.participantStatus !== "DECLINED" ? (
+                    <div className="mt-1 space-y-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={handoffBusyParticipantId === participant.id}
+                        onClick={() => void startHandoff(participant.id)}
+                      >
+                        {handoffBusyParticipantId === participant.id
+                          ? "Preparing…"
+                          : "Hand device to this participant"}
+                      </Button>
+                      {handoff?.participantId === participant.id ? (
+                        <p className="text-xs text-muted-foreground">
+                          <a
+                            className="text-primary underline-offset-4 hover:underline"
+                            href={handoff.path}
+                          >
+                            Open {participant.fullName}&rsquo;s signing session
+                          </a>
+                          {" · expires "}
+                          {new Date(handoff.expiresAt).toLocaleTimeString()}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <SigningCompletedOpsPanel
         signingId={signingId}

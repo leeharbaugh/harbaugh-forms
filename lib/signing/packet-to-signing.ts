@@ -1,7 +1,8 @@
 /**
  * Packet → Signing creation and participant derivation.
  *
- * Source of truth for parties: ACTIVE packet_contacts joined to contacts.
+ * Source of truth for parties: ACTIVE packet_contacts joined to contacts, plus
+ * ACTIVE clients of the Packet's representation agreement (legacy Packets).
  * Does not guess representative capacity from roles.
  * Does not include agents/brokers/TCs as participants.
  */
@@ -37,6 +38,7 @@ export type DerivedPacketSigningParticipant = {
   email: string;
   optionalRole: string | null;
   linkedContactId: number;
+  contactOwnerUserId: string | null;
   packetRole: PacketContactRole;
 };
 
@@ -63,9 +65,87 @@ function roleLabel(role: PacketContactRole): string {
   }
 }
 
+function agreementClientRole(agreementType: unknown): PacketContactRole {
+  if (agreementType === "BUYER_REP") return "BUYER";
+  if (agreementType === "LISTING") return "SELLER";
+  return "PRIMARY";
+}
+
+function firstJoined<T>(value: T | T[] | null | undefined): T | null {
+  return (Array.isArray(value) ? value[0] : value) ?? null;
+}
+
+/**
+ * A Packet's parties live in ACTIVE packet_contacts and, for Packets created
+ * from a representation agreement, in that agreement's ACTIVE clients.
+ */
+async function loadPacketPartyRows(
+  admin: SupabaseClient,
+  packetId: number,
+): Promise<
+  { contactId: number; role: PacketContactRole; contact: Contact | null }[]
+> {
+  const { data, error } = await admin
+    .from("packet_contacts")
+    .select("contact_id, packet_role, sort_order, status, contacts(*)")
+    .eq("packet_id", packetId)
+    .eq("status", "ACTIVE")
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []).map((row) => ({
+    contactId: row.contact_id as number,
+    role: row.packet_role as PacketContactRole,
+    contact: firstJoined(row.contacts as Contact | Contact[] | null),
+  }));
+
+  const { data: packet, error: packetError } = await admin
+    .from("packets")
+    .select(
+      "representation_agreement_id, representation_agreements(agreement_type, representation_agreement_clients(contact_id, sort_order, status, contacts(*)))",
+    )
+    .eq("id", packetId)
+    .maybeSingle();
+  if (packetError) throw new Error(packetError.message);
+
+  type AgreementJoin = {
+    agreement_type: string;
+    representation_agreement_clients:
+      | {
+          contact_id: number;
+          sort_order: number;
+          status: string;
+          contacts: Contact | Contact[] | null;
+        }[]
+      | null;
+  };
+  const agreement = firstJoined(
+    packet?.representation_agreements as unknown as
+      | AgreementJoin
+      | AgreementJoin[]
+      | null,
+  );
+  if (agreement) {
+    const role = agreementClientRole(agreement.agreement_type);
+    const clients = [...(agreement.representation_agreement_clients ?? [])]
+      .filter((link) => link.status === "ACTIVE")
+      .sort((a, b) => a.sort_order - b.sort_order || a.contact_id - b.contact_id);
+    for (const link of clients) {
+      rows.push({
+        contactId: link.contact_id,
+        role,
+        contact: firstJoined(link.contacts),
+      });
+    }
+  }
+
+  return rows;
+}
+
 /**
  * Deterministic derivation: one participant per contact id (first role wins
- * for optional_role label; sort_order then id).
+ * for optional_role label; packet_contacts before agreement clients).
  */
 export async function deriveSigningParticipantsFromPacket(
   admin: SupabaseClient,
@@ -74,31 +154,20 @@ export async function deriveSigningParticipantsFromPacket(
   participants: DerivedPacketSigningParticipant[];
   reviewNote: string | null;
 }> {
-  const { data, error } = await admin
-    .from("packet_contacts")
-    .select("contact_id, packet_role, sort_order, status, contacts(*)")
-    .eq("packet_id", packetId)
-    .eq("status", "ACTIVE")
-    .order("sort_order", { ascending: true })
-    .order("id", { ascending: true });
-
-  if (error) throw new Error(error.message);
+  const rows = await loadPacketPartyRows(admin, packetId);
 
   const allowed = new Set<string>(PACKET_SIGNING_PARTY_ROLES);
   const seenContacts = new Set<number>();
   const participants: DerivedPacketSigningParticipant[] = [];
   let skippedUnnamed = 0;
 
-  for (const row of data ?? []) {
-    const role = row.packet_role as PacketContactRole;
+  for (const row of rows) {
+    const role = row.role;
     if (!allowed.has(role)) continue;
-    const contactId = row.contact_id as number;
+    const contactId = row.contactId;
     if (seenContacts.has(contactId)) continue;
 
-    const contactRaw = row.contacts;
-    const contact = (
-      Array.isArray(contactRaw) ? contactRaw[0] : contactRaw
-    ) as Contact | null;
+    const contact = row.contact;
     if (!contact || contact.status !== "ACTIVE") continue;
     if (!hasUsableContactDisplayName(contact)) {
       skippedUnnamed += 1;
@@ -112,6 +181,7 @@ export async function deriveSigningParticipantsFromPacket(
       email,
       optionalRole: roleLabel(role),
       linkedContactId: contactId,
+      contactOwnerUserId: contact.owner_user_id ?? null,
       packetRole: role,
     });
   }

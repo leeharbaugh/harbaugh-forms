@@ -61,6 +61,7 @@ async function main() {
   let userId = "";
   let organizationId = "";
   let packetId = 0;
+  let agreementId = 0;
   const formIds: number[] = [];
   const contactIds: number[] = [];
   const generatedPaths: string[] = [];
@@ -169,9 +170,18 @@ async function main() {
       generatedPaths.push(storagePath);
       await admin.from("packet_forms").update({ storage_path: storagePath }).eq("id", formId);
     }
-    for (const [first, last, role, sort] of [
-      ["Bea", "Buyer", "BUYER", 0],
-      ["Cal", "Cobuyer", "CO_CLIENT", 1],
+    // Same shape as the manager's failing Packet: a Buyer Rep Packet whose
+    // parties live on its representation agreement, with no packet_contacts.
+    const { data: agreement, error: agreementError } = await admin
+      .from("representation_agreements")
+      .insert({ agreement_type: "BUYER_REP", effective_date: "2026-06-09", owner_user_id: userId })
+      .select("id")
+      .single();
+    if (agreementError || !agreement) fail(agreementError?.message ?? "agreement");
+    agreementId = agreement.id as number;
+    for (const [first, last, withEmail, sort] of [
+      ["Lee", "Harbaugh", true, 0],
+      ["Cal", "Cobuyer", false, 1],
     ] as const) {
       const { data: contact } = await admin
         .from("contacts")
@@ -180,20 +190,19 @@ async function main() {
           contact_type: "INDIVIDUAL",
           first_name: first,
           last_name: last,
-          email: role === "BUYER" ? `bea-${stamp}@example.com` : null,
+          email: withEmail ? `lee-${stamp}@example.com` : null,
           status: "ACTIVE",
         })
         .select("id")
         .single();
       contactIds.push(contact!.id as number);
-      await admin.from("packet_contacts").insert({
-        packet_id: packetId,
+      await admin.from("representation_agreement_clients").insert({
+        representation_agreement_id: agreementId,
         contact_id: contact!.id,
-        packet_role: role,
         sort_order: sort,
-        status: "ACTIVE",
       });
     }
+    await admin.from("packets").update({ representation_agreement_id: agreementId }).eq("id", packetId);
 
     // Sign in via one-time magic link and create a blank Signing in the UI.
     const { data: link, error: linkError } = await admin.auth.admin.generateLink({
@@ -218,13 +227,42 @@ async function main() {
     signingId = page.url().split("/signings/")[1].split(/[?#/]/)[0];
     ok(`blank Signing created ${signingId}`);
 
-    // Select the Packet: participants populate automatically.
+    // An ad hoc participant first; it must survive Packet selection.
     await page.getByRole("button", { name: "Use this Packet" }).waitFor({ timeout: 60000 });
+    const participantList = page.locator('[data-testid="draft-participant-list"]');
+    await page.locator("#participant-name").fill("Ad Hoc Witness");
+    await page.getByRole("button", { name: "Add participant", exact: true }).click();
+    await participantList.getByText("Ad Hoc Witness").waitFor({ timeout: 30000 });
+    ok("ad hoc participant added before choosing a Packet");
+
+    // Select the Packet: its parties appear under Participants immediately.
     await page.locator("#source-packet").selectOption(String(packetId));
     await page.getByRole("button", { name: "Use this Packet" }).click();
     await page.getByText(/Packet selected\. Added 2 participants/).waitFor({ timeout: 30000 });
-    await page.getByText("Bea Buyer").first().waitFor();
-    await page.getByText("Cal Cobuyer").first().waitFor();
+    const listText = await participantList.innerText();
+    for (const name of ["Ad Hoc Witness", "Lee Harbaugh", "Cal Cobuyer"]) {
+      const count = listText.split(name).length - 1;
+      if (count !== 1) fail(`${name} appears ${count} times under Participants: ${listText}`);
+    }
+    if (!listText.includes("No email")) fail("party without email must show No email");
+    if ((await participantList.getByRole("button", { name: "Remove participant" }).count()) !== 3) {
+      fail("each participant must keep Remove participant");
+    }
+    const sectionOrder = await page.evaluate(() => {
+      const heading = document.getElementById("draft-participants-heading");
+      const section = heading?.closest("section");
+      const list = document.querySelector('[data-testid="draft-participant-list"]');
+      const add = Array.from(section?.querySelectorAll("p") ?? []).find(
+        (el) => el.textContent === "Add participant",
+      );
+      return Boolean(
+        section && list && add && section.contains(list) &&
+          add.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    });
+    if (!sectionOrder) fail("participant list must sit directly below Add participant in one section");
+    const participantCards = await page.getByText("Participants", { exact: true }).count();
+    if (participantCards !== 1) fail(`expected one Participants section, found ${participantCards}`);
     await page
       .locator("#source-packet")
       .waitFor({ state: "detached", timeout: 10000 })
@@ -233,7 +271,14 @@ async function main() {
     if ((await page.getByRole("button", { name: "Change Packet" }).count()) !== 0) {
       fail("Change Packet must be hidden once Packet parties exist");
     }
-    ok("selecting the Packet populated both parties; selector locked");
+    await participantList.scrollIntoViewIfNeeded();
+    await shot(page, "00-participants-after-packet");
+    ok("Packet parties appeared immediately under Participants (no duplicates, ad hoc kept); selector locked");
+    const { data: dbParticipants } = await admin
+      .from("signing_participants")
+      .select("full_name")
+      .eq("signing_id", signingId);
+    if ((dbParticipants ?? []).length !== 3) fail("database must hold exactly 3 participants");
     await page.getByRole("button", { name: "Add all remaining packet documents" }).click();
     await page.getByText(/Added 2 documents from the Packet/).waitFor({ timeout: 60000 });
     await shot(page, "01-dashboard-after-packet");
@@ -274,7 +319,7 @@ async function main() {
     if (scrollBefore <= 0) fail("expected the workspace to be scrolled to page 2");
 
     // Place a Signature on page 2 (auto Date Signed).
-    await page.locator("#prepare-participant").selectOption({ label: "Bea Buyer" });
+    await page.locator("#prepare-participant").selectOption({ label: "Lee Harbaugh" });
     await page.locator("#prepare-field-type").selectOption("SIGNATURE");
     const page2 = page.locator(".react-pdf__Page").nth(1);
     await page2.click({ position: { x: 200, y: 300 } });
@@ -292,10 +337,36 @@ async function main() {
       fail(`scroll reset after place: ${scrollBefore} -> ${scrollAfterPlace}`);
     }
     ok("Signature + linked Date Signed placed on page 2; scroll preserved");
+    const scale = pageBox.width / 612;
+    if (
+      `${signature.width}x${signature.height}` !== "150x28" ||
+      `${pairedDate.width}x${pairedDate.height}` !== "72x18"
+    ) {
+      fail(`defaults: Signature ${signature.width}x${signature.height}, Date ${pairedDate.width}x${pairedDate.height}`);
+    }
+    if (Math.abs(pairedDate.y + pairedDate.height - (signature.y + signature.height)) > 0.5) {
+      fail("linked Date Signed must share the Signature's baseline");
+    }
+    const sigBox = (await page.locator('.signing-field-overlay:has([data-field-type="SIGNATURE"])').first().boundingBox())!;
+    const dateBox = (await page.locator('.signing-field-overlay:has([data-field-type="DATE_SIGNED"])').first().boundingBox())!;
+    if (Math.abs(sigBox.width - 150 * scale) > 1.5 || Math.abs(sigBox.height - 28 * scale) > 1.5) {
+      fail(`Signature overlay ${sigBox.width}x${sigBox.height} does not match 150x28 at scale ${scale}`);
+    }
+    if (Math.abs(dateBox.width - 72 * scale) > 1.5 || Math.abs(dateBox.height - 18 * scale) > 1.5) {
+      fail(`Date overlay ${dateBox.width}x${dateBox.height} does not match 72x18`);
+    }
+    const sigLabel = await page.locator('[data-field-type="SIGNATURE"]').first().getAttribute("data-field-label");
+    const dateLabel = await page.locator('[data-field-type="DATE_SIGNED"]').first().getAttribute("data-field-label");
+    if (sigLabel !== "Lee Harbaugh" || dateLabel !== "Date") fail(`labels: ${sigLabel} / ${dateLabel}`);
+    ok(`Signature 150x28 pt (${Math.round(sigBox.width)}x${Math.round(sigBox.height)} px) and smaller linked Date 72x18 pt on its baseline; labels "${sigLabel}" / "${dateLabel}"`);
+    await page.screenshot({
+      path: path.join(OUT_DIR, "03b-signature-date-closeup.png"),
+      clip: { x: sigBox.x - 20, y: sigBox.y - 30, width: sigBox.width + dateBox.width + 60, height: sigBox.height + 60 },
+    });
     await shot(page, "03-placed");
 
     // Drag the Signature.
-    const sigOverlay = page.locator(".signing-field-overlay", { hasText: "Signature" }).first();
+    const sigOverlay = page.locator('.signing-field-overlay:has([data-field-type="SIGNATURE"])').first();
     const box = (await sigOverlay.boundingBox())!;
     await page.mouse.move(box.x + 20, box.y + box.height / 2);
     await page.mouse.down();
@@ -351,12 +422,30 @@ async function main() {
     ok("reassign moved the Signature and its Date Signed to Cal Cobuyer");
 
     // Initials: place and remove independently.
-    await page.locator("#prepare-participant").selectOption({ label: "Bea Buyer" });
+    await page.locator("#prepare-participant").selectOption({ label: "Lee Harbaugh" });
     await page.locator("#prepare-field-type").selectOption("INITIALS");
     await page2.click({ position: { x: 450, y: 650 } });
     await waitSaved();
-    if ((await draftFields()).length !== 3) fail("Initials were not placed");
-    const initialsOverlay = page.locator(".signing-field-overlay", { hasText: "Initials" }).first();
+    const withInitials = await draftFields();
+    if (withInitials.length !== 3) fail("Initials were not placed");
+    const initialsRow = withInitials.find((row) => row.field_type === "INITIALS")!;
+    if (`${initialsRow.width}x${initialsRow.height}` !== "40x20") {
+      fail(`Initials default ${initialsRow.width}x${initialsRow.height}`);
+    }
+    const initialsOverlay = page.locator('.signing-field-overlay:has([data-field-type="INITIALS"])').first();
+    const initialsBox = (await initialsOverlay.boundingBox())!;
+    if (Math.abs(initialsBox.width - 40 * scale) > 1.5 || Math.abs(initialsBox.height - 20 * scale) > 1.5) {
+      fail(`Initials overlay ${initialsBox.width}x${initialsBox.height} does not match 40x20`);
+    }
+    const initialsText = (await initialsOverlay.locator('[data-field-type="INITIALS"]').innerText()).trim();
+    const initialsAria = await initialsOverlay.locator('[data-field-type="INITIALS"]').getAttribute("aria-label");
+    if (initialsText !== "LH") fail(`Initials label must be LH, got "${initialsText}"`);
+    if (initialsAria !== "Initials for Lee Harbaugh") fail(`Initials aria-label: ${initialsAria}`);
+    ok(`Initials 40x20 pt (${Math.round(initialsBox.width)}x${Math.round(initialsBox.height)} px) labelled "LH"; aria "${initialsAria}"`);
+    await page.screenshot({
+      path: path.join(OUT_DIR, "03c-initials-closeup.png"),
+      clip: { x: initialsBox.x - 30, y: initialsBox.y - 30, width: initialsBox.width + 60, height: initialsBox.height + 60 },
+    });
     await initialsOverlay.click({ position: { x: 30, y: 14 } });
     await initialsOverlay.locator(".signing-field-remove").click();
     await waitSaved();
@@ -383,24 +472,58 @@ async function main() {
     }
     ok("Remove deleted the Signature and its Date Signed; no refresh, scroll kept");
 
-    // Place one more pair, close, and verify read-only Preview shows it.
-    await page.locator("#prepare-field-type").selectOption("SIGNATURE");
-    await page.locator(".react-pdf__Page").first().click({ position: { x: 150, y: 500 } });
+    // Place Initials + a Signature pair on page 1, close, and compare Preview.
+    const firstPage = page.locator(".react-pdf__Page").first();
+    await firstPage.scrollIntoViewIfNeeded();
+    await page.locator("#prepare-field-type").selectOption("INITIALS");
+    await firstPage.click({ position: { x: 500, y: 700 } });
     await waitSaved();
+    await page.locator("#prepare-field-type").selectOption("SIGNATURE");
+    await firstPage.click({ position: { x: 150, y: 500 } });
+    await waitSaved();
+    const overlayRects = async (selector: string) => {
+      const pageRect = (await firstPage.boundingBox())!;
+      return page.$$eval(
+        selector,
+        (nodes, origin) =>
+          nodes
+            .map((node) => {
+              const box = (node.closest(".signing-field-overlay, .pointer-events-none") ?? node).getBoundingClientRect();
+              return {
+                type: node.getAttribute("data-field-type"),
+                x: Math.round(box.x - origin.x),
+                y: Math.round(box.y - origin.y),
+                w: Math.round(box.width),
+                h: Math.round(box.height),
+              };
+            })
+            .filter((rect) => rect.y >= 0 && rect.y < origin.height)
+            .sort((a, b) => String(a.type).localeCompare(String(b.type))),
+        { x: pageRect.x, y: pageRect.y, height: pageRect.height },
+      );
+    };
+    const prepareRects = await overlayRects("[data-field-type]");
+    if (prepareRects.length !== 3) fail(`expected 3 page-1 fields, got ${JSON.stringify(prepareRects)}`);
     await shot(page, "04-before-close");
     await page.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: "Preview Signing" }).first().click();
     await page.getByRole("heading", { name: "Preview Signing" }).waitFor();
     await page.locator(".react-pdf__Page canvas").first().waitFor({ timeout: 60000 });
     await page.waitForTimeout(1500);
-    const previewOverlays = page.locator(".pointer-events-none.absolute", {
-      hasText: "Bea Buyer",
-    });
-    if ((await previewOverlays.count()) < 2) fail("Preview did not show the persisted pair");
     if ((await page.locator(".signing-field-overlay").count()) !== 0) {
       fail("Preview must be read-only");
     }
-    ok("Preview renders the same persisted fields read-only");
+    const previewRects = await overlayRects("[data-field-type]");
+    if (JSON.stringify(previewRects) !== JSON.stringify(prepareRects)) {
+      const close = previewRects.length === prepareRects.length && previewRects.every((rect, index) => {
+        const other = prepareRects[index];
+        return rect.type === other.type && ["x", "y", "w", "h"].every(
+          (key) => Math.abs((rect as Record<string, number | string | null>)[key] as number - ((other as Record<string, number | string | null>)[key] as number)) <= 2,
+        );
+      });
+      if (!close) fail(`Preview geometry differs: ${JSON.stringify(prepareRects)} vs ${JSON.stringify(previewRects)}`);
+    }
+    ok(`Preview shows Initials, Signature, and Date at the same geometry read-only: ${JSON.stringify(previewRects)}`);
     await shot(page, "05-preview");
 
     console.log("\nPrepare Documents browser QA: all checks passed.");
@@ -438,8 +561,13 @@ async function main() {
     if (generatedPaths.length > 0) {
       await admin.storage.from(GENERATED_DOCUMENTS_BUCKET).remove(generatedPaths);
     }
-    if (packetId) {
-      await admin.from("packet_contacts").delete().eq("packet_id", packetId);
+    if (agreementId) {
+      await admin.from("packets").update({ representation_agreement_id: null }).eq("id", packetId);
+      await admin
+        .from("representation_agreement_clients")
+        .delete()
+        .eq("representation_agreement_id", agreementId);
+      await admin.from("representation_agreements").delete().eq("id", agreementId);
     }
     if (contactIds.length > 0) await admin.from("contacts").delete().in("id", contactIds);
     if (formIds.length > 0) {

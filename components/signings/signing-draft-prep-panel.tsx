@@ -49,6 +49,17 @@ type DraftDocument = {
   sourceKind?: string | null;
 };
 
+type DraftParticipant = {
+  id: string;
+  fullName: string;
+  email: string;
+  optionalRole: string | null;
+  hasSignatureOrInitialsField: boolean;
+  capacityMode?: SigningCapacityMode;
+  representedPartyName?: string | null;
+  capacityLabel?: SigningCapacityLabel | null;
+};
+
 const DEFAULT_CAPACITY_LABEL: SigningCapacityLabel = "ATTORNEY_IN_FACT";
 
 export function SigningDraftPrepPanel({
@@ -69,7 +80,7 @@ export function SigningDraftPrepPanel({
   sourcePacketId: number | null;
   firstDocumentId: string | null;
   documents: DraftDocument[];
-  participants: { id: string; fullName: string }[];
+  participants: DraftParticipant[];
   participantsMissingFields: { id: string; fullName: string }[];
   onChanged: () => Promise<void>;
   onResolveDrift: (
@@ -216,10 +227,17 @@ export function SigningDraftPrepPanel({
       await onChanged();
       await loadPacketForms();
       await loadSourceState();
+      const skipped = data.skippedExistingParticipantCount;
       setNotice(
         added > 0
-          ? `Packet selected. Added ${added} participant${added === 1 ? "" : "s"} from the Packet.`
-          : "Packet selected. No new participants were found on the Packet.",
+          ? `Packet selected. Added ${added} participant${added === 1 ? "" : "s"} from the Packet.${
+              data.reviewNote?.includes("not available to you")
+                ? ` ${data.reviewNote}`
+                : ""
+            }`
+          : skipped > 0
+            ? "Packet selected. Its parties are already participants."
+            : `Packet selected. ${data.reviewNote ?? "No Packet transaction parties were found."}`,
       );
     }
     setBusy(false);
@@ -670,129 +688,170 @@ export function SigningDraftPrepPanel({
           </div>
         </div>
 
-        <div className="space-y-3 rounded-lg border border-border p-3">
-          <p className="text-sm font-medium">Add participant</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="participant-name">Full name</Label>
-              <Input
-                id="participant-name"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                disabled={busy}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="participant-email">Email (optional)</Label>
-              <Input
-                id="participant-email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                disabled={busy}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="signing-capacity-mode">Signing as</Label>
-            <select
-              id="signing-capacity-mode"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-              value={signingCapacityMode}
-              onChange={(event) =>
-                setSigningCapacityMode(
-                  event.target.value as SigningCapacityMode,
-                )
-              }
-              disabled={busy}
-            >
-              <option value="PERSONAL">Personal</option>
-              <option value="REPRESENTATIVE">Representative</option>
-            </select>
-          </div>
-
-          {signingCapacityMode === "REPRESENTATIVE" ? (
+        <section className="space-y-3" aria-labelledby="draft-participants-heading">
+          <p id="draft-participants-heading" className="text-sm font-medium">
+            Participants
+          </p>
+          <div className="space-y-3 rounded-lg border border-border p-3">
+            <p className="text-sm font-medium">Add participant</p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="represented-party">Representing</Label>
+              <div className="space-y-2">
+                <Label htmlFor="participant-name">Full name</Label>
                 <Input
-                  id="represented-party"
-                  value={representedPartyName}
-                  onChange={(event) =>
-                    setRepresentedPartyName(event.target.value)
-                  }
+                  id="participant-name"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
                   disabled={busy}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="capacity-label">Capacity</Label>
-                <select
-                  id="capacity-label"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                  value={capacityLabel}
-                  onChange={(event) => {
-                    setCapacityWordingTouched(false);
-                    setCapacityLabel(
-                      event.target.value as SigningCapacityLabel,
-                    );
-                  }}
-                  disabled={busy}
-                >
-                  {SIGNING_CAPACITY_LABEL_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="capacity-wording">Exact execution wording</Label>
+                <Label htmlFor="participant-email">Email (optional)</Label>
                 <Input
-                  id="capacity-wording"
-                  value={capacityWording}
-                  onChange={(event) => {
-                    setCapacityWordingTouched(true);
-                    setCapacityWording(event.target.value);
-                  }}
+                  id="participant-email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                   disabled={busy}
                 />
               </div>
             </div>
-          ) : null}
 
-          <Button
-            type="button"
-            size="sm"
-            disabled={busy || !canAddParticipant}
-            onClick={() => void addParticipant()}
-          >
-            Add participant
-          </Button>
-        </div>
-
-        {participants.length > 0 ? (
-          <div className="space-y-3 rounded-lg border border-border p-3">
-            <p className="text-sm font-medium">Draft participants</p>
-            {participants.map((participant) => (
-              <div
-                key={participant.id}
-                className="flex flex-wrap items-center justify-between gap-2"
+            <div className="space-y-2">
+              <Label htmlFor="signing-capacity-mode">Signing as</Label>
+              <select
+                id="signing-capacity-mode"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                value={signingCapacityMode}
+                onChange={(event) =>
+                  setSigningCapacityMode(
+                    event.target.value as SigningCapacityMode,
+                  )
+                }
+                disabled={busy}
               >
-                <span className="text-sm">{participant.fullName}</span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void removeParticipant(participant.id)}
-                >
-                  Remove participant
-                </Button>
+                <option value="PERSONAL">Personal</option>
+                <option value="REPRESENTATIVE">Representative</option>
+              </select>
+            </div>
+
+            {signingCapacityMode === "REPRESENTATIVE" ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="represented-party">Representing</Label>
+                  <Input
+                    id="represented-party"
+                    value={representedPartyName}
+                    onChange={(event) =>
+                      setRepresentedPartyName(event.target.value)
+                    }
+                    disabled={busy}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="capacity-label">Capacity</Label>
+                  <select
+                    id="capacity-label"
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                    value={capacityLabel}
+                    onChange={(event) => {
+                      setCapacityWordingTouched(false);
+                      setCapacityLabel(
+                        event.target.value as SigningCapacityLabel,
+                      );
+                    }}
+                    disabled={busy}
+                  >
+                    {SIGNING_CAPACITY_LABEL_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="capacity-wording">Exact execution wording</Label>
+                  <Input
+                    id="capacity-wording"
+                    value={capacityWording}
+                    onChange={(event) => {
+                      setCapacityWordingTouched(true);
+                      setCapacityWording(event.target.value);
+                    }}
+                    disabled={busy}
+                  />
+                </div>
               </div>
-            ))}
+            ) : null}
+
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy || !canAddParticipant}
+              onClick={() => void addParticipant()}
+            >
+              Add participant
+            </Button>
           </div>
-        ) : null}
+
+          <div className="space-y-2" data-testid="draft-participant-list">
+            {participants.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No participants have been added yet.
+              </p>
+            ) : (
+              participants.map((participant) => (
+                <div
+                  key={participant.id}
+                  className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-border p-3"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="font-medium">{participant.fullName}</span>
+                      {participant.optionalRole ? (
+                        <span className="text-muted-foreground">
+                          {participant.optionalRole}
+                        </span>
+                      ) : null}
+                      {participant.capacityMode === "REPRESENTATIVE" ? (
+                        <span className="text-muted-foreground">
+                          Representative
+                          {participant.capacityLabel
+                            ? ` · ${
+                                SIGNING_CAPACITY_LABEL_OPTIONS.find(
+                                  (option) =>
+                                    option.value === participant.capacityLabel,
+                                )?.label ?? participant.capacityLabel
+                              }`
+                            : null}
+                          {participant.representedPartyName
+                            ? ` · ${participant.representedPartyName}`
+                            : null}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {participant.email || "No email"}
+                    </p>
+                    {!participant.hasSignatureOrInitialsField ? (
+                      <p className="text-xs text-warning-foreground">
+                        Needs at least one Signature or Initials field.
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void removeParticipant(participant.id)}
+                  >
+                    Remove participant
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
 
         {participantsMissingFields.length > 0 ? (
           <div className="space-y-3 rounded-lg border border-border p-3">

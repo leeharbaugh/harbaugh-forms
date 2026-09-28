@@ -7,13 +7,14 @@
  * Signing holds no Packet-derived documents or participants; it never remaps.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  bindSigningSourcePacketIfUnset,
-  listIncludedPacketDocumentPacketIds,
-} from "./draft-documents";
-import { addDraftSigningParticipantWithActor } from "./draft-participants";
+import { listIncludedPacketDocumentPacketIds } from "./draft-documents";
 import { SigningError } from "./errors";
-import { parsePositiveInt, requireManageableDraftSigning } from "./manage";
+import {
+  normalizeOptionalText,
+  normalizeRequiredText,
+  parsePositiveInt,
+  requireManageableDraftSigning,
+} from "./manage";
 import { deriveSigningParticipantsFromPacket } from "./packet-to-signing";
 import type { SigningActor, SigningRow } from "./types";
 
@@ -29,6 +30,12 @@ export type SelectDraftSourcePacketResult = {
   addedParticipantCount: number;
   skippedExistingParticipantCount: number;
   reviewNote: string | null;
+  participants: {
+    id: string;
+    fullName: string;
+    email: string;
+    linkedContactId: number | null;
+  }[];
 };
 
 const SWITCH_BLOCKED_MESSAGE =
@@ -154,10 +161,37 @@ export async function loadDraftSourcePacketStateWithActor(
   };
 }
 
+const SELECTION_ERRORS: Record<string, [SigningError["code"], string]> = {
+  SOURCE_PACKET_CONFLICT: [
+    "CONFLICT",
+    "The Signing's source Packet changed. Reload and try again.",
+  ],
+  SOURCE_PACKET_HAS_DOCUMENTS: ["INVALID_PACKET", SWITCH_BLOCKED_MESSAGE],
+  SOURCE_PACKET_HAS_PARTICIPANTS: ["INVALID_PACKET", SWITCH_BLOCKED_MESSAGE],
+  SOURCE_PACKET_NOT_DRAFT: [
+    "CONFLICT",
+    "Only a Draft Signing can change its source Packet.",
+  ],
+  SOURCE_PACKET_SIGNING_NOT_FOUND: ["NOT_FOUND", "Signing not found."],
+};
+
+function selectionError(message: string): Error {
+  const key = Object.keys(SELECTION_ERRORS).find((code) =>
+    message.includes(code),
+  );
+  if (!key) return new Error(message);
+  const [code, text] = SELECTION_ERRORS[key];
+  return new SigningError(code, text);
+}
+
 /**
- * Bind (or safely switch) the Signing's source Packet and import that Packet's
- * transaction parties. Existing participants are never deleted or merged;
- * Packet parties already linked by contact id are skipped.
+ * Select the Signing's source Packet and import that Packet's transaction
+ * parties as one operation. Parties are derived and validated first; the bind
+ * (compare-and-set against the source read here) and the participant inserts
+ * then commit together under the Signing row lock, so a Signing is never bound
+ * without its parties or populated from a Packet it is not bound to. Existing
+ * participants are never deleted or merged; parties already linked by contact
+ * id are skipped. One-time Draft population, no live sync.
  */
 export async function selectDraftSourcePacketWithActor(
   actor: SigningActor,
@@ -173,71 +207,61 @@ export async function selectDraftSourcePacketWithActor(
   await requireOwnedPacket(actor, admin, packetId);
 
   if (signing.source_packet_id !== packetId) {
-    if (signing.source_packet_id == null) {
-      await bindSigningSourcePacketIfUnset(admin, signing.id, packetId);
-    } else {
-      const { allowed, reason } = await assessSourcePacketSwitch(admin, signing);
-      if (!allowed) {
-        throw new SigningError("INVALID_PACKET", reason ?? SWITCH_BLOCKED_MESSAGE);
-      }
-      const { data: switched, error: switchError } = await admin
-        .from("signings")
-        .update({ source_packet_id: packetId })
-        .eq("id", signing.id)
-        .eq("source_packet_id", signing.source_packet_id)
-        .select("id")
-        .maybeSingle();
-      if (switchError) throw new Error(switchError.message);
-      if (!switched) {
-        throw new SigningError(
-          "CONFLICT",
-          "The Signing's source Packet changed. Reload and try again.",
-        );
-      }
+    const { allowed, reason } = await assessSourcePacketSwitch(admin, signing);
+    if (!allowed) {
+      throw new SigningError("INVALID_PACKET", reason ?? SWITCH_BLOCKED_MESSAGE);
     }
   }
 
   const derived = await deriveSigningParticipantsFromPacket(admin, packetId);
-
-  const { data: existing, error: existingError } = await admin
-    .from("signing_participants")
-    .select("linked_contact_id, participant_status")
-    .eq("signing_id", signing.id);
-  if (existingError) throw new Error(existingError.message);
-  const linkedContactIds = new Set(
-    (existing ?? [])
-      .filter((row) => row.participant_status !== "REMOVED")
-      .map((row) => row.linked_contact_id as number | null)
-      .filter((id): id is number => id != null),
+  const usable = derived.participants.filter(
+    (party) => party.contactOwnerUserId === actor.userId,
   );
+  const unavailable = derived.participants.length - usable.length;
+  const reviewNote = [
+    derived.reviewNote,
+    unavailable > 0
+      ? `${unavailable} Packet party(ies) were skipped because the contact is not available to you.`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" ") || null;
+  const parties = usable.map((party) => ({
+    full_name: normalizeRequiredText(party.fullName, "full name", 200),
+    email: party.email
+      ? normalizeRequiredText(party.email, "email", 320).toLowerCase()
+      : "",
+    optional_role: normalizeOptionalText(party.optionalRole, "role", 120),
+    linked_contact_id: party.linkedContactId,
+  }));
 
-  let addedParticipantCount = 0;
-  let skippedExistingParticipantCount = 0;
-  for (const party of derived.participants) {
-    if (linkedContactIds.has(party.linkedContactId)) {
-      skippedExistingParticipantCount += 1;
-      continue;
-    }
-    await addDraftSigningParticipantWithActor(
-      actor,
-      {
-        signingId: signing.id,
-        fullName: party.fullName,
-        email: party.email,
-        optionalRole: party.optionalRole,
-        linkedContactId: party.linkedContactId,
-        signingCapacityMode: "PERSONAL",
-      },
-      admin,
-    );
-    linkedContactIds.add(party.linkedContactId);
-    addedParticipantCount += 1;
-  }
+  const { data, error } = await admin.rpc("signing_select_source_packet", {
+    p_signing_id: signing.id,
+    p_expected_source_packet_id: signing.source_packet_id,
+    p_packet_id: packetId,
+    p_parties: parties,
+  });
+  if (error) throw selectionError(error.message);
+
+  const counts = (data ?? {}) as { added?: number; skipped?: number };
+  const { data: rows, error: listError } = await admin
+    .from("signing_participants")
+    .select("id, full_name, email, linked_contact_id")
+    .eq("signing_id", signing.id)
+    .neq("participant_status", "REMOVED")
+    .order("display_order", { ascending: true });
+  if (listError) throw new Error(listError.message);
 
   return {
     sourcePacketId: packetId,
-    addedParticipantCount,
-    skippedExistingParticipantCount,
-    reviewNote: derived.reviewNote,
+    addedParticipantCount: counts.added ?? 0,
+    skippedExistingParticipantCount: counts.skipped ?? 0,
+    reviewNote,
+    participants: (rows ?? []).map((row) => ({
+      id: row.id as string,
+      fullName: row.full_name as string,
+      email: row.email as string,
+      linkedContactId: (row.linked_contact_id as number | null) ?? null,
+    })),
   };
 }

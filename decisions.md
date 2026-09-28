@@ -12,6 +12,27 @@ Each decision should include:
 
 ---
 
+## Packet selection and Packet-party population are one Draft preparation action
+
+**Date:** 2026-09-28
+
+**Decision:**
+From the user's perspective, choosing a source Packet and populating that Packet's parties is a single action. The server derives and validates the parties first, then binds `signings.source_packet_id` and inserts the missing participants in one database transaction (`signing_select_source_packet`, service role only) that holds the Signing row lock and compare-and-sets the source against the value the server read. A Packet's parties are its ACTIVE `packet_contacts` plus the ACTIVE clients of its representation agreement. The population is a one-time Draft snapshot, never a live sync. Included Packet-form documents in a Draft must belong to the Signing's source Packet, enforced by a database trigger.
+
+**Reason:**
+Binding and importing as separate steps let a Signing end up bound with no parties (Packets whose parties live on a representation agreement derived nothing), and let competing selections interleave.
+
+**Consequences:**
+* No "Packet selected, participants missing" state for Packets that have parties; a Packet with no usable parties says so.
+* Competing selections produce exactly one winner; participants always come from the bound Packet.
+* Party contacts not owned by the actor are skipped with a visible note.
+
+**Related:**
+* `supabase/migrations/20260928120000_native_signing_source_packet_selection.sql`
+* `lib/signing/source-packet.ts`, `lib/signing/packet-to-signing.ts`
+
+---
+
 ## One source Packet per Signing
 
 **Date:** 2026-09-28
@@ -39,7 +60,7 @@ Mixing documents from several Packets made provenance, participant derivation, a
 **Date:** 2026-09-28
 
 **Decision:**
-Selecting a source Packet on a Draft Signing imports that Packet's transaction parties as Draft participants using the same derivation as Packet → Create Signing (`deriveSigningParticipantsFromPacket`): ACTIVE `packet_contacts` with recognized party roles, one participant per contact id, PERSONAL capacity, email optional in Draft. Agents, brokers, and TCs are not imported. Participants already linked to the same contact are skipped. Existing and ad hoc participants are never deleted, replaced, or merged by name. The import is a snapshot; later Packet contact edits do not sync.
+Selecting a source Packet on a Draft Signing imports that Packet's transaction parties as Draft participants using the same derivation as Packet → Create Signing (`deriveSigningParticipantsFromPacket`): ACTIVE `packet_contacts` with recognized party roles (plus representation agreement clients — see "Packet selection and Packet-party population are one Draft preparation action"), one participant per contact id, PERSONAL capacity, email optional in Draft. Agents, brokers, and TCs are not imported. Participants already linked to the same contact are skipped. Existing and ad hoc participants are never deleted, replaced, or merged by name. The import is a snapshot; later Packet contact edits do not sync.
 
 **Reason:**
 Managers expected the Packet's buyers/sellers to appear when choosing the Packet, as they do when creating a Signing from the Packet page. Re-entering them by hand invited typos and duplicate people.
