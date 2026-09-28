@@ -21,12 +21,18 @@ import {
   addDraftSigningDocumentAction,
   addDraftSigningParticipantAction,
   addRemainingPacketDocumentsAction,
+  getDraftSourcePacketStateAction,
   listPacketFormsForDraftAction,
   removeDraftSigningDocumentAction,
   removeDraftSigningParticipantAction,
+  selectDraftSourcePacketAction,
   upsertDraftSigningFieldAction,
 } from "@/lib/signing/stage3-actions";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  DraftSourcePacketState,
+  SelectDraftSourcePacketResult,
+} from "@/lib/signing/source-packet";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type PacketFormOption = {
   id: number;
@@ -85,32 +91,15 @@ export function SigningDraftPrepPanel({
 
   const [packetForms, setPacketForms] = useState<PacketFormOption[]>([]);
   const [selectedPacketFormId, setSelectedPacketFormId] = useState("");
-  const [selectedPacketId, setSelectedPacketId] = useState("");
+  const [sourceState, setSourceState] = useState<DraftSourcePacketState | null>(
+    null,
+  );
+  const [packetChoice, setPacketChoice] = useState("");
+  const [changingPacket, setChangingPacket] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-
-  const packetOptions = useMemo(() => {
-    const byId = new Map<number, string | null>();
-    for (const form of packetForms) {
-      if (!byId.has(form.packetId)) {
-        byId.set(form.packetId, form.packetLabel);
-      }
-    }
-    return Array.from(byId.entries()).map(([id, label]) => ({
-      id,
-      label: label ?? `Packet ${id}`,
-    }));
-  }, [packetForms]);
-
-  const formsForSelectedPacket = useMemo(() => {
-    if (sourcePacketId != null) return packetForms;
-    if (!selectedPacketId) return packetForms;
-    return packetForms.filter(
-      (form) => String(form.packetId) === selectedPacketId,
-    );
-  }, [packetForms, selectedPacketId, sourcePacketId]);
 
   const loadPacketForms = useCallback(async () => {
     const result = await listPacketFormsForDraftAction({ signingId });
@@ -120,14 +109,6 @@ export function SigningDraftPrepPanel({
     }
     const rows = (result.data as PacketFormOption[] | undefined) ?? [];
     setPacketForms(rows);
-    setSelectedPacketId((previous) => {
-      if (sourcePacketId != null) return String(sourcePacketId);
-      if (rows.length === 0) return "";
-      if (previous && rows.some((row) => String(row.packetId) === previous)) {
-        return previous;
-      }
-      return String(rows[0].packetId);
-    });
     setSelectedPacketFormId((previous) => {
       if (rows.length === 0) return "";
       if (previous && rows.some((row) => String(row.id) === previous)) {
@@ -135,12 +116,44 @@ export function SigningDraftPrepPanel({
       }
       return String(rows[0].id);
     });
-  }, [signingId, sourcePacketId]);
+  }, [signingId]);
+
+  const loadSourceState = useCallback(async () => {
+    const result = await getDraftSourcePacketStateAction({ signingId });
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    const state = result.data as DraftSourcePacketState;
+    setSourceState(state);
+    setPacketChoice((previous) => {
+      if (
+        previous &&
+        state.selectablePackets.some((packet) => String(packet.id) === previous)
+      ) {
+        return previous;
+      }
+      return state.selectablePackets[0] ? String(state.selectablePackets[0].id) : "";
+    });
+    if (!state.canChangeSourcePacket) setChangingPacket(false);
+  }, [signingId]);
+
+  const packetDocumentCount = documents.filter(
+    (document) => document.sourceKind !== "AD_HOC_PDF",
+  ).length;
 
   useEffect(() => {
     if (!canManage) return;
     void loadPacketForms();
-  }, [canManage, loadPacketForms]);
+    void loadSourceState();
+  }, [
+    canManage,
+    loadPacketForms,
+    loadSourceState,
+    sourcePacketId,
+    packetDocumentCount,
+    participants.length,
+  ]);
 
   useEffect(() => {
     if (signingCapacityMode !== "REPRESENTATIVE") return;
@@ -165,21 +178,6 @@ export function SigningDraftPrepPanel({
     }
   }, [signingCapacityMode]);
 
-  useEffect(() => {
-    if (sourcePacketId != null) return;
-    if (!selectedPacketId) return;
-    setSelectedPacketFormId((previous) => {
-      const scoped = packetForms.filter(
-        (form) => String(form.packetId) === selectedPacketId,
-      );
-      if (scoped.length === 0) return "";
-      if (previous && scoped.some((row) => String(row.id) === previous)) {
-        return previous;
-      }
-      return String(scoped[0].id);
-    });
-  }, [selectedPacketId, packetForms, sourcePacketId]);
-
   if (!canManage) {
     return null;
   }
@@ -192,14 +190,40 @@ export function SigningDraftPrepPanel({
     fullName.trim().length > 0 &&
     (signingCapacityMode === "PERSONAL" || canAddRepresentative);
 
-  const noPacketForms = formsForSelectedPacket.length === 0;
-  const packetIdForBulk =
-    sourcePacketId != null
-      ? sourcePacketId
-      : selectedPacketId
-        ? Number(selectedPacketId)
-        : null;
+  const noPacketForms = packetForms.length === 0;
+  const packetIdForBulk = sourcePacketId;
   const canAddEntirePacket = packetIdForBulk != null && !noPacketForms;
+  const showPacketChooser =
+    sourceState != null &&
+    sourceState.canChangeSourcePacket &&
+    (sourceState.sourcePacket == null || changingPacket);
+
+  async function selectSourcePacket() {
+    if (!packetChoice) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = await selectDraftSourcePacketAction({
+      signingId,
+      packetId: Number(packetChoice),
+    });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      const data = result.data as SelectDraftSourcePacketResult;
+      const added = data.addedParticipantCount;
+      setChangingPacket(false);
+      await onChanged();
+      await loadPacketForms();
+      await loadSourceState();
+      setNotice(
+        added > 0
+          ? `Packet selected. Added ${added} participant${added === 1 ? "" : "s"} from the Packet.`
+          : "Packet selected. No new participants were found on the Packet.",
+      );
+    }
+    setBusy(false);
+  }
 
   async function addParticipant() {
     setBusy(true);
@@ -287,6 +311,8 @@ export function SigningDraftPrepPanel({
         | undefined;
       const added = data?.addedCount ?? 0;
       const skipped = data?.skippedDuplicateCount ?? 0;
+      await onChanged();
+      await loadPacketForms();
       setNotice(
         added === 0
           ? skipped > 0
@@ -296,8 +322,6 @@ export function SigningDraftPrepPanel({
               skipped > 0 ? ` (${skipped} already included)` : ""
             }.`,
       );
-      await onChanged();
-      await loadPacketForms();
     }
     setBusy(false);
   }
@@ -396,9 +420,8 @@ export function SigningDraftPrepPanel({
       <CardHeader>
         <CardTitle>Prepare Signing</CardTitle>
         <CardDescription>
-          Add Packet documents or upload a PDF, add participants, then use
-          Prepare Documents to place Signature, Initials, and Date Signed
-          fields visually.
+          Choose the source Packet, add its documents or upload a PDF, review
+          participants, then use Prepare Documents to place signing fields.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -409,39 +432,90 @@ export function SigningDraftPrepPanel({
 
         <div className="space-y-3 rounded-lg border border-border p-3">
           <p className="text-sm font-medium">Documents</p>
-          {sourcePacketId == null ? (
-            <div className="space-y-2">
-              <Label htmlFor="source-packet">Packet</Label>
-              <select
-                id="source-packet"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                value={selectedPacketId}
-                onChange={(event) => setSelectedPacketId(event.target.value)}
-                disabled={busy || packetOptions.length === 0}
-              >
-                {packetOptions.length === 0 ? (
-                  <option value="">No owned Packets available</option>
-                ) : (
-                  packetOptions.map((packet) => (
-                    <option key={packet.id} value={packet.id}>
-                      #{packet.id} · {packet.label}
-                    </option>
-                  ))
-                )}
-              </select>
+          {sourceState?.sourcePacket ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Source Packet
+                </p>
+                <p className="truncate text-sm font-semibold">
+                  #{sourceState.sourcePacket.id} · {sourceState.sourcePacket.label}
+                </p>
+              </div>
+              {sourceState.canChangeSourcePacket && !changingPacket ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => setChangingPacket(true)}
+                >
+                  Change Packet
+                </Button>
+              ) : null}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Documents come from source Packet #{sourcePacketId}. Already
-              included forms are hidden from the picker.
+          ) : null}
+          {sourceState?.sourcePacket && !sourceState.canChangeSourcePacket ? (
+            <p className="text-xs text-muted-foreground">
+              A Signing uses one source Packet. Start a new Signing to use a
+              different Packet.
             </p>
-          )}
+          ) : null}
 
-          {noPacketForms ? (
+          {showPacketChooser ? (
+            <div className="space-y-2">
+              <Label htmlFor="source-packet">
+                {sourceState?.sourcePacket ? "Change source Packet" : "Source Packet"}
+              </Label>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  id="source-packet"
+                  className="flex h-9 min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  value={packetChoice}
+                  onChange={(event) => setPacketChoice(event.target.value)}
+                  disabled={busy || (sourceState?.selectablePackets.length ?? 0) === 0}
+                >
+                  {(sourceState?.selectablePackets.length ?? 0) === 0 ? (
+                    <option value="">No owned Packets available</option>
+                  ) : (
+                    sourceState?.selectablePackets.map((packet) => (
+                      <option key={packet.id} value={packet.id}>
+                        #{packet.id} · {packet.label}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy || !packetChoice}
+                  onClick={() => void selectSourcePacket()}
+                >
+                  Use this Packet
+                </Button>
+                {sourceState?.sourcePacket ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setChangingPacket(false)}
+                  >
+                    Cancel
+                  </Button>
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Selecting a Packet adds its buyers, sellers, and other parties
+                as participants. You can still upload PDFs.
+              </p>
+            </div>
+          ) : null}
+
+          {sourcePacketId == null ? null : noPacketForms ? (
             <p className="text-sm text-muted-foreground">
-              {documents.length > 0
-                ? "All eligible Packet documents are already in this Signing, or none remain available."
-                : "No available Packet Forms found on your Packets. Create or open a Packet with an available form first, or upload a PDF."}
+              All eligible documents from this Packet are already in this
+              Signing, or none are available.
             </p>
           ) : (
             <div className="space-y-2">
@@ -453,10 +527,9 @@ export function SigningDraftPrepPanel({
                 onChange={(event) => setSelectedPacketFormId(event.target.value)}
                 disabled={busy}
               >
-                {formsForSelectedPacket.map((form) => (
+                {packetForms.map((form) => (
                   <option key={form.id} value={form.id}>
                     #{form.id} · {form.documentName}
-                    {form.packetLabel ? ` (${form.packetLabel})` : ""}
                   </option>
                 ))}
               </select>
@@ -464,26 +537,28 @@ export function SigningDraftPrepPanel({
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={busy || !canAddEntirePacket}
-              onClick={() => void addEntirePacket()}
-            >
-              {sourcePacketId != null
-                ? "Add all remaining packet documents"
-                : "Add entire packet"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={busy || noPacketForms || !selectedPacketFormId}
-              onClick={() => void addDocument()}
-            >
-              Add document from packet
-            </Button>
+            {sourcePacketId != null ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || !canAddEntirePacket}
+                  onClick={() => void addEntirePacket()}
+                >
+                  Add all remaining packet documents
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || noPacketForms || !selectedPacketFormId}
+                  onClick={() => void addDocument()}
+                >
+                  Add document from packet
+                </Button>
+              </>
+            ) : null}
             <Button
               type="button"
               size="sm"

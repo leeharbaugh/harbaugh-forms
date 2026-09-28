@@ -1,8 +1,27 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-23 (Native Signing manager QA pass 4 on PR #46 — ad hoc PDF + visual prepare + pre-Complete copy recipients; Gate A paused; production Native Signing unavailable)
+**As of:** 2026-09-28 (Native Signing manager QA pass 5 on PR #46 — Draft prep workflow: one source Packet, auto participants, full-height refresh-free Prepare Documents; Gate A paused; production Native Signing unavailable)
 
 ## Current State
+
+### Native Signing manager QA pass 5 (2026-09-28; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. PR #46 stays open — do not merge until Lee re-QAs the Draft preparation workflow.
+
+| Item | Result |
+|------|--------|
+| Prepare Documents layout | Full-viewport workspace reusing the Packet form editor pattern: header with document navigation, zoom / Fit Width / Fit Page toolbar, stacked scrollable pages sized by `computePdfPageWidth` + ResizeObserver, 360px sidebar (participant, field type, selected field, field list) |
+| Refresh root cause | Every edit awaited `load()` (set `loading` → unmounted the PDF, reset page/size/selection) then reloaded the dashboard; Rnd reported a drag stop on every click, so selecting persisted + reloaded; the busy re-render disabled **Remove** before its click fired |
+| Refresh fix | Local optimistic model + ordered trusted server queue; reconcile from server only on failure; no remount, no page/scroll reset; no-movement drag stops ignored; Remove excluded from drag (`cancel`) and never disabled; press that starts on a field never places a new one |
+| Field rules | Removing a Signature removes its paired Date Signed (server + local); Initials / Date Signed remove independently; reassigning a Signature moves its Date Signed to the same participant |
+| Dead controls | Decorative Signature / Initials / Date Signed toolbar badges and page-step buttons removed; Participant + Field type dropdowns kept |
+| Adoption copy | Only: "Place signing fields for each participant. Participants adopt their signatures and initials when they sign." No Adopt feature in prep |
+| One source Packet | Selecting a Packet binds `signings.source_packet_id` (compare-and-set); picker / Add all scoped to it; second Packet rejected server-side; switch allowed only with no Packet documents or Packet-linked participants; first Packet document also binds an unbound Signing; ad hoc PDFs always allowed |
+| Participant import | Selecting a Packet imports ACTIVE transaction parties via `deriveSigningParticipantsFromPacket` (dedupe by contact id, missing email allowed, PERSONAL capacity, no agents/brokers/TCs); existing/ad hoc participants never deleted or merged; no live sync |
+| Coverage | `npm run test:native-signing-draft-prep`; `npm run validate:native-signing-draft-prep-dev`; browser QA `scripts/qa-signing-prepare-browser.ts` (disposable fixtures) |
+| Migration | None |
+| In Progress amendment | Still out of scope — no manager UI; never mutate Revision 1 |
+| Gate A | Remains paused |
 
 ### Native Signing manager QA pass 4 (2026-09-23; PR #46)
 

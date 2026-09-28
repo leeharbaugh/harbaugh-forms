@@ -175,6 +175,31 @@ export async function upsertDraftSigningFieldWithActor(
     if (!isUuid(input.fieldId)) {
       throw new SigningError("INVALID_INPUT", "Invalid draft field id.");
     }
+    const { data: current, error: currentError } = await admin
+      .from("signing_draft_fields")
+      .select("id, field_type")
+      .eq("id", input.fieldId)
+      .eq("signing_id", signing.id)
+      .maybeSingle();
+    if (currentError) throw new Error(currentError.message);
+    if (!current) {
+      throw new SigningError("NOT_FOUND", "Signing field not found.");
+    }
+
+    const { data: linkedDates, error: linkedDatesError } = await admin
+      .from("signing_draft_fields")
+      .select("id")
+      .eq("signing_id", signing.id)
+      .eq("linked_signature_draft_field_id", input.fieldId);
+    if (linkedDatesError) throw new Error(linkedDatesError.message);
+    const linkedDateIds = (linkedDates ?? []).map((row) => row.id as string);
+    if (linkedDateIds.length > 0 && fieldType !== "SIGNATURE") {
+      throw new SigningError(
+        "INVALID_INPUT",
+        "Remove the linked Date Signed before changing this Signature's type.",
+      );
+    }
+
     const { data, error } = await admin
       .from("signing_draft_fields")
       .update(payload)
@@ -184,6 +209,16 @@ export async function upsertDraftSigningFieldWithActor(
       .single();
     if (error || !data) {
       throw new Error(error?.message ?? "Failed to update draft field.");
+    }
+
+    // A paired Date Signed always belongs to its Signature's participant.
+    if (linkedDateIds.length > 0) {
+      const { error: followError } = await admin
+        .from("signing_draft_fields")
+        .update({ signing_participant_id: input.signingParticipantId })
+        .eq("signing_id", signing.id)
+        .in("id", linkedDateIds);
+      if (followError) throw new Error(followError.message);
     }
     return data as SigningDraftFieldRow;
   }
@@ -199,11 +234,16 @@ export async function upsertDraftSigningFieldWithActor(
   return data as SigningDraftFieldRow;
 }
 
+/**
+ * Remove a Draft field. Removing a Signature also removes its paired Date
+ * Signed so no unlinked Date Signed remains; Initials and Date Signed remove
+ * independently. Returns every removed field id for local reconciliation.
+ */
 export async function removeDraftSigningFieldWithActor(
   actor: SigningActor,
   input: { signingId: unknown; fieldId: unknown },
   admin: SupabaseClient,
-): Promise<void> {
+): Promise<{ removedFieldIds: string[] }> {
   const { signing } = await requireManageableDraftSigning(
     actor,
     input.signingId,
@@ -213,11 +253,24 @@ export async function removeDraftSigningFieldWithActor(
     throw new SigningError("INVALID_INPUT", "Invalid draft field id.");
   }
 
-  await admin
+  const { data: target, error: targetError } = await admin
     .from("signing_draft_fields")
-    .update({ linked_signature_draft_field_id: null })
+    .select("id")
+    .eq("id", input.fieldId)
     .eq("signing_id", signing.id)
-    .eq("linked_signature_draft_field_id", input.fieldId);
+    .maybeSingle();
+  if (targetError) throw new Error(targetError.message);
+  if (!target) {
+    return { removedFieldIds: [] };
+  }
+
+  const { data: linkedDates, error: linkedError } = await admin
+    .from("signing_draft_fields")
+    .delete()
+    .eq("signing_id", signing.id)
+    .eq("linked_signature_draft_field_id", input.fieldId)
+    .select("id");
+  if (linkedError) throw new Error(linkedError.message);
 
   const { error } = await admin
     .from("signing_draft_fields")
@@ -225,4 +278,11 @@ export async function removeDraftSigningFieldWithActor(
     .eq("id", input.fieldId)
     .eq("signing_id", signing.id);
   if (error) throw new Error(error.message);
+
+  return {
+    removedFieldIds: [
+      input.fieldId,
+      ...(linkedDates ?? []).map((row) => row.id as string),
+    ],
+  };
 }

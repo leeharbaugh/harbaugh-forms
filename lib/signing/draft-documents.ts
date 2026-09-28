@@ -45,6 +45,76 @@ async function reloadSigningDocument(
   return data as SigningDocumentRow;
 }
 
+/**
+ * Packet ids of included Packet-derived documents on this Signing. Ad hoc PDFs
+ * carry no Packet and are never counted.
+ */
+export async function listIncludedPacketDocumentPacketIds(
+  admin: SupabaseClient,
+  signingId: string,
+): Promise<number[]> {
+  const { data, error } = await admin
+    .from("signing_documents")
+    .select("source_packet_form_id, packet_forms!inner(packet_id)")
+    .eq("signing_id", signingId)
+    .eq("included_in_draft", true)
+    .not("source_packet_form_id", "is", null);
+  if (error) throw new Error(error.message);
+  const packetIds = new Set<number>();
+  for (const row of data ?? []) {
+    const form = Array.isArray(row.packet_forms)
+      ? row.packet_forms[0]
+      : row.packet_forms;
+    const packetId = (form as { packet_id?: number } | null)?.packet_id;
+    if (typeof packetId === "number") packetIds.add(packetId);
+  }
+  return Array.from(packetIds);
+}
+
+/**
+ * One source Packet per Signing. Binds an unbound Draft to `packetId` with a
+ * compare-and-set so concurrent adds from different Packets cannot both win.
+ * Never remaps an already-bound Signing.
+ */
+export async function bindSigningSourcePacketIfUnset(
+  admin: SupabaseClient,
+  signingId: string,
+  packetId: number,
+): Promise<void> {
+  const existingPacketIds = await listIncludedPacketDocumentPacketIds(
+    admin,
+    signingId,
+  );
+  if (existingPacketIds.some((id) => id !== packetId)) {
+    throw new SigningError(
+      "INVALID_PACKET",
+      "This Signing already includes documents from a different Packet.",
+    );
+  }
+
+  const { error: bindError } = await admin
+    .from("signings")
+    .update({ source_packet_id: packetId })
+    .eq("id", signingId)
+    .is("source_packet_id", null);
+  if (bindError) throw new Error(bindError.message);
+
+  const { data: bound, error: readError } = await admin
+    .from("signings")
+    .select("source_packet_id")
+    .eq("id", signingId)
+    .single();
+  if (readError || !bound) {
+    throw new Error(readError?.message ?? "Failed to read Signing source Packet.");
+  }
+  if (bound.source_packet_id !== packetId) {
+    throw new SigningError(
+      "INVALID_PACKET",
+      "This Signing is tied to a different source Packet.",
+    );
+  }
+}
+
 async function nextDocumentDisplayOrder(
   admin: SupabaseClient,
   signingId: string,
@@ -108,7 +178,6 @@ export async function addDraftSigningDocumentWithActor(
     );
   }
 
-  // Prefer Signing's source packet when set; otherwise require owner match only.
   if (
     signing.source_packet_id != null &&
     packet.id !== signing.source_packet_id
@@ -117,6 +186,9 @@ export async function addDraftSigningDocumentWithActor(
       "INVALID_PACKET",
       "The Packet Form does not belong to this Signing's source Packet.",
     );
+  }
+  if (signing.source_packet_id == null) {
+    await bindSigningSourcePacketIfUnset(admin, signing.id, packet.id as number);
   }
 
   const displayName =

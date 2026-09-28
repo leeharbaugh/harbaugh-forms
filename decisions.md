@@ -12,6 +12,88 @@ Each decision should include:
 
 ---
 
+## One source Packet per Signing
+
+**Date:** 2026-09-28
+
+**Decision:**
+A Signing has at most one source Packet (`signings.source_packet_id`). Selecting a Packet in Draft preparation binds it; the first Packet document added to an unbound Signing also binds it. Packet document picking and **Add all remaining packet documents** are scoped to that Packet, and the server rejects Packet Forms from any other Packet. The source Packet may change only while the Signing holds no included Packet documents and no Packet-linked participants; it is never silently remapped. Signing-owned ad hoc PDFs remain allowed alongside source-Packet documents. The UI shows the source Packet prominently and offers a Packet chooser only when the server would accept the change.
+
+**Reason:**
+Mixing documents from several Packets made provenance, participant derivation, and later drift handling ambiguous. The server enforced source-Packet scoping only after a source was set, so an unbound Draft could accumulate documents from different Packets.
+
+**Consequences:**
+* Binding uses a compare-and-set update (`source_packet_id is null`) so concurrent adds from different Packets cannot both win.
+* Legacy Drafts with Packet documents from a different Packet cannot bind to a new Packet.
+* Switching Packets after Packet-derived state exists requires a new Signing.
+
+**Related:**
+* `lib/signing/source-packet.ts`, `lib/signing/draft-documents.ts` (`bindSigningSourcePacketIfUnset`)
+* `lib/signing/stage3-actions.ts`, `components/signings/signing-draft-prep-panel.tsx`
+* `scripts/validate-native-signing-draft-prep-dev.ts`
+
+---
+
+## Packet selection populates Signing participants
+
+**Date:** 2026-09-28
+
+**Decision:**
+Selecting a source Packet on a Draft Signing imports that Packet's transaction parties as Draft participants using the same derivation as Packet → Create Signing (`deriveSigningParticipantsFromPacket`): ACTIVE `packet_contacts` with recognized party roles, one participant per contact id, PERSONAL capacity, email optional in Draft. Agents, brokers, and TCs are not imported. Participants already linked to the same contact are skipped. Existing and ad hoc participants are never deleted, replaced, or merged by name. The import is a snapshot; later Packet contact edits do not sync.
+
+**Reason:**
+Managers expected the Packet's buyers/sellers to appear when choosing the Packet, as they do when creating a Signing from the Packet page. Re-entering them by hand invited typos and duplicate people.
+
+**Consequences:**
+* Representative capacity is never inferred from Packet roles; set it during preparation.
+* Re-selecting the same Packet adds only parties not yet linked.
+* Packet-linked participants count as Packet-derived state and lock the source Packet.
+
+**Related:**
+* `lib/signing/source-packet.ts`, `lib/signing/packet-to-signing.ts`
+
+---
+
+## Signature adoption boundary
+
+**Date:** 2026-09-28
+
+**Decision:**
+Signature and initials adoption happens only in the participant signing ceremony. Manager Draft preparation places signing fields for each participant and never adopts, draws, types, or previews a participant's signature. Prepare Documents shows at most: "Place signing fields for each participant. Participants adopt their signatures and initials when they sign." Agents who sign adopt in their own ceremony like any other participant.
+
+**Reason:**
+Adoption is a participant act with its own consent and attribution. Offering adoption in the manager workspace would blur who performed it and duplicate ceremony behavior.
+
+**Consequences:**
+* No "Adopt Signature" control in Prepare Documents or the Draft prep panel.
+* Ceremony adoption instructions are unchanged.
+
+**Related:**
+* `components/signings/signing-preview-dialog.tsx`
+* Ceremony: `lib/signing/ceremony-*`
+
+---
+
+## Prepare Documents edits are local-first with trusted server persistence
+
+**Date:** 2026-09-28
+
+**Decision:**
+The Prepare Documents workspace applies place / move / resize / reassign / remove to local state immediately and persists each change through the existing trusted `signing_draft_fields` server actions in an ordered queue. The server response reconciles local ids; on failure the workspace reloads the trusted model without remounting the PDF or resetting document, page, or scroll. Removing a Signature removes its paired Date Signed; reassigning a Signature moves its paired Date Signed to the same participant. Initials and Date Signed remove independently.
+
+**Reason:**
+Reloading the whole preview model after every edit unmounted the PDF and reset the view, which looked like a page refresh and swallowed Remove clicks.
+
+**Consequences:**
+* Browsers still never write `signing_draft_fields` directly.
+* Dashboard readiness refreshes once when the workspace closes after edits.
+* Unlinked Date Signed rows are no longer produced by Signature removal.
+
+**Related:**
+* `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-field-editor-state.ts`, `lib/signing/draft-fields.ts`
+
+---
+
 ## Signing-owned ad hoc PDFs are first-class Draft documents
 
 **Date:** 2026-09-23

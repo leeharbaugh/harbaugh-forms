@@ -24,6 +24,10 @@ import {
   upsertDraftSigningFieldWithActor,
 } from "@/lib/signing/draft-fields";
 import { requireManageableDraftSigning } from "@/lib/signing/manage";
+import {
+  loadDraftSourcePacketStateWithActor,
+  selectDraftSourcePacketWithActor,
+} from "@/lib/signing/source-packet";
 import { SigningError } from "@/lib/signing/errors";
 import { NativeSigningDisabledError } from "@/lib/signing/feature-gate";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -203,10 +207,26 @@ export async function removeDraftSigningFieldAction(input: {
   signingId: unknown;
   fieldId: unknown;
 }): Promise<SigningStage3ActionResult> {
-  return withAuthorizedAdmin(async (actor, admin) => {
-    await removeDraftSigningFieldWithActor(actor, input, admin);
-    return null;
-  });
+  return withAuthorizedAdmin((actor, admin) =>
+    removeDraftSigningFieldWithActor(actor, input, admin),
+  );
+}
+
+export async function getDraftSourcePacketStateAction(input: {
+  signingId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    loadDraftSourcePacketStateWithActor(actor, input, admin),
+  );
+}
+
+export async function selectDraftSourcePacketAction(input: {
+  signingId: unknown;
+  packetId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    selectDraftSourcePacketWithActor(actor, input, admin),
+  );
 }
 
 /**
@@ -216,8 +236,9 @@ export async function removeDraftSigningFieldAction(input: {
  */
 
 /**
- * List AVAILABLE Packet Forms on Packets owned by the actor that may be added
- * to this Draft Signing. Used by the manager Draft preparation UI.
+ * List AVAILABLE Packet Forms from this Draft Signing's source Packet that may
+ * still be added. Empty until a source Packet is selected (one source Packet
+ * per Signing). Used by the manager Draft preparation UI.
  */
 export async function listPacketFormsForDraftAction(input: {
   signingId: unknown;
@@ -229,19 +250,16 @@ export async function listPacketFormsForDraftAction(input: {
       admin,
     );
 
-    let packetQuery = admin
+    if (signing.source_packet_id == null) {
+      return [];
+    }
+
+    const { data: packets, error: packetError } = await admin
       .from("packets")
       .select("id, label, status")
       .eq("owner_user_id", actor.userId)
       .neq("status", "DELETED")
-      .order("id", { ascending: false })
-      .limit(50);
-
-    if (signing.source_packet_id != null) {
-      packetQuery = packetQuery.eq("id", signing.source_packet_id);
-    }
-
-    const { data: packets, error: packetError } = await packetQuery;
+      .eq("id", signing.source_packet_id);
     if (packetError) throw new Error(packetError.message);
 
     const packetIds = (packets ?? []).map((row) => row.id as number);
