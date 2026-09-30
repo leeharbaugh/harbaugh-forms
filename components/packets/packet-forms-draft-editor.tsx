@@ -2,16 +2,23 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import type { CollectionFormLink } from "@/lib/types/collection";
 import type { Form } from "@/lib/types/form";
 import {
+  countPacketFormInstancesByFormId,
+  DUPLICATE_PACKET_FORM_CONFIRM_LABEL,
+  findDuplicatePacketFormSelections,
+  formatDuplicatePacketFormMessage,
+  formatDuplicatePacketFormTitle,
   formatPacketFormOrigin,
+  formatPacketFormPresenceLabel,
   getActiveCollectionFormLinks,
   type DraftExternalPacketForm,
-  validateAdditionalInternalFormId,
+  type DuplicatePacketFormSelection,
   warnDuplicateExternalDocumentName,
 } from "@/lib/types/packet-form";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
@@ -38,6 +45,8 @@ export function PacketFormsDraftEditor({
 }: PacketFormsDraftEditorProps) {
   const collectionLinks = getActiveCollectionFormLinks(collectionForms);
   const collectionFormIds = collectionLinks.map((link) => link.form_id);
+  const plannedFormIds = [...collectionFormIds, ...additionalInternalFormIds];
+  const instanceCountByFormId = countPacketFormInstancesByFormId(plannedFormIds);
 
   const [formSearch, setFormSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Form[]>([]);
@@ -45,7 +54,10 @@ export function PacketFormsDraftEditor({
   const [addedInternalForms, setAddedInternalForms] = useState<
     AddedInternalForm[]
   >([]);
-  const [addFormError, setAddFormError] = useState<string | null>(null);
+  const [pendingDuplicate, setPendingDuplicate] = useState<{
+    formId: number;
+    duplicates: DuplicatePacketFormSelection[];
+  } | null>(null);
   const [externalName, setExternalName] = useState("");
   const [externalNotes, setExternalNotes] = useState("");
   const [externalFile, setExternalFile] = useState<File | null>(null);
@@ -128,26 +140,25 @@ export function PacketFormsDraftEditor({
     return () => clearTimeout(timeout);
   }, [searchForms]);
 
-  const addInternalForm = (form: Form) => {
-    const error = validateAdditionalInternalFormId(
-      form.id,
-      collectionFormIds,
-      additionalInternalFormIds,
-    );
-    if (error) {
-      setAddFormError(error);
-      return;
-    }
-
-    setAddFormError(null);
-    onAdditionalInternalFormIdsChange([...additionalInternalFormIds, form.id]);
+  const appendInternalForm = (formId: number) => {
+    setPendingDuplicate(null);
+    onAdditionalInternalFormIdsChange([...additionalInternalFormIds, formId]);
     setFormSearch("");
     setSearchResults([]);
   };
 
-  const removeInternalForm = (formId: number) => {
+  const addInternalForm = (form: Form) => {
+    const duplicates = findDuplicatePacketFormSelections([form], plannedFormIds);
+    if (duplicates.length > 0) {
+      setPendingDuplicate({ formId: form.id, duplicates });
+      return;
+    }
+    appendInternalForm(form.id);
+  };
+
+  const removeInternalForm = (index: number) => {
     onAdditionalInternalFormIdsChange(
-      additionalInternalFormIds.filter((id) => id !== formId),
+      additionalInternalFormIds.filter((_, entryIndex) => entryIndex !== index),
     );
   };
 
@@ -230,6 +241,21 @@ export function PacketFormsDraftEditor({
 
   return (
     <div className="space-y-8">
+      <ConfirmDialog
+        open={pendingDuplicate != null}
+        title={formatDuplicatePacketFormTitle(pendingDuplicate?.duplicates ?? [])}
+        message={formatDuplicatePacketFormMessage(
+          pendingDuplicate?.duplicates ?? [],
+        )}
+        confirmLabel={DUPLICATE_PACKET_FORM_CONFIRM_LABEL}
+        initialFocus="cancel"
+        onConfirm={() => {
+          if (pendingDuplicate) {
+            appendInternalForm(pendingDuplicate.formId);
+          }
+        }}
+        onCancel={() => setPendingDuplicate(null)}
+      />
       <section className="space-y-3">
         <div>
           <h3 className="text-base font-medium">Default collection forms</h3>
@@ -301,16 +327,15 @@ export function PacketFormsDraftEditor({
                 ) : (
                   <div className="divide-y">
                     {searchResults.map((form) => {
-                      const alreadyIncluded =
-                        collectionFormIds.includes(form.id) ||
-                        additionalInternalFormIds.includes(form.id);
+                      const presenceLabel = formatPacketFormPresenceLabel(
+                        instanceCountByFormId.get(form.id) ?? 0,
+                      );
                       return (
                         <button
                           key={form.id}
                           type="button"
                           className="flex w-full items-start justify-between gap-3 p-3 text-left hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
                           onClick={() => addInternalForm(form)}
-                          disabled={alreadyIncluded}
                         >
                           <div>
                             <p className="font-medium">{form.form_name}</p>
@@ -318,9 +343,9 @@ export function PacketFormsDraftEditor({
                               {form.form_code}
                             </p>
                           </div>
-                          {alreadyIncluded && (
+                          {presenceLabel && (
                             <span className="text-xs text-muted-foreground">
-                              Added
+                              {presenceLabel}
                             </span>
                           )}
                         </button>
@@ -333,10 +358,6 @@ export function PacketFormsDraftEditor({
           </div>
         )}
 
-        {addFormError && (
-          <p className="text-sm text-destructive">{addFormError}</p>
-        )}
-
         {addedInternalForms.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No additional internal forms added.
@@ -345,7 +366,7 @@ export function PacketFormsDraftEditor({
           <div className="divide-y rounded-md border">
             {addedInternalForms.map((form, index) => (
               <div
-                key={form.id}
+                key={`${form.id}-${index}`}
                 className="flex items-center justify-between gap-3 p-3"
               >
                 <div>
@@ -389,7 +410,7 @@ export function PacketFormsDraftEditor({
                         variant="outline"
                         size="icon"
                         className="h-8 w-8"
-                        onClick={() => removeInternalForm(form.id)}
+                        onClick={() => removeInternalForm(index)}
                         aria-label="Remove"
                       >
                         <X className="h-4 w-4" />
