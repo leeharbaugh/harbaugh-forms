@@ -6,7 +6,11 @@
 
 ### Duplicate packet forms allowed (2026-09-30; emergency fix)
 
-**Status:** Migration applied to development. Production rollout in progress: migration first, then app deploy.
+**Status:** Migration applied to development and production. Production app deploy follows the merge of PR #47.
+
+**Production migration (2026-09-30):** `20260930120000` applied to `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`) out of order via `supabase db push --db-url` from a temporary migrations directory containing only the 110 already-applied production migrations plus `20260930120000` (dry run listed only that file). Afterwards: `packet_forms_packet_form_internal_active_uidx` absent; 111 remote migrations, no remote-only versions; production packets / packet forms / field instances / annotations fingerprint identical before and after.
+
+**Native Signing production rollout note:** The 20 Native Signing migrations (`20260914200000`–`20260920190000`) are now older than the latest production migration (`20260930120000`). A plain `supabase db push` will refuse them; the future Native Signing production rollout must use `supabase db push --include-all` (after its own dry run).
 
 **Durable rule:** A packet may contain multiple independent instances of the same form. Form presence in a packet must never make that form unavailable for addition. Duplicate instances are identified and managed by `packet_form.id`, not by assuming `packet_id + form_id` is unique. The UI may warn before adding duplicates but must allow the user to proceed.
 
