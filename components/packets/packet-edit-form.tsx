@@ -24,7 +24,6 @@ import {
   type PacketDetail,
   updatePacket,
 } from "@/lib/types/packet";
-import { sortPacketForms } from "@/lib/types/packet-form";
 import {
   formatPacketWorkflowType,
   PACKET_WORKFLOW_TYPES,
@@ -152,12 +151,6 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
   const propertyRequired =
     packetType !== "" && workflowRequiresProperty(packetType);
 
-  const activeForms = sortPacketForms(
-    (packet?.packet_forms ?? []).filter((form) => form.status === "ACTIVE"),
-  );
-  const collectionFormIds = activeForms
-    .filter((form) => (form.origin ?? "collection") === "collection" && form.form_id)
-    .map((form) => form.form_id as number);
   const listingOwnerKind = getListingOwnerKindFromPacket({
     packetType: packetType || packet?.packet_type || null,
     collectionName: packet?.collections?.collection_name,
@@ -409,7 +402,6 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
           <PacketFormsLiveEditor
             packetId={packetId}
             forms={packet.packet_forms ?? []}
-            collectionFormIds={collectionFormIds}
             disabled={isSaving}
             onFormsChange={() => void loadPacket()}
             emptyMessage={
