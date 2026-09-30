@@ -1,12 +1,16 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-30 (Duplicate packet forms allowed — production rollout; earlier: Native Signing enabled for local QA; production Native Signing unavailable)
+**As of:** 2026-09-30 (Duplicate packet forms allowed — deployed to production via hotfix deployment from `348d309`; `main` not yet deployed; earlier: Native Signing enabled for local QA; production Native Signing unavailable)
 
 ## Current State
 
 ### Duplicate packet forms allowed (2026-09-30; emergency fix)
 
-**Status:** Migration applied to development and production. Production app deploy follows the merge of PR #47.
+**Status:** Deployed to production (2026-09-30). Migration applied to development and production; app live on `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app`; production smoke test passed.
+
+**Production app deploy (2026-09-30):** `main` (`15e4b7a`) could not be promoted because it also carries the unreleased Native Signing work (merged PRs #34–#45, `fb022a5`) that the live deployment (`dpl_2CMdac6EViudwyp6TgoQbHf8htiM`, commit `348d309`) does not. Shipped instead from branch `hotfix/duplicate-packet-forms-prod` = `348d309` + only the duplicate-forms code (`a87b1aa`; code byte-identical to `15e4b7a`, docs left at `348d309`). Validation on that branch: duplicate tests 18/18, field-instance-sync 17/17, packet-form-lifecycle 7/7, `tsc`, targeted ESLint, `next build` pass. Live deployment is now `dpl_4eXrZwG8hJC3UgmPKgRVGDHMpMWX` (`harbaugh-forms-163e8xagp`), built from the hotfix preview via `vercel redeploy --target production`; rollback target is `dpl_2CMdac6EViudwyp6TgoQbHf8htiM`. **Note:** that CLI redeploy assigned both production domains itself when Ready (Auto-assign Custom Production Domains only stops Git-triggered production builds), so the isolated-URL login check ran after assignment, not before. Future CLI production builds should skip domain assignment and promote explicitly. The next `main` production deploy (Native Signing) already contains this fix.
+
+**Production smoke (Lee, temporary custom packet, then cleaned up):** first add of Amendment to Contract — no dialog; search result shows "In packet" and stays selectable; selecting it shows "This form is already in the packet. Add another copy?" with the form/count, Cancel focused; Cancel created nothing; Add Another created a second ACTIVE packet form with its own PDF and 38 own field instances; label then "In packet (2)"; Fill form opened on the copy; a saved field value and a Date Signed annotation on the copy left the original's instance ids, values, `update_date`, and annotations untouched (no shared instance ids); removing the copy soft-deleted only it. Post-rollout: all pre-existing packets / packet forms / field instances / annotations byte-identical to the pre-migration fingerprint; no 5xx in production logs. Real use began immediately: a second Amendment to Contract ("Extend closing date Oct 14") was added to live packet #12.
 
 **Production migration (2026-09-30):** `20260930120000` applied to `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`) out of order via `supabase db push --db-url` from a temporary migrations directory containing only the 110 already-applied production migrations plus `20260930120000` (dry run listed only that file). Afterwards: `packet_forms_packet_form_internal_active_uidx` absent; 111 remote migrations, no remote-only versions; production packets / packet forms / field instances / annotations fingerprint identical before and after.
 
