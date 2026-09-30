@@ -1,8 +1,24 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-21 (Native Signing enabled for local QA; production Native Signing unavailable)
+**As of:** 2026-09-30 (Duplicate packet forms allowed — production rollout; earlier: Native Signing enabled for local QA; production Native Signing unavailable)
 
 ## Current State
+
+### Duplicate packet forms allowed (2026-09-30; emergency fix)
+
+**Status:** Migration applied to development. Production rollout in progress: migration first, then app deploy.
+
+**Durable rule:** A packet may contain multiple independent instances of the same form. Form presence in a packet must never make that form unavailable for addition. Duplicate instances are identified and managed by `packet_form.id`, not by assuming `packet_id + form_id` is unique. The UI may warn before adding duplicates but must allow the user to proceed.
+
+| Item | Result |
+|------|--------|
+| Root cause | Two layers. DB: partial unique index `packet_forms_packet_form_internal_active_uidx` on `(packet_id, form_id) WHERE status='ACTIVE' AND form_id IS NOT NULL` (from `20250610190000`). App: Add Forms disabled forms already present ("In packet"); `addInternalFormToPacket` threw "This form is already in the packet." after a `.maybeSingle()` lookup; `createPacketFromCollection` and the draft editor rejected repeated / collection-overlapping additional forms |
+| Migration | `20260930120000_packet_forms_allow_duplicate_forms.sql` — `drop index if exists public.packet_forms_packet_form_internal_active_uidx;` only. Forward-only; no data rewrite. Dev: 356 packet forms / 1,516 field instances hashed before and after — identical |
+| UX | Search results always selectable; forms already present show "In packet" (or "In packet (N)" when N ≥ 2 copies exist). Selecting one opens "This form is already in the packet. Add another copy?" listing the form and count, with Cancel / Add Another (Cancel focused). Non-duplicates add immediately with no dialog. Same behavior in the packet-creation draft editor (entries now removed/keyed by position) |
+| New copy | New `packet_forms` row via the normal path: own id, own copied PDF, own field instances on first open (normal defaults, nothing cloned), own lifecycle/annotations/deletion/Signing inclusion |
+| Other assumptions checked | Field instances, storage paths, annotations, Signing documents, pending-publication activation, packet-level field-instance ensure, PDF download: all keyed by `packet_form.id` — no change needed |
+| Coverage | `npm run test:packet-forms-duplicate` (18 unit/contract tests); `npm run validate:duplicate-packet-forms-dev` (real creation / field-instance / soft-delete paths under RLS). Pre-migration dev run failed on the unique index as expected; post-migration run passes. Browser QA on dev: dialog, Cancel (no row), Add Another (second ACTIVE copy), Fill form on the copy |
+| Isolation | Shipped from `main` on `fix/duplicate-packet-forms`, independent of the open Native Signing PR #46 branch; no signing/annotation files in the diff |
 
 ### Native Signing local development QA enablement (2026-09-21)
 

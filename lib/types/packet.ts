@@ -3,9 +3,7 @@ import {
   createAdditionalInternalPacketForms,
   createCollectionPacketForms,
   createExternalPacketForms,
-  getCollectionFormIds,
   getMaxCollectionSortOrder,
-  validateAdditionalInternalFormId,
 } from "@/lib/types/packet-form";
 import type { DraftExternalPacketForm, PacketFormOrigin } from "@/lib/types/packet-form";
 import { formatContactDisplayName } from "@/lib/types/contact";
@@ -455,25 +453,7 @@ export async function createPacketFromCollection(
     throw new Error("The selected collection must contain at least one form.");
   }
 
-  const collectionFormIds = getCollectionFormIds(
-    collectionWithForms.collection_forms ?? [],
-  );
   const additionalFormIds = input.additionalInternalFormIds ?? [];
-  const uniqueAdditional = new Set(additionalFormIds);
-  if (uniqueAdditional.size !== additionalFormIds.length) {
-    throw new Error("Duplicate additional forms are not allowed.");
-  }
-
-  for (const formId of additionalFormIds) {
-    const duplicateError = validateAdditionalInternalFormId(
-      formId,
-      collectionFormIds,
-      [],
-    );
-    if (duplicateError) {
-      throw new Error(duplicateError);
-    }
-  }
 
   const contactIds = input.contacts.map((contact) => contact.contactId);
   const { data: contactsData, error: contactsError } = await supabase
