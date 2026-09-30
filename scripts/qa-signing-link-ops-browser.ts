@@ -1,8 +1,8 @@
 /**
  * Browser QA: In Progress participant access (PR #46 QA pass 8).
  *
- * Disposable development fixtures only (own user, Packet, Signing activated
- * REMOTE_SEND with the development email sandbox); cleaned up in `finally`.
+ * Disposable development fixtures only (own user, Packet, Draft Signing sent
+ * from the Draft page with the development email sandbox); cleaned up in `finally`.
  * Proves in a real browser that Replace / Revoke ask for confirmation, show
  * inline status next to the participant, update link status without a manual
  * reload, never display credential ids or provider references, and that the
@@ -16,13 +16,14 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { activateSigningWithActor } from "../lib/signing/activation.ts";
 import { addDraftSigningDocumentWithActor } from "../lib/signing/draft-documents.ts";
 import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
 import { upsertDraftSigningFieldWithActor } from "../lib/signing/draft-fields.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
 import type { SigningActor } from "../lib/signing/types.ts";
 import type { Profile } from "../lib/types/profile.ts";
+import { loadRawParticipantCredentialToken } from "../lib/signing/credentials.ts";
+import { createRuntimeNoiseGuard } from "./qa-runtime-noise.ts";
 
 const EXPECTED_REF = "ewxsxwzezhkeawnjvigx";
 const APP_ORIGIN = process.env.MANUAL_QA_ORIGIN?.trim() || "http://localhost:3000";
@@ -69,10 +70,8 @@ async function main() {
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  page.on("pageerror", (error) => console.log(`NOTE: pageerror ${error.message}`));
-  page.on("console", (message) => {
-    if (message.type() === "error") console.log(`NOTE: console error ${message.text().slice(0, 300)}`);
-  });
+  const noise = createRuntimeNoiseGuard();
+  noise.watch(page, "manager");
 
   async function credentials() {
     const { data, error } = await admin
@@ -232,21 +231,27 @@ async function main() {
       },
       admin,
     );
-    await activateSigningWithActor(
-      actor,
-      { signingId, mode: "REMOTE_SEND", clientRequestId: randomUUID() },
-      admin,
-    );
-    ok("disposable REMOTE_SEND Signing activated (sandboxed invitation)");
-
     const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: "magiclink", email });
     if (linkError || !link.properties?.hashed_token) fail("generateLink failed");
     await page.goto(
-      `${APP_ORIGIN}/auth/confirm?token_hash=${encodeURIComponent(link.properties.hashed_token)}&type=magiclink&next=${encodeURIComponent(`/signings/${signingId}`)}`,
+      `${APP_ORIGIN}/auth/confirm?token_hash=${encodeURIComponent(link.properties.hashed_token)}&type=magiclink&next=${encodeURIComponent("/signings")}`,
       { waitUntil: "networkidle" },
     );
     if (page.url().includes("/auth/")) fail(`auth failed: ${page.url()}`);
-    await page.getByText("In Progress — participant access").waitFor({ timeout: 60000 });
+    await page.getByText(`Link Ops QA ${stamp}`).first().waitFor({ timeout: 60000 });
+    ok("Signings list loaded with the Draft Signing");
+
+    // Send through the real Draft page and confirmation (sandboxed invitation).
+    await page.goto(`${APP_ORIGIN}/signings/${signingId}`, { waitUntil: "networkidle" });
+    const sendButton = page.getByRole("button", { name: "Send", exact: true });
+    await sendButton.waitFor({ timeout: 60000 });
+    if (!(await sendButton.isEnabled())) fail("Send is disabled for a ready Draft");
+    await sendButton.click();
+    const sendDialog = page.getByRole("alertdialog");
+    await sendDialog.getByText("Send this Signing?").waitFor();
+    await sendDialog.getByRole("button", { name: "Send", exact: true }).click();
+    await page.getByText("In Progress — participant access").waitFor({ timeout: 90000 });
+    ok("Draft page Send confirmation activated the Signing (REMOTE_SEND, sandboxed invitation)");
     await page.evaluate(() => {
       (window as unknown as { __qaNoReload?: boolean }).__qaNoReload = true;
     });
@@ -295,6 +300,41 @@ async function main() {
     if ((await instructionCount()) !== instructionsBefore + 2) fail("Resend did not queue an invitation");
     ok("Resend keeps the current credential and queues another invitation");
 
+    // Participant entry with the replacement link reaches the ceremony.
+    const replacementSecret = await loadRawParticipantCredentialToken({
+      admin,
+      signingId,
+      credentialId: afterReplace[0],
+    });
+    if (!replacementSecret) fail("replacement link secret unavailable");
+    const participantContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const participantPage = await participantContext.newPage();
+    noise.watch(participantPage, "participant");
+    await participantPage.goto(`${APP_ORIGIN}/sign/${afterReplace[0]}#${replacementSecret}`, {
+      waitUntil: "networkidle",
+    });
+    const entryPath = `/sign/${afterReplace[0]}`;
+    await participantPage
+      .waitForURL((current) => current.pathname !== entryPath, { timeout: 60000 })
+      .catch(async () => {
+        await shot(participantPage, "04a-participant-entry-stuck");
+        fail(`participant entry stayed on the entry page: ${await participantPage.locator("main").innerText()}`);
+      });
+    await participantPage.waitForLoadState("networkidle");
+    if (!/^\/sign\/(ceremony|continue)/.test(new URL(participantPage.url()).pathname)) {
+      await shot(participantPage, "04a-participant-entry-unexpected");
+      fail(`replacement link landed on ${new URL(participantPage.url()).pathname}`);
+    }
+    await shot(participantPage, "04a-participant-ceremony-entry");
+    ok(`replacement link entered the participant ceremony (${new URL(participantPage.url()).pathname})`);
+    await participantPage.getByRole("button", { name: "I am Pat Participant" }).click();
+    await participantPage.waitForURL(/\/sign\/ceremony/, { timeout: 60000 });
+    await participantPage.waitForLoadState("networkidle");
+    await participantPage.waitForTimeout(1500);
+    await shot(participantPage, "04b-participant-ceremony");
+    await participantContext.close();
+    ok("identity affirmation opened the ceremony");
+
     // Revoke: confirmation, no replacement, Revoked badge.
     await panel().getByRole("button", { name: "Revoke signing link" }).click();
     await dialog.getByText("Revoke signing link?").waitFor();
@@ -320,6 +360,9 @@ async function main() {
     if (!noReload) fail("the page reloaded during link operations");
     await shot(page, "04-revoked");
     ok("Revoke confirmed, Revoked badge and time shown without reload; no replacement credential or invitation");
+    const issues = noise.issues();
+    if (issues.length > 0) fail(`unexpected runtime errors/warnings:\n${issues.join("\n")}`);
+    ok("no browser console errors/warnings, page errors, or dev server errors/warnings");
     console.log("\nParticipant access browser QA: all checks passed.");
   } finally {
     await browser.close();

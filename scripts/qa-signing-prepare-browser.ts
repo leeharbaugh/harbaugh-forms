@@ -19,6 +19,7 @@ import {
   DATE_SIGNED_DEFAULT_SIZE,
   defaultDraftFieldSize,
 } from "../lib/signing/draft-field-sizing.ts";
+import { createRuntimeNoiseGuard } from "./qa-runtime-noise.ts";
 
 const EXPECTED_REF = "ewxsxwzezhkeawnjvigx";
 const APP_ORIGIN = process.env.MANUAL_QA_ORIGIN?.trim() || "http://localhost:3000";
@@ -98,7 +99,8 @@ async function main() {
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  page.on("pageerror", (error) => console.log(`NOTE: pageerror ${error.message}`));
+  const noise = createRuntimeNoiseGuard();
+  noise.watch(page, "manager");
 
   async function draftFields() {
     const { data, error } = await admin
@@ -312,11 +314,21 @@ async function main() {
     await page.getByText(/Added 2 documents from the Packet/).waitFor({ timeout: 60000 });
     await shot(page, "01-dashboard-after-packet");
 
-    // Open the Prepare Documents workspace.
+    // Open the Prepare Documents workspace. pdf.js (which sets
+    // globalThis.pdfjsLib when evaluated) must not load with the dashboard.
+    const viewerLoaded = () =>
+      page.evaluate(() => typeof (globalThis as { pdfjsLib?: unknown }).pdfjsLib !== "undefined");
+    if (await viewerLoaded()) fail("pdf.js loaded with the dashboard, before Prepare Documents opened");
     await page.getByRole("button", { name: "Prepare Documents", exact: true }).click();
     await page.getByRole("heading", { name: "Prepare Documents" }).waitFor();
     await page.locator(".react-pdf__Page canvas").first().waitFor({ timeout: 60000 });
     await page.waitForTimeout(1500);
+    if (!(await viewerLoaded())) fail("pdf.js did not load when Prepare Documents opened");
+    await page.evaluate(() => {
+      const scope = globalThis as { pdfjsLib?: unknown; __qaFirstPdfjs?: unknown };
+      scope.__qaFirstPdfjs = scope.pdfjsLib;
+    });
+    ok("pdf.js is not loaded by the dashboard; it loads when Prepare Documents opens");
     const dialogBox = await page.getByRole("dialog").boundingBox();
     if (!dialogBox || dialogBox.width < 1400 || dialogBox.height < 880) {
       fail(`workspace is not full viewport: ${JSON.stringify(dialogBox)}`);
@@ -627,6 +639,12 @@ async function main() {
     });
     if (!same) fail(`reopened geometry differs: ${JSON.stringify(prepareRects)} vs ${JSON.stringify(reopenedRects)}`);
     ok(`reopened Prepare Documents renders the same geometry: ${JSON.stringify(reopenedRects)}`);
+    const sameViewerModule = await page.evaluate(() => {
+      const scope = globalThis as { pdfjsLib?: unknown; __qaFirstPdfjs?: unknown };
+      return scope.pdfjsLib !== undefined && scope.pdfjsLib === scope.__qaFirstPdfjs;
+    });
+    if (!sameViewerModule) fail("reopening Prepare Documents re-evaluated pdf.js");
+    ok("reopen reuses the already-loaded viewer module (pdf.js not re-evaluated)");
     await shot(page, "06-prepare-reopened");
 
     // Multi-select, group drag, copy/paste, multi-delete (page 1).
@@ -813,6 +831,9 @@ async function main() {
     if (!sameAgain) fail(`geometry after edits differs on reopen: ${JSON.stringify(finalRects)} vs ${JSON.stringify(reopenedAgain)}`);
     await shot(page, "10-reopened-after-multi-edit");
     ok(`geometry after group drag / paste / delete survives close and reopen (${finalRects.length} fields)`);
+    const issues = noise.issues();
+    if (issues.length > 0) fail(`unexpected runtime errors/warnings:\n${issues.join("\n")}`);
+    ok("no browser console errors/warnings, page errors, or dev server errors/warnings");
     console.log("\nPrepare Documents browser QA: all checks passed.");
   } finally {
     await browser.close();

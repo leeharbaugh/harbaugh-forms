@@ -12,6 +12,24 @@ Each decision should include:
 
 ---
 
+## Browser PDF viewing stays out of the server module graph
+
+**Date:** 2026-09-30
+
+**Decision:**
+Browser-only document-viewer code (`react-pdf`, `pdfjs-dist`, `lib/pdfjs-setup`) must remain outside the server module graph. Server PDF generation and manipulation (pdf-lib, fontkit, snapshots, completed PDFs, hashing) and client PDF viewing are separate responsibilities. Client Components that show a PDF viewer load it with `next/dynamic(..., { ssr: false })`; the viewer is never made to run on the server with browser-API polyfills.
+
+**Reason:**
+pdf.js needs DOMMatrix, canvas, and workers at module load. A static import from a server-rendered Client Component made every Signing dashboard request fail server rendering and rely on client recovery.
+
+**Consequences:**
+* The Signing dashboard loads Prepare Documents only when it is first opened.
+* `lib/signing/client-boundary.test.ts` fails if any `app/**` page, layout, or route statically reaches a viewer module.
+
+**Related:** `components/signings/signing-dashboard-page.tsx`; `lib/signing/client-boundary.test.ts`; `components/packets/packet-form-editor-page.tsx`; `components/forms/pdf-field-editor-page.tsx`.
+
+---
+
 ## Prepare Documents multi-select and copy/paste are Draft editing conveniences
 
 **Date:** 2026-09-28

@@ -1,8 +1,27 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-28 (Native Signing manager QA pass 8 on PR #46 — Prepare Documents multi-select, group move, multi-delete, and in-editor copy/paste; Replace signing link confirmation, inline feedback, and honest participant link/invitation status; Signing Placement Templates designed, not implemented; Gate A paused; production Native Signing unavailable)
+**As of:** 2026-09-30 (Native Signing quality/efficiency closeout on PR #46 — DOMMatrix server error fixed at the module boundary, participant `/sign` routes no longer redirected to workspace login, runtime-noise-free browser QA; earlier: pass 8 multi-select / copy-paste / participant access status; Signing Placement Templates designed, not implemented; Gate A paused; production Native Signing unavailable)
 
 ## Current State
+
+### Native Signing quality/efficiency closeout (2026-09-30; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. PR #46 stays open — technically ready for Lee's final participant-ceremony QA and merge decision; do not merge before that.
+
+| Item | Result |
+|------|--------|
+| DOMMatrix root cause | `pdfjs-dist/build/pdf.mjs` runs `new DOMMatrix()` at module top level. The Signing dashboard (a Client Component, still server-rendered per request) statically imported the Prepare Documents dialog → `react-pdf` / `lib/pdfjs-setup` → `pdfjs-dist`, so every `/signings/[id]` request failed server rendering (500 + "Please use the legacy build" warning) and the browser recovered by client-rendering |
+| Fix | The dashboard loads the dialog with `next/dynamic(..., { ssr: false })` and mounts it only after Prepare Documents is first opened (kept mounted afterwards). No DOMMatrix polyfill; server PDF generation (pdf-lib / fontkit) untouched |
+| Script-tag warning | "Encountered a script tag while rendering React component" came from the `next-themes` inline script during that client-side recovery render; gone with the fix |
+| Participant routes | `lib/supabase/proxy.ts` redirected `/sign/*` and `/api/sign/*` to workspace login, contradicting "Login is never required to sign". These routes now bypass the workspace-login redirect (device-handoff lock still first); they authenticate with Signing credentials/sessions |
+| Dev CSP | `/sign/*` CSP adds `'unsafe-eval'` only when `NODE_ENV=development` (Next dev tooling needs it); production CSP unchanged |
+| Lazy viewer | Browser QA: pdf.js is not evaluated on dashboard load, loads on first Prepare Documents open, and reopening reuses the same module instance |
+| Boundary guard | `lib/signing/client-boundary.test.ts` walks static imports from every `app/**/page|layout|route` and fails if any reaches `react-pdf`, `pdfjs-dist`, or `lib/pdfjs-setup` |
+| Runtime noise | `scripts/qa-runtime-noise.ts` fails both browser QA scripts on any browser console error/warning, page error, or new dev-server ERROR/WARN log line (no allowlist). Link-ops QA now sends through the Draft page Send confirmation and visits the Signings list |
+| Batch writes | Not added: group move / multi-delete / paste stay per-field trusted writes on the ordered queue (small selections; each write fully authorized; failures reconcile to server state) |
+| Build | `next build` emits no warnings. Remaining non-Next output: Node `MODULE_TYPELESS_PACKAGE_JSON` from the pre-build env guard (repo-wide module type; backlog) and an npm `devdir` env warning from the local shell environment |
+| Migration | None |
+| Gate A | Remains paused |
 
 ### Native Signing manager QA pass 8 (2026-09-28; PR #46)
 

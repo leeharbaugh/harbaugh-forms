@@ -4,7 +4,6 @@ import { ListPageHeader } from "@/components/list-page-header";
 import { SigningCompletedOpsPanel } from "@/components/signings/signing-completed-ops-panel";
 import { SigningCopyRecipientsPanel } from "@/components/signings/signing-copy-recipients-panel";
 import { SigningDraftPrepPanel } from "@/components/signings/signing-draft-prep-panel";
-import { SigningPreviewDialog } from "@/components/signings/signing-preview-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +27,17 @@ import {
   revokeParticipantInvitationAction,
   updateDraftSourceToLatestAction,
 } from "@/lib/signing/stage4-actions";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
+
+/** pdf.js needs browser APIs (DOMMatrix, canvas, workers): never load it on the server. */
+const SigningPreviewDialog = dynamic(
+  () =>
+    import("@/components/signings/signing-preview-dialog").then(
+      (module) => module.SigningPreviewDialog,
+    ),
+  { ssr: false },
+);
 
 type ActivationMode = "REMOTE_SEND" | "IN_PERSON";
 
@@ -94,7 +103,8 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     path: string;
     expiresAt: string;
   } | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceMounted, setWorkspaceMounted] = useState(false);
   const [workspaceDocumentId, setWorkspaceDocumentId] = useState<string | null>(
     null,
   );
@@ -367,7 +377,8 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
           busyDocumentId={busyDocumentId}
           onPrepareDocument={(documentId) => {
             setWorkspaceDocumentId(documentId);
-            setPreviewOpen(true);
+            setWorkspaceOpen(true);
+            setWorkspaceMounted(true);
           }}
         />
       ) : null}
@@ -725,17 +736,19 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         finalizationCondition={dashboard.signing.finalizationCondition}
       />
 
-      <SigningPreviewDialog
-        open={previewOpen}
-        signingId={signingId}
-        mode="prepare"
-        initialDocumentId={workspaceDocumentId}
-        onClose={() => {
-          setPreviewOpen(false);
-          setWorkspaceDocumentId(null);
-        }}
-        onChanged={reload}
-      />
+      {workspaceMounted ? (
+        <SigningPreviewDialog
+          open={workspaceOpen}
+          signingId={signingId}
+          mode="prepare"
+          initialDocumentId={workspaceDocumentId}
+          onClose={() => {
+            setWorkspaceOpen(false);
+            setWorkspaceDocumentId(null);
+          }}
+          onChanged={reload}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={pendingLinkOp !== null}
