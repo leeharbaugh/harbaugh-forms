@@ -770,7 +770,9 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
             ? "Begin In-Person Signing"
             : "Send"
         }
-        confirmingLabel="Activating…"
+        confirmingLabel={
+          pendingActivation?.mode === "IN_PERSON" ? "Activating…" : "Sending…"
+        }
         isConfirming={activating}
         onConfirm={() => void confirmActivation()}
         onCancel={() => {

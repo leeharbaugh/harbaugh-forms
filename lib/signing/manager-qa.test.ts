@@ -113,6 +113,15 @@ describe("manager QA wiring", () => {
     );
   });
 
+  it("labels the remote Send pending state Sending…, not Activating…", () => {
+    const dashboard = read("components/signings/signing-dashboard-page.tsx");
+    assert.match(
+      dashboard,
+      /confirmingLabel=\{\s*pendingActivation\?\.mode === "IN_PERSON" \? "Activating…" : "Sending…"\s*\}/,
+    );
+    assert.doesNotMatch(dashboard, /confirmingLabel="Activating…"/);
+  });
+
   it("reviews Draft snapshots in Prepare Documents without a standalone Preview", () => {
     const dashboard = read("components/signings/signing-dashboard-page.tsx");
     const preview = read("lib/signing/preview.ts");
