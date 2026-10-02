@@ -26,6 +26,7 @@ import {
   replaceCeremonyPlacementAction,
 } from "@/lib/signing/ceremony-actions";
 import type { CeremonyOverview } from "@/lib/signing/ceremony-context";
+import { linkedDateSignedBySignatureField } from "@/lib/signing/ceremony-field-view";
 import { SIGNING_PRESENCE_HEARTBEAT_SECONDS } from "@/lib/signing/presence";
 import { useCallback, useEffect, useState, useTransition } from "react";
 
@@ -57,9 +58,7 @@ export function CeremonyShell({
   const [initialsPrefilled, setInitialsPrefilled] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
-  const [finished, setFinished] = useState(
-    initialOverview.participantStatus === "FINISHED",
-  );
+  const finished = overview.participantStatus === "FINISHED";
 
   const refresh = useCallback(async () => {
     const result = await getCeremonyOverviewAction();
@@ -75,16 +74,6 @@ export function CeremonyShell({
     setSessionEnded(result.error);
     return false;
   }, [initialsPrefilled]);
-
-  function redirectAfterInPersonExit(data: unknown) {
-    const payload = data as {
-      inPersonCeremony?: boolean;
-      returnToAgentPath?: string | null;
-    };
-    if (payload.inPersonCeremony && payload.returnToAgentPath) {
-      window.location.assign(payload.returnToAgentPath);
-    }
-  }
 
   // Presence heartbeat. This renews the lease only; the 60-minute inactivity
   // deadline still depends on meaningful activity.
@@ -150,7 +139,7 @@ export function CeremonyShell({
     );
   }
 
-  if (finished || overview.participantStatus === "FINISHED") {
+  if (finished) {
     return (
       <Card>
         <CardHeader>
@@ -184,6 +173,7 @@ export function CeremonyShell({
   const actionableFields = overview.fields.filter(
     (field) => field.fieldType === "SIGNATURE" || field.fieldType === "INITIALS",
   );
+  const dateSignedBySignature = linkedDateSignedBySignatureField(overview.fields);
   const needsSignature =
     actionableFields.some((field) => field.fieldType === "SIGNATURE") &&
     !overview.marks.signature;
@@ -414,8 +404,8 @@ export function CeremonyShell({
                               {field.placementId ? (
                                 <span className="block text-xs text-muted-foreground">
                                   Applied
-                                  {field.renderedSenderLocalDate
-                                    ? ` · dated ${field.renderedSenderLocalDate}`
+                                  {dateSignedBySignature.has(field.fieldId)
+                                    ? ` · dated ${dateSignedBySignature.get(field.fieldId)}`
                                     : ""}
                                 </span>
                               ) : null}
@@ -470,7 +460,7 @@ export function CeremonyShell({
                                     run(() =>
                                       placeCeremonyFieldAction({
                                         signingFieldId: field.fieldId,
-                                        clientRequestId: `accept:${clientRequestId}`,
+                                        clientRequestId: `accept:${clientRequestId}:${Date.now()}`,
                                       }),
                                     )
                                   }
@@ -506,14 +496,7 @@ export function CeremonyShell({
             type="button"
             className="w-full"
             disabled={pending || !overview.canFinish || !consentSatisfied}
-            onClick={() =>
-              run(() => finishCeremonyAction(), {
-                onSuccess: (data) => {
-                  redirectAfterInPersonExit(data);
-                  setFinished(true);
-                },
-              })
-            }
+            onClick={() => run(() => finishCeremonyAction())}
           >
             Finish signing
           </Button>
@@ -538,13 +521,11 @@ export function CeremonyShell({
                   variant="destructive"
                   disabled={pending}
                   onClick={() =>
-                    run(
-                      () =>
-                        declineCeremonyAction({
-                          confirmed: true,
-                          reason: declineReason,
-                        }),
-                      { onSuccess: redirectAfterInPersonExit },
+                    run(() =>
+                      declineCeremonyAction({
+                        confirmed: true,
+                        reason: declineReason,
+                      }),
                     )
                   }
                 >
@@ -577,11 +558,7 @@ export function CeremonyShell({
             variant="ghost"
             className="w-full"
             disabled={pending}
-            onClick={() =>
-              run(() => exitCeremonyAction(), {
-                onSuccess: redirectAfterInPersonExit,
-              })
-            }
+            onClick={() => run(() => exitCeremonyAction())}
           >
             Exit signing
           </Button>
