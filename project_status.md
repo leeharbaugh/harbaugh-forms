@@ -6,6 +6,23 @@
 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
+### Production hotfix: packet Created/Updated timestamps in Central time (2026-10-02)
+
+**Bug:** packet Created/Updated timestamps (Packets list, Packet detail, Contact detail) combined the UTC calendar date with the viewer's local time, so evening Central timestamps showed the next day (e.g. a packet created 10:44 PM CDT on 8/10 displayed as `08/11/2026 10:44 PM`). Not a hydration issue: all three views load data client-side after mount.
+
+**Fix:** `formatDateTime` in `lib/types/packet.ts` now delegates to the shared `formatTimestamp` (America/Chicago, explicit CDT/CST, independent of server and viewer time zone); unparseable values keep the previous `formatDate` fallback and empty values still show `—`. Approved by Lee 2026-10-02 (Central time).
+
+| Item | Result |
+| --- | --- |
+| Starting point | Production lineage `c25e4c3` (`hotfix/admin-hydration-prod`), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; not deployed from `main` |
+| Hotfix | Branch `hotfix/packet-timestamps-prod`, commit `3e5eaa3`: cherry-pick of PR #52 code and tests only (`f1a9a24`; `main` `7733493`). Files: `lib/types/packet.ts`, `lib/types/packet-datetime.test.ts`, `lib/format-timestamp.test.ts`, `package.json` (test script) |
+| Validation | `npm ci`; packet-timestamps 3/3, format-timestamp 6/6, packet-forms-duplicate, packet-tenant-names, packet-form-lifecycle, ui-lists, form-controls, admin-audit pass; `tsc`, changed-path ESLint, `git diff --check` pass; `npm audit --omit=dev` 0; `build:validate` with `NATIVE_SIGNING_ENABLED=false` pass (37 routes, no signing routes) |
+| Candidate | `vercel deploy --prod --skip-domain` from a clean checkout: `dpl_E9HTxf45epr8ckKifivWCPNgpFAU` (Next.js 16.3.6) |
+| Unique-URL validation | Passed before promotion: packet created after UTC midnight showed `8/10/2026, 10:44:45 PM CDT` on all three views in America/Chicago and Asia/Tokyo browsers, no rollover; core and admin smoke read-only; 0 console/page/#418 errors; 0 server errors or 5xx |
+| Promotion | `vercel promote` to `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app`; both post-verified with the same smoke (passed) and clean runtime logs |
+| Rollback target | `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo` (retained) |
+| Unchanged | Native Signing off; no Supabase changes, no migrations, no env var changes; `autoAssignCustomDomains=false` confirmed after promotion |
+
 ### Native e-signature architecture design (2026-08-19)
 
 **Status:** Design in progress. **No signing implementation, migration, or schema change.**
