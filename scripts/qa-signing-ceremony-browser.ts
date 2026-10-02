@@ -14,6 +14,10 @@
  *
  * Signing B: Resend / Replace / Revoke spot-check, then an explicit Decline.
  *
+ * Signing C (in person, on the manager's own browser): Begin In-Person, hand
+ * the device over, sign, Finish → Return to agent with the device lock intact,
+ * then unlock with the agent password.
+ *
  * Participant links come from the development-only Copy signing link helper;
  * secrets are held in memory only and never printed.
  *
@@ -37,6 +41,7 @@ import { loadRawCompletedPackageToken } from "../lib/signing/completed-package-c
 import { addCopyRecipientWithActor } from "../lib/signing/copy-recipients.ts";
 import { addDraftSigningDocumentWithActor } from "../lib/signing/draft-documents.ts";
 import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
+import { DEVICE_HANDOFF_LOCK_COOKIE_NAME } from "../lib/signing/device-handoff-lock.ts";
 import { upsertDraftSigningFieldWithActor } from "../lib/signing/draft-fields.ts";
 import { SIGNING_ENTRY_COOKIE_NAME } from "../lib/signing/entry-sessions.ts";
 import { verifySigningEventChain } from "../lib/signing/event-chain.ts";
@@ -57,6 +62,7 @@ const P1 = "Avery Jordan Stone";
 const P2 = "Blake Rivera";
 const P3 = "Casey Decliner";
 const P4 = "Drew Revoked";
+const P5 = "Erin Inperson";
 const AGENT = "Ceremony QA Agent";
 
 class QaFailure extends Error {}
@@ -364,9 +370,10 @@ async function main() {
     // ---------- fixtures ----------
     const { data: org } = await admin.from("organizations").insert({ name: orgName, status: "ACTIVE" }).select("id").single();
     organizationId = org!.id as string;
+    const agentPassword = `CeremonyQa-${randomUUID()}!aA1`;
     const { data: created, error: userError } = await admin.auth.admin.createUser({
       email,
-      password: `CeremonyQa-${randomUUID()}!aA1`,
+      password: agentPassword,
       email_confirm: true,
     });
     if (userError || !created.user) fail(userError?.message ?? "user");
@@ -1060,6 +1067,49 @@ async function main() {
     await shot(manager, "b03-manager-declined");
     ok("manager sees DECLINED; no completed-package operations for the Declined Signing");
 
+    // ---------- Signing C: in-person Finish keeps the device lock ----------
+    const formC = await createPacketDocument("Ceremony QA In-Person Contract");
+    const titleC = `Ceremony QA In-Person ${stamp}`;
+    const c = await createDraft(titleC, formC);
+    const p5 = await addDraftSigningParticipantWithActor(actor, { signingId: c.signingId, fullName: P5, email: `erin-${stamp}@example.com` }, admin);
+    const p5Sig = await addField(c.signingId, c.documentId, p5.id, "SIGNATURE", { x: 72, y: 560, width: 150, height: 28 });
+    await addField(c.signingId, c.documentId, p5.id, "DATE_SIGNED", { x: 230, y: 566, width: 72, height: 18 }, { linkedSignatureDraftFieldId: p5Sig.id });
+    await manager.goto(`${APP_ORIGIN}/signings/${c.signingId}`, { waitUntil: "networkidle" });
+    await manager.getByRole("button", { name: "Begin In-Person Signing" }).click();
+    await manager.getByRole("alertdialog").getByRole("button", { name: "Begin In-Person Signing" }).click();
+    const handoffButton = panel(P5).getByRole("button", { name: "Hand device to this participant" });
+    await handoffButton.waitFor({ timeout: 90000 });
+    await handoffButton.click();
+    await manager.waitForURL(/\/sign\/continue/, { timeout: 60000 });
+    if (!(await managerContext.cookies()).some((cookie) => cookie.name === DEVICE_HANDOFF_LOCK_COOKIE_NAME)) fail("device-handoff lock not set at handoff");
+    await affirm(manager, P5);
+    await manager.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
+    await manager.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
+    await manager.locator("#typed-signature").fill(P5);
+    await manager.getByRole("button", { name: "Adopt signature" }).click();
+    await manager.getByText("Signature adopted.").waitFor({ timeout: 30000 });
+    await row(manager, "Signature", true).getByRole("button", { name: "Sign here" }).click();
+    await row(manager, "Signature", true).getByText("Applied").waitFor({ timeout: 30000 });
+    await manager.getByRole("button", { name: "Finish signing" }).click();
+    await manager.waitForURL(/\/sign\/return-to-agent$/, { timeout: 30000 });
+    await manager.getByText("Return to agent workspace", { exact: true }).waitFor({ timeout: 30000 });
+    const inPersonCookies = await managerContext.cookies();
+    if (!inPersonCookies.some((cookie) => cookie.name === DEVICE_HANDOFF_LOCK_COOKIE_NAME)) fail("device-handoff lock cleared by in-person Finish");
+    if (inPersonCookies.some((cookie) => cookie.name === SIGNING_CEREMONY_COOKIE_NAME)) fail("ceremony cookie survived in-person Finish");
+    if ((await participantRow(c.signingId, P5)).participant_status !== "FINISHED") fail("in-person participant not FINISHED");
+    await shot(manager, "c01-in-person-return-to-agent");
+    await manager.goto(`${APP_ORIGIN}/signings`, { waitUntil: "networkidle" });
+    if (!/\/sign\/return-to-agent$/.test(manager.url())) fail(`workspace reachable while the device is locked: ${manager.url()}`);
+    await manager.locator("#agent-unlock-password").fill(agentPassword);
+    await manager.getByRole("button", { name: "Return to Agent Workspace" }).click();
+    await manager.waitForURL(new RegExp(`/signings/${c.signingId}$`), { timeout: 60000 });
+    if ((await managerContext.cookies()).some((cookie) => cookie.name === DEVICE_HANDOFF_LOCK_COOKIE_NAME)) fail("device-handoff lock survived unlock");
+    {
+      const deadline = Date.now() + 120000;
+      while ((await signingRow(c.signingId)).lifecycle_state !== "COMPLETE" && Date.now() < deadline) await manager.waitForTimeout(2000);
+    }
+    ok(`in-person: Begin In-Person → hand device → "I am ${P5}" → sign → Finish lands on Return to agent with the device lock intact (ceremony cookie cleared); /signings stays locked; password unlock returns to the Signing (lifecycle ${(await signingRow(c.signingId)).lifecycle_state})`);
+
     // ---------- secret hygiene + runtime noise ----------
     for (const secret of secrets) {
       if (participantRequestUrls.some((requestUrl) => requestUrl.includes(secret))) fail("a raw secret appeared in a request URL");
@@ -1132,6 +1182,7 @@ async function cleanup(
       "signing_entry_sessions",
       "signing_participant_presence_leases",
       "signing_browser_sessions",
+      "signing_device_handoff_locks",
       "signing_in_person_handoffs",
       "signing_amendment_locks",
       "signing_participant_credentials",
