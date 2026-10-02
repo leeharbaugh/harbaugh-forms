@@ -1,8 +1,41 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-02 (admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 open for `main`; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live since 2026-10-01 via hotfix `2a92d82` = `a87b1aa` + dependency change only; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
+**As of:** 2026-10-02 (dev-only `brace-expansion` advisories remediated by a lockfile-only PR, full lockfile audit clean; admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 open for `main`; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live since 2026-10-01 via hotfix `2a92d82` = `a87b1aa` + dependency change only; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
 
 ## Current State
+
+### Dev-only `brace-expansion` advisories remediated (2026-10-02)
+
+**Status:** Lockfile-only PR on `security/brace-expansion-dev-tooling` from `main` `c2a490a`; not merged, not deployed. Closes the reviewed R1 exception carried since the Next.js 16.3.6 patch. Independent of Native Signing PR #46 and of any production rollout.
+
+**Finding:** The full lockfile audit (R1, `npm audit --package-lock-only`) reported one High in `brace-expansion`, present only through ESLint tooling. Advisories (checked 2026-10-02 against the GitHub Advisory Database and the npm registry):
+
+| Advisory | Severity | Affected (relevant lines) | Patched |
+|----------|----------|---------------------------|---------|
+| GHSA-qhr7-859c-m2p7 / CVE-2026-102278 — uncontrolled recursion on nested brace groups (stack exhaustion) | High (7.5) | `< 1.1.20`; `>= 4.0.0 < 5.0.11` | 1.1.20 / 5.0.11 |
+| GHSA-6j4f-fj2g-mc7p / CVE-2026-102276 — uncontrolled recursion in `parseCommaParts` | High (7.5) | `< 1.1.19`; `>= 4.0.0 < 5.0.10` | 1.1.19 / 5.0.10 |
+| GHSA-q2hr-2g5m-vwhr / CVE-2026-102277 — quadratic `{a},b}` rewrite (CPU DoS) | Moderate (5.3) | `< 1.1.21`; `>= 4.0.0 < 5.0.12` | 1.1.21 / 5.0.12 |
+
+Both installed major lines were affected (1.1.18 and 5.0.9). Exploitation needs an attacker-controlled glob/brace pattern; here the pattern sources are ESLint config and CLI arguments on developer machines.
+
+**Dependency chains (all `dev: true`):**
+- `brace-expansion@1.1.18` ← `minimatch@3.1.5` (`^1.1.7`) ← `@eslint/eslintrc@3.3.5` (direct devDependency, used by `eslint.config.mjs` `FlatCompat`), `@eslint/config-array` (← `eslint@9.39.4`), `eslint-plugin-import`, `eslint-plugin-jsx-a11y`, `eslint-plugin-react` (← `eslint-config-next@15.3.1`).
+- `brace-expansion@5.0.9` ← `minimatch@10.2.5` (`^5.0.5`) ← `@typescript-eslint/typescript-estree@8.63.0` ← `@typescript-eslint/parser` / `type-utils` / `utils` ← `eslint-config-next@15.3.1`.
+
+**Remediation:** In-range transitive refresh, `npm update brace-expansion --package-lock-only`. Both patched versions already satisfy the parents' declared ranges, so no `package.json` change, no `overrides`, and no ESLint package bump. The lockfile diff is exactly the two `brace-expansion` entries (version / resolved / integrity: 1.1.18 → 1.1.21, 5.0.9 → 5.0.12); npm's rewrite of the lockfile `name` to the worktree folder was reverted. The existing nested `balanced-match@4.0.4` satisfies 5.0.12's `^4.0.2`.
+
+| Item | Result |
+|------|--------|
+| `npm ci` (clean `node_modules`) | Pass, 446 packages; installed 1.1.21 / 5.0.12 |
+| `npm audit --omit=dev` | 0 vulnerabilities (unchanged) |
+| R1 lockfile audit / installed-tree `npm audit` | Before: 1 High (`brace-expansion`). After: 0 of every severity |
+| `npm ls` / `npm explain brace-expansion` | Only 1.1.21 and 5.0.12, both `dev`; `npm ls brace-expansion --omit=dev` empty |
+| ESLint | Source lint (`app`, `components`, `lib`, `proxy.ts`, `next.config.ts`; 526 files, both `minimatch` paths exercised): 2 errors / 10 warnings, identical file-by-file and line-by-line to a baseline run with 1.1.18 / 5.0.9 swapped back in. Full `npm run lint` still fails on pre-existing `.next` / `_audit_tmp` pollution (out of scope). Brace globs (`**/*.{ts,tsx}`, `file{1..3}.md`) match identically through both `minimatch` versions; 5,000-deep nested braces return without stack exhaustion |
+| Type check / diff check | `npx tsc --noEmit --incremental false` pass; `git diff --check` clean |
+| Tests | 15 suites, 351 tests, 0 failures (format-timestamp, admin audit / orgs / user lifecycle / invite, auth confirm / bootstrap, Supabase guard, library permissions, secure publish, selective production, UI lists, form controls, form lifecycle, storage paths) |
+| Build | `npm run build:validate` pass (Next 16.3.6, dev target `ewxsxwzezhkeawnjvigx`) |
+
+**Production impact:** None. Both packages are `dev: true` in the lockfile and absent from `npm ls --omit=dev`; none of the 57 `.next/**/*.nft.json` server traces reference `brace-expansion`, `minimatch`, or `eslint`; no file under `.next/server` or `.next/static` mentions either package. `next build` (Next 16) does not run ESLint, so the packages are not executed during the Vercel build either. Production (`dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`) is unchanged and needs no redeploy for this.
 
 ### Admin pages React #418 hydration fix (2026-10-02)
 
