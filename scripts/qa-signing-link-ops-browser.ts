@@ -3,6 +3,10 @@
  *
  * Disposable development fixtures only (own user, Packet, Draft Signing sent
  * from the Draft page with the development email sandbox); cleaned up in `finally`.
+ * Development Copy / Open signing link: the copied URL is the current
+ * credential's invitation URL (shape checked, secret never printed), opens the
+ * participant flow without workspace login, changes on Replace (old link
+ * refused), is unchanged by Resend, and the controls disappear on Revoke.
  * Proves in a real browser that Replace / Revoke ask for confirmation, show
  * inline status next to the participant, update link status without a manual
  * reload, never display credential ids or provider references, and that the
@@ -22,7 +26,6 @@ import { upsertDraftSigningFieldWithActor } from "../lib/signing/draft-fields.ts
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
 import type { SigningActor } from "../lib/signing/types.ts";
 import type { Profile } from "../lib/types/profile.ts";
-import { loadRawParticipantCredentialToken } from "../lib/signing/credentials.ts";
 import { createRuntimeNoiseGuard } from "./qa-runtime-noise.ts";
 
 const EXPECTED_REF = "ewxsxwzezhkeawnjvigx";
@@ -69,7 +72,11 @@ async function main() {
   let participantId = "";
 
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const managerContext = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    permissions: ["clipboard-read", "clipboard-write"],
+  });
+  const page = await managerContext.newPage();
   const noise = createRuntimeNoiseGuard();
   noise.watch(page, "manager");
 
@@ -258,10 +265,88 @@ async function main() {
     const linkState = panel().locator('[data-testid="participant-link-state"]');
     if ((await linkState.innerText()).trim() !== "Active link") fail("initial link state is not Active link");
     await panel().getByText("Invitation accepted by the development email sandbox (not sent)").first().waitFor();
-    await page.getByText(/Email delivery is sandboxed in development: invitations are accepted but not sent\./).waitFor();
+    await page
+      .getByText("Email delivery is sandboxed in development. Use Copy signing link to test the participant ceremony.")
+      .waitFor();
+    await panel().getByRole("button", { name: "Copy signing link" }).waitFor();
+    await panel().getByRole("button", { name: "Open signing link" }).waitFor();
     await assertNoSecrets("initial");
     await shot(page, "01-in-progress-access");
-    ok("panel shows Active link, honest sandbox invitation status, and the sandbox note");
+    ok("panel shows Active link, honest sandbox status, the sandbox note, and Copy / Open signing link");
+
+    // Copy signing link: the exact current invitation URL, never in the page at rest.
+    const status = panel().locator('[data-testid="participant-link-status"]');
+    async function copySigningLink(label: string): Promise<string> {
+      await page.evaluate(() => navigator.clipboard.writeText(""));
+      await panel().getByRole("button", { name: "Copy signing link" }).click();
+      await status.getByText("Signing link copied.").waitFor({ timeout: 30000 });
+      const copied = await page.evaluate(() => navigator.clipboard.readText());
+      const [currentId] = await currentIds();
+      const parsed = new URL(copied);
+      if (
+        parsed.pathname !== `/sign/${currentId}` ||
+        !/^#[A-Za-z0-9_-]{43}$/.test(parsed.hash) ||
+        parsed.search !== ""
+      ) {
+        fail(`${label}: copied link is not /sign/{current credential}#<secret>`);
+      }
+      const html = await page.content();
+      if (html.includes(parsed.hash.slice(1)) || html.includes(copied)) {
+        fail(`${label}: the copied link is present in the page`);
+      }
+      ok(`${label}: copied link has shape /sign/{current credential id}#<43-char secret> (secret not printed); not in page HTML`);
+      return copied;
+    }
+    async function openAsParticipant() {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const participant = await context.newPage();
+      return { context, participant };
+    }
+    async function expectEntryWorks(link: string, label: string, affirm: boolean) {
+      const { context, participant } = await openAsParticipant();
+      noise.watch(participant, "participant");
+      await participant.goto(link, { waitUntil: "networkidle" });
+      const entryPath = new URL(link).pathname;
+      await participant
+        .waitForURL((current) => current.pathname !== entryPath, { timeout: 60000 })
+        .catch(async () => {
+          await shot(participant, `${label}-entry-stuck`);
+          fail(`${label}: participant entry stayed on the entry page`);
+        });
+      await participant.waitForLoadState("networkidle");
+      const landed = new URL(participant.url()).pathname;
+      if (landed.startsWith("/auth/")) fail(`${label}: participant was sent to workspace login`);
+      if (!/^\/sign\/(continue|ceremony)/.test(landed)) fail(`${label}: link landed on ${landed}`);
+      await participant.getByRole("button", { name: "I am Pat Participant" }).waitFor({ timeout: 30000 });
+      await shot(participant, `${label}-identity`);
+      ok(`${label}: link reached ${landed} without workspace login; identity affirmation shown`);
+      if (affirm) {
+        await participant.getByRole("button", { name: "I am Pat Participant" }).click();
+        await participant.waitForURL(/\/sign\/ceremony/, { timeout: 60000 });
+        await participant.waitForLoadState("networkidle");
+        await participant.waitForTimeout(1500);
+        await shot(participant, `${label}-ceremony`);
+        ok(`${label}: identity affirmation opened the ceremony`);
+      }
+      await context.close();
+    }
+
+    const firstLink = await copySigningLink("copy");
+    await expectEntryWorks(firstLink, "05-first-link", true);
+
+    // Open signing link: requested on click and opened in a new tab.
+    const [opened] = await Promise.all([
+      managerContext.waitForEvent("page", { timeout: 30000 }),
+      panel().getByRole("button", { name: "Open signing link" }).click(),
+    ]);
+    noise.watch(opened, "opened-tab");
+    await status.getByText("Signing link opened in a new tab.").waitFor({ timeout: 30000 });
+    await opened.waitForURL((current) => current.pathname.startsWith("/sign/"), { timeout: 60000 });
+    await opened.getByRole("button", { name: "I am Pat Participant" }).waitFor({ timeout: 60000 });
+    const openerVisible = await opened.evaluate(() => window.opener !== null);
+    if (openerVisible) fail("Open signing link tab can reach window.opener");
+    await opened.close();
+    ok("Open signing link opened the participant link in a new tab (no opener) and reached identity affirmation");
 
     // Replace: confirmation, then inline status and updated history.
     const [originalId] = await currentIds();
@@ -275,7 +360,6 @@ async function main() {
     await shot(page, "02-replace-confirm");
     if ((await currentIds())[0] !== originalId) fail("opening the confirmation changed the credential");
     await dialog.getByRole("button", { name: "Replace signing link" }).click();
-    const status = panel().locator('[data-testid="participant-link-status"]');
     await status.getByText("Signing link replaced.").waitFor({ timeout: 30000 });
     await status.getByText("The previous link no longer works. A new link has been queued for delivery.").waitFor();
     await status.getByText("Email delivery is sandboxed in development.").waitFor();
@@ -293,47 +377,42 @@ async function main() {
     await shot(page, "03-replaced");
     ok("Replace confirmed, inline success + sandbox note shown, Link replaced time listed; DB: old revoked, new current, invitation queued");
 
-    // Resend keeps the same credential.
+    // After Replace, Copy returns the new link; the old one no longer opens.
+    const replacedLink = await copySigningLink("copy after Replace");
+    if (replacedLink === firstLink) fail("Copy after Replace returned the replaced link");
+    if (new URL(replacedLink).hash === new URL(firstLink).hash) fail("replacement link reuses the old secret");
+    ok("link after Replace differs from the old link (compared in memory, not printed)");
+
+    // Negative path: the replaced link must be refused (exchange answers 503 by
+    // design, which Chrome reports as a console error), so this tab is checked
+    // explicitly instead of through the runtime-noise guard.
+    {
+      const { context, participant } = await openAsParticipant();
+      const exchange = participant.waitForResponse((response) =>
+        response.url().endsWith("/api/sign/entry-exchange"),
+      );
+      await participant.goto(firstLink, { waitUntil: "domcontentloaded" });
+      if ((await exchange).status() !== 503) fail("old link exchange was not refused");
+      await participant
+        .getByText("Signing access is currently unavailable. Please request a new link from the sender.")
+        .waitFor({ timeout: 30000 });
+      if (new URL(participant.url()).pathname !== new URL(firstLink).pathname) {
+        fail("old link left the entry page");
+      }
+      await shot(participant, "06-old-link-refused");
+      await context.close();
+      ok("old link after Replace is refused (unavailable message, no session)");
+    }
+    await expectEntryWorks(replacedLink, "07-new-link", true);
+
+    // Resend keeps the same credential and the same link.
     await panel().getByRole("button", { name: "Resend signing link" }).click();
     await status.getByText("Signing link resent.").waitFor({ timeout: 30000 });
     if ((await currentIds())[0] !== afterReplace[0]) fail("Resend changed the credential");
     if ((await instructionCount()) !== instructionsBefore + 2) fail("Resend did not queue an invitation");
     ok("Resend keeps the current credential and queues another invitation");
-
-    // Participant entry with the replacement link reaches the ceremony.
-    const replacementSecret = await loadRawParticipantCredentialToken({
-      admin,
-      signingId,
-      credentialId: afterReplace[0],
-    });
-    if (!replacementSecret) fail("replacement link secret unavailable");
-    const participantContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-    const participantPage = await participantContext.newPage();
-    noise.watch(participantPage, "participant");
-    await participantPage.goto(`${APP_ORIGIN}/sign/${afterReplace[0]}#${replacementSecret}`, {
-      waitUntil: "networkidle",
-    });
-    const entryPath = `/sign/${afterReplace[0]}`;
-    await participantPage
-      .waitForURL((current) => current.pathname !== entryPath, { timeout: 60000 })
-      .catch(async () => {
-        await shot(participantPage, "04a-participant-entry-stuck");
-        fail(`participant entry stayed on the entry page: ${await participantPage.locator("main").innerText()}`);
-      });
-    await participantPage.waitForLoadState("networkidle");
-    if (!/^\/sign\/(ceremony|continue)/.test(new URL(participantPage.url()).pathname)) {
-      await shot(participantPage, "04a-participant-entry-unexpected");
-      fail(`replacement link landed on ${new URL(participantPage.url()).pathname}`);
-    }
-    await shot(participantPage, "04a-participant-ceremony-entry");
-    ok(`replacement link entered the participant ceremony (${new URL(participantPage.url()).pathname})`);
-    await participantPage.getByRole("button", { name: "I am Pat Participant" }).click();
-    await participantPage.waitForURL(/\/sign\/ceremony/, { timeout: 60000 });
-    await participantPage.waitForLoadState("networkidle");
-    await participantPage.waitForTimeout(1500);
-    await shot(participantPage, "04b-participant-ceremony");
-    await participantContext.close();
-    ok("identity affirmation opened the ceremony");
+    if ((await copySigningLink("copy after Resend")) !== replacedLink) fail("Copy after Resend returned a different link");
+    ok("link after Resend is unchanged");
 
     // Revoke: confirmation, no replacement, Revoked badge.
     await panel().getByRole("button", { name: "Revoke signing link" }).click();
@@ -353,6 +432,10 @@ async function main() {
     if (!(await panel().getByRole("button", { name: "Resend signing link" }).isDisabled())) {
       fail("Resend must be disabled without an active link");
     }
+    for (const name of ["Copy signing link", "Open signing link"]) {
+      if ((await panel().getByRole("button", { name }).count()) !== 0) fail(`${name} still shown after Revoke`);
+    }
+    ok("Copy / Open signing link controls disappear after Revoke");
     await assertNoSecrets("after revoke");
     const noReload = await page.evaluate(
       () => (window as unknown as { __qaNoReload?: boolean }).__qaNoReload === true,
@@ -383,6 +466,8 @@ async function main() {
         "signing_delivery_instructions",
         "signing_work_items",
         "signing_entry_sessions",
+        "signing_participant_presence_leases",
+        "signing_browser_sessions",
       ]) {
         await admin.from(table).delete().eq("signing_id", signingId);
       }
@@ -435,6 +520,7 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error instanceof QaFailure ? `FAIL: ${error.message}` : error);
+  const text = error instanceof QaFailure ? `FAIL: ${error.message}` : String(error?.stack ?? error);
+  console.error(text.replace(/#[A-Za-z0-9_-]{43}/g, "#<redacted>"));
   process.exit(1);
 });

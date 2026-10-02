@@ -48,10 +48,12 @@ import {
 import { PRE_RECOVERY_ACCESS_EPOCH_SENTINEL } from "../lib/signing/external-access.ts";
 import { loadSigningDashboardForActor } from "../lib/signing/dashboard.ts";
 import {
+  getParticipantSigningLinkForQaWithActor,
   replaceParticipantInvitationWithActor,
   resendParticipantInvitationWithActor,
   revokeParticipantCredentialWithActor,
 } from "../lib/signing/participant-credential-recovery.ts";
+import { buildParticipantInviteUrl } from "../lib/signing/bearer-transport.ts";
 import { evaluateSigningReadiness } from "../lib/signing/readiness.ts";
 import {
   getDocumentSourceStatus,
@@ -1117,6 +1119,106 @@ async function main() {
       if (error) fail(error.message);
       return (data?.id as string | undefined) ?? null;
     };
+    // 9d. Development QA helper: current invitation URL for authorized managers only.
+    const qaLinkInput = { signingId: signing.id, participantId: participant.id };
+    const qaLink = async (who: SigningActor = agent) =>
+      (await getParticipantSigningLinkForQaWithActor(who, qaLinkInput, admin)).inviteUrl;
+    const assertQaLinkFor = (inviteUrl: string, credentialId: string, rawToken: string, label: string) => {
+      const parsed = new URL(inviteUrl);
+      if (
+        parsed.pathname !== `/sign/${credentialId}` ||
+        parsed.hash !== `#${rawToken}` ||
+        parsed.search !== "" ||
+        inviteUrl !== buildParticipantInviteUrl(credentialId, rawToken)
+      ) {
+        fail(`${label}: QA link is not the current invitation URL`);
+      }
+    };
+    const capturedLogs: string[] = [];
+    const originalConsole = { log: console.log, warn: console.warn, error: console.error, info: console.info };
+    for (const method of ["log", "warn", "error", "info"] as const) {
+      console[method] = (...args: unknown[]) => {
+        capturedLogs.push(args.map(String).join(" "));
+      };
+    }
+    let initialQaLink: string;
+    try {
+      initialQaLink = await qaLink();
+    } finally {
+      Object.assign(console, originalConsole);
+    }
+    assertQaLinkFor(initialQaLink, remoteCredential.id as string, remoteRawToken, "initial");
+    if (capturedLogs.some((line) => line.includes(remoteRawToken) || line.includes(initialQaLink))) {
+      fail("QA link request logged the raw secret");
+    }
+    ok("manager gets the exact current invitation URL in development (path id + fragment secret, nothing logged)");
+
+    const sameOrgMember = buildActor({
+      userId: randomUUID(),
+      email: `stage4-member-${stamp}@example.com`,
+      displayName: "Same Org Member",
+      organizationId,
+    });
+    try {
+      await qaLink(sameOrgMember);
+      fail("same-organization non-manager obtained a QA link");
+    } catch (error) {
+      if (!(error instanceof SigningError) || !["NOT_FOUND", "FORBIDDEN"].includes(error.code)) {
+        throw error;
+      }
+      ok(`same-organization user who does not manage this Signing rejected (${error.code})`);
+    }
+    const outsiderOrgId = randomUUID();
+    await expectSigningError("QA link for a user in another organization", "NOT_FOUND", () =>
+      qaLink(
+        buildActor({
+          userId: randomUUID(),
+          email: `stage4-outsider-${stamp}@example.com`,
+          displayName: "Outsider",
+          organizationId: outsiderOrgId,
+        }),
+      ),
+    );
+    const globalAdmin = buildActor({
+      userId: randomUUID(),
+      email: `stage4-global-admin-${stamp}@example.com`,
+      displayName: "Global Admin",
+      organizationId: outsiderOrgId,
+    });
+    globalAdmin.profile = { ...globalAdmin.profile, app_role: "ADMIN" };
+    await expectSigningError("QA link for a Global Admin without Signing authority", "NOT_FOUND", () =>
+      qaLink(globalAdmin),
+    );
+    await expectSigningError("QA link naming a participant from another Signing", "NOT_FOUND", () =>
+      getParticipantSigningLinkForQaWithActor(
+        agent,
+        { signingId: signing.id, participantId: inPersonParticipant.id },
+        admin,
+      ),
+    );
+
+    const previousVercelEnv = process.env.VERCEL_ENV;
+    process.env.VERCEL_ENV = "production";
+    try {
+      await expectSigningError("QA link request in production", "FORBIDDEN", () => qaLink());
+      const productionDashboard = await loadSigningDashboardForActor(agent, signing.id, admin);
+      if (productionDashboard.participantLinkQaHelper) {
+        fail("production dashboard enables the QA link controls");
+      }
+      const productionJson = JSON.stringify(productionDashboard);
+      for (const secret of [remoteRawToken, remoteCredential.id as string, "/sign/"]) {
+        if (productionJson.includes(secret)) fail("production dashboard exposes a credential or link");
+      }
+      ok("production dashboard disables the QA link controls and carries no credential or link");
+    } finally {
+      if (previousVercelEnv === undefined) delete process.env.VERCEL_ENV;
+      else process.env.VERCEL_ENV = previousVercelEnv;
+    }
+    const devDashboard = await loadSigningDashboardForActor(agent, signing.id, admin);
+    if (!devDashboard.participantLinkQaHelper) fail("development dashboard does not enable the QA link controls");
+    if (JSON.stringify(devDashboard).includes(remoteRawToken)) fail("development dashboard embeds the raw secret");
+    ok("development dashboard enables the QA link controls without embedding the link");
+
     const instructionsBefore = await countRows(admin, "signing_delivery_instructions", signing.id);
     const credentialsBefore = await countRows(admin, "signing_participant_credentials", signing.id);
 
@@ -1141,6 +1243,8 @@ async function main() {
       fail("Resend invalidated the existing link");
     }
     ok("Resend reuses the current credential and queues a new invitation");
+    if ((await qaLink()) !== initialQaLink) fail("QA link changed after Resend");
+    ok("QA link is unchanged after Resend");
 
     const preReplaceCredential = await validateParticipantCredential(admin, remoteRawToken);
     if (!preReplaceCredential) fail("current credential missing before Replace");
@@ -1194,6 +1298,12 @@ async function main() {
       fail("the replacement link does not validate");
     }
     ok("Replace revokes the old link and its sessions, issues and queues a new link");
+    const replacedQaLink = await qaLink();
+    assertQaLinkFor(replacedQaLink, newCredentialId, newRawToken, "after Replace");
+    if (replacedQaLink === initialQaLink || replacedQaLink.includes(remoteRawToken)) {
+      fail("QA link returned the replaced credential");
+    }
+    ok("QA link after Replace is the new current link, never the replaced one");
 
     const afterReplace = await loadSigningDashboardForActor(agent, signing.id, admin);
     const replacedAccess = afterReplace.participants.find((row) => row.id === participant.id)?.access;
@@ -1241,6 +1351,24 @@ async function main() {
       fail("dashboard access status did not reflect Revoke");
     }
     ok("Revoke stops access without a replacement and the dashboard shows Revoked");
+    if (afterRevoke.participants.find((row) => row.id === participant.id)?.hasActiveInvitationLink) {
+      fail("revoked participant still offers the QA link controls");
+    }
+    await expectSigningError("QA link after Revoke", "CONFLICT", () => qaLink());
+
+    const persisted = JSON.stringify(
+      await Promise.all(
+        [
+          admin.from("signing_events").select("*").eq("signing_id", signing.id),
+          admin.from("signing_work_items").select("*").eq("signing_id", signing.id),
+          admin.from("signing_delivery_instructions").select("*").eq("signing_id", signing.id),
+        ].map(async (query) => (await query).data ?? []),
+      ),
+    );
+    for (const secret of [remoteRawToken, newRawToken, initialQaLink, replacedQaLink]) {
+      if (persisted.includes(secret)) fail("a raw secret or invitation URL was persisted in events/work items/instructions");
+    }
+    ok("no raw secret or invitation URL in Signing events, work-item JSON, or delivery instructions");
     delete process.env.SIGNING_EMAIL_SANDBOX;
 
     // 9b. Corrupted snapshot bytes must never reach a package revision.

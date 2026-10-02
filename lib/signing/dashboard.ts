@@ -7,6 +7,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SigningDocumentRow } from "./draft-documents";
 import { signingEmailSandboxed } from "./delivery";
+import { isParticipantLinkQaHelperEnabled } from "./feature-gate";
 import { getSigningForActor } from "./operations";
 import {
   summarizeParticipantAccess,
@@ -63,6 +64,8 @@ export type SigningDashboard = {
   ready: boolean;
   /** Development email sandbox: invitations are accepted but not sent. */
   emailSandboxed: boolean;
+  /** Development QA: show Copy/Open signing link (never in production). */
+  participantLinkQaHelper: boolean;
   blockers: SigningReadinessBlocker[];
   documents: SigningDashboardDocument[];
   participants: SigningDashboardParticipant[];
@@ -268,6 +271,7 @@ export async function loadSigningDashboardForActor(
     },
     ready,
     emailSandboxed: signingEmailSandboxed(),
+    participantLinkQaHelper: isParticipantLinkQaHelperEnabled(),
     blockers,
     documents,
     participants,

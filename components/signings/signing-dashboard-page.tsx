@@ -22,6 +22,7 @@ import {
   activateSigningAction,
   getSigningDashboardAction,
   keepCurrentDraftSourceAction,
+  getParticipantSigningLinkForQaAction,
   replaceParticipantInvitationAction,
   resendParticipantInvitationAction,
   revokeParticipantInvitationAction,
@@ -259,6 +260,36 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     setBusyParticipantId(null);
   }
 
+  /** Development QA: the URL is held only in this call, never in state or markup. */
+  async function requestSigningLinkForQa(participantId: string, action: "copy" | "open") {
+    setBusyParticipantId(participantId);
+    setError(null);
+    setNotice(null);
+    setLinkOpStatus(null);
+    const result = await getParticipantSigningLinkForQaAction({ signingId, participantId });
+    if (!result.ok) {
+      setLinkOpStatus({ participantId, tone: "error", lines: [result.error] });
+    } else {
+      const { inviteUrl } = result.data as { inviteUrl: string };
+      if (action === "open") {
+        window.open(inviteUrl, "_blank", "noopener,noreferrer");
+        setLinkOpStatus({ participantId, tone: "success", lines: ["Signing link opened in a new tab."] });
+      } else {
+        try {
+          await navigator.clipboard.writeText(inviteUrl);
+          setLinkOpStatus({ participantId, tone: "success", lines: ["Signing link copied."] });
+        } catch {
+          setLinkOpStatus({
+            participantId,
+            tone: "error",
+            lines: ["Could not copy the signing link. Allow clipboard access and try again, or use Open signing link."],
+          });
+        }
+      }
+    }
+    setBusyParticipantId(null);
+  }
+
   async function confirmLinkOp() {
     if (!pendingLinkOp) return;
     const { participantId, op } = pendingLinkOp;
@@ -462,9 +493,11 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
               here. Resend uses the current link; Replace issues a new link and
               invalidates the previous one; Revoke stops access without sending
               a replacement.
-              {dashboard.emailSandboxed
-                ? " Email delivery is sandboxed in development: invitations are accepted but not sent."
-                : null}
+              {dashboard.participantLinkQaHelper
+                ? " Email delivery is sandboxed in development. Use Copy signing link to test the participant ceremony."
+                : dashboard.emailSandboxed
+                  ? " Email delivery is sandboxed in development: invitations are accepted but not sent."
+                  : null}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -604,6 +637,29 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                         >
                           Revoke signing link
                         </Button>
+                        {dashboard.participantLinkQaHelper &&
+                        participant.hasActiveInvitationLink ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void requestSigningLinkForQa(participant.id, "copy")}
+                            >
+                              Copy signing link
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void requestSigningLinkForQa(participant.id, "open")}
+                            >
+                              Open signing link
+                            </Button>
+                          </>
+                        ) : null}
                       </div>
                     ) : (
                       <p className="text-xs text-muted-foreground">

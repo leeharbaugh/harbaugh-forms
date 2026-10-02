@@ -8,6 +8,10 @@
  * Accepted truthy value: exactly "true" (case-sensitive).
  * Not exposed as NEXT_PUBLIC_* so browsers cannot enable incomplete Signing UI.
  */
+import {
+  extractSupabaseProjectRef,
+  PROD_SUPABASE_PROJECT_REF,
+} from "../supabase/project-guard";
 
 export const NATIVE_SIGNING_ENV_FLAG = "NATIVE_SIGNING_ENABLED" as const;
 
@@ -39,6 +43,24 @@ export function isSigningProductionRuntime(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   return env.VERCEL_ENV === "production";
+}
+
+/**
+ * Development QA helper that hands an authorized manager the current
+ * participant invitation URL. Only while Signing email is sandboxed, never on
+ * Vercel Production, and never against the production Supabase project.
+ */
+export function isParticipantLinkQaHelperEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (isSigningProductionRuntime(env)) return false;
+  if (
+    extractSupabaseProjectRef(env.NEXT_PUBLIC_SUPABASE_URL) ===
+    PROD_SUPABASE_PROJECT_REF
+  ) {
+    return false;
+  }
+  return env.SIGNING_EMAIL_SANDBOX?.trim() === "true";
 }
 
 export class NativeSigningProductionDisclosureError extends Error {

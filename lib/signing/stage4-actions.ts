@@ -8,6 +8,7 @@ import { loadSigningDashboardForActor } from "@/lib/signing/dashboard";
 import { SigningError } from "@/lib/signing/errors";
 import { NativeSigningDisabledError } from "@/lib/signing/feature-gate";
 import {
+  getParticipantSigningLinkForQaWithActor,
   replaceParticipantInvitationWithActor,
   resendParticipantInvitationWithActor,
   revokeParticipantCredentialWithActor,
@@ -121,6 +122,16 @@ export async function replaceParticipantInvitationAction(input: {
 }): Promise<SigningStage4ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
     replaceParticipantInvitationWithActor(actor, input, admin),
+  );
+}
+
+/** Development QA only: current participant invitation URL (denied in production). */
+export async function getParticipantSigningLinkForQaAction(input: {
+  signingId: unknown;
+  participantId: unknown;
+}): Promise<SigningStage4ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    getParticipantSigningLinkForQaWithActor(actor, input, admin),
   );
 }
 

@@ -17,7 +17,11 @@ import {
 } from "./delivery";
 import { SigningError } from "./errors";
 import { requireSigningEventActorType } from "./event-actor";
-import { assertNativeSigningEnabled } from "./feature-gate";
+import { buildParticipantInviteUrl } from "./bearer-transport";
+import {
+  assertNativeSigningEnabled,
+  isParticipantLinkQaHelperEnabled,
+} from "./feature-gate";
 import { revokeSigningEntrySessionsForCredential } from "./entry-sessions";
 import { appendSigningEvent } from "./signing-events";
 import type { SigningActor } from "./types";
@@ -479,6 +483,54 @@ export async function replaceParticipantInvitationWithActor(
     ),
     emailSandboxed: signingEmailSandboxed(),
   };
+}
+
+/**
+ * Development QA only: the exact invitation URL for the participant's current
+ * credential, returned on explicit manager request while email is sandboxed.
+ * Denied in production before any lookup. The URL carries the bearer secret:
+ * never log it, persist it, or record it in events.
+ */
+export async function getParticipantSigningLinkForQaWithActor(
+  actor: SigningActor,
+  input: { signingId: unknown; participantId: unknown },
+  admin: SupabaseClient,
+): Promise<{ inviteUrl: string }> {
+  if (!isParticipantLinkQaHelperEnabled()) {
+    throw new SigningError(
+      "FORBIDDEN",
+      "Copying signing links is only available in development.",
+    );
+  }
+  const ctx = await requireInProgressManageableParticipant({
+    actor,
+    signingId: input.signingId,
+    participantId: input.participantId,
+    admin,
+  });
+  const credentialId = await loadCurrentCredentialId({
+    admin,
+    signingId: ctx.signingId,
+    participantId: ctx.participantId,
+  });
+  if (!credentialId) {
+    throw new SigningError(
+      "CONFLICT",
+      "No active signing link exists for this participant.",
+    );
+  }
+  const rawToken = await loadRawParticipantCredentialToken({
+    admin,
+    signingId: ctx.signingId,
+    credentialId,
+  });
+  if (!rawToken) {
+    throw new SigningError(
+      "CONFLICT",
+      "The current signing link cannot be recovered. Use Replace signing link.",
+    );
+  }
+  return { inviteUrl: buildParticipantInviteUrl(credentialId, rawToken) };
 }
 
 /**

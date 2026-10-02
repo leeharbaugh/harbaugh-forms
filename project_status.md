@@ -1,8 +1,23 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-09-30 (Native Signing quality/efficiency closeout on PR #46 — DOMMatrix server error fixed at the module boundary, participant `/sign` routes no longer redirected to workspace login, runtime-noise-free browser QA; earlier: pass 8 multi-select / copy-paste / participant access status; Signing Placement Templates designed, not implemented; Gate A paused; production Native Signing unavailable)
+**As of:** 2026-10-01 (development-only Copy / Open signing link for participant ceremony QA on PR #46; earlier: 2026-09-30 Native Signing quality/efficiency closeout — DOMMatrix server error fixed at the module boundary, participant `/sign` routes no longer redirected to workspace login, runtime-noise-free browser QA; earlier: pass 8 multi-select / copy-paste / participant access status; Signing Placement Templates designed, not implemented; Gate A paused; production Native Signing unavailable)
 
 ## Current State
+
+### Development Copy / Open signing link for participant QA (2026-10-01; PR #46)
+
+**Status:** Development-only QA helper. Production remains OFF/untouched; PR #46 stays open.
+
+| Item | Result |
+|------|--------|
+| Purpose | Signing email is sandboxed locally, so no invitation arrives. Managers can copy or open the real participant link to QA the ceremony |
+| UI | In Progress participant access card, after Resend / Replace / Revoke: **Copy signing link** ("Signing link copied.") and **Open signing link** (new tab, `noopener,noreferrer`). Shown only while the participant has an active link and the helper is enabled. Card note: "Email delivery is sandboxed in development. Use Copy signing link to test the participant ceremony." |
+| Gate | `isParticipantLinkQaHelperEnabled()`: `SIGNING_EMAIL_SANDBOX=true`, `VERCEL_ENV` ≠ `production`, and Supabase URL not the production project. The dashboard flag and the server action both use it; the action denies (`FORBIDDEN`) before any lookup |
+| Authority / link | Same checks as Resend/Replace/Revoke (`requireInProgressManageableParticipant`: manage authority, In Progress, remote, participant on this Signing); current unrevoked credential only; URL from `buildParticipantInviteUrl` (`/sign/{credential id}#{secret}`), identical to the invitation email |
+| Secret handling | Unwrapped only on click; not logged, persisted, evented, or rendered; held only in the click handler |
+| Replace / Resend / Revoke | Replace → new link, old refused; Resend → same link; Revoke → controls hidden, action `CONFLICT` |
+| Coverage | `lib/signing/participant-link-qa.test.ts` (gate matrix, production denial with no DB access, UI gating, no link in markup/state); Stage 4 dev validator (exact URL, nothing logged, same-org non-manager / other org / Global Admin / other-Signing participant denied, production denial + production dashboard flag off, Resend / Replace / Revoke, no secret in events / work items / instructions); `scripts/qa-signing-link-ops-browser.ts` (copy → participant reaches identity affirmation without login, Open in new tab, Replace → old refused / new works, Resend unchanged, Revoke hides controls; secrets never printed; zero console/server noise; cleanup now also removes ceremony sessions and presence leases) |
+| Migration | None |
 
 ### Native Signing quality/efficiency closeout (2026-09-30; PR #46)
 

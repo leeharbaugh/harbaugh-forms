@@ -12,6 +12,23 @@ Each decision should include:
 
 ---
 
+## Development may hand managers the current participant link for QA; production never does
+
+**Date:** 2026-10-01
+
+**Decision:**
+Development may expose an authorized manager-only helper (**Copy signing link** / **Open signing link**) that returns the current participant invitation URL for QA. Production must never expose participant bearer links through the manager UI. The trusted server action denies itself unless Signing email is sandboxed, `VERCEL_ENV` is not `production`, and the app does not target the production Supabase project; hiding the buttons is not the control. It reuses the Resend/Replace/Revoke manager checks and returns only the current, unrevoked credential's URL as built for the invitation email. The URL is fetched on click, never rendered into page markup, logged, persisted, or recorded in events.
+
+**Reason:**
+Signing email is sandboxed in development, so no invitation arrives; Lee needs the real link to QA the participant ceremony.
+
+**Consequences:**
+* Narrows "Credential ids, tokens, links, and provider references are never sent to the browser" (2026-09-28) and "Raw bearer URLs/secrets are never shown" to production; in development they reach the browser only on this explicit manager request.
+
+**Related:** `lib/signing/feature-gate.ts` (`isParticipantLinkQaHelperEnabled`); `lib/signing/participant-credential-recovery.ts`; `components/signings/signing-dashboard-page.tsx`.
+
+---
+
 ## Browser PDF viewing stays out of the server module graph
 
 **Date:** 2026-09-30
