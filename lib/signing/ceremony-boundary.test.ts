@@ -352,7 +352,17 @@ describe("Native Signing ceremony boundaries", () => {
     assert.match(proxy, /no-store/);
     assert.match(returnToAgentPage, /validateDeviceHandoffLock/);
     assert.match(read("components/sign/return-to-agent-form.tsx"), /unlockDeviceHandoffLockAction/);
-    assert.match(read("components/sign/return-to-agent-form.tsx"), /location\.replace/);
+    // Unlock clears the lock cookie, which re-renders this page. Without a
+    // lock cookie it must render, not redirect, so the form's hard navigation
+    // (fresh workspace CSP) still runs.
+    const missingLockBranch = returnToAgentPage.slice(
+      returnToAgentPage.indexOf("if (!rawLockToken) {"),
+      returnToAgentPage.indexOf("const admin = createAdminClient();"),
+    );
+    assert.match(missingLockBranch, /return \(/);
+    assert.doesNotMatch(missingLockBranch, /redirect\(/);
+    assert.match(missingLockBranch, /Agent workspace unlocked/);
+    assert.match(read("components/sign/return-to-agent-form.tsx"), /location\.replace\(redirectPath\)/);
     assert.doesNotMatch(returnToAgentPage, /loadCeremonyDocumentBytes/);
     assert.match(actions, /exitCeremonyAction/);
     assert.match(actions, /return-to-agent/);
