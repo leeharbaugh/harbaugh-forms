@@ -12,6 +12,25 @@ Each decision should include:
 
 ---
 
+## Security patches for production dependencies ship independently of feature rollouts
+
+**Date:** 2026-10-01
+
+**Decision:**
+A security advisory affecting a dependency version that is running in production is remediated in its own focused PR from `main`, with the smallest dependency change (no unrelated upgrades, no forced audit fix), and is rolled out to production independently of any in-flight feature rollout. When production runs from a hotfix branch rather than `main`, the production candidate is that live commit plus only the dependency change, so unreleased features (e.g. Native Signing) do not go live with the patch.
+
+**Reason:**
+GHSA-vcvr-r3jv-pc5j (Next.js `next/og` `ImageResponse` RCE, critical, patched in 16.3.6) affected the Next.js 16.3.5 already in production while `main` carried unreleased Native Signing work and the live deployment was built from `hotfix/duplicate-packet-forms-prod`.
+
+**Consequences:**
+* Patch PR: `next` `^16.3.5` → `^16.3.6`; lockfile changes only `next`, `@next/env`, `@next/swc-*`.
+* Production rollout requires Lee's explicit approval and follows the explicit-promotion flow: deploy candidate without domain assignment, validate the unique Vercel deployment URL, manually promote the custom domains, verify automatic custom-domain assignment remains disabled.
+* Dev-only advisories (e.g. `brace-expansion` in ESLint tooling) are reviewed and fixed in separate small PRs rather than folded into a production security patch.
+
+**Related files:** `package.json`, `package-lock.json`
+
+---
+
 ## A packet may contain multiple independent instances of the same form
 
 **Date:** 2026-09-30
