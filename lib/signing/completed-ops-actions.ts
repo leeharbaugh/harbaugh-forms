@@ -5,6 +5,7 @@ import "server-only";
 import { requireSigningActor } from "@/lib/signing/actor";
 import {
   addCopyRecipientWithActor,
+  listActiveCopyRecipients,
   softRemoveCopyRecipientWithActor,
 } from "@/lib/signing/copy-recipients";
 import {
@@ -13,10 +14,12 @@ import {
   revokeCompletedPackageCredentialWithActor,
 } from "@/lib/signing/completed-package-delivery";
 import { loadCompletedOpsSnapshotForActor } from "@/lib/signing/completed-ops";
+import { loadSigningAuthorityBundle } from "@/lib/signing/authority-context";
 import { SigningError } from "@/lib/signing/errors";
 import { NativeSigningDisabledError } from "@/lib/signing/feature-gate";
 import { requestFinalizationRetryWithActor } from "@/lib/signing/finalization-retry";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isUuid } from "@/lib/signing/types";
 
 export type CompletedOpsActionResult =
   | { ok: true; data?: unknown }
@@ -98,6 +101,45 @@ export async function revokeCompletedPackageLinkAction(input: {
     const admin = createAdminClient();
     await revokeCompletedPackageCredentialWithActor(actor, input, admin);
     return { ok: true };
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+export async function listCopyRecipientsAction(input: {
+  signingId: string;
+}): Promise<CompletedOpsActionResult> {
+  try {
+    const actor = await requireSigningActor();
+    const admin = createAdminClient();
+    if (!isUuid(input.signingId)) {
+      throw new SigningError("INVALID_INPUT", "Invalid Signing id.");
+    }
+    const bundle = await loadSigningAuthorityBundle(
+      admin,
+      actor,
+      input.signingId,
+    );
+    if (!bundle || !bundle.authority.canRead) {
+      throw new SigningError("NOT_FOUND", "Signing not found.");
+    }
+    if (!bundle.authority.canManage) {
+      throw new SigningError(
+        "FORBIDDEN",
+        "You cannot manage copy recipients for this Signing.",
+      );
+    }
+    const rows = await listActiveCopyRecipients(admin, bundle.signing.id);
+    return {
+      ok: true,
+      data: rows.map((row) => ({
+        id: row.id,
+        email: row.email,
+        displayName: row.display_name,
+        roleLabel: row.role_label,
+        status: row.status,
+      })),
+    };
   } catch (error) {
     return toActionError(error);
   }

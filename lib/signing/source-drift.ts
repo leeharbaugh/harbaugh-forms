@@ -117,13 +117,14 @@ export async function getDocumentSourceStatus(
     };
   }
   if (document.source_packet_form_id == null) {
+    // Ad hoc Signing PDFs have no live Packet Form to drift against.
     return {
       ...base,
-      status: "SOURCE_UNAVAILABLE",
+      status: "CURRENT",
       snapshot,
       snapshotFingerprint: snapshot.content_fingerprint,
-      liveFingerprint: null,
-      reason: "NO_SOURCE_PACKET_FORM",
+      liveFingerprint: snapshot.content_fingerprint,
+      reason: "MATCHES_SNAPSHOT",
     };
   }
 

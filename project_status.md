@@ -1,42 +1,96 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-02 (dev-only `brace-expansion` advisories remediated by a lockfile-only PR, full lockfile audit clean; admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 open for `main`; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live since 2026-10-01 via hotfix `2a92d82` = `a87b1aa` + dependency change only; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
+**As of:** 2026-10-02 (PR #46 brought up to date with `main` `7733493` by merge commit `8769993` (Next.js 16.3.6, no conflicts left, full revalidation and ceremony browser regression pass); PR still open, awaiting Lee's manual re-QA, manager completed-document access is a pre-production blocker, see "PR #46 merged with current main" below; Native Signing participant ceremony QA complete on PR #46 at `3f92e48`: four ceremony defects fixed; packet Created/Updated timestamps fixed to Central time with CDT/CST, PR #52 squash-merged to `main` as `7733493`, live in production via hotfix `3e5eaa3` (= `c25e4c3` + PR #52 code only), deployment `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, rollback `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; dev-only `brace-expansion` advisories remediated by lockfile-only PR #51, squash-merged to `main` as `edfc5a7`, full lockfile audit clean, not deployed (dev-only, no production effect); admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 squash-merged to `main` as `c2a490a` on 2026-10-02; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j is live in production via hotfix `2a92d82` (= `a87b1aa` + dependency change only; deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`); PR #49 squash-merged to `main` as `9f00a80` on 2026-10-02. Earlier, 2026-09-30: Native Signing development and QA remain the active workstream; work paused briefly for the duplicate packet forms hotfix, now live in production. Resume Native Signing development/QA from the state recorded below. Production is running the isolated hotfix, not `main`; production Native Signing remains unavailable.)
 
 ## Current State
 
-### Packet Created/Updated timestamps in Central time (2026-10-02)
+### PR #46 merged with current main (2026-10-02; PR #46)
 
-**Status:** PR on `fix/packet-timestamps-central` from `main` `edfc5a7`; not merged, not deployed. Independent of Native Signing PR #46.
-
-**Defect:** `formatDateTime()` (`lib/types/packet.ts`) joined the UTC calendar date sliced from the ISO string with `toLocaleTimeString()` in the viewer's zone, so evening timestamps showed the next day: a packet created 2026-10-02 7:30 PM CDT (00:30 UTC) displayed `10/03/2026 7:30 PM` to a Chicago viewer. Affected `/` (Packets list), `/packets/[id]`, and `/contacts/[id]` (associated packets Updated / Created). Not a hydration issue: all three components fetch data in the browser after hydration, so the text never appears in server HTML (verified on a production build with server `TZ=UTC`).
-
-**Fix:** `formatDateTime()` now delegates to the shared `formatTimestamp()` (`lib/format-timestamp.ts`), so date and time both come from the same instant in `America/Chicago` with a `CDT`/`CST` label (e.g. `10/2/2026, 7:30:00 PM CDT`), matching admin pages. Empty input still returns `—` and unparseable input still falls back to `formatDate()`. No component changes.
+**Status:** [PR #46](https://github.com/leeharbaugh/harbaugh-forms/pull/46) is open, unmerged, and no longer conflicting. `origin/main` `7733493` was merged into `feat/native-signing-manager-qa` (`3f92e48` → merge commit `8769993`, history kept, no rebase). Ready for Lee's manual re-QA. Production untouched (`dpl_E9HTxf45epr8ckKifivWCPNgpFAU`), Native Signing off there, no production Supabase / migration / email / Cron / secret change, Gate A paused.
 
 | Item | Result |
 |------|--------|
-| Unit tests | New `test:packet-timestamps` (3 tests: Central date+time for the evening case and a CST case, identical output under runtime `TZ` UTC / Chicago / Tokyo / Los Angeles, fallbacks); fails on the previous helper with `10/03/2026 7:30 PM`. `test:format-timestamp` now also bans `toLocale*String(` in `lib/types/packet.ts`, `components/packets`, and `components/contacts` (6 tests) |
+| Conflicts | `package.json`, `decisions.md`, `project_status.md` (`package-lock.json` merged cleanly) |
+| `package.json` | Union of scripts (PR #46 Signing scripts and its superset `test:native-signing-production-readiness`; main's `test:packet-forms-duplicate`, `validate:duplicate-packet-forms-dev`, timestamp tests); dependencies exactly `main` (`next` `^16.3.6`). No upgrades |
+| `package-lock.json` | Identical to `main`: Next 16.3.6; `brace-expansion` only 1.1.21 and 5.0.12 |
+| Docs | Union of both histories; `main`-side entries carry their current merged / deployed status; no duplicate sections or decisions |
+| Fixes A–D | Date Signed beside Signature, remove → reapply, Finish / Decline / Exit server redirects (`/sign/done`, Return to agent), unlock page without lock cookie: all present after the merge, guarded by `test:native-signing-ceremony` (63) |
+| Dependencies | Clean `npm ci`; `npm audit --omit=dev` 0; full lockfile audit 0 |
+| Unit suites | stage3 11, stage4 50, ceremony 63, TC authority 31, stage6 30, completion delivery 12, recovery access 7, draft prep 64, production readiness 56, duplicate packet forms 18, format-timestamp 6, packet timestamps 3; stage1 16 / stage2 34 / participant-link-qa + draft-multiselect 22 under `tsx` (the plain-`node` stage1 / stage2 scripts still fail on `@/` resolution, pre-existing). All 0 fail |
+| Dev validators | stage4, stage6, completion delivery, ceremony, duplicate packet forms pass |
+| Browser regression | Ceremony QA (remote P1 / P2 with isolation and Finish → `/sign/done?outcome=finished`, finalization to VERIFIED / COMPLETE, completed package, Decline → "You declined to sign", refused links, in-person Finish → Return to agent with lock intact → password unlock → the Signing) and link-ops QA pass; 0 console errors / warnings, 0 page errors, 0 hydration errors, 0 dev-server ERROR / WARN; no QA fixtures left on dev |
+| Admin hydration (from `main`) | `qa-admin-hydration-browser.ts` passes on the merged build (local production server, `TZ=UTC`, browser Chicago). Under `next dev` only, `/admin/audit` and `/admin/users/[id]` log Next's "runtime data during prerendering" (blocking-route) dev message; those pages are identical to `main`, so this is not from the merge |
+| Static | `tsc`, ESLint on the 85 changed files, `git diff --check`, `build:validate` pass |
+
+**Manager completed-document access (pre-production blocker, not implemented here):** COMPLETED_DOCUMENT, AUDIT_CERTIFICATE and the optional COMBINED_PACKAGE live in the private `signing-artifacts` bucket (`signings/{id}/artifacts/{completed|certificate|combined}/{artifactId}.pdf`, sha256 + `verified_at` in `signing_artifacts`). The only download path is the recipient route `/sign/package/artifact/[artifactId]` behind a completed-package session (credentials issued only after Complete, access-logged). `canReadCompletedSigningArtifacts()` exists but is unused; the manager Signing page shows delivery rows but no view / download. decisions.md expects authorized agents to view / download completed artifacts through server mediation. Proposed separate PR: a manager-authenticated route (`requireSigningActor` + `canReadCompletedSigningArtifacts`, verified artifacts of the frozen revision only, sha256 readback with a clear integrity-failure label, `no-store`) plus View / Download links on the Complete manager view and tests; no bearer links, no Storage URLs, no RLS change.
+
+**Remaining before merge:** Lee's manual re-QA (remote Finish, Decline, in-person hand-back, Date Signed / remove-reapply spot check); Lee's call on whether the access gap lands before PR #46 merges or as the next PR before production enablement.
+
+### Packet Created/Updated timestamps in Central time (2026-10-02)
+
+**Status:** [PR #52](https://github.com/leeharbaugh/harbaugh-forms/pull/52) (`fix/packet-timestamps-central`, `f1a9a24`, from `main` `edfc5a7`) squash-merged to `main` as `7733493` on 2026-10-02 17:39 UTC (Lee approved); merged tree identical to the PR head; not deployed. Post-merge on `main`: packet-timestamps 3/3, format-timestamp 6/6, packet / UI / admin suites, `tsc`, ESLint, diff check, `build:validate` pass; `npm audit --omit=dev` 0, full lockfile audit 0. Vercel's automatic Git build of `main` (`dpl_5327xDSo5a3YZpg5r3bDfFy4MmTg`) was not promoted; production received the fix through the hotfix lineage instead (see Production rollout below). Lee chose fixed Central time with an explicit zone label (not viewer-local). Independent of Native Signing PR #46.
+
+**Fix:** `formatDateTime()` (`lib/types/packet.ts`) now delegates to the shared `formatTimestamp()` (`lib/format-timestamp.ts`), so date and time both come from the same instant in `America/Chicago` with `CDT`/`CST` (e.g. `10/2/2026, 7:30:00 PM CDT`, previously `10/03/2026 7:30 PM` for a Chicago viewer). Empty input still `-`; unparseable input still falls back to `formatDate()`. No component changes, so the three call sites (also present on PR #46) are untouched.
+
+| Item | Result |
+|------|--------|
+| Unit tests | New `test:packet-timestamps` (3 tests: evening / next-UTC-day case, CST case, identical output under runtime `TZ` UTC / Chicago / Tokyo / Los Angeles, fallbacks); fails on the previous helper with `10/03/2026 7:30 PM`. `test:format-timestamp` now also bans `toLocale*String(` in `lib/types/packet.ts`, `components/packets`, `components/contacts` (6 tests) |
 | Regression | `tsc` pass; ESLint on changed files clean; `git diff --check` clean; packet-forms-duplicate 18, packet-tenant-names 14, packet-form-lifecycle 7, form-controls 23, ui-lists 29, admin-audit 20 pass; `build:validate` pass |
 | Browser QA | Production build, server `TZ=UTC`, disposable dev data (cleaned up); browsers UTC / `America/Chicago` / `Asia/Tokyo`: all three routes show identical Central text on hard load, reload, direct URL, client navigation, back/forward; 0 console errors/warnings, 0 page errors, 0 React #418; server log clean |
 
+**Production rollout (2026-10-02, Lee approved):** fixed in production. Not deployed from `main`; Native Signing code and other `main`-only changes excluded.
+
+| Item | Result |
+|------|--------|
+| Starting point | Production lineage `c25e4c3` (`hotfix/admin-hydration-prod`), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo` |
+| Hotfix | `hotfix/packet-timestamps-prod` `3e5eaa3`: cherry-pick of PR #52 head `f1a9a24`, code and tests only (`lib/types/packet.ts`, `lib/types/packet-datetime.test.ts`, `lib/format-timestamp.test.ts`, `package.json`); rollout record `581a7f4` (docs only, not deployed). Branch pushed and retained |
+| Validation | `npm ci` (446 packages, Next.js 16.3.6); packet-timestamps 3/3, format-timestamp 6/6, packet-forms-duplicate 18, packet-tenant-names 14, packet-form-lifecycle 7, ui-lists 29, form-controls 23, admin-audit 20; `tsc`, changed-path ESLint, `git diff --check` pass; `npm audit --omit=dev` 0; full lockfile audit 1 High (dev-only `brace-expansion`, fixed on `main` by PR #51, intentionally not in this hotfix); `build:validate` with `NATIVE_SIGNING_ENABLED=false` pass, 37 routes, no signing routes, pre-existing warnings only |
+| Candidate | `vercel deploy --prod --skip-domain` from a clean detached checkout of `3e5eaa3`: `dpl_E9HTxf45epr8ckKifivWCPNgpFAU` (`harbaugh-forms-od5uyq8rp-lee-harbaugh-s-projects.vercel.app`), Next.js 16.3.6, build warning only npm install-scripts notice for `unrs-resolver` |
+| Unique URL (before promotion) | Signed in as Lee (one-time link, session revoked after). Packet #12 created `2026-08-11T03:44:45Z` shows `8/10/2026, 10:44:45 PM CDT` on Packets list (and reload), Packet detail, Contact detail (`Updated` / `Created`), identical in `America/Chicago` and `Asia/Tokyo` browsers; old `08/11/2026 10:44 PM` absent. Core smoke (dashboard, Contacts, Properties, Forms, Settings, `/packets`, admin users / organizations / audit) read-only pass; Native Signing routes unavailable; 0 console errors/warnings, 0 page errors, 0 React #418, 0 5xx; runtime logs 0 error / warning / fatal / 5xx |
+| Promotion | `vercel promote dpl_E9HTxf45epr8ckKifivWCPNgpFAU`; `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` both inspect to it |
+| Post-verify | Same smoke on both domains: HTTPS, login, all three packet views Central with CDT, no rollover, 0 console / hydration / page errors, 0 5xx (58/58 checks each); runtime logs clean |
+| Settings / data | `autoAssignCustomDomains=false` re-confirmed after promotion; production Supabase untouched; no migrations; no env var changes; Native Signing off |
+| Rollback | `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo` retained (`vercel promote dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo --yes`) |
+
+### Packet-page `formatDateTime` audit (2026-10-02; read-only)
+
+**Status:** Hydration risk disproven. The separate, non-hydration display defect found here is fixed in PR #52 (see section above). Audited on `main` `edfc5a7`; production untouched.
+
+**Helper:** `lib/types/packet.ts` `formatDateTime(date: string | null | undefined)`. `null` / empty returns `—`; unparseable input returns `formatDate(date)`. Otherwise it returns `formatDate(date)` (`lib/types/buyer-rep-agreement.ts`: slices the ISO string's calendar part to `MM/DD/YYYY`, i.e. the **UTC** date for Supabase `timestamptz` values such as `2026-10-03T00:30:00+00:00`) plus `toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })` (runtime locale and **runtime time zone**; no zone label). Used only by packet-facing UI.
+
+**Call sites (all `"use client"`, all data fetched in the browser in `useEffect`, initial render is a loading state):**
+
+| Route | Component | Text |
+|-------|-----------|------|
+| `/` (Packets list) | `components/packets/packets-page.tsx` | `packet.create_date` |
+| `/packets/[id]` | `components/packets/packet-detail.tsx` (via `packet-detail-page.tsx`) | `packet.create_date` |
+| `/contacts/[id]` | `components/contacts/contact-detail.tsx` | associated packet `Updated` / `Created` |
+
+**Hydration result:** Safe by architecture. The timestamps never exist in the server HTML or initial RSC payload; they are computed only in the browser after hydration. Reproduction on a production build (`next start`, server `TZ=UTC`, same env as build) with a disposable dev user/contact/packet (`create_date` 00:30 UTC), browsers UTC (control), `America/Chicago`, `Asia/Tokyo`: for all three routes, server HTML contained the loading state and no packet label or timestamp; hard load, reload, direct URL, client navigation (soft, `/` → packet), and back/forward produced 0 console errors/warnings, 0 page errors, 0 React #418; server log clean. Disposable data removed.
+
+**Display defect (not hydration):** The date half is the UTC calendar date while the time half is viewer-local, so evening timestamps in the Americas show the next day: Chicago viewer saw `10/03/2026 7:30 PM` for a packet created 2026-10-02 7:30 PM CDT (00:30 UTC). Tokyo viewer saw `10/02/2026 2:15 AM` for 2026-10-03 2:15 AM JST. Affects every packet created/updated after 7 PM CDT (6 PM CST) for Central viewers, in production today. No time-zone label. No documented display-time-zone rule exists for packet timestamps (the Central-time rule in `decisions.md` covers SSR-visible admin timestamps).
+
+**Remediation options considered (Lee chose fixed Central; implemented in PR #52):** derive date and time from the same instant in one zone. Either viewer-local (consistent with current time-of-day behavior; still client-only, so hydration-safe) or fixed Central with a `CDT`/`CST` label via the shared `formatTimestamp()` (consistent with admin pages and Signing defaults). Small, packet-only change plus unit tests either way.
+
 ### Dev-only `brace-expansion` advisories remediated (2026-10-02)
 
-**Status:** Lockfile-only PR on `security/brace-expansion-dev-tooling` from `main` `c2a490a`; not merged, not deployed. Closes the reviewed R1 exception carried since the Next.js 16.3.6 patch. Independent of Native Signing PR #46 and of any production rollout.
+**Status:** Lockfile-only [PR #51](https://github.com/leeharbaugh/harbaugh-forms/pull/51) (`security/brace-expansion-dev-tooling`, `13ffdbe`, from `main` `c2a490a`) squash-merged to `main` as `edfc5a7` on 2026-10-02 17:01 UTC (Lee approved); merged tree identical to the PR head. Post-merge clean `npm ci` on `main`: installed 1.1.21 / 5.0.12 only (hidden lockfile consistent), `npm audit --omit=dev` 0, full lockfile audit 0, `tsc` / source ESLint (unchanged baseline) / 10 test suites / `build:validate` pass. No production action: Vercel's automatic Git build of `main` (`dpl_24CPSQ7JsB2YZDjjPTHqJ2RsaCjL`) was not promoted; production stays on `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`. Closes the reviewed R1 exception carried since the Next.js 16.3.6 patch. Independent of Native Signing PR #46 and of any production rollout.
 
 **Finding:** The full lockfile audit (R1, `npm audit --package-lock-only`) reported one High in `brace-expansion`, present only through ESLint tooling. Advisories (checked 2026-10-02 against the GitHub Advisory Database and the npm registry):
 
 | Advisory | Severity | Affected (relevant lines) | Patched |
 |----------|----------|---------------------------|---------|
-| GHSA-qhr7-859c-m2p7 / CVE-2026-102278 — uncontrolled recursion on nested brace groups (stack exhaustion) | High (7.5) | `< 1.1.20`; `>= 4.0.0 < 5.0.11` | 1.1.20 / 5.0.11 |
-| GHSA-6j4f-fj2g-mc7p / CVE-2026-102276 — uncontrolled recursion in `parseCommaParts` | High (7.5) | `< 1.1.19`; `>= 4.0.0 < 5.0.10` | 1.1.19 / 5.0.10 |
-| GHSA-q2hr-2g5m-vwhr / CVE-2026-102277 — quadratic `{a},b}` rewrite (CPU DoS) | Moderate (5.3) | `< 1.1.21`; `>= 4.0.0 < 5.0.12` | 1.1.21 / 5.0.12 |
+| GHSA-qhr7-859c-m2p7 / CVE-2026-102278 - uncontrolled recursion on nested brace groups (stack exhaustion) | High (7.5) | `< 1.1.20`; `>= 4.0.0 < 5.0.11` | 1.1.20 / 5.0.11 |
+| GHSA-6j4f-fj2g-mc7p / CVE-2026-102276 - uncontrolled recursion in `parseCommaParts` | High (7.5) | `< 1.1.19`; `>= 4.0.0 < 5.0.10` | 1.1.19 / 5.0.10 |
+| GHSA-q2hr-2g5m-vwhr / CVE-2026-102277 - quadratic `{a},b}` rewrite (CPU DoS) | Moderate (5.3) | `< 1.1.21`; `>= 4.0.0 < 5.0.12` | 1.1.21 / 5.0.12 |
 
 Both installed major lines were affected (1.1.18 and 5.0.9). Exploitation needs an attacker-controlled glob/brace pattern; here the pattern sources are ESLint config and CLI arguments on developer machines.
 
 **Dependency chains (all `dev: true`):**
-- `brace-expansion@1.1.18` ← `minimatch@3.1.5` (`^1.1.7`) ← `@eslint/eslintrc@3.3.5` (direct devDependency, used by `eslint.config.mjs` `FlatCompat`), `@eslint/config-array` (← `eslint@9.39.4`), `eslint-plugin-import`, `eslint-plugin-jsx-a11y`, `eslint-plugin-react` (← `eslint-config-next@15.3.1`).
-- `brace-expansion@5.0.9` ← `minimatch@10.2.5` (`^5.0.5`) ← `@typescript-eslint/typescript-estree@8.63.0` ← `@typescript-eslint/parser` / `type-utils` / `utils` ← `eslint-config-next@15.3.1`.
+- `brace-expansion@1.1.18` <- `minimatch@3.1.5` (`^1.1.7`) <- `@eslint/eslintrc@3.3.5` (direct devDependency, used by `eslint.config.mjs` `FlatCompat`), `@eslint/config-array` (<- `eslint@9.39.4`), `eslint-plugin-import`, `eslint-plugin-jsx-a11y`, `eslint-plugin-react` (<- `eslint-config-next@15.3.1`).
+- `brace-expansion@5.0.9` <- `minimatch@10.2.5` (`^5.0.5`) <- `@typescript-eslint/typescript-estree@8.63.0` <- `@typescript-eslint/parser` / `type-utils` / `utils` <- `eslint-config-next@15.3.1`.
 
-**Remediation:** In-range transitive refresh, `npm update brace-expansion --package-lock-only`. Both patched versions already satisfy the parents' declared ranges, so no `package.json` change, no `overrides`, and no ESLint package bump. The lockfile diff is exactly the two `brace-expansion` entries (version / resolved / integrity: 1.1.18 → 1.1.21, 5.0.9 → 5.0.12); npm's rewrite of the lockfile `name` to the worktree folder was reverted. The existing nested `balanced-match@4.0.4` satisfies 5.0.12's `^4.0.2`.
+**Remediation:** In-range transitive refresh, `npm update brace-expansion --package-lock-only`. Both patched versions already satisfy the parents' declared ranges, so no `package.json` change, no `overrides`, and no ESLint package bump. The lockfile diff is exactly the two `brace-expansion` entries (version / resolved / integrity: 1.1.18 -> 1.1.21, 5.0.9 -> 5.0.12); npm's rewrite of the lockfile `name` to the worktree folder was reverted. The existing nested `balanced-match@4.0.4` satisfies 5.0.12's `^4.0.2`.
 
 | Item | Result |
 |------|--------|
@@ -53,7 +107,7 @@ Both installed major lines were affected (1.1.18 and 5.0.9). Exploitation needs 
 
 ### Admin pages React #418 hydration fix (2026-10-02)
 
-**Status:** Live in production since 2026-10-02 (Lee approved) via `hotfix/admin-hydration-prod` (`c25e4c3` = `2a92d82` + the fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`. PR #50 (`fix/admin-hydration-errors` from `main` `9f00a80`) open against `main`, not merged. Independent of Native Signing PR #46.
+**Status:** Live in production since 2026-10-02 (Lee approved) via `hotfix/admin-hydration-prod` (`c25e4c3` = `2a92d82` + the fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`. PR #50 (`fix/admin-hydration-errors` from `main` `9f00a80`, head `90ad65f`) squash-merged to `main` as `c2a490a` on 2026-10-02 16:42 UTC (Lee approved); merged tree identical to the PR head. The merge involved no production action: Vercel's automatic Git build of `main` (`dpl_GiZXineDEwVnoxrJH4KGYnD69pdF`) was not promoted, and production stays on `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo` with automatic domain assignment off. Independent of Native Signing PR #46.
 
 **Symptom:** Production showed minified React error #418 (hydration mismatch) on hard load / refresh of `/admin/users` (2×), `/admin/organizations` (1×), and `/admin/audit` (1×), identically on Next 16.3.5 and 16.3.6. Client-side navigation between admin pages was clean; non-admin pages were clean. React recovered by client-rendering the affected boundary, so users saw browser-local times.
 
@@ -76,7 +130,7 @@ Both installed major lines were affected (1.1.18 and 5.0.9). Exploitation needs 
 | Validators / checks | `validate:account-state-dev` pass; `npm audit --omit=dev` 0; `tsc` pass; changed-path ESLint clean; `git diff --check` clean; `build:validate` pass (Next 16.3.6, `NATIVE_SIGNING_ENABLED` off; only pre-existing `MODULE_TYPELESS_PACKAGE_JSON` / npm `devdir` warnings) |
 | Unchanged | Auth guards (`requireAppAdmin`, `requireAppAdminPage`), privileged readers, account-state, org authorization, audit access; no schema, migration, env, Native Signing, brace-expansion, or production change |
 
-**Not in scope (noted):** `lib/types/packet.ts` `formatDateTime` uses `toLocaleTimeString(undefined, …)` on packet pages — same class of risk; not changed here.
+**Not in scope (noted):** `lib/types/packet.ts` `formatDateTime` uses `toLocaleTimeString(undefined, …)` on packet pages — same class of risk; not changed here. Audited 2026-10-02: not a hydration risk (client-only after data load); separate UTC-date / local-time display defect recorded in the packet-page `formatDateTime` audit section.
 
 **Production rollout (2026-10-02, Lee approved):** Production ran `hotfix/next-16.3.6-prod` (`2a92d82`), not `main` (which carries unreleased Native Signing), so the candidate was `hotfix/admin-hydration-prod` = `2a92d82` + `2e22ea9` cherry-picked with its documentation hunks omitted (commit `c25e4c3`; code patch-id identical to `2e22ea9`; 8 files: the formatter, its test, the four admin components, the browser QA script, one `package.json` test script).
 
@@ -92,11 +146,11 @@ Both installed major lines were affected (1.1.18 and 5.0.9). Exploitation needs 
 | Rollback target | `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf` (`2a92d82`, Next 16.3.6) retained, Ready |
 | Unchanged | No Supabase change, no migrations, production `eetonalyyyssvkyfdoxh` data untouched (only the smoke sign-in events and revoked sessions); Native Signing off (no flag or Signing secrets in production env; Native Signing code absent from the hotfix lineage); no auth / authorization change |
 
-**Follow-ups:** merge PR #50 into `main` so `main` contains the fix running in production; separate small lockfile PR for dev-only `brace-expansion`; packet-page `formatDateTime` (noted above) if its hydration risk is confirmed.
+**Follow-ups:** PR #50 merged to `main` (`c2a490a`), done; `main` now contains the fix running in production. Dev-only `brace-expansion` lockfile PR #51 merged to `main` (`edfc5a7`), done (see section above). Packet-page `formatDateTime` audited 2026-10-02: hydration risk disproven; display-zone defect fixed in PR #52, merged to `main` as `7733493` (Central time with CDT/CST; see section above); live in production via hotfix `3e5eaa3` / `dpl_E9HTxf45epr8ckKifivWCPNgpFAU` (2026-10-02), done.
 
 ### Next.js 16.3.6 security patch — GHSA-vcvr-r3jv-pc5j (2026-10-01)
 
-**Status:** Deployed to production on 2026-10-01 (Lee approved) from `hotfix/next-16.3.6-prod` (`2a92d82`); PR #49 (`security/next-16.3.6-ghsa-vcvr-r3jv-pc5j`) open against `main`, not merged. Independent of the Native Signing PR #46 and of the Native Signing rollout.
+**Status:** Deployed to production on 2026-10-01 (Lee approved) from `hotfix/next-16.3.6-prod` (`2a92d82`); PR #49 (`security/next-16.3.6-ghsa-vcvr-r3jv-pc5j`) squash-merged to `main` as `9f00a80` on 2026-10-02 03:35 UTC (Lee approved), so `main` now pins Next 16.3.6; the merge involved no production action and production stays on `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`. Independent of the Native Signing PR #46 and of the Native Signing rollout. `hotfix/next-16.3.6-prod` is retained as the exact production lineage (`a87b1aa` → `2a92d82`) until `main` becomes the production release baseline.
 
 **Advisory (checked 2026-10-01 against the Vercel repository advisory and the GitHub Advisory Database):** GHSA-vcvr-r3jv-pc5j / CVE-2026-94545, critical. "Remote Code Execution in next/og ImageResponse": a Node.js-runtime `ImageResponse` from `next/og` that passes attacker-controlled values into SVG content, attributes, or styles can lead to RCE (root cause: improper escaping in Satori, GHSA-wx4j-mvgx-mqwp). Affected `next >= 16.2.0 < 16.3.6`; patched `16.3.6` (fix commit `868fad3`, "Harden next/og SVG serialization"; v16.3.5...v16.3.6 changes only the compiled `@vercel/og` bundles plus version bumps). Workaround: do not pass attacker-controlled values to `ImageResponse`.
 
@@ -128,19 +182,17 @@ Both installed major lines were affected (1.1.18 and 5.0.9). Exploitation needs 
 | Rollback target | `dpl_4eXrZwG8hJC3UgmPKgRVGDHMpMWX` (`a87b1aa`, Next 16.3.5) retained, Ready |
 | Unchanged | No Supabase change, no migrations, production `eetonalyyyssvkyfdoxh` untouched; Native Signing off (no flag or Signing secrets in production env; Native Signing code absent from the hotfix baseline); no Signing email / Cron / secret change |
 
-**Follow-ups:** merge PR #49 into `main` (keeps `main`'s Next version ≥ production for the eventual `main` release); separate small lockfile PR for dev-only `brace-expansion`; investigate the pre-existing admin-page React #418 hydration mismatch.
+**Follow-ups:** PR #49 merged to `main` (`9f00a80`), done. Admin React #418 hydration mismatch fixed in PR #50 and live in production since 2026-10-02 (see section above; PR #50 merged to `main` as `c2a490a`); then a separate small lockfile PR for dev-only `brace-expansion` (PR #51, merged to `main` as `edfc5a7`).
 
 ### Duplicate packet forms allowed (2026-09-30; emergency fix)
 
-**Status:** Deployed to production (2026-09-30). Migration applied to development and production; app live on `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app`; production smoke test passed.
+**Status:** Deployed to production on 2026-09-30. Migration `20260930120000` is applied to development (`ewxsxwzezhkeawnjvigx`) and production (`eetonalyyyssvkyfdoxh`); the production smoke test passed. This was a brief interruption to Native Signing development, which continues from the QA state below. No Native Signing code or schema was promoted with this hotfix.
 
-**Production app deploy (2026-09-30):** `main` (`15e4b7a`) could not be promoted because it also carries the unreleased Native Signing work (merged PRs #34–#45, `fb022a5`) that the live deployment (`dpl_2CMdac6EViudwyp6TgoQbHf8htiM`, commit `348d309`) does not. Shipped instead from branch `hotfix/duplicate-packet-forms-prod` = `348d309` + only the duplicate-forms code (`a87b1aa`; code byte-identical to `15e4b7a`, docs left at `348d309`). Validation on that branch: duplicate tests 18/18, field-instance-sync 17/17, packet-form-lifecycle 7/7, `tsc`, targeted ESLint, `next build` pass. Live deployment is now `dpl_4eXrZwG8hJC3UgmPKgRVGDHMpMWX` (`harbaugh-forms-163e8xagp`), built from the hotfix preview via `vercel redeploy --target production`; rollback target is `dpl_2CMdac6EViudwyp6TgoQbHf8htiM`. **Note:** that CLI redeploy assigned both production domains itself when Ready (Auto-assign Custom Production Domains only stops Git-triggered production builds), so the isolated-URL login check ran after assignment, not before. Future CLI production builds should skip domain assignment and promote explicitly. The next `main` production deploy (Native Signing) already contains this fix.
+**Production app and rollback:** PR #47 was squash-merged to `main` as `15e4b7a`; PR #48 recorded the rollout on `main` as `cd7e0f4`. The live app was built from `hotfix/duplicate-packet-forms-prod` at `a87b1aa`: prior live commit `348d309` plus only the duplicate-forms fix, with fix code byte-identical to `main`. `main` has not been deployed. Both production domains (`forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app`) run Vercel deployment `dpl_4eXrZwG8hJC3UgmPKgRVGDHMpMWX`; the prior deployment `dpl_2CMdac6EViudwyp6TgoQbHf8htiM` is the rollback target. Keep the hotfix branch as a record of the exact deployed source until a later `main` release replaces it.
 
-**Production smoke (Lee, temporary custom packet, then cleaned up):** first add of Amendment to Contract — no dialog; search result shows "In packet" and stays selectable; selecting it shows "This form is already in the packet. Add another copy?" with the form/count, Cancel focused; Cancel created nothing; Add Another created a second ACTIVE packet form with its own PDF and 38 own field instances; label then "In packet (2)"; Fill form opened on the copy; a saved field value and a Date Signed annotation on the copy left the original's instance ids, values, `update_date`, and annotations untouched (no shared instance ids); removing the copy soft-deleted only it. Post-rollout: all pre-existing packets / packet forms / field instances / annotations byte-identical to the pre-migration fingerprint; no 5xx in production logs. Real use began immediately: a second Amendment to Contract ("Extend closing date Oct 14") was added to live packet #12.
+**Production migration:** Applied only `20260930120000_packet_forms_allow_duplicate_forms.sql`, using a temporary migrations directory with the 110 migrations production already had plus this file; the dry run listed only the new file. The unique index is gone; production has 111 applied migrations with no drift. Pre-existing packets, packet forms, field instances, and annotations were byte-identical before and after the rollout. The 20 older Native Signing migrations remain pending in production. Their future rollout must use `supabase db push --include-all` after a dry run, because production already has the later duplicate-forms migration.
 
-**Production migration (2026-09-30):** `20260930120000` applied to `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`) out of order via `supabase db push --db-url` from a temporary migrations directory containing only the 110 already-applied production migrations plus `20260930120000` (dry run listed only that file). Afterwards: `packet_forms_packet_form_internal_active_uidx` absent; 111 remote migrations, no remote-only versions; production packets / packet forms / field instances / annotations fingerprint identical before and after.
-
-**Native Signing production rollout note:** The 20 Native Signing migrations (`20260914200000`–`20260920190000`) are now older than the latest production migration (`20260930120000`). A plain `supabase db push` will refuse them; the future Native Signing production rollout must use `supabase db push --include-all` (after its own dry run).
+**Production smoke and domain behavior:** A temporary packet confirmed first add without a dialog, an already-present form remaining selectable, Cancel creating nothing, and Add Another creating an independent second copy with its own PDF and 38 field instances. A field value and Date Signed annotation on that copy did not alter the original; removing it soft-deleted only the copy. The temporary packet was cleaned up, and the rollout report recorded no production 5xx errors. A second Amendment to Contract was subsequently added to live packet #12. Although automatic domain assignment was disabled for Git-triggered production builds, `vercel redeploy --target production` assigned both domains when Ready; the isolated-URL login check therefore ran after assignment. Future CLI production builds should skip domain assignment, validate the deployment URL, then promote domains explicitly.
 
 **Durable rule:** A packet may contain multiple independent instances of the same form. Form presence in a packet must never make that form unavailable for addition. Duplicate instances are identified and managed by `packet_form.id`, not by assuming `packet_id + form_id` is unique. The UI may warn before adding duplicates but must allow the user to proceed.
 
@@ -148,11 +200,255 @@ Both installed major lines were affected (1.1.18 and 5.0.9). Exploitation needs 
 |------|--------|
 | Root cause | Two layers. DB: partial unique index `packet_forms_packet_form_internal_active_uidx` on `(packet_id, form_id) WHERE status='ACTIVE' AND form_id IS NOT NULL` (from `20250610190000`). App: Add Forms disabled forms already present ("In packet"); `addInternalFormToPacket` threw "This form is already in the packet." after a `.maybeSingle()` lookup; `createPacketFromCollection` and the draft editor rejected repeated / collection-overlapping additional forms |
 | Migration | `20260930120000_packet_forms_allow_duplicate_forms.sql` — `drop index if exists public.packet_forms_packet_form_internal_active_uidx;` only. Forward-only; no data rewrite. Dev: 356 packet forms / 1,516 field instances hashed before and after — identical |
-| UX | Search results always selectable; forms already present show "In packet" (or "In packet (N)" when N ≥ 2 copies exist). Selecting one opens "This form is already in the packet. Add another copy?" listing the form and count, with Cancel / Add Another (Cancel focused). Non-duplicates add immediately with no dialog. Same behavior in the packet-creation draft editor (entries now removed/keyed by position) |
+| UX | Search results always selectable; forms already present show "In packet" (or "In packet (N)" when N ≥ 2 copies exist) and stay selectable. Selecting one opens "This form is already in the packet. Add another copy?" listing the form and count, with Cancel / Add Another (Cancel focused). Non-duplicates add immediately with no dialog. Same behavior in the packet-creation draft editor (entries now removed/keyed by position) |
 | New copy | New `packet_forms` row via the normal path: own id, own copied PDF, own field instances on first open (normal defaults, nothing cloned), own lifecycle/annotations/deletion/Signing inclusion |
-| Other assumptions checked | Field instances, storage paths, annotations, Signing documents, pending-publication activation, packet-level field-instance ensure, PDF download: all keyed by `packet_form.id` — no change needed |
-| Coverage | `npm run test:packet-forms-duplicate` (18 unit/contract tests); `npm run validate:duplicate-packet-forms-dev` (real creation / field-instance / soft-delete paths under RLS). Pre-migration dev run failed on the unique index as expected; post-migration run passes. Browser QA on dev: dialog, Cancel (no row), Add Another (second ACTIVE copy), Fill form on the copy |
+| Other assumptions checked | Field instances, storage paths, annotations, Signing documents, pending-publication activation, packet-level field-instance ensure, PDF download: all keyed by `packet_form.id` — no change needed. No other `.single()` / `maybeSingle()` / map keyed by `packet_id + form_id` found |
+| Coverage | `npm run test:packet-forms-duplicate` (18 unit/contract tests); `npm run validate:duplicate-packet-forms-dev` (real creation / field-instance / soft-delete paths under RLS: normal add, duplicate flagged, cancel creates nothing, distinct second ACTIVE copy with own PDF and 27 own field instances, no value cloning, original row + instances byte-identical at every stage, mixed A-duplicate + B-new, delete one copy leaves others). Pre-migration run failed on the unique index as expected; post-migration run passes. Browser QA on dev: dialog, Cancel (no row), Add Another (second ACTIVE copy), Fill form on the copy |
 | Isolation | Shipped from `main` on `fix/duplicate-packet-forms`, independent of the open Native Signing PR #46 branch; no signing/annotation files in the diff |
+| Regression | field-instance-sync 17, form/packet-form lifecycle 47, packet-custom + dialogs 19, F5 final-document immutability dev, packet-form annotation auth dev — all pass; `tsc --noEmit`, targeted ESLint, `build:validate` pass |
+
+### Native Signing participant ceremony QA (2026-10-02; PR #46)
+
+**Status:** Development-only. [PR #46](https://github.com/leeharbaugh/harbaugh-forms/pull/46) stays open and unmerged; head moved `4bb2800` → `3f92e48` (four commits: ceremony fixes `0b5b432`, ceremony browser QA `b7e622e`, unlock fix `8fbd588`, in-person QA `3f92e48`). Production untouched (`dpl_E9HTxf45epr8ckKifivWCPNgpFAU`), Native Signing off there, Gate A paused. Dev Supabase `ewxsxwzezhkeawnjvigx` only; email sandboxed; links from the development Copy signing link helper. A random development-only `SIGNING_EVENT_CHAIN_KEY` / `_ID` was added to the gitignored `.env.local` (Lee approved) because finalization requires it.
+
+**QA run:** `scripts/qa-signing-ceremony-browser.ts` (new), all checks pass on the final code, with disposable fixtures cleaned up afterwards. Signing A: P1 "Avery Jordan Stone" (Signature + linked Date, required Initials, optional Initials), P2 "Blake Rivera" (Signature + linked Date, Initials), and one copy recipient. Signing B: Resend / Replace / Revoke, then Decline. Signing C: one in-person participant.
+
+| Area | Result |
+|------|--------|
+| Entry | Copied link → POST exchange (secret only in the body) → `/sign/continue` without workspace login; HttpOnly entry cookie holds no secret; pre-affirmation shows name / agent / brokerage / title only |
+| Affirmation | "I am [Name]" (attestation only) → one ACTIVE ceremony session (60-minute inactivity), presence lease, HttpOnly ceremony cookie; the ceremony is refused without it |
+| Consent | Development placeholder disclosure (`dev-placeholder-2026-09-17`, sha256 `a09d0114…`) shown with the dev-copy badge; no marks or Finish before acceptance; reload keeps it unaccepted; acceptance records version id + fingerprint; no re-prompt after reload or Exit |
+| Signature | Another participant's name and a wrong-case name are rejected with the exact-match message; the exact name is adopted (unlocked until first use). Caveat appears only in the completed PDF; the ceremony has no rendered mark preview (observation, not a defect) |
+| Initials | Suggested "AJS" / "BR"; editable before first use (edited to "AJX", server re-adoption to "AJS" accepted); adopt card hidden after adoption; first use locks it, after which re-adoption returns `MARK_LOCKED` |
+| Placement / Date Signed | Sign / Initial here creates ACCEPTED placements on the participant's own fields only; linked Date Signed is a separate placement with the sender-local date (America/Chicago); the completed PDF draws each mark inside its assigned box |
+| Remove / Replace | Optional Initials apply → Remove (REMOVED, survives reload) → reapply; Signature Replace (old REPLACED, new ACCEPTED, new Date) and Remove (Date follows) → re-sign; exactly one ACCEPTED per field |
+| Freeze | First accepted mark sets `frozen_package_revision_id`; manager Draft field write and amendment lock return `CONFLICT`; document versions unchanged; no preparation controls |
+| Finish | Disabled until required fields are done (optional Initials can stay empty); P1 Finish → FINISHED, Signing stays In Progress, no finalization work; reload / return link show no controls; post-Finish writes refused |
+| P2 + isolation | P2 sees only its 2 fields (no P1 field ids in the page); P2 session acting on P1 fields → `CEREMONY_FORBIDDEN`; P1 placements unchanged. Exit lands on `/sign/done?outcome=exited`; reopening the link + "I am" resumes with consent and marks kept |
+| Finalization | Last Finish → READY, one `FINALIZE_SIGNING` → request-driven worker → VERIFIED / COMPLETE in ~8 s; 1 COMPLETED_DOCUMENT + 1 AUDIT_CERTIFICATE, bytes match sha256, verified before `completed_at`; protected event chain verifies; combined package and three completed-package deliveries SUCCEEDED (sandbox) |
+| Completed PDF | HarbaughCaveat embedded; both names, "BR", 2× "AJS", 2× the date inside the assigned boxes; no stale marks; audit certificate names both participants |
+| Completed review | Package credentials only after Complete (2 participants + copy recipient); account-free package link lists both artifacts and downloads byte-identical files. Manager: COMPLETE, Finalization VERIFIED, delivery rows, no participant link controls; old invitation link refused |
+| Decline | Two-step confirmation with reason; Signing and participant DECLINED; no artifacts / finalization; `PARTICIPANT_DECLINED` by the participant; chain verifies; lands on "You declined to sign"; link refused afterwards; manager sees DECLINED with no completed-package operations |
+| Link ops | Resend keeps the link; Replace refuses the old link and the new one reaches affirmation; Revoke refuses. `qa-signing-link-ops-browser.ts` also passes |
+| In person | Begin In-Person → hand device → sign → Finish lands on Return to agent with the device lock intact; `/signings` stays locked; password unlock returns to the Signing; finalized to COMPLETE |
+| Runtime | 0 unexpected console errors / warnings, 0 page errors, 0 hydration errors, 0 new dev-server ERROR / WARN lines. Expected refusals (replaced / revoked / declined / post-Complete links → 503 unavailable) are classified explicitly |
+| Secrets | 7 raw secrets never appeared in ~630 participant request URLs or the dev server log |
+
+**Defects found and fixed (each with regression tests that fail on the old code):**
+
+| Defect | Root cause | Fix |
+|--------|-----------|-----|
+| Applied Signature never showed its Date Signed | Shell read `renderedSenderLocalDate` from the Signature row, but the date lives on the linked DATE_SIGNED placement | `linkedDateSignedBySignatureField()` (`lib/signing/ceremony-field-view.ts`) |
+| A removed field could not be applied again (silent no-op) | Apply used the fixed request id `accept:{field}:new`; the server correctly replayed the earlier (removed) placement | Fresh request id per click, like Replace / Remove |
+| Finish / Decline / Exit landed on "Signing access is currently unavailable"; in person this could also clear the device-handoff lock (see security.md R29) | Clearing a cookie in a Server Action re-renders the page; `/sign/ceremony` without its cookie redirected to `/sign/unavailable`, which clears every Signing cookie | Actions redirect server-side: remote → static `/sign/done?outcome=…`, in person → `/sign/return-to-agent` |
+| Password unlock landed on `/sign/unavailable` instead of the Signing (lock already released; fail-safe) | Same re-render: Return to agent with no lock cookie redirected before the form's hard navigation ran | With no lock cookie the page renders an "Agent workspace unlocked" notice; unlock keeps its hard navigation (a client-side move would keep the strict `/sign` CSP) |
+
+**Found, not fixed here:**
+
+- **Manager completed-document access gap (pre-existing):** the manager Signing page has no view or download of the completed document or audit certificate. `canReadCompletedSigningArtifacts` is used only in tests, while decisions.md ("Signing artifacts use private immutable storage and server-mediated downloads") expects authorized agents to download. Needs a separate focused PR; likely a production-enablement blocker.
+- **Minor wording:** "N of M of your fields complete" counts Date Signed fields.
+- **Pre-existing:** `test:native-signing-stage1` / `stage2` run `feature-gate.test.ts` under plain `node --experimental-strip-types`, which cannot resolve `@/lib/supabase/project-guard`. The same files pass 24/24 under `tsx`.
+
+**Validation (QA worktree at `3f92e48`; PR #46's own schema on dev):**
+
+- Unit suites: stage3 11, stage4 50, ceremony 63, TC authority 31, stage6 30, completion delivery 12, recovery access 7, draft prep 64, production readiness 56 (includes bearer transport). Stage1 / stage2 / authority / participant-link-qa / draft-multiselect pass under `tsx`: 64 tests. All 0 fail.
+- Dev validators: stage4, ceremony, stage6, completion delivery pass.
+- Browser QA: ceremony and link-ops pass.
+- `tsc`, changed-path ESLint (10 files), `git diff --check` and `build:validate` pass.
+- `npm audit --omit=dev`: 1 critical, GHSA-vcvr-r3jv-pc5j (Next 16.3.5 on this branch; `main` has 16.3.6).
+
+**Merge readiness: do not merge yet.** Remaining blockers:
+
+1. ~~PR #46 conflicts with `main`~~ Resolved 2026-10-02 by merge commit `8769993` (Next 16.3.6, audit clean, full revalidation passed); see "PR #46 merged with current main".
+2. Lee's own re-QA of the ceremony, including the new `/sign/done` landing and the in-person hand-back.
+3. Lee's decision on the manager completed-document access gap: before merge, or as a tracked follow-up before production enablement.
+
+### Development Copy / Open signing link for participant QA (2026-10-01; PR #46)
+
+**Status:** Development-only QA helper. Production remains OFF/untouched; PR #46 stays open.
+
+| Item | Result |
+|------|--------|
+| Purpose | Signing email is sandboxed locally, so no invitation arrives. Managers can copy or open the real participant link to QA the ceremony |
+| UI | In Progress participant access card, after Resend / Replace / Revoke: **Copy signing link** ("Signing link copied.") and **Open signing link** (new tab, `noopener,noreferrer`). Shown only while the participant has an active link and the helper is enabled. Card note: "Email delivery is sandboxed in development. Use Copy signing link to test the participant ceremony." |
+| Gate | `isParticipantLinkQaHelperEnabled()`: `SIGNING_EMAIL_SANDBOX=true`, `VERCEL_ENV` ≠ `production`, and Supabase URL not the production project. The dashboard flag and the server action both use it; the action denies (`FORBIDDEN`) before any lookup |
+| Authority / link | Same checks as Resend/Replace/Revoke (`requireInProgressManageableParticipant`: manage authority, In Progress, remote, participant on this Signing); current unrevoked credential only; URL from `buildParticipantInviteUrl` (`/sign/{credential id}#{secret}`), identical to the invitation email |
+| Secret handling | Unwrapped only on click; not logged, persisted, evented, or rendered; held only in the click handler |
+| Replace / Resend / Revoke | Replace → new link, old refused; Resend → same link; Revoke → controls hidden, action `CONFLICT` |
+| Coverage | `lib/signing/participant-link-qa.test.ts` (gate matrix, production denial with no DB access, UI gating, no link in markup/state); Stage 4 dev validator (exact URL, nothing logged, same-org non-manager / other org / Global Admin / other-Signing participant denied, production denial + production dashboard flag off, Resend / Replace / Revoke, no secret in events / work items / instructions); `scripts/qa-signing-link-ops-browser.ts` (copy → participant reaches identity affirmation without login, Open in new tab, Replace → old refused / new works, Resend unchanged, Revoke hides controls; secrets never printed; zero console/server noise; cleanup now also removes ceremony sessions and presence leases) |
+| Migration | None |
+
+### Native Signing quality/efficiency closeout (2026-09-30; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. PR #46 stays open — technically ready for Lee's final participant-ceremony QA and merge decision; do not merge before that.
+
+| Item | Result |
+|------|--------|
+| DOMMatrix root cause | `pdfjs-dist/build/pdf.mjs` runs `new DOMMatrix()` at module top level. The Signing dashboard (a Client Component, still server-rendered per request) statically imported the Prepare Documents dialog → `react-pdf` / `lib/pdfjs-setup` → `pdfjs-dist`, so every `/signings/[id]` request failed server rendering (500 + "Please use the legacy build" warning) and the browser recovered by client-rendering |
+| Fix | The dashboard loads the dialog with `next/dynamic(..., { ssr: false })` and mounts it only after Prepare Documents is first opened (kept mounted afterwards). No DOMMatrix polyfill; server PDF generation (pdf-lib / fontkit) untouched |
+| Script-tag warning | "Encountered a script tag while rendering React component" came from the `next-themes` inline script during that client-side recovery render; gone with the fix |
+| Participant routes | `lib/supabase/proxy.ts` redirected `/sign/*` and `/api/sign/*` to workspace login, contradicting "Login is never required to sign". These routes now bypass the workspace-login redirect (device-handoff lock still first); they authenticate with Signing credentials/sessions |
+| Dev CSP | `/sign/*` CSP adds `'unsafe-eval'` only when `NODE_ENV=development` (Next dev tooling needs it); production CSP unchanged |
+| Lazy viewer | Browser QA: pdf.js is not evaluated on dashboard load, loads on first Prepare Documents open, and reopening reuses the same module instance |
+| Boundary guard | `lib/signing/client-boundary.test.ts` walks static imports from every `app/**/page|layout|route` and fails if any reaches `react-pdf`, `pdfjs-dist`, or `lib/pdfjs-setup` |
+| Runtime noise | `scripts/qa-runtime-noise.ts` fails both browser QA scripts on any browser console error/warning, page error, or new dev-server ERROR/WARN log line (no allowlist). Link-ops QA now sends through the Draft page Send confirmation and visits the Signings list |
+| Batch writes | Not added: group move / multi-delete / paste stay per-field trusted writes on the ordered queue (small selections; each write fully authorized; failures reconcile to server state) |
+| Build | `next build` emits no warnings. Remaining non-Next output: Node `MODULE_TYPELESS_PACKAGE_JSON` from the pre-build env guard (repo-wide module type; backlog) and an npm `devdir` env warning from the local shell environment |
+| Migration | None |
+| Gate A | Remains paused |
+
+### Native Signing manager QA pass 8 (2026-09-28; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. PR #46 stays open — do not merge until Lee re-QAs multi-select / group move / copy / paste / delete, Replace signing link feedback, and the remaining Send / In Progress / participant-ceremony flows.
+
+| Item | Result |
+|------|--------|
+| Multi-select | Click selects one placement; Ctrl-click (Windows/Linux) or ⌘-click (macOS) toggles; Escape or a click on empty page area clears the selection (that click does not place a field); new placements are not auto-selected. Selected placements get a sky ring/fill; the sidebar shows "N placements selected" with Copy / Paste / Remove selected. No marquee |
+| Group move | Dragging any selected placement moves the selected placements **on that page** together by one PDF-point delta, clamped as a group to the page so relative geometry is preserved; selected placements on other pages stay put (sidebar says so). No cross-page moves. Followers track live; each moved row persists through the trusted draft-field upsert; no reload, remount, or scroll reset |
+| Multi-delete | Delete / Backspace removes the selection via the trusted remove action (a Signature takes its linked Date Signed; Initials and Date Signed remove alone). Ignored while focus is in an input, select, textarea, or contenteditable |
+| Copy / paste | Ctrl/⌘+C and Ctrl/⌘+V (plus sidebar buttons) use an in-memory editor clipboard — never the OS clipboard. Paste keeps participant, type, required state, page, size, and relative offsets, shifted 12 pt per successive paste and clamped per page; target is the current document. New rows persist through trusted writes in order (Signatures before Dates) |
+| Signature/Date on paste | Copied pair → new linked pair; Signature alone → new paired Date Signed; Date alone → links to its original Signature if still present, else to an undated same-participant Signature on that page, else rejected: "Date Signed needs a Signature for {name}. Copy the Signature with its Date Signed, or place a Signature for {name} first." Never links across participants |
+| Geometry | All moves/pastes computed in PDF points via the existing render↔PDF helpers; zoom-independent; browser QA verifies group drag, paste, delete, and close/reopen geometry |
+| Replace semantics (audit) | Resend: same credential, new invitation instruction + work item. Replace: prior credential superseded (`is_current=false`, `revoked_at`, `REPLACED_BY_MANAGER`, `replaced_by_credential_id`), new credential in the current access epoch, invitation queued and sent inline; old entry and ceremony sessions fail validation, and old entry sessions are now also explicitly revoked. Revoke: credential revoked + entry sessions revoked, no replacement |
+| Replace fix | `replaceParticipantInvitationWithActor` now runs the same In Progress / REMOTE_SEND / active participant / email checks as Resend and Revoke **before** touching credentials (previously a participant without email was revoked and reissued before the enqueue failed) |
+| Why Lee saw nothing | The success notice rendered at the page top, away from the participant panel. Now: confirmation dialogs for Replace ("Replace signing link?" — "The participant’s current link will stop working and a new signing link will be sent.") and Revoke; inline status in the participant card ("Signing link replaced." / "The previous link no longer works. A new link has been queued for delivery." / "Email delivery is sandboxed in development."); the panel reloads immediately |
+| Access status | Participant card shows Active link / Revoked / No active link, current link issued time, link replaced / revoked times, last invitation queued, last send attempt. Invitation labels are honest: queued, accepted by the email service, accepted by the development sandbox (not sent), failed — never "delivered". No credential ids, tokens, links, or provider references reach the browser |
+| Coverage | `lib/signing/draft-multiselect.test.ts` (17); Stage 4 dev validator adds Resend / Replace / Revoke / dashboard-status checks (44 OK); browser QA `scripts/qa-signing-prepare-browser.ts` (multi-select, group drag, paste, typing guard, multi-delete, pair paste, orphan Date rejection, reopen) and new `scripts/qa-signing-link-ops-browser.ts` (Replace/Resend/Revoke UI + DB) |
+| Send pending label | Final polish (2026-09-30): the Send confirmation shows "Sending…" while the Send is in progress (was "Activating…", internal lifecycle wording); Begin In-Person keeps its own label. Copy only — activation code and behavior unchanged |
+| Migration | None |
+| Gate A | Remains paused |
+
+#### Signing Placement Templates — design (not implemented in PR #46)
+
+Audit findings (code/migrations only):
+
+* **Form identity.** `forms` rows are immutable per version once Published; a new revision is a new row (`version_label`, same `form_family_key`, normalized upper-case from `form_code`). Signing documents trace `signing_documents.source_packet_form_id → packet_forms.form_id → forms.id`. Ad hoc uploads have `packet_forms.form_id = null` (and ad hoc Signing documents have no Packet Form).
+* **Participant roles.** Packet parties carry `PacketContactRole` (`BUYER`, `SELLER`, `TENANT`, `LANDLORD`, `PRIMARY`, `CO_CLIENT`, `SPOUSE`, `POWER_OF_ATTORNEY`, `OTHER`) from `packet_contacts.packet_role`, or from the representation agreement (BUYER_REP → Buyer, LISTING → Seller), ordered by `sort_order`. Agents/brokers/TCs are never ceremony participants. `signing_participants` keeps only `linked_contact_id` and a human `optional_role` label, not the role code or ordinal.
+* **Scope precedent.** `field_defaults` uses PRIVATE (owner) / ORGANIZATION (org) with Private overriding Organization, resolved via `primary_organization_id`.
+
+Recommended design (schema and slot names not locked):
+
+* **Key:** exact `forms.id` (the version row). `form_family_key` is used only to *suggest* a template from an older version ("Template saved for 2024 version — review before applying"), never to auto-apply across versions.
+* **Scope / precedence:** Organization templates (org admins) and Personal templates (owner); for a given form version Personal wins over Organization; the manager can choose either explicitly. No Global scope initially.
+* **Stored instructions:** per placement — participant slot, field type, page, x/y/width/height (PDF pt), required, linked-Date relationship (template-local id), optional display order. No Contact/User/participant ids, no names, no evidence.
+* **Slots:** derived from Packet roles plus ordinal — e.g. Buyer 1 / Buyer 2, Seller 1 / Seller 2, Tenant 1 / 2, Landlord 1 / 2, Client 1 / 2 (PRIMARY/CO_CLIENT). Needs participant role code + ordinal captured at Packet import (new nullable columns on `signing_participants`) so slots resolve without re-reading the live Packet.
+* **Save:** from Prepare Documents for a document with a Form version; manager names the template, picks scope, reviews the slot for each participant (defaulted from role + ordinal; unresolved/ad hoc participants must be mapped or excluded).
+* **Apply:** explicit "Apply template" per document; mapping dialog shows every slot → participant, highlights unresolved slots, never assigns silently; creates ordinary editable Draft placements through the trusted draft-field writes (Signature + linked Date preserved). No evidence, revisions, or Revision 1 effects. Auto-apply may come later as a suggestion once explicit Apply is proven.
+* **Ad hoc PDFs:** out of scope initially (no stable identity); revisit with a content fingerprint later.
+* **Next PR:** "Signing Placement Templates (explicit Save/Apply)": migration for `signing_placement_templates` + `signing_placement_template_fields` (deny-by-default RLS, service-role writes) and participant role/ordinal capture; trusted Save/Apply/list/delete actions with `requireSigningActor` + scope checks; Prepare Documents Save/Apply UI with slot mapping; unit, dev validator, and browser QA coverage.
+
+### Native Signing manager QA pass 7 (2026-09-28; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. PR #46 stays open — do not merge until Lee re-QAs the content-sized placements.
+
+| Item | Result |
+|------|--------|
+| Content-driven sizing | New placements are sized from the mark the completed-PDF renderer will draw: expected text (personal signing name, frozen representative `capacity_wording`, shared suggested initials, or the en-CA finalization date) measured with the renderer's font metrics at a target size, plus modest padding, clamped per type; long representative wording caps and shrinks to fit like the renderer. Still resizable |
+| Metrics | `lib/signing/mark-metrics-data.ts` generated by `scripts/generate-signing-mark-metrics.ts` from the embedded Caveat font and Helvetica; tests verify it against pdf-lib |
+| Canvas labels | Signature/Initials show the expected text in Caveat at the renderer's fitted size and baseline; Date shows "Date"; details in tooltip/aria/sidebar |
+| Linked Date | Uses the content-sized Date box; right of the Signature on the same bottom edge when it fits, otherwise below |
+| Preview Signing | Standalone Draft-page buttons and "Open Preview Signing…" copy removed. Read-only renderer, route, and dialog mode kept. Readiness stays derived; no preview acknowledgment; Send confirmation unchanged |
+| Canonical review | Prepare Documents renders the same selected Draft source snapshot that activation consumes |
+| Coverage | `lib/signing/draft-prep-editor.test.ts` (sizing, no-clip against pdf-lib, geometry round trip); browser QA `scripts/qa-signing-prepare-browser.ts` (printed Buyer Rep-style lines, short vs long names, no Preview button, reopen round trip); draft-prep dev validator uses the computed sizes |
+| Migration | None |
+| Gate A | Remains paused |
+### Native Signing manager QA pass 6 (2026-09-28; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. PR #46 stays open — do not merge until Lee re-QAs Packet selection / participant population and the new placement defaults.
+
+| Item | Result |
+|------|--------|
+| Participant-import root cause | Lee's Packet #2 is a Buyer Rep Packet whose parties live in `representation_agreement_clients` (agreement #1); it has no `packet_contacts`. `deriveSigningParticipantsFromPacket` read only `packet_contacts`, derived zero parties, and the bind still committed → "Packet selected, participants missing". Validator fixtures used `packet_contacts`, so they passed |
+| Derivation | Now reads ACTIVE `packet_contacts` plus ACTIVE clients of the Packet's representation agreement (BUYER_REP → Buyer, LISTING → Seller); dedupe by contact id; contacts must be ACTIVE and owned by the actor (others skipped with a note) |
+| Bind + import | One transaction: parties derived/validated first, then `signing_select_source_packet` RPC (service role only) locks the Signing row, compare-and-sets `source_packet_id` against the value read, and inserts missing parties. Returns the refreshed participant list; the UI reloads before showing the notice |
+| Concurrency | Competing selections: exactly one wins; the loser gets CONFLICT/INVALID_PACKET; participants always match the bound Packet. Trigger `signing_documents_enforce_source_packet` rejects inserting/re-including a Packet document from any other Packet in a Draft |
+| Participants layout | One **Participants** section in Prepare Signing: Add participant card, then the participant list (role, representative capacity, email or "No email", field warning, Remove participant). The separate bottom Participants card is hidden for a manageable Draft |
+| Placement defaults | Signature 150×28, Initials 40×20, Date Signed 72×18 PDF pt (was 160×40 / 80×40 / 100×24), sized from the completed-PDF renderer (Caveat typed marks, Helvetica `YYYY-MM-DD`); linked Date sits right of the Signature on its baseline |
+| Labels | Initials show the ceremony's suggested initials (`LH`) via the shared `suggestTypedInitialsFromDisplayName` (moved to pure `lib/signing/initials-suggestion.ts`, re-exported from `adopted-marks.ts`); Signature shows the human signer name; Date shows "Date"; full detail in tooltip/aria/sidebar. Overlays render exact geometry (no minimum inflation) |
+| Coverage | `npm run test:native-signing-draft-prep`; `npm run validate:native-signing-draft-prep-dev` (26 checks incl. legacy agreement Packet, races, trigger); browser QA `scripts/qa-signing-prepare-browser.ts` on an agreement-backed Packet |
+| Migration | `20260928120000_native_signing_source_packet_selection.sql` (dev only; also binds legacy unbound Drafts whose Packet documents come from one Packet) |
+| Known gap | Existing Drafts already bound with Packet documents (e.g. Lee's two Packet #2 Drafts) are not back-filled; add participants manually or start a new Draft |
+| Gate A | Remains paused |
+
+### Native Signing manager QA pass 5 (2026-09-28; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. PR #46 stays open — do not merge until Lee re-QAs the Draft preparation workflow.
+
+| Item | Result |
+|------|--------|
+| Prepare Documents layout | Full-viewport workspace reusing the Packet form editor pattern: header with document navigation, zoom / Fit Width / Fit Page toolbar, stacked scrollable pages sized by `computePdfPageWidth` + ResizeObserver, 360px sidebar (participant, field type, selected field, field list) |
+| Refresh root cause | Every edit awaited `load()` (set `loading` → unmounted the PDF, reset page/size/selection) then reloaded the dashboard; Rnd reported a drag stop on every click, so selecting persisted + reloaded; the busy re-render disabled **Remove** before its click fired |
+| Refresh fix | Local optimistic model + ordered trusted server queue; reconcile from server only on failure; no remount, no page/scroll reset; no-movement drag stops ignored; Remove excluded from drag (`cancel`) and never disabled; press that starts on a field never places a new one |
+| Field rules | Removing a Signature removes its paired Date Signed (server + local); Initials / Date Signed remove independently; reassigning a Signature moves its Date Signed to the same participant |
+| Dead controls | Decorative Signature / Initials / Date Signed toolbar badges and page-step buttons removed; Participant + Field type dropdowns kept |
+| Adoption copy | Only: "Place signing fields for each participant. Participants adopt their signatures and initials when they sign." No Adopt feature in prep |
+| One source Packet | Selecting a Packet binds `signings.source_packet_id` (compare-and-set); picker / Add all scoped to it; second Packet rejected server-side; switch allowed only with no Packet documents or Packet-linked participants; first Packet document also binds an unbound Signing; ad hoc PDFs always allowed |
+| Participant import | Selecting a Packet imports ACTIVE transaction parties via `deriveSigningParticipantsFromPacket` (dedupe by contact id, missing email allowed, PERSONAL capacity, no agents/brokers/TCs); existing/ad hoc participants never deleted or merged; no live sync |
+| Coverage | `npm run test:native-signing-draft-prep`; `npm run validate:native-signing-draft-prep-dev`; browser QA `scripts/qa-signing-prepare-browser.ts` (disposable fixtures) |
+| Migration | None |
+| In Progress amendment | Still out of scope — no manager UI; never mutate Revision 1 |
+| Gate A | Remains paused |
+
+### Native Signing manager QA pass 4 (2026-09-23; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. Do not merge until Lee QAs the full Draft document-preparation workflow.
+
+| Item | Result |
+|------|--------|
+| Ad hoc PDF upload | Draft-only Upload PDF → Signing-owned `AD_HOC_PDF` + `draft-ad-hoc/` snapshot; no Packet/Form/evidence/revision |
+| Visual Prepare Documents | Same workspace as Preview; place/move/resize/remove Signature/Initials/Date Signed via `signing_draft_fields` |
+| Preview Signing | Remains read-only view of the same Draft source + fields |
+| Add default fields | Demoted to optional quick fixture only |
+| Copy recipients | Configurable in Draft / In Progress / Complete; credentials + delivery only after Complete; fan-out includes preconfigured ACTIVE recipients |
+| Migration | `20260923200000_native_signing_ad_hoc_documents.sql` (dev only) |
+| In Progress amendment | Still missing manager UI — backend locks exist; do not mutate Revision 1 |
+| Gate A | Remains paused |
+
+### Native Signing manager QA pass 3 (2026-09-23; PR #46)
+
+**Status:** Development-only. Production remains OFF/untouched. Do not merge until Lee re-QAs Preview Signing.
+
+| Item | Result |
+|------|--------|
+| Preview Signing | Manager action near header + Readiness; renders selected Draft source snapshots with Signature/Initials/Date Signed overlays |
+| Preview evidence | Non-evidentiary — no revision/version/credential/work item created |
+| Field placement edit | Backend upsert/remove exist; manager UI still only **Add default fields** (fixed coords) — visual place/move/resize remains a pre-production gap |
+| Banner copy | Removed general representative-support and typed-adoption banners from Signings list/detail |
+| Gate A | Remains paused |
+
+### Native Signing manager QA pass 2 (2026-09-22; PR #46)
+
+**Status:** Development-only UX/product reconciliation. Production remains OFF/untouched. Do not merge until Lee re-QAs.
+
+| Item | Result |
+|------|--------|
+| Product terminology | User-facing UI uses Signing/Signings; “Native Signing” reserved for internal architecture. Admin → **Signings enabled**. |
+| Packet → Create Signing | Owner-only retained. Create action shown only when `packets.owner_user_id` matches the current user (avoids predictable FORBIDDEN). |
+| Documents section | Add documents + picker + current Documents list are one continuous Draft section; **Remove document** via Draft path. |
+| Add entire packet | Remaining eligible Packet Forms via existing Draft snapshot path; no duplicates; source-packet and standalone modes. |
+| Readiness / Send copy | Direct ready/not-ready status language; concise Send confirmation (no representative prose). |
+| In Progress ops | Manager panel: delivery status, Resend / Replace / Revoke signing link (no bearer secrets). |
+| Copy recipients | Still COMPLETE-only (architectural: add issues completed-package credential + delivery). Pre-Complete config deferred. |
+| Pre-first-mark amendment | Backend locks exist; manager amendment UI still missing — next focused PR before production. |
+| Gate A | Remains paused |
+
+### Native Signing manager QA follow-up (2026-09-21; in progress on feat/native-signing-manager-qa)
+
+
+**Status:** Development-only UX/product reconciliation before Gate A. Production remains OFF/untouched.
+
+| Item | Result |
+|------|--------|
+| Representative signing | Restored as first-class initial-release model (stated capacity; no authority validation). Removed incorrect personal-capacity-only notice. |
+| Migration | `20260921200000_native_signing_representative_capacity.sql` applied on **dev** only (21 Native Signing migrations total). |
+| Packet → Create Signing | Packet detail **Create Signing** imports eligible Packet Forms + transaction parties |
+| Participant removal | Draft **Remove participant** via existing Stage 3 delete path |
+| Activated pre-freeze removal | Still unsupported end-to-end (document as follow-up UX gap) |
+| Add document | Root cause: picker filtered `packet_forms.status='AVAILABLE'` instead of `ACTIVE` + `availability_state='AVAILABLE'` — fixed |
+| Complete list visibility | List now also includes `original_sender_user_id` candidates |
+| Signing Controls | Plain-language posture + worker recovery copy |
+| User-facing Draft wording | Primary actions say **Create Signing** / **Prepare Signing**; lifecycle badge may still say Draft |
+| Gate A | Remains paused pending Lee re-QA |
 
 ### Native Signing local development QA enablement (2026-09-21)
 
@@ -171,6 +467,7 @@ Both installed major lines were affected (1.1.18 and 5.0.9). Exploitation needs 
 Harbaugh Forms is **live** for controlled **Lee-only** production use on `https://forms.harbaughrealestate.com`.
 
 ### Native Signing production rollout checkpoint (2026-09-21; audit only)
+
 
 **Status:** Read-only checkpoint on `main` `fa669c4` (PR #45 squash `01ce26d`). **No production mutation.** **No code blocker remains** before Gate A.
 
@@ -255,7 +552,7 @@ Harbaugh Forms is **live** for controlled **Lee-only** production use on `https:
 | `access_suspended` / `SIGNING_ACCESS_SUSPENDED` + `access_epoch` | Denies external bearer/session auth; parks invitation/package email |
 
 **Hard blockers before production enablement:**
-1. Apply all 20 Native Signing migrations to production (with immediate recovery suspend+bump).
+1. Apply all 21 Native Signing migrations to production (with immediate recovery suspend+bump).
 2. Install secrets: event-chain HMAC, participant wrap, completed-package wrap, worker secret, `CRON_SECRET`; set `NEXT_PUBLIC_SITE_URL`; Resend From/domain.
 3. Counsel-approved disclosure with `is_production_ready=true`.
 4. ~~Resolve emailed bearer-path platform logging~~ — closed on transport branch (UUID path + fragment secret); residual in-person path-bearer remains documented.
@@ -1760,7 +2057,7 @@ Smaller / optional items (not the two major roadmap areas above):
 - Signature / initials fields may appear but are not editable as preference defaults
 - Multi-organization users need a valid `profiles.primary_organization_id` with ACTIVE membership for Organization defaults
 - `listing-packet-kind.test.ts` has a pre-existing bare-Node `@/lib` import-resolution problem
-- Occasional Next.js hydration warning around `AdminSectionNav` / packet page — the admin-page cause (runtime-locale timestamps, React #418) is fixed by `lib/format-timestamp.ts` (2026-10-02); packet pages' `formatDateTime` (`toLocaleTimeString(undefined, …)`) remains a likely source
+- Occasional Next.js hydration warning around `AdminSectionNav` / packet page — the admin-page cause (runtime-locale timestamps, React #418) is fixed by `lib/format-timestamp.ts` (2026-10-02); packet pages' `formatDateTime` was audited 2026-10-02 and is not a hydration source (rendered only client-side after data load); its separate UTC-date / local-time display defect was fixed 2026-10-02 (PR #52, Central time with CDT/CST)
 - Specialized PDF editor dialogs lack full focus-trap behavior of confirm/info dialogs
 - Repo-wide `npm run lint` can fail when ESLint scans `.next` artifacts; targeted lint of source files is preferred
 

@@ -441,10 +441,20 @@ export async function promotePackageRevisionFromDraftWithActor(
           signing_participant_id: participant.id,
           display_order: participant.display_order,
           frozen_full_name: participant.full_name,
-          frozen_email: participant.email,
+          frozen_email: participant.email ?? "",
           frozen_optional_role: participant.optional_role,
           frozen_linked_user_id: participant.linked_user_id,
           frozen_linked_contact_id: participant.linked_contact_id,
+          frozen_signing_capacity_mode:
+            (participant.signing_capacity_mode as string | undefined) ??
+            "PERSONAL",
+          frozen_represented_party_name:
+            (participant.represented_party_name as string | null | undefined) ??
+            null,
+          frozen_capacity_label:
+            (participant.capacity_label as string | null | undefined) ?? null,
+          frozen_capacity_wording:
+            (participant.capacity_wording as string | null | undefined) ?? null,
         })
         .select("id, signing_participant_id")
         .single();

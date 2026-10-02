@@ -16,6 +16,10 @@ import {
   type UpdateDraftSigningTitleInput,
 } from "@/lib/signing/operations";
 import {
+  createSigningFromPacketWithActor,
+  type CreateSigningFromPacketResult,
+} from "@/lib/signing/packet-to-signing";
+import {
   grantOperatorDelegationWithActor,
   revokeOperatorDelegationWithActor,
   type GrantOperatorDelegationInput,
@@ -23,6 +27,7 @@ import {
 } from "@/lib/signing/operator-delegations";
 import { SigningError } from "@/lib/signing/errors";
 import { NativeSigningDisabledError } from "@/lib/signing/feature-gate";
+import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import type { SigningSummary } from "@/lib/signing/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -32,6 +37,10 @@ export type SigningActionResult =
 
 export type SigningListActionResult =
   | { ok: true; signings: SigningSummary[] }
+  | { ok: false; code: string; error: string };
+
+export type CreateSigningFromPacketActionResult =
+  | { ok: true; data: CreateSigningFromPacketResult }
   | { ok: false; code: string; error: string };
 
 export type DelegationActionResult =
@@ -88,6 +97,27 @@ export async function listSigningsAction(): Promise<SigningListActionResult> {
     const admin = createAdminClient();
     const signings = await listSigningsForActor(actor, admin);
     return { ok: true, signings };
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+/**
+ * Server action: create a Draft Signing from a Packet (documents + parties).
+ */
+export async function createSigningFromPacketAction(input: {
+  packetId: unknown;
+  title?: unknown;
+  confirmDuplicate?: unknown;
+}): Promise<CreateSigningFromPacketActionResult> {
+  try {
+    if (!isNativeSigningEnabled()) {
+      throw new NativeSigningDisabledError();
+    }
+    const actor = await requireSigningActor();
+    const admin = createAdminClient();
+    const data = await createSigningFromPacketWithActor(actor, input, admin);
+    return { ok: true, data };
   } catch (error) {
     return toActionError(error);
   }

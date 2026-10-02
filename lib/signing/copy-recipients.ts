@@ -1,6 +1,8 @@
 /**
  * Completed Signing copy recipients (non-signers).
  * Soft-remove only; never affects Complete or frozen evidence.
+ * Recipients may be configured in Draft / In Progress / Complete; completed-package
+ * credentials and delivery are issued only after Complete.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadSigningAuthorityBundle } from "./authority-context";
@@ -39,7 +41,7 @@ export type SigningCopyRecipientRow = {
   removal_reason: string | null;
 };
 
-async function requireCompletedManageableSigning(
+async function requireCopyRecipientManageableSigning(
   actor: SigningActor,
   signingIdRaw: unknown,
   admin: SupabaseClient,
@@ -51,17 +53,31 @@ async function requireCompletedManageableSigning(
   if (!bundle || !bundle.authority.canRead) {
     throw new SigningError("NOT_FOUND", "Signing not found.");
   }
-  if (
-    !canManageCompletedSigningOperations(
-      bundle.authority,
-      bundle.signing.lifecycle_state,
-    )
-  ) {
+
+  const lifecycle = bundle.signing.lifecycle_state;
+  if (lifecycle === "COMPLETE") {
+    if (
+      !canManageCompletedSigningOperations(bundle.authority, lifecycle)
+    ) {
+      throw new SigningError(
+        "FORBIDDEN",
+        "You cannot manage copy recipients for this Signing.",
+      );
+    }
+  } else if (lifecycle === "DRAFT" || lifecycle === "IN_PROGRESS") {
+    if (!bundle.authority.canManage) {
+      throw new SigningError(
+        "FORBIDDEN",
+        "You cannot manage copy recipients for this Signing.",
+      );
+    }
+  } else {
     throw new SigningError(
-      "FORBIDDEN",
-      "You cannot manage copy recipients for this Signing.",
+      "CONFLICT",
+      "Copy recipients cannot be managed for this Signing state.",
     );
   }
+
   return bundle;
 }
 
@@ -91,7 +107,7 @@ export async function addCopyRecipientWithActor(
   },
   admin: SupabaseClient,
 ): Promise<SigningCopyRecipientRow> {
-  const bundle = await requireCompletedManageableSigning(
+  const bundle = await requireCopyRecipientManageableSigning(
     actor,
     input.signingId,
     admin,
@@ -147,26 +163,29 @@ export async function addCopyRecipientWithActor(
 
   const recipient = inserted as SigningCopyRecipientRow;
 
-  const ensured = await ensureCompletedPackageCredential({
-    admin,
-    signingId: bundle.signing.id,
-    target: { signingCopyRecipientId: recipient.id },
-    issuedByUserId: actor.userId,
-  });
+  // Completed-package credentials/delivery exist only after Complete.
+  if (bundle.signing.lifecycle_state === "COMPLETE") {
+    const ensured = await ensureCompletedPackageCredential({
+      admin,
+      signingId: bundle.signing.id,
+      target: { signingCopyRecipientId: recipient.id },
+      issuedByUserId: actor.userId,
+    });
 
-  await enqueueCompletedPackageDelivery({
-    admin,
-    signingId: bundle.signing.id,
-    credentialId: ensured.credentialId,
-    signingCopyRecipientId: recipient.id,
-    recipientEmail: email,
-    recipientName: displayName ?? email,
-    packageRevisionId: bundle.signing.frozen_package_revision_id,
-    initiatedByUserId: actor.userId,
-  });
+    await enqueueCompletedPackageDelivery({
+      admin,
+      signingId: bundle.signing.id,
+      credentialId: ensured.credentialId,
+      signingCopyRecipientId: recipient.id,
+      recipientEmail: email,
+      recipientName: displayName ?? email,
+      packageRevisionId: bundle.signing.frozen_package_revision_id,
+      initiatedByUserId: actor.userId,
+    });
 
-  const { kickSigningWorkProcessing } = await import("./signing-worker-kick");
-  kickSigningWorkProcessing({ admin, signingId: bundle.signing.id });
+    const { kickSigningWorkProcessing } = await import("./signing-worker-kick");
+    kickSigningWorkProcessing({ admin, signingId: bundle.signing.id });
+  }
 
   await appendSigningEvent(admin, {
     signingId: bundle.signing.id,
@@ -178,6 +197,7 @@ export async function addCopyRecipientWithActor(
     detailsJson: {
       copyRecipientId: recipient.id,
       email,
+      lifecycleState: bundle.signing.lifecycle_state,
     },
   });
 
@@ -193,18 +213,21 @@ export async function softRemoveCopyRecipientWithActor(
   },
   admin: SupabaseClient,
 ): Promise<SigningCopyRecipientRow> {
-  const bundle = await requireCompletedManageableSigning(
+  const bundle = await requireCopyRecipientManageableSigning(
     actor,
     input.signingId,
     admin,
   );
+
   if (!isUuid(input.copyRecipientId)) {
     throw new SigningError("INVALID_INPUT", "Invalid copy recipient id.");
   }
 
-  const reason = normalizeOptionalText(input.reason, "removal reason", 200);
+  const reason =
+    normalizeOptionalText(input.reason, "removal reason", 200) ??
+    "Removed by manager";
 
-  const { data: updated, error } = await admin
+  const { data: recipient, error } = await admin
     .from("signing_copy_recipients")
     .update({
       status: "REMOVED",
@@ -212,21 +235,20 @@ export async function softRemoveCopyRecipientWithActor(
       removed_by_user_id: actor.userId,
       removal_reason: reason,
     })
-    .eq("id", input.copyRecipientId)
     .eq("signing_id", bundle.signing.id)
+    .eq("id", input.copyRecipientId)
     .eq("status", "ACTIVE")
     .select("*")
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!updated) {
+  if (!recipient) {
     throw new SigningError("NOT_FOUND", "Active copy recipient not found.");
   }
 
-  const recipient = updated as SigningCopyRecipientRow;
   const currentCredential = await findCurrentCompletedPackageCredential({
     admin,
     signingId: bundle.signing.id,
-    target: { signingCopyRecipientId: recipient.id },
+    target: { signingCopyRecipientId: recipient.id as string },
   });
   let revokedCredentialId: string | null = null;
   if (currentCredential) {
@@ -296,5 +318,5 @@ export async function softRemoveCopyRecipientWithActor(
     },
   });
 
-  return recipient;
+  return recipient as SigningCopyRecipientRow;
 }

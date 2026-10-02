@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { SIGNING_CEREMONY_COOKIE_NAME } from "./browser-sessions";
+import {
+  parseSigningCeremonyExitOutcome,
+  SIGNING_CEREMONY_DONE_PATH,
+} from "./ceremony-exit";
 import { SIGNING_ENTRY_COOKIE_NAME } from "./entry-sessions";
 import { SIGNING_HANDOFF_COOKIE_NAME } from "./in-person-handoff";
 import {
@@ -348,11 +352,59 @@ describe("Native Signing ceremony boundaries", () => {
     assert.match(proxy, /no-store/);
     assert.match(returnToAgentPage, /validateDeviceHandoffLock/);
     assert.match(read("components/sign/return-to-agent-form.tsx"), /unlockDeviceHandoffLockAction/);
-    assert.match(read("components/sign/return-to-agent-form.tsx"), /location\.replace/);
+    // Unlock clears the lock cookie, which re-renders this page. Without a
+    // lock cookie it must render, not redirect, so the form's hard navigation
+    // (fresh workspace CSP) still runs.
+    const missingLockBranch = returnToAgentPage.slice(
+      returnToAgentPage.indexOf("if (!rawLockToken) {"),
+      returnToAgentPage.indexOf("const admin = createAdminClient();"),
+    );
+    assert.match(missingLockBranch, /return \(/);
+    assert.doesNotMatch(missingLockBranch, /redirect\(/);
+    assert.match(missingLockBranch, /Agent workspace unlocked/);
+    assert.match(read("components/sign/return-to-agent-form.tsx"), /location\.replace\(redirectPath\)/);
     assert.doesNotMatch(returnToAgentPage, /loadCeremonyDocumentBytes/);
     assert.match(actions, /exitCeremonyAction/);
     assert.match(actions, /return-to-agent/);
     assert.match(read("components/device-handoff-bfcache-guard.tsx"), /pageshow/);
+  });
+
+  it("redirects Finish, Decline, and Exit server-side instead of re-rendering the ceremony", () => {
+    // Clearing the ceremony cookie in a Server Action re-renders the current
+    // page; /sign/ceremony without it redirects to /sign/unavailable, which
+    // would hide the outcome and clear the device-handoff lock.
+    for (const [action, outcome] of [
+      ["finishCeremonyAction", "finished"],
+      ["declineCeremonyAction", "declined"],
+      ["exitCeremonyAction", "exited"],
+    ] as const) {
+      const start = actions.indexOf(`export async function ${action}`);
+      const body = actions.slice(start, actions.indexOf("\n}\n", start));
+      assert.match(body, /buildClearedSigningCeremonyCookieAttributes/);
+      assert.match(
+        body,
+        new RegExp(`destination = ceremonyExitDestination\\(session, "${outcome}"\\);`),
+      );
+      assert.match(
+        body,
+        /\} catch \(error\) \{\n    return toActionError\(error\);\n  \}\n  redirect\(destination, RedirectType\.replace\);$/,
+      );
+      assert.doesNotMatch(body, /ok: true/);
+    }
+    assert.match(
+      actions,
+      /session\.inPersonHandoffId !== null\n    \? RETURN_TO_AGENT_PATH\n    : `\$\{SIGNING_CEREMONY_DONE_PATH\}\?outcome=\$\{outcome\}`/,
+    );
+
+    const donePage = read("app/sign/done/page.tsx");
+    assert.match(donePage, /isNativeSigningEnabled/);
+    assert.match(donePage, /parseSigningCeremonyExitOutcome\(outcome\)/);
+    assert.doesNotMatch(donePage, /cookies|createAdminClient|loadCeremony/);
+    assert.equal(parseSigningCeremonyExitOutcome("finished"), "finished");
+    assert.equal(parseSigningCeremonyExitOutcome("declined"), "declined");
+    assert.equal(parseSigningCeremonyExitOutcome(["finished"]), "exited");
+    assert.equal(parseSigningCeremonyExitOutcome("<script>"), "exited");
+    assert.equal(SIGNING_CEREMONY_DONE_PATH, "/sign/done");
   });
 
   it("authorizes the agent handoff with the ordinary Signing actor checks", () => {

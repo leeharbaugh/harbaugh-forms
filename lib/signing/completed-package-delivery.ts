@@ -290,6 +290,73 @@ export async function enqueueInitialCompletedPackageFanOut(
   return { enqueued, failed };
 }
 
+/**
+ * Enqueue completed-package delivery for ACTIVE copy recipients after Complete.
+ * Safe to call after participant fan-out; email failure never rolls back Complete.
+ */
+export async function enqueueInitialCopyRecipientFanOut(
+  admin: SupabaseClient,
+  signingId: string,
+): Promise<{ enqueued: number; failed: number }> {
+  const { data: signing, error: signingError } = await admin
+    .from("signings")
+    .select("id, lifecycle_state, frozen_package_revision_id")
+    .eq("id", signingId)
+    .maybeSingle();
+  if (signingError) throw new Error(signingError.message);
+  if (!signing || signing.lifecycle_state !== "COMPLETE") {
+    return { enqueued: 0, failed: 0 };
+  }
+  const frozenRevisionId = signing.frozen_package_revision_id as string | null;
+  if (!frozenRevisionId) {
+    return { enqueued: 0, failed: 0 };
+  }
+
+  const { data: recipients, error } = await admin
+    .from("signing_copy_recipients")
+    .select("id, email, display_name, status")
+    .eq("signing_id", signingId)
+    .eq("status", "ACTIVE");
+  if (error) throw new Error(error.message);
+
+  let enqueued = 0;
+  let failed = 0;
+  for (const recipient of recipients ?? []) {
+    const email = String(recipient.email ?? "").trim().toLowerCase();
+    const name =
+      String(recipient.display_name ?? "").trim() || email || "Recipient";
+    try {
+      const ensured = await ensureCompletedPackageCredential({
+        admin,
+        signingId,
+        target: { signingCopyRecipientId: recipient.id as string },
+      });
+      if (!isValidDeliveryEmail(email)) {
+        failed += 1;
+        continue;
+      }
+      await enqueueCompletedPackageDelivery({
+        admin,
+        signingId,
+        credentialId: ensured.credentialId,
+        signingCopyRecipientId: recipient.id as string,
+        recipientEmail: email,
+        recipientName: name,
+        packageRevisionId: frozenRevisionId,
+        idempotencySuffix: `initial-copy:${ensured.credentialId}`,
+      });
+      enqueued += 1;
+    } catch (err) {
+      console.error(
+        "[native-signing-completion-delivery] fan-out copy recipient failed:",
+        err instanceof Error ? err.message : "unknown error",
+      );
+      failed += 1;
+    }
+  }
+  return { enqueued, failed };
+}
+
 export type ProcessCompletedPackageDeliveryResult = {
   workItemId: string;
   deliveryInstructionId: string;

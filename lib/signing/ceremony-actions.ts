@@ -3,6 +3,7 @@
 import "server-only";
 
 import { cookies, headers } from "next/headers";
+import { redirect, RedirectType } from "next/navigation";
 import { adoptCeremonyMark } from "@/lib/signing/adopted-marks";
 import {
   buildClearedSigningCeremonyCookieAttributes,
@@ -22,6 +23,10 @@ import {
   type CeremonyWriteContext,
 } from "@/lib/signing/ceremony-context";
 import { declineSigning } from "@/lib/signing/ceremony-decline";
+import {
+  SIGNING_CEREMONY_DONE_PATH,
+  type SigningCeremonyExitOutcome,
+} from "@/lib/signing/ceremony-exit";
 import { finishParticipantSigning } from "@/lib/signing/ceremony-finish";
 import { acceptConsent } from "@/lib/signing/consent-disclosure";
 import { SIGNING_ENTRY_COOKIE_NAME } from "@/lib/signing/entry-sessions";
@@ -116,12 +121,21 @@ async function readCeremonyCookie(): Promise<string | undefined> {
 
 const RETURN_TO_AGENT_PATH = "/sign/return-to-agent" as const;
 
-function inPersonCeremonyExitPayload(session: ValidatedCeremonySession) {
-  const inPersonCeremony = session.inPersonHandoffId !== null;
-  return {
-    inPersonCeremony,
-    returnToAgentPath: inPersonCeremony ? RETURN_TO_AGENT_PATH : null,
-  };
+/**
+ * Where Finish / Decline / Exit land once the ceremony cookies are cleared.
+ *
+ * Clearing a cookie in a Server Action re-renders the current page, and
+ * `/sign/ceremony` without its cookie redirects to `/sign/unavailable`, which
+ * also clears the device-handoff lock. These actions therefore redirect
+ * server-side instead of returning to the ceremony page.
+ */
+function ceremonyExitDestination(
+  session: ValidatedCeremonySession,
+  outcome: SigningCeremonyExitOutcome,
+): string {
+  return session.inPersonHandoffId !== null
+    ? RETURN_TO_AGENT_PATH
+    : `${SIGNING_CEREMONY_DONE_PATH}?outcome=${outcome}`;
 }
 
 /**
@@ -310,6 +324,7 @@ export async function noteCeremonyReviewActivityAction(): Promise<SigningCeremon
 }
 
 export async function finishCeremonyAction(): Promise<SigningCeremonyActionResult> {
+  let destination: string;
   try {
     assertNativeSigningEnabled();
     await requireSameOriginCeremonyRequest();
@@ -335,16 +350,15 @@ export async function finishCeremonyAction(): Promise<SigningCeremonyActionResul
     cookieStore.set(buildClearedSigningCeremonyCookieAttributes());
     cookieStore.set(buildClearedSigningHandoffCookieAttributes());
 
-    return {
-      ok: true,
-      data: { ...result, ...inPersonCeremonyExitPayload(session) },
-    };
+    destination = ceremonyExitDestination(session, "finished");
   } catch (error) {
     return toActionError(error);
   }
+  redirect(destination, RedirectType.replace);
 }
 
 export async function exitCeremonyAction(): Promise<SigningCeremonyActionResult> {
+  let destination: string;
   try {
     assertNativeSigningEnabled();
     await requireSameOriginCeremonyRequest();
@@ -367,19 +381,18 @@ export async function exitCeremonyAction(): Promise<SigningCeremonyActionResult>
     cookieStore.set(buildClearedSigningCeremonyCookieAttributes());
     cookieStore.set(buildClearedSigningHandoffCookieAttributes());
 
-    return {
-      ok: true,
-      data: inPersonCeremonyExitPayload(session),
-    };
+    destination = ceremonyExitDestination(session, "exited");
   } catch (error) {
     return toActionError(error);
   }
+  redirect(destination, RedirectType.replace);
 }
 
 export async function declineCeremonyAction(input: {
   confirmed: unknown;
   reason?: unknown;
 }): Promise<SigningCeremonyActionResult> {
+  let destination: string;
   try {
     assertNativeSigningEnabled();
     await requireSameOriginCeremonyRequest();
@@ -389,7 +402,7 @@ export async function declineCeremonyAction(input: {
       admin,
       await readCeremonyCookie(),
     );
-    const result = await declineSigning({
+    await declineSigning({
       admin,
       session,
       confirmed: input.confirmed,
@@ -400,13 +413,11 @@ export async function declineCeremonyAction(input: {
     cookieStore.set(buildClearedSigningCeremonyCookieAttributes());
     cookieStore.set(buildClearedSigningHandoffCookieAttributes());
 
-    return {
-      ok: true,
-      data: { ...result, ...inPersonCeremonyExitPayload(session) },
-    };
+    destination = ceremonyExitDestination(session, "declined");
   } catch (error) {
     return toActionError(error);
   }
+  redirect(destination, RedirectType.replace);
 }
 
 /**

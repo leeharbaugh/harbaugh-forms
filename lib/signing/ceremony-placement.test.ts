@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { resolveActionableRevisionId } from "./ceremony-context";
+import { resolveActionableRevisionId, type CeremonyFieldView } from "./ceremony-context";
+import { linkedDateSignedBySignatureField } from "./ceremony-field-view";
 import { FINALIZE_SIGNING_WORK_TYPE } from "./ceremony-finish";
 import { SigningError } from "./errors";
 import { senderLocalDate } from "./placements";
@@ -278,5 +279,58 @@ describe("Native Signing ceremony placements, Finish, and Decline", () => {
     assert.match(overview, /requiredRemaining/);
     assert.match(overview, /canFinish/);
     assert.doesNotMatch(overview, /\bemail\b/i);
+  });
+
+  it("shows each applied Signature's Date Signed from its linked date placement", () => {
+    const field = (
+      overrides: Partial<CeremonyFieldView> & Pick<CeremonyFieldView, "fieldId" | "fieldType">,
+    ): CeremonyFieldView => ({
+      revisionDocumentId: "doc",
+      isRequired: true,
+      pageNumber: 1,
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      linkedSignatureFieldId: null,
+      placementId: null,
+      acceptedAt: null,
+      renderedSenderLocalDate: null,
+      ...overrides,
+    });
+    const dates = linkedDateSignedBySignatureField([
+      field({ fieldId: "sig-a", fieldType: "SIGNATURE", placementId: "p1" }),
+      field({
+        fieldId: "date-a",
+        fieldType: "DATE_SIGNED",
+        linkedSignatureFieldId: "sig-a",
+        placementId: "p2",
+        renderedSenderLocalDate: "2026-10-02",
+      }),
+      field({ fieldId: "sig-b", fieldType: "SIGNATURE" }),
+      field({ fieldId: "date-b", fieldType: "DATE_SIGNED", linkedSignatureFieldId: "sig-b" }),
+      field({ fieldId: "init", fieldType: "INITIALS", placementId: "p3" }),
+    ]);
+    assert.deepEqual([...dates], [["sig-a", "2026-10-02"]]);
+
+    const shell = read("components/sign/ceremony-shell.tsx");
+    assert.match(shell, /linkedDateSignedBySignatureField\(overview\.fields\)/);
+    assert.doesNotMatch(shell, /field\.renderedSenderLocalDate/);
+  });
+
+  it("gives every apply click a fresh client request id so a removed field can be applied again", () => {
+    // The server replays any earlier request with the same id, including one
+    // whose placement was later removed; a reused id would silently do nothing.
+    assert.match(placements, /const replayed = await findPlacementByIdempotencyKey/);
+    const shell = read("components/sign/ceremony-shell.tsx");
+    const requestIds = [...shell.matchAll(/clientRequestId: `(\w+):\$\{clientRequestId\}([^`]*)`/g)];
+    assert.deepEqual(
+      requestIds.map(([, operation, suffix]) => [operation, suffix]),
+      [
+        ["replace", ":${Date.now()}"],
+        ["remove", ":${Date.now()}"],
+        ["accept", ":${Date.now()}"],
+      ],
+    );
   });
 });

@@ -130,6 +130,14 @@ export type SigningEmailSendResult =
   | { ok: true; providerReference: string | null }
   | { ok: false; failureDetailSafe: string };
 
+/** Development sandbox: sends are accepted without reaching the provider. */
+export function signingEmailSandboxed(): boolean {
+  return (
+    process.env.SIGNING_EMAIL_SANDBOX?.trim() === "true" &&
+    process.env.VERCEL_ENV?.trim() !== "production"
+  );
+}
+
 /**
  * Minimal provider-neutral transactional mail boundary.
  * Fails safely (and describably) when the provider is not configured.

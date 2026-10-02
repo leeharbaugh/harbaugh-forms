@@ -39,10 +39,10 @@ export type SigningReadinessResult = {
   documents: SigningReadinessDocument[];
 };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 /**
  * Evaluate readiness for one Signing. Read-only: never writes lifecycle state.
+ * Valid participant email is required for remote Send (enforced at activation),
+ * not for general Draft readiness / Begin In-Person.
  */
 export async function evaluateSigningReadiness(
   admin: SupabaseClient,
@@ -85,13 +85,30 @@ export async function evaluateSigningReadiness(
 
   for (const participant of bundle.participants) {
     const fullName = String(participant.full_name ?? "").trim();
-    const email = String(participant.email ?? "").trim();
-    if (!fullName || !EMAIL_RE.test(email)) {
+    if (!fullName) {
       blockers.push({
         code: "PARTICIPANT_MISSING_CONTACT_DETAILS",
-        message: "Every participant needs a full name and a valid email address.",
+        message: "Every participant needs a full name.",
         participantId: participant.id as string,
       });
+    }
+
+    const capacityMode =
+      (participant.signing_capacity_mode as string | undefined) ?? "PERSONAL";
+    if (capacityMode === "REPRESENTATIVE") {
+      const represented = String(
+        participant.represented_party_name ?? "",
+      ).trim();
+      const wording = String(participant.capacity_wording ?? "").trim();
+      const label = participant.capacity_label;
+      if (!represented || !wording || !label) {
+        blockers.push({
+          code: "REPRESENTATIVE_CAPACITY_INCOMPLETE",
+          message:
+            "Representative participants need representing party, capacity, and exact execution wording.",
+          participantId: participant.id as string,
+        });
+      }
     }
   }
 
