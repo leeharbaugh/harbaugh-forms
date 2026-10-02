@@ -19,6 +19,7 @@ import type {
   AuditEventRow,
   AuditSettingsRow,
 } from "@/lib/audit/record";
+import { formatTimestamp } from "@/lib/format-timestamp";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useMemo, useState, useTransition } from "react";
@@ -38,17 +39,6 @@ type AdminAuditPageProps = {
     organizationId: string;
   };
 };
-
-function formatTimestamp(value: string | null | undefined): string {
-  if (!value) {
-    return "—";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString();
-}
 
 export function AdminAuditPage({
   settings,
@@ -213,7 +203,7 @@ export function AdminAuditPage({
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Last changed: {formatTimestamp(settings?.last_changed_at)} by{" "}
+            Last changed: {formatTimestamp(settings?.last_changed_at, { invalid: "raw" })} by{" "}
             {settings?.last_changed_by_user_id ? (
               <Link
                 href={`/admin/users/${settings.last_changed_by_user_id}`}
@@ -366,7 +356,7 @@ export function AdminAuditPage({
                       <Fragment key={event.id}>
                         <tr className="align-top">
                           <td className="px-3 py-2.5 text-muted-foreground">
-                            {formatTimestamp(event.event_at)}
+                            {formatTimestamp(event.event_at, { invalid: "raw" })}
                           </td>
                           <td className="px-3 py-2.5">
                             <div>{event.actor_display_name ?? "—"}</div>

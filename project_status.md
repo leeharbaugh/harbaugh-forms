@@ -1,8 +1,51 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-01 (Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live in production via hotfix `2a92d82` = `a87b1aa` + dependency change only, deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
+**As of:** 2026-10-02 (admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 open for `main`; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live since 2026-10-01 via hotfix `2a92d82` = `a87b1aa` + dependency change only; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
 
 ## Current State
+
+### Admin pages React #418 hydration fix (2026-10-02)
+
+**Status:** Live in production since 2026-10-02 (Lee approved) via `hotfix/admin-hydration-prod` (`c25e4c3` = `2a92d82` + the fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`. PR #50 (`fix/admin-hydration-errors` from `main` `9f00a80`) open against `main`, not merged. Independent of Native Signing PR #46.
+
+**Symptom:** Production showed minified React error #418 (hydration mismatch) on hard load / refresh of `/admin/users` (2×), `/admin/organizations` (1×), and `/admin/audit` (1×), identically on Next 16.3.5 and 16.3.6. Client-side navigation between admin pages was clean; non-admin pages were clean. React recovered by client-rendering the affected boundary, so users saw browser-local times.
+
+**Root cause (shared):** The `"use client"` admin components (`admin-users-page`, `admin-organizations-page`, `admin-audit-page`, and the nearby `admin-user-detail-page`) formatted timestamps with bare `new Date(value).toLocaleString()`. That uses the runtime's locale and time zone: the Vercel server renders in UTC, the browser in the agent's zone (America/Chicago), so the SSR text differed from the initial client render. It never reproduced in local dev because server and browser shared a time zone.
+
+**Reproduction (unchanged `main`, production build, disposable dev admin):** `next start` with `TZ=UTC` + Playwright browser `America/Chicago` → `#418` (`args[]=text`) on hard load and reload of all three routes and direct `/admin`; client nav and back/forward clean. Control with server and browser both in `America/Chicago` → no text mismatch. `next dev` with matching zones → no hydration error (only the known dev-only "runtime data outside `<Suspense>`" diagnostic on `/admin/audit`). `next-themes` is not involved.
+
+**Local-only artifact (not a production cause):** a build made with `NATIVE_SIGNING_ENABLED=false` but served with the dev `.env.local` value `true` adds an `#418` (`args[]=HTML`) on every page: `SigningsNavLink` reads the flag during prerender of the static nav shell, so the request-time render disagrees with the baked shell. Production builds and serves with the same env. Local production-mode QA must run `next start` with the same `NATIVE_SIGNING_ENABLED` value used for the build. Not changed (Native Signing scope).
+
+**Fix:** New shared deterministic formatter `lib/format-timestamp.ts` (`formatTimestamp`): fixed `America/Chicago` zone with an explicit zone label, assembled from `Intl.DateTimeFormat.formatToParts` so ICU spacing differences between Node and browsers cannot leak (e.g. `10/1/2026, 9:16:05 PM CDT`). Empty → `—` (unchanged); the audit page keeps showing the raw value for unparseable timestamps. The four admin components use it; no `suppressHydrationWarning`, no client-only rendering, no effects or `ssr: false`.
+
+**Date/time decision:** Admin timestamps display in Central time (CST/CDT) with the zone label, matching the brokerage's market and the Native Signing audit-certificate default. Before, users effectively saw their browser's local time after React's recovery re-render (unlabeled); for Central-time users the value is unchanged, now with a `CDT`/`CST` suffix.
+
+| Item | Result |
+|------|--------|
+| Regression (unit) | `npm run test:format-timestamp`: exact Central output (DST / standard / midnight), ASCII-only spacing, fallbacks, identical output under process `TZ` UTC / Chicago / Tokyo, and a source check banning `toLocale*String(` in `components/admin`. Source check fails on unchanged `main`; 5/5 pass after |
+| Regression (browser) | `scripts/qa-admin-hydration-browser.ts` (disposable dev admin, local production server): fails on unchanged `main` (7 failing phases); passes after the fix with server `TZ=UTC` and browser Chicago, browser Tokyo, and Chicago with 400 ms network latency — hard load, reload, direct `/admin`, `/admin/users/[id]`, client nav, back/forward: no `#418`, no console error/warning, no page error; user detail shows `… CDT/CST` timestamps |
+| R5 / F6 HTML + RSC role matrix (local) | Unauthenticated, ordinary, disabled, inactive-organization, and admin sessions × `/admin`, `/admin/users`, `/admin/organizations`, `/admin/audit`, `/admin/users/[id]`: no privileged marker in any non-admin HTML or RSC body; admin HTML and RSC contain it (positive control) |
+| Unit tests | `test:admin-audit` 20, `test:admin-orgs` 4, `test:admin-user-lifecycle` 23, `test:admin-invite` 37, `test:auth-confirm` 30, `test:auth-bootstrap` 7 — all pass |
+| Validators / checks | `validate:account-state-dev` pass; `npm audit --omit=dev` 0; `tsc` pass; changed-path ESLint clean; `git diff --check` clean; `build:validate` pass (Next 16.3.6, `NATIVE_SIGNING_ENABLED` off; only pre-existing `MODULE_TYPELESS_PACKAGE_JSON` / npm `devdir` warnings) |
+| Unchanged | Auth guards (`requireAppAdmin`, `requireAppAdminPage`), privileged readers, account-state, org authorization, audit access; no schema, migration, env, Native Signing, brace-expansion, or production change |
+
+**Not in scope (noted):** `lib/types/packet.ts` `formatDateTime` uses `toLocaleTimeString(undefined, …)` on packet pages — same class of risk; not changed here.
+
+**Production rollout (2026-10-02, Lee approved):** Production ran `hotfix/next-16.3.6-prod` (`2a92d82`), not `main` (which carries unreleased Native Signing), so the candidate was `hotfix/admin-hydration-prod` = `2a92d82` + `2e22ea9` cherry-picked with its documentation hunks omitted (commit `c25e4c3`; code patch-id identical to `2e22ea9`; 8 files: the formatter, its test, the four admin components, the browser QA script, one `package.json` test script).
+
+| Item | Result |
+|------|--------|
+| Hotfix validation | `npm ci` (Next 16.3.6); `npm audit --omit=dev` 0; `test:format-timestamp` 5, `test:admin-audit` 20, `test:admin-orgs` 4, `test:admin-user-lifecycle` 23, `test:admin-invite` 37, `test:auth-confirm` 30, `test:auth-bootstrap` 7 — all pass; `tsc` pass; changed-path ESLint clean; `git diff --check` clean; `build:validate` pass with `NATIVE_SIGNING_ENABLED` off (37 routes, no `/sign` / `/signings`; only pre-existing warnings); local production server (`TZ=UTC`, browser Chicago) hydration QA pass; local R5 HTML/RSC role matrix pass; `validate:account-state-dev` pass |
+| Candidate | `vercel deploy --prod --skip-domain` from a clean detached worktree of `c25e4c3` (no env files / `node_modules` / `security.md`): `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, `https://harbaugh-forms-1sbmqsmbu-lee-harbaugh-s-projects.vercel.app`, Ready, target production, meta `gitCommitSha` `c25e4c3`, `autoAssignCustomDomains: false`, "Detected Next.js version: 16.3.6". Custom domains stayed on `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf` until promotion |
+| Control on previous deployment | Same read-only smoke against `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`'s unique URL: exactly one `#418` (`args[]=text`) per hard load / reload of each admin page; timestamps unlabeled. The earlier "2× on `/admin/users`" was the smoke loading `/admin` (redirects to `/admin/users`) and then `/admin/users`, with issues tagged by final path — two loads of the same mismatch, not a second cause |
+| Unique-URL validation (before promotion) | Read-only, as the existing production admin via a one-time sign-in link, browser `America/Chicago`; session revoked afterwards (local scope). `/admin/users` (hard load + 2 reloads), `/admin/organizations`, `/admin/audit` (hard load + reload), `/admin/users/[id]`, direct `/admin`, client nav Users → Organizations → Audit → Users, back/forward: 0 `#418`, 0 page errors, 0 console errors/warnings. Every timestamp carries `CDT`/`CST` (e.g. `7/31/2026, 2:01:38 PM CDT`) and appears verbatim in the server HTML. Login, logged-out redirects, dashboard / Contacts / Properties / Packets / Forms / Settings, client RSC navigation, client Next 16.3.6, Native Signing routes unavailable. 0 HTTP 5xx; Vercel runtime logs 0 error / warning / fatal |
+| Promotion | `vercel promote dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`. `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` both serve it (HTTPS 200, HSTS); project production target = it at `c25e4c3` |
+| Post-promotion | Same smoke on both custom domains: all checks pass, 0 `#418`, Central timestamps with labels, 0 console issues, 0 5xx. Runtime logs: 0 warning / fatal / 5xx; one `auth_confirm:token_hash:expired_or_invalid` (307) from a smoke run started in parallel on both domains (the second one-time link invalidated the first; harness race, correct handling); rerun alone passed |
+| Auto domain assignment | `autoAssignCustomDomains` = `false` before deploy, on the candidate, after promotion, and on final re-check |
+| Rollback target | `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf` (`2a92d82`, Next 16.3.6) retained, Ready |
+| Unchanged | No Supabase change, no migrations, production `eetonalyyyssvkyfdoxh` data untouched (only the smoke sign-in events and revoked sessions); Native Signing off (no flag or Signing secrets in production env; Native Signing code absent from the hotfix lineage); no auth / authorization change |
+
+**Follow-ups:** merge PR #50 into `main` so `main` contains the fix running in production; separate small lockfile PR for dev-only `brace-expansion`; packet-page `formatDateTime` (noted above) if its hydration risk is confirmed.
 
 ### Next.js 16.3.6 security patch — GHSA-vcvr-r3jv-pc5j (2026-10-01)
 
@@ -31,7 +74,7 @@
 | Hotfix validation | `npm ci` (Next / `@next/env` / `@next/swc-*` 16.3.6); `npm audit --omit=dev` 0; R1 only the reviewed dev-only `brace-expansion` High; `tsc` pass; `git diff --check` clean; `build:validate` pass with `NATIVE_SIGNING_ENABLED` off (37 routes, no `/sign` / `/signings` — Native Signing code is not in this baseline; only pre-existing warnings); all 40 `test:*` scripts at this baseline 829/0; dev validators R2–R8 + duplicate packet forms pass; local dev smoke incl. non-admin denied `/admin` |
 | Candidate | `vercel deploy --prod --skip-domain` from a clean detached worktree of `2a92d82` (no local env files); `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`, `https://harbaugh-forms-a7scsg8rh-lee-harbaugh-s-projects.vercel.app`, Ready, target production; deployment meta `gitCommitSha` `2a92d82fc9e45e511755850ab94e780ac6b4a74f`, not dirty, `autoAssignCustomDomains: false`; Vercel build log "Detected Next.js version: 16.3.6". Custom domains stayed on `dpl_4eXrZwG8hJC3UgmPKgRVGDHMpMWX` until promotion |
 | Unique-URL validation (before promotion) | Read-only, as the existing production admin via a one-time sign-in link; smoke session revoked afterwards (local scope only). Login page (HTTPS 200), sign-in, unauthenticated redirects, dashboard / Contacts / Properties / Packets / Forms / Settings, client RSC navigation without reloads, admin Users / Organizations / Audit, cleared-session redirect, client Next.js 16.3.6, Native Signing routes unavailable. 0 HTTP 5xx; Vercel runtime logs 0 error / warning / fatal. No production business records created or changed |
-| Known pre-existing | React #418 hydration text mismatch on `/admin/users` (2×), `/admin/organizations`, `/admin/audit` — identical on the previous 16.3.5 production deployment; core pages clean. Follow-up, not a 16.3.6 regression |
+| Known pre-existing | React #418 hydration text mismatch on `/admin/users` (2×), `/admin/organizations`, `/admin/audit` — identical on the previous 16.3.5 production deployment; core pages clean. Follow-up, not a 16.3.6 regression. Fixed in production 2026-10-02 (`dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; see admin hydration section) |
 | Promotion | `vercel promote dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf` after validation. `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` both serve `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf` (HTTPS 200, HSTS); project production target = that deployment at `2a92d82` |
 | Post-promotion | Same read-only smoke on both custom domains: all functional checks pass; 0 5xx; runtime logs 0 error / warning / fatal |
 | Auto domain assignment | `autoAssignCustomDomains` = `false` before deploy, on the candidate, after promotion, and on final re-check |
@@ -1670,7 +1713,7 @@ Smaller / optional items (not the two major roadmap areas above):
 - Signature / initials fields may appear but are not editable as preference defaults
 - Multi-organization users need a valid `profiles.primary_organization_id` with ACTIVE membership for Organization defaults
 - `listing-packet-kind.test.ts` has a pre-existing bare-Node `@/lib` import-resolution problem
-- Occasional Next.js hydration warning around `AdminSectionNav` / packet page
+- Occasional Next.js hydration warning around `AdminSectionNav` / packet page — the admin-page cause (runtime-locale timestamps, React #418) is fixed by `lib/format-timestamp.ts` (2026-10-02); packet pages' `formatDateTime` (`toLocaleTimeString(undefined, …)`) remains a likely source
 - Specialized PDF editor dialogs lack full focus-trap behavior of confirm/info dialogs
 - Repo-wide `npm run lint` can fail when ESLint scans `.next` artifacts; targeted lint of source files is preferred
 

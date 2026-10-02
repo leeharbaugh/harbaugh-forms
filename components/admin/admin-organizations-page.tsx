@@ -21,6 +21,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { AdminOrganizationListItem } from "@/lib/admin/manage-organizations";
+import { formatTimestamp } from "@/lib/format-timestamp";
 import { formatPhoneInput } from "@/lib/phone-format";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -29,17 +30,6 @@ import { useState, useTransition } from "react";
 type AdminOrganizationsPageProps = {
   organizations: AdminOrganizationListItem[];
 };
-
-function formatDate(value: string | null | undefined): string {
-  if (!value) {
-    return "—";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-  return date.toLocaleString();
-}
 
 export function AdminOrganizationsPage({
   organizations,
@@ -406,7 +396,7 @@ export function AdminOrganizationsPage({
                         {org.activeAgentCount}
                       </td>
                       <td className="px-3 py-2.5 text-muted-foreground">
-                        {formatDate(org.update_date)}
+                        {formatTimestamp(org.update_date)}
                       </td>
                       <td className="px-3 py-2.5">
                         <ListRowActions wrap>
