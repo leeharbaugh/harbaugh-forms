@@ -475,6 +475,7 @@ async function main() {
       for (const table of [
         "signing_participant_credentials",
         "signing_operation_idempotency",
+        "signing_event_chain_state",
         "signing_events",
         "signing_fields",
         "signing_package_revision_documents",
