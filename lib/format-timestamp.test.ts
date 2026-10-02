@@ -61,3 +61,24 @@ describe("admin components render deterministic timestamps", () => {
     }
   });
 });
+
+describe("packet timestamps render in a fixed time zone", () => {
+  const sources = [
+    "lib/types/packet.ts",
+    ...["components/packets", "components/contacts"].flatMap((dir) =>
+      readdirSync(join(root, dir))
+        .filter((name) => name.endsWith(".tsx"))
+        .map((name) => `${dir}/${name}`),
+    ),
+  ];
+
+  it("never format dates with the runtime locale or time zone", () => {
+    for (const path of sources) {
+      const source = readFileSync(join(root, path), "utf8");
+      assert.ok(
+        !/\.toLocale(?:Date|Time)?String\(/.test(source),
+        `${path} must use formatDateTime() / formatTimestamp()`,
+      );
+    }
+  });
+});
