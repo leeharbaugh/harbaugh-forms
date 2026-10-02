@@ -1,12 +1,12 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-02 (admin-page React #418 hydration fix on `fix/admin-hydration-errors`, PR open, not deployed; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live in production via hotfix `2a92d82` = `a87b1aa` + dependency change only, deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
+**As of:** 2026-10-02 (admin-page React #418 hydration fix in PR #50 (`fix/admin-hydration-errors`), not merged, not deployed; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live in production via hotfix `2a92d82` = `a87b1aa` + dependency change only, deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
 
 ## Current State
 
 ### Admin pages React #418 hydration fix (2026-10-02)
 
-**Status:** Branch `fix/admin-hydration-errors` from `main` `9f00a80`; PR open against `main`, not merged, not deployed. Independent of Native Signing PR #46.
+**Status:** Branch `fix/admin-hydration-errors` from `main` `9f00a80`; PR #50 open against `main`, not merged, not deployed. Independent of Native Signing PR #46.
 
 **Symptom:** Production showed minified React error #418 (hydration mismatch) on hard load / refresh of `/admin/users` (2×), `/admin/organizations` (1×), and `/admin/audit` (1×), identically on Next 16.3.5 and 16.3.6. Client-side navigation between admin pages was clean; non-admin pages were clean. React recovered by client-rendering the affected boundary, so users saw browser-local times.
 
@@ -1699,7 +1699,7 @@ Smaller / optional items (not the two major roadmap areas above):
 - Signature / initials fields may appear but are not editable as preference defaults
 - Multi-organization users need a valid `profiles.primary_organization_id` with ACTIVE membership for Organization defaults
 - `listing-packet-kind.test.ts` has a pre-existing bare-Node `@/lib` import-resolution problem
-- Occasional Next.js hydration warning around `AdminSectionNav` / packet page
+- Occasional Next.js hydration warning around `AdminSectionNav` / packet page — the admin-page cause (runtime-locale timestamps, React #418) is fixed by `lib/format-timestamp.ts` (2026-10-02); packet pages' `formatDateTime` (`toLocaleTimeString(undefined, …)`) remains a likely source
 - Specialized PDF editor dialogs lack full focus-trap behavior of confirm/info dialogs
 - Repo-wide `npm run lint` can fail when ESLint scans `.next` artifacts; targeted lint of source files is preferred
 
