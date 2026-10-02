@@ -1,8 +1,30 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-02 (Native Signing participant ceremony QA complete on PR #46, head `3f92e48`: four ceremony defects fixed, PR still open and not merge-ready, see "Native Signing participant ceremony QA" below; packet Created/Updated timestamps fixed to Central time with CDT/CST, PR #52 squash-merged to `main` as `7733493`, live in production via hotfix `3e5eaa3` (= `c25e4c3` + PR #52 code only), deployment `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, rollback `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; dev-only `brace-expansion` advisories remediated by lockfile-only PR #51, squash-merged to `main` as `edfc5a7`, full lockfile audit clean, not deployed (dev-only, no production effect); admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 squash-merged to `main` as `c2a490a` on 2026-10-02; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j is live in production via hotfix `2a92d82` (= `a87b1aa` + dependency change only; deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`); PR #49 squash-merged to `main` as `9f00a80` on 2026-10-02. Earlier, 2026-09-30: Native Signing development and QA remain the active workstream; work paused briefly for the duplicate packet forms hotfix, now live in production. Resume Native Signing development/QA from the state recorded below. Production is running the isolated hotfix, not `main`; production Native Signing remains unavailable.)
+**As of:** 2026-10-02 (PR #46 brought up to date with `main` `7733493` by merge commit `8769993` (Next.js 16.3.6, no conflicts left, full revalidation and ceremony browser regression pass); PR still open, awaiting Lee's manual re-QA, manager completed-document access is a pre-production blocker, see "PR #46 merged with current main" below; Native Signing participant ceremony QA complete on PR #46 at `3f92e48`: four ceremony defects fixed; packet Created/Updated timestamps fixed to Central time with CDT/CST, PR #52 squash-merged to `main` as `7733493`, live in production via hotfix `3e5eaa3` (= `c25e4c3` + PR #52 code only), deployment `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, rollback `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; dev-only `brace-expansion` advisories remediated by lockfile-only PR #51, squash-merged to `main` as `edfc5a7`, full lockfile audit clean, not deployed (dev-only, no production effect); admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 squash-merged to `main` as `c2a490a` on 2026-10-02; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j is live in production via hotfix `2a92d82` (= `a87b1aa` + dependency change only; deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`); PR #49 squash-merged to `main` as `9f00a80` on 2026-10-02. Earlier, 2026-09-30: Native Signing development and QA remain the active workstream; work paused briefly for the duplicate packet forms hotfix, now live in production. Resume Native Signing development/QA from the state recorded below. Production is running the isolated hotfix, not `main`; production Native Signing remains unavailable.)
 
 ## Current State
+
+### PR #46 merged with current main (2026-10-02; PR #46)
+
+**Status:** [PR #46](https://github.com/leeharbaugh/harbaugh-forms/pull/46) is open, unmerged, and no longer conflicting. `origin/main` `7733493` was merged into `feat/native-signing-manager-qa` (`3f92e48` → merge commit `8769993`, history kept, no rebase). Ready for Lee's manual re-QA. Production untouched (`dpl_E9HTxf45epr8ckKifivWCPNgpFAU`), Native Signing off there, no production Supabase / migration / email / Cron / secret change, Gate A paused.
+
+| Item | Result |
+|------|--------|
+| Conflicts | `package.json`, `decisions.md`, `project_status.md` (`package-lock.json` merged cleanly) |
+| `package.json` | Union of scripts (PR #46 Signing scripts and its superset `test:native-signing-production-readiness`; main's `test:packet-forms-duplicate`, `validate:duplicate-packet-forms-dev`, timestamp tests); dependencies exactly `main` (`next` `^16.3.6`). No upgrades |
+| `package-lock.json` | Identical to `main`: Next 16.3.6; `brace-expansion` only 1.1.21 and 5.0.12 |
+| Docs | Union of both histories; `main`-side entries carry their current merged / deployed status; no duplicate sections or decisions |
+| Fixes A–D | Date Signed beside Signature, remove → reapply, Finish / Decline / Exit server redirects (`/sign/done`, Return to agent), unlock page without lock cookie: all present after the merge, guarded by `test:native-signing-ceremony` (63) |
+| Dependencies | Clean `npm ci`; `npm audit --omit=dev` 0; full lockfile audit 0 |
+| Unit suites | stage3 11, stage4 50, ceremony 63, TC authority 31, stage6 30, completion delivery 12, recovery access 7, draft prep 64, production readiness 56, duplicate packet forms 18, format-timestamp 6, packet timestamps 3; stage1 16 / stage2 34 / participant-link-qa + draft-multiselect 22 under `tsx` (the plain-`node` stage1 / stage2 scripts still fail on `@/` resolution, pre-existing). All 0 fail |
+| Dev validators | stage4, stage6, completion delivery, ceremony, duplicate packet forms pass |
+| Browser regression | Ceremony QA (remote P1 / P2 with isolation and Finish → `/sign/done?outcome=finished`, finalization to VERIFIED / COMPLETE, completed package, Decline → "You declined to sign", refused links, in-person Finish → Return to agent with lock intact → password unlock → the Signing) and link-ops QA pass; 0 console errors / warnings, 0 page errors, 0 hydration errors, 0 dev-server ERROR / WARN; no QA fixtures left on dev |
+| Admin hydration (from `main`) | `qa-admin-hydration-browser.ts` passes on the merged build (local production server, `TZ=UTC`, browser Chicago). Under `next dev` only, `/admin/audit` and `/admin/users/[id]` log Next's "runtime data during prerendering" (blocking-route) dev message; those pages are identical to `main`, so this is not from the merge |
+| Static | `tsc`, ESLint on the 85 changed files, `git diff --check`, `build:validate` pass |
+
+**Manager completed-document access (pre-production blocker, not implemented here):** COMPLETED_DOCUMENT, AUDIT_CERTIFICATE and the optional COMBINED_PACKAGE live in the private `signing-artifacts` bucket (`signings/{id}/artifacts/{completed|certificate|combined}/{artifactId}.pdf`, sha256 + `verified_at` in `signing_artifacts`). The only download path is the recipient route `/sign/package/artifact/[artifactId]` behind a completed-package session (credentials issued only after Complete, access-logged). `canReadCompletedSigningArtifacts()` exists but is unused; the manager Signing page shows delivery rows but no view / download. decisions.md expects authorized agents to view / download completed artifacts through server mediation. Proposed separate PR: a manager-authenticated route (`requireSigningActor` + `canReadCompletedSigningArtifacts`, verified artifacts of the frozen revision only, sha256 readback with a clear integrity-failure label, `no-store`) plus View / Download links on the Complete manager view and tests; no bearer links, no Storage URLs, no RLS change.
+
+**Remaining before merge:** Lee's manual re-QA (remote Finish, Decline, in-person hand-back, Date Signed / remove-reapply spot check); Lee's call on whether the access gap lands before PR #46 merges or as the next PR before production enablement.
 
 ### Packet Created/Updated timestamps in Central time (2026-10-02)
 
@@ -237,7 +259,7 @@ Both installed major lines were affected (1.1.18 and 5.0.9). Exploitation needs 
 
 **Merge readiness: do not merge yet.** Remaining blockers:
 
-1. PR #46 conflicts with `main` (`decisions.md`, `package.json`, `project_status.md`; the conflicts already existed at `4bb2800`). Merge `main` in (brings Next 16.3.6), then re-run the suites, validators, browser QA and audit.
+1. ~~PR #46 conflicts with `main`~~ Resolved 2026-10-02 by merge commit `8769993` (Next 16.3.6, audit clean, full revalidation passed); see "PR #46 merged with current main".
 2. Lee's own re-QA of the ceremony, including the new `/sign/done` landing and the in-person hand-back.
 3. Lee's decision on the manager completed-document access gap: before merge, or as a tracked follow-up before production enablement.
 
@@ -2035,7 +2057,7 @@ Smaller / optional items (not the two major roadmap areas above):
 - Signature / initials fields may appear but are not editable as preference defaults
 - Multi-organization users need a valid `profiles.primary_organization_id` with ACTIVE membership for Organization defaults
 - `listing-packet-kind.test.ts` has a pre-existing bare-Node `@/lib` import-resolution problem
-- Occasional Next.js hydration warning around `AdminSectionNav` / packet page — the admin-page cause (runtime-locale timestamps, React #418) is fixed by `lib/format-timestamp.ts` (2026-10-02); packet pages' `formatDateTime` was audited 2026-10-02 and is not a hydration source (rendered only client-side after data load; it has a separate UTC-date / local-time display defect)
+- Occasional Next.js hydration warning around `AdminSectionNav` / packet page — the admin-page cause (runtime-locale timestamps, React #418) is fixed by `lib/format-timestamp.ts` (2026-10-02); packet pages' `formatDateTime` was audited 2026-10-02 and is not a hydration source (rendered only client-side after data load); its separate UTC-date / local-time display defect was fixed 2026-10-02 (PR #52, Central time with CDT/CST)
 - Specialized PDF editor dialogs lack full focus-trap behavior of confirm/info dialogs
 - Repo-wide `npm run lint` can fail when ESLint scans `.next` artifacts; targeted lint of source files is preferred
 
