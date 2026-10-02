@@ -12,6 +12,92 @@ Each decision should include:
 
 ---
 
+## `E:\dev\harbaugh-forms` is the canonical workspace and home of project history
+
+**Date:** 2026-10-01
+
+**Decision:**
+Temporary Git worktrees (for example `E:\dev\harbaugh-forms-next-patch`, `E:\dev\harbaugh-forms-next-prod`) are acceptable for isolated branches, security patches, hotfixes, QA, and deployment preparation, but `E:\dev\harbaugh-forms` remains the canonical project workspace. Its `project_status.md`, `decisions.md`, and private gitignored `security.md` are the canonical, complete human-readable project history.
+
+**Reason:**
+Parallel work (the Native Signing PR #46 branch, the duplicate packet forms hotfix, the Next.js 16.3.6 security patch) ran in separate worktrees at the same time, so documentation written in one worktree could otherwise be lost or diverge.
+
+**Consequences:**
+* Before work done in a temporary worktree is called complete, reconcile its documentation semantically into the canonical files: keep newer canonical entries, add the worktree's entries, avoid duplicate sections, keep history in chronological order. Never blindly overwrite canonical files with a branch's copy.
+* After a PR merges, compare canonical docs with `main` and keep the union of all valid history.
+* `security.md` is never committed, deployed, or kept as a primary copy in another worktree.
+* Canonical doc edits that belong to `main` are not committed into an unrelated open feature PR (for example PR #46).
+
+**Related files:** `project_status.md`, `decisions.md`, `security.md`
+
+---
+
+## SSR-visible UI renders deterministic text on server and first client render
+
+**Date:** 2026-10-02
+
+**Decision:**
+Anything rendered during SSR (including `"use client"` components) must produce the same output on the server and on the initial client render. Locale-, time-zone-, or clock-dependent formatting must not alter the initial hydration tree: format timestamps with the shared `formatTimestamp()` (`lib/format-timestamp.ts`, fixed `America/Chicago` with an explicit zone label), never bare `toLocaleString()` / `toLocaleDateString()` / `toLocaleTimeString()`. Hydration mismatches are fixed at the source, not hidden with `suppressHydrationWarning`, client-only rendering, post-hydration effects, or `ssr: false` (reserved for genuinely browser-only content).
+
+**Reason:**
+Production admin pages raised React #418 because the Vercel server formats in UTC while browsers format in the user's zone.
+
+**Consequences:**
+* Admin timestamps display in Central time with a `CST`/`CDT` label regardless of the viewer's browser zone.
+* Packet Created/Updated timestamps (Packets list, Packet detail, Contact detail associated packets) follow the same rule: `formatDateTime()` in `lib/types/packet.ts` delegates to `formatTimestamp()`, so date and time both come from the same instant in `America/Chicago` with a `CDT`/`CST` label. Never pair a UTC calendar date with a local time, and do not use the viewer's zone (2026-10-02, Lee; PR #52; live in production via hotfix `3e5eaa3`).
+* `lib/format-timestamp.test.ts` bans `toLocale*String(` in `components/admin`; extend it when other surfaces adopt the formatter.
+* Local production-mode QA must serve with the same env (e.g. `NATIVE_SIGNING_ENABLED`) used at build time; build-time-prerendered shells otherwise disagree with request-time renders.
+* Rolled out 2026-10-02 from `hotfix/admin-hydration-prod` (`c25e4c3` = production `2a92d82` + the fix) as `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, via skip-domain deploy, unique-URL validation, and manual promotion; rollback target `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`. PR #50 squash-merged the same fix to `main` as `c2a490a` (2026-10-02 16:42 UTC) with no production action.
+
+**Related files:** `lib/format-timestamp.ts`, `lib/format-timestamp.test.ts`, `components/admin/*`, `scripts/qa-admin-hydration-browser.ts`
+
+---
+
+## Security patches for production dependencies ship independently of feature rollouts
+
+**Date:** 2026-10-01
+
+**Decision:**
+A security advisory affecting a dependency version that is running in production is remediated in its own focused PR from `main`, with the smallest dependency change (no unrelated upgrades, no forced audit fix), and is rolled out to production independently of any in-flight feature rollout. When production runs from a hotfix branch rather than `main`, the production candidate is that live commit plus only the dependency change, so unreleased features (e.g. Native Signing) do not go live with the patch.
+
+**Reason:**
+GHSA-vcvr-r3jv-pc5j (Next.js `next/og` `ImageResponse` RCE, critical, patched in 16.3.6) affected the Next.js 16.3.5 already in production while `main` carried unreleased Native Signing work and the live deployment was built from `hotfix/duplicate-packet-forms-prod`.
+
+**Consequences:**
+* Patch PR #49: `next` `^16.3.5` → `^16.3.6`; lockfile changes only `next`, `@next/env`, `@next/swc-*`.
+* Production rollout requires Lee's explicit approval and follows the explicit-promotion flow: deploy candidate without domain assignment, validate the unique Vercel deployment URL, manually promote the custom domains, verify automatic custom-domain assignment remains disabled.
+* Rolled out 2026-10-01 from `hotfix/next-16.3.6-prod` (`2a92d82` = `a87b1aa` + the dependency change) as `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; rollback target `dpl_4eXrZwG8hJC3UgmPKgRVGDHMpMWX`.
+* For CLI production builds use `vercel deploy --prod --skip-domain` (from a clean checkout of the exact commit) followed by `vercel promote` after unique-URL validation; `vercel redeploy` has no skip-domain option and assigns domains when Ready.
+* Dev-only advisories (e.g. `brace-expansion` in ESLint tooling) are reviewed and fixed in separate small PRs rather than folded into a production security patch.
+
+**Related files:** `package.json`, `package-lock.json`
+
+---
+
+## A packet may contain multiple independent instances of the same form
+
+**Date:** 2026-09-30
+
+**Decision:**
+A packet may contain multiple independent instances of the same form. Form presence in a packet must never make that form unavailable for addition. Duplicate instances are identified and managed by `packet_form.id`, not by assuming `packet_id + form_id` is unique. The UI may warn before adding duplicates but must allow the user to proceed.
+
+Each added copy is a new `packet_forms` row created through the normal creation path: its own id, its own copied PDF, its own field instances (created on first open with normal defaults/provenance, never cloned from another copy), and its own annotations, lifecycle, deletion, and Signing inclusion. No form is hard-coded as "no duplicates" (Listing Agreement, Buyer Representation Agreement, etc. get the same warning only).
+
+**Reason:**
+Agents need several separate documents of the same form in one transaction (e.g. a second Amendment to Contract). The Add Forms search disabled any form already in the packet ("In packet"), and a partial unique index on `(packet_id, form_id) WHERE status = 'ACTIVE'` rejected the insert at the database.
+
+**Consequences:**
+* Migration `20260930120000_packet_forms_allow_duplicate_forms.sql` drops only `packet_forms_packet_form_internal_active_uidx`. Forward-only; no data change. Do not recreate the index once duplicates exist. It was applied to production on 2026-09-30 ahead of the 20 still-pending Native Signing migrations (`20260914200000`–`20260920190000`); their future production rollout must use `supabase db push --include-all` after a dry run.
+* The production app was deployed from `hotfix/duplicate-packet-forms-prod` at `a87b1aa` (prior live `348d309` plus only this fix), not from `main`. No unreleased Native Signing code went live. The next `main` production release already contains the duplicate-forms fix; Native Signing development/QA resumes without merging the hotfix branch back.
+* Vercel CLI `redeploy --target production` assigned both production domains when Ready despite automatic assignment being disabled for Git-triggered builds. For future CLI production builds, skip domain assignment, validate the unique deployment URL, and promote the domains explicitly. The live deployment is `dpl_4eXrZwG8hJC3UgmPKgRVGDHMpMWX`; rollback target is `dpl_2CMdac6EViudwyp6TgoQbHf8htiM`.
+* Add Forms (packet page and packet-creation draft editor) shows "In packet" (or "In packet (N)" for two or more copies) while keeping the form selectable, and confirms with "This form is already in the packet. Add another copy?" (Cancel / Add Another) only when the selected form is already present. Non-duplicates add with no extra step.
+* `addInternalFormToPacket` no longer pre-checks for an existing row (its `.maybeSingle()` lookup would also error once two rows exist); packet creation no longer rejects repeated or collection-overlapping additional forms.
+* Field instances (`packet_form_id, field_id`), storage paths (`{packetFormId}-…`), annotations, and Signing documents (`signing_id, source_packet_form_id`) were already keyed by `packet_form.id` and needed no change. Collections still may not list the same form twice; that is a collection rule, not a packet rule.
+
+**Related:** `lib/types/packet-form.ts`; `lib/types/packet.ts`; `components/packets/packet-forms-live-editor.tsx`; `components/packets/packet-forms-draft-editor.tsx`; `lib/types/packet-form.test.ts`; `scripts/validate-duplicate-packet-forms-dev.ts`; `supabase/migrations/20260930120000_packet_forms_allow_duplicate_forms.sql`.
+
+---
+
 ## Development may hand managers the current participant link for QA; production never does
 
 **Date:** 2026-10-01

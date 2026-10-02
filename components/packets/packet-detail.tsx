@@ -387,10 +387,6 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
     ),
   );
 
-  const collectionFormIds = documents
-    .filter((document) => document.origin === "collection" && document.form_id)
-    .map((document) => document.form_id as number);
-
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
       <ConfirmDeleteDialog
@@ -647,7 +643,6 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
           <PacketFormsLiveEditor
             packetId={packetId}
             forms={packet.packet_forms ?? []}
-            collectionFormIds={collectionFormIds}
             disabled={isDeleted}
             onFormsChange={() => void loadPacket()}
             emptyMessage={

@@ -3,9 +3,7 @@ import {
   createAdditionalInternalPacketForms,
   createCollectionPacketForms,
   createExternalPacketForms,
-  getCollectionFormIds,
   getMaxCollectionSortOrder,
-  validateAdditionalInternalFormId,
 } from "@/lib/types/packet-form";
 import type { DraftExternalPacketForm, PacketFormOrigin } from "@/lib/types/packet-form";
 import { formatContactDisplayName } from "@/lib/types/contact";
@@ -15,6 +13,7 @@ import {
   formatDate,
   getOrderedContactNames,
 } from "@/lib/types/buyer-rep-agreement";
+import { formatTimestamp } from "@/lib/format-timestamp";
 import type { Form } from "@/lib/types/form";
 import type {
   Collection,
@@ -233,20 +232,13 @@ export function formatDocumentState(state: DocumentState): string {
   return state.charAt(0) + state.slice(1).toLowerCase();
 }
 
+/** Packet Created/Updated timestamps: date and time both in America/Chicago, with CDT/CST. */
 export function formatDateTime(date: string | null | undefined): string {
   if (!date) return "—";
-  const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) {
+  if (Number.isNaN(new Date(date).getTime())) {
     return formatDate(date);
   }
-
-  const datePart = formatDate(date);
-  const timePart = parsed.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-
-  return `${datePart} ${timePart}`;
+  return formatTimestamp(date);
 }
 
 export function buildPacketLabel(
@@ -455,25 +447,7 @@ export async function createPacketFromCollection(
     throw new Error("The selected collection must contain at least one form.");
   }
 
-  const collectionFormIds = getCollectionFormIds(
-    collectionWithForms.collection_forms ?? [],
-  );
   const additionalFormIds = input.additionalInternalFormIds ?? [];
-  const uniqueAdditional = new Set(additionalFormIds);
-  if (uniqueAdditional.size !== additionalFormIds.length) {
-    throw new Error("Duplicate additional forms are not allowed.");
-  }
-
-  for (const formId of additionalFormIds) {
-    const duplicateError = validateAdditionalInternalFormId(
-      formId,
-      collectionFormIds,
-      [],
-    );
-    if (duplicateError) {
-      throw new Error(duplicateError);
-    }
-  }
 
   const contactIds = input.contacts.map((contact) => contact.contactId);
   const { data: contactsData, error: contactsError } = await supabase

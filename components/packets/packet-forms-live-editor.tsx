@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { downloadFilledPacketFormPdf } from "@/lib/packet-form-download";
@@ -11,14 +12,20 @@ import type { Form } from "@/lib/types/form";
 import {
   addExternalFormToPacket,
   addInternalFormToPacket,
+  countPacketFormInstancesByFormId,
+  DUPLICATE_PACKET_FORM_CONFIRM_LABEL,
+  findDuplicatePacketFormSelections,
+  formatDuplicatePacketFormMessage,
+  formatDuplicatePacketFormTitle,
   formatPacketFormOrigin,
+  formatPacketFormPresenceLabel,
   getNextPacketFormSortOrder,
   reorderPacketForm,
   renamePacketFormDocument,
   softDeletePacketForm,
   sortPacketForms,
-  validateAdditionalInternalFormId,
   warnDuplicateExternalDocumentName,
+  type DuplicatePacketFormSelection,
 } from "@/lib/types/packet-form";
 import type { PacketForm } from "@/lib/types/packet";
 import {
@@ -38,7 +45,6 @@ import { useCallback, useEffect, useState } from "react";
 type PacketFormsLiveEditorProps = {
   packetId: number;
   forms: PacketForm[];
-  collectionFormIds: number[];
   disabled?: boolean;
   onFormsChange: () => void;
   emptyMessage?: string;
@@ -47,7 +53,6 @@ type PacketFormsLiveEditorProps = {
 export function PacketFormsLiveEditor({
   packetId,
   forms,
-  collectionFormIds,
   disabled = false,
   onFormsChange,
   emptyMessage = "No active forms in this packet.",
@@ -55,9 +60,9 @@ export function PacketFormsLiveEditor({
   const activeForms = sortPacketForms(
     forms.filter((form) => form.status === "ACTIVE"),
   );
-  const activeInternalFormIds = activeForms
-    .filter((form) => form.form_id != null)
-    .map((form) => form.form_id as number);
+  const activeInternalFormIds = activeForms.map((form) => form.form_id);
+  const instanceCountByFormId =
+    countPacketFormInstancesByFormId(activeInternalFormIds);
 
   const [formSearch, setFormSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Form[]>([]);
@@ -81,6 +86,10 @@ export function PacketFormsLiveEditor({
     useState<PacketForm | null>(null);
   const [renameDocumentName, setRenameDocumentName] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
+  const [pendingDuplicate, setPendingDuplicate] = useState<{
+    formId: number;
+    duplicates: DuplicatePacketFormSelection[];
+  } | null>(null);
 
   const searchForms = useCallback(async () => {
     const trimmed = formSearch.trim();
@@ -134,17 +143,7 @@ export function PacketFormsLiveEditor({
     }
   };
 
-  const handleAddInternalForm = async (formId: number) => {
-    const validationError = validateAdditionalInternalFormId(
-      formId,
-      collectionFormIds,
-      activeInternalFormIds,
-    );
-    if (validationError) {
-      setActionError(validationError);
-      return;
-    }
-
+  const addInternalForm = async (formId: number) => {
     setIsSubmitting(true);
     setActionError(null);
     setActionWarning(null);
@@ -154,17 +153,39 @@ export function PacketFormsLiveEditor({
     try {
       const sortOrder = getNextPacketFormSortOrder(activeForms);
       await addInternalFormToPacket(supabase, packetId, formId, sortOrder);
+      setPendingDuplicate(null);
       setShowAddInternal(false);
       setFormSearch("");
       setSearchResults([]);
       onFormsChange();
     } catch (error) {
+      setPendingDuplicate(null);
       setActionError(
         error instanceof Error ? error.message : "Failed to add form.",
       );
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSelectInternalForm = (form: Form) => {
+    const duplicates = findDuplicatePacketFormSelections(
+      [form],
+      activeInternalFormIds,
+    );
+    if (duplicates.length > 0) {
+      setActionError(null);
+      setPendingDuplicate({ formId: form.id, duplicates });
+      return;
+    }
+    void addInternalForm(form.id);
+  };
+
+  const cancelDuplicate = () => {
+    if (isSubmitting) {
+      return;
+    }
+    setPendingDuplicate(null);
   };
 
   const handleUploadExternal = async () => {
@@ -326,6 +347,23 @@ export function PacketFormsLiveEditor({
         onConfirm={() => void handleConfirmRemoveForm()}
         onCancel={closeRemoveDialog}
       />
+      <ConfirmDialog
+        open={pendingDuplicate != null}
+        title={formatDuplicatePacketFormTitle(pendingDuplicate?.duplicates ?? [])}
+        message={formatDuplicatePacketFormMessage(
+          pendingDuplicate?.duplicates ?? [],
+        )}
+        confirmLabel={DUPLICATE_PACKET_FORM_CONFIRM_LABEL}
+        confirmingLabel="Adding…"
+        isConfirming={isSubmitting}
+        initialFocus="cancel"
+        onConfirm={() => {
+          if (pendingDuplicate) {
+            void addInternalForm(pendingDuplicate.formId);
+          }
+        }}
+        onCancel={cancelDuplicate}
+      />
       {!disabled && (
         <div className="flex flex-wrap gap-2">
           <Button
@@ -380,16 +418,16 @@ export function PacketFormsLiveEditor({
               ) : (
                 <div className="divide-y">
                   {searchResults.map((form) => {
-                    const alreadyIncluded = activeInternalFormIds.includes(
-                      form.id,
+                    const presenceLabel = formatPacketFormPresenceLabel(
+                      instanceCountByFormId.get(form.id) ?? 0,
                     );
                     return (
                       <button
                         key={form.id}
                         type="button"
                         className="flex w-full items-start justify-between gap-3 p-3 text-left hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
-                        onClick={() => void handleAddInternalForm(form.id)}
-                        disabled={alreadyIncluded || isSubmitting}
+                        onClick={() => handleSelectInternalForm(form)}
+                        disabled={isSubmitting}
                       >
                         <div>
                           <p className="font-medium">{form.form_name}</p>
@@ -397,9 +435,9 @@ export function PacketFormsLiveEditor({
                             {form.form_code}
                           </p>
                         </div>
-                        {alreadyIncluded && (
+                        {presenceLabel && (
                           <span className="text-xs text-muted-foreground">
-                            In packet
+                            {presenceLabel}
                           </span>
                         )}
                       </button>

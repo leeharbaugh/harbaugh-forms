@@ -73,20 +73,90 @@ export function getNextPacketFormSortOrder(
   return Math.max(...activeForms.map((form) => form.sort_order ?? 0)) + 10;
 }
 
-export function validateAdditionalInternalFormId(
-  formId: number,
-  collectionFormIds: number[],
-  additionalFormIds: number[],
-): string | null {
-  if (collectionFormIds.includes(formId)) {
-    return "This form is already included from the collection.";
+export type DuplicatePacketFormSelection = {
+  formId: number;
+  formName: string;
+  existingCount: number;
+};
+
+export const DUPLICATE_PACKET_FORM_TITLE_SINGLE =
+  "This form is already in the packet. Add another copy?";
+export const DUPLICATE_PACKET_FORM_TITLE_MULTIPLE =
+  "These forms are already in the packet. Add another copy?";
+export const DUPLICATE_PACKET_FORM_CONFIRM_LABEL = "Add Another";
+
+/**
+ * Counts packet-form instances per form. A packet may hold several instances
+ * of one form; each is its own packet_forms row. Pass only ACTIVE rows.
+ */
+export function countPacketFormInstancesByFormId(
+  formIds: Array<number | null | undefined>,
+): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const formId of formIds) {
+    if (formId == null) {
+      continue;
+    }
+    counts.set(formId, (counts.get(formId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Selected forms that already have one or more instances in the packet
+ * (including earlier entries in the same selection). Never a reason to block;
+ * callers use it only to decide whether to confirm.
+ */
+export function findDuplicatePacketFormSelections(
+  selected: Array<{ id: number; form_name?: string | null }>,
+  existingFormIds: Array<number | null | undefined>,
+): DuplicatePacketFormSelection[] {
+  const counts = countPacketFormInstancesByFormId(existingFormIds);
+  const duplicates: DuplicatePacketFormSelection[] = [];
+
+  for (const form of selected) {
+    const existingCount = counts.get(form.id) ?? 0;
+    if (existingCount > 0) {
+      duplicates.push({
+        formId: form.id,
+        formName: form.form_name?.trim() || `Form #${form.id}`,
+        existingCount,
+      });
+    }
+    counts.set(form.id, existingCount + 1);
   }
 
-  if (additionalFormIds.includes(formId)) {
-    return "This form has already been added.";
-  }
+  return duplicates;
+}
 
-  return null;
+export function formatDuplicatePacketFormTitle(
+  duplicates: DuplicatePacketFormSelection[],
+): string {
+  const distinctForms = new Set(duplicates.map((duplicate) => duplicate.formId));
+  return distinctForms.size > 1
+    ? DUPLICATE_PACKET_FORM_TITLE_MULTIPLE
+    : DUPLICATE_PACKET_FORM_TITLE_SINGLE;
+}
+
+export function formatDuplicatePacketFormMessage(
+  duplicates: DuplicatePacketFormSelection[],
+): string {
+  const lines = duplicates.map(
+    (duplicate) =>
+      `• ${duplicate.formName} (${duplicate.existingCount} already in packet)`,
+  );
+  return [
+    ...lines,
+    "",
+    "Each copy is a separate document with its own fields. Existing copies are not changed.",
+  ].join("\n");
+}
+
+export function formatPacketFormPresenceLabel(instanceCount: number): string | null {
+  if (instanceCount <= 0) {
+    return null;
+  }
+  return instanceCount === 1 ? "In packet" : `In packet (${instanceCount})`;
 }
 
 export function warnDuplicateExternalDocumentName(
@@ -460,23 +530,7 @@ export async function addInternalFormToPacket(
   packetId: number,
   formId: number,
   sortOrder: number,
-): Promise<void> {
-  const { data: existing, error: existingError } = await supabase
-    .from("packet_forms")
-    .select("id")
-    .eq("packet_id", packetId)
-    .eq("form_id", formId)
-    .eq("status", "ACTIVE")
-    .maybeSingle();
-
-  if (existingError) {
-    throw new Error(existingError.message);
-  }
-
-  if (existing) {
-    throw new Error("This form is already in the packet.");
-  }
-
+): Promise<number> {
   const { data: formData, error: formError } = await supabase
     .from("forms")
     .select(FORM_SELECT)
@@ -534,6 +588,8 @@ export async function addInternalFormToPacket(
     await rollbackFailedPacketFormUpload(supabase, packetFormId, storagePath);
     throw error;
   }
+
+  return packetFormId;
 }
 
 export async function addExternalFormToPacket(
