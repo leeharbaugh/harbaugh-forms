@@ -4,6 +4,20 @@
 
 ## Current State
 
+### Packet Created/Updated timestamps in Central time (2026-10-02)
+
+**Status:** PR on `fix/packet-timestamps-central` from `main` `edfc5a7`; not merged, not deployed. Independent of Native Signing PR #46.
+
+**Defect:** `formatDateTime()` (`lib/types/packet.ts`) joined the UTC calendar date sliced from the ISO string with `toLocaleTimeString()` in the viewer's zone, so evening timestamps showed the next day: a packet created 2026-10-02 7:30 PM CDT (00:30 UTC) displayed `10/03/2026 7:30 PM` to a Chicago viewer. Affected `/` (Packets list), `/packets/[id]`, and `/contacts/[id]` (associated packets Updated / Created). Not a hydration issue: all three components fetch data in the browser after hydration, so the text never appears in server HTML (verified on a production build with server `TZ=UTC`).
+
+**Fix:** `formatDateTime()` now delegates to the shared `formatTimestamp()` (`lib/format-timestamp.ts`), so date and time both come from the same instant in `America/Chicago` with a `CDT`/`CST` label (e.g. `10/2/2026, 7:30:00 PM CDT`), matching admin pages. Empty input still returns `—` and unparseable input still falls back to `formatDate()`. No component changes.
+
+| Item | Result |
+|------|--------|
+| Unit tests | New `test:packet-timestamps` (3 tests: Central date+time for the evening case and a CST case, identical output under runtime `TZ` UTC / Chicago / Tokyo / Los Angeles, fallbacks); fails on the previous helper with `10/03/2026 7:30 PM`. `test:format-timestamp` now also bans `toLocale*String(` in `lib/types/packet.ts`, `components/packets`, and `components/contacts` (6 tests) |
+| Regression | `tsc` pass; ESLint on changed files clean; `git diff --check` clean; packet-forms-duplicate 18, packet-tenant-names 14, packet-form-lifecycle 7, form-controls 23, ui-lists 29, admin-audit 20 pass; `build:validate` pass |
+| Browser QA | Production build, server `TZ=UTC`, disposable dev data (cleaned up); browsers UTC / `America/Chicago` / `Asia/Tokyo`: all three routes show identical Central text on hard load, reload, direct URL, client navigation, back/forward; 0 console errors/warnings, 0 page errors, 0 React #418; server log clean |
+
 ### Dev-only `brace-expansion` advisories remediated (2026-10-02)
 
 **Status:** Lockfile-only PR on `security/brace-expansion-dev-tooling` from `main` `c2a490a`; not merged, not deployed. Closes the reviewed R1 exception carried since the Next.js 16.3.6 patch. Independent of Native Signing PR #46 and of any production rollout.
