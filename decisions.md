@@ -12,6 +12,25 @@ Each decision should include:
 
 ---
 
+## SSR-visible UI renders deterministic text on server and first client render
+
+**Date:** 2026-10-02
+
+**Decision:**
+Anything rendered during SSR (including `"use client"` components) must produce the same output on the server and on the initial client render. Locale-, time-zone-, or clock-dependent formatting must not alter the initial hydration tree: format timestamps with the shared `formatTimestamp()` (`lib/format-timestamp.ts`, fixed `America/Chicago` with an explicit zone label), never bare `toLocaleString()` / `toLocaleDateString()` / `toLocaleTimeString()`. Hydration mismatches are fixed at the source, not hidden with `suppressHydrationWarning`, client-only rendering, post-hydration effects, or `ssr: false` (reserved for genuinely browser-only content).
+
+**Reason:**
+Production admin pages raised React #418 because the Vercel server formats in UTC while browsers format in the user's zone.
+
+**Consequences:**
+* Admin timestamps display in Central time with a `CST`/`CDT` label regardless of the viewer's browser zone.
+* `lib/format-timestamp.test.ts` bans `toLocale*String(` in `components/admin`; extend it when other surfaces adopt the formatter.
+* Local production-mode QA must serve with the same env (e.g. `NATIVE_SIGNING_ENABLED`) used at build time; build-time-prerendered shells otherwise disagree with request-time renders.
+
+**Related files:** `lib/format-timestamp.ts`, `lib/format-timestamp.test.ts`, `components/admin/*`, `scripts/qa-admin-hydration-browser.ts`
+
+---
+
 ## Security patches for production dependencies ship independently of feature rollouts
 
 **Date:** 2026-10-01

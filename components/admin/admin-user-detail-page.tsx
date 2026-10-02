@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { TestUserBadge } from "@/components/ui/list-badges";
 import type { AdminUserDetail } from "@/lib/admin/manage-user-detail";
+import { formatTimestamp } from "@/lib/format-timestamp";
 import { formatPhoneInput } from "@/lib/phone-format";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -36,17 +37,6 @@ type AdminUserDetailPageProps = {
   detail: AdminUserDetail;
   organizations: OrgOption[];
 };
-
-function formatDate(value: string | null): string {
-  if (!value) {
-    return "—";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-  return date.toLocaleString();
-}
 
 export function AdminUserDetailPage({
   detail,
@@ -284,19 +274,19 @@ export function AdminUserDetailPage({
         <CardContent className="grid gap-3 text-sm md:grid-cols-2">
           <div>
             <p className="text-muted-foreground">Created</p>
-            <p>{formatDate(detail.createdAt)}</p>
+            <p>{formatTimestamp(detail.createdAt)}</p>
           </div>
           <div>
             <p className="text-muted-foreground">Last sign-in</p>
-            <p>{formatDate(detail.lastSignInAt)}</p>
+            <p>{formatTimestamp(detail.lastSignInAt)}</p>
           </div>
           <div>
             <p className="text-muted-foreground">Email confirmed</p>
-            <p>{formatDate(detail.emailConfirmedAt)}</p>
+            <p>{formatTimestamp(detail.emailConfirmedAt)}</p>
           </div>
           <div>
             <p className="text-muted-foreground">Auth ban until</p>
-            <p>{formatDate(detail.bannedUntil)}</p>
+            <p>{formatTimestamp(detail.bannedUntil)}</p>
           </div>
         </CardContent>
       </Card>

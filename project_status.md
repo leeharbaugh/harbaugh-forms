@@ -1,8 +1,37 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-01 (Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live in production via hotfix `2a92d82` = `a87b1aa` + dependency change only, deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
+**As of:** 2026-10-02 (admin-page React #418 hydration fix on `fix/admin-hydration-errors`, PR open, not deployed; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live in production via hotfix `2a92d82` = `a87b1aa` + dependency change only, deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
 
 ## Current State
+
+### Admin pages React #418 hydration fix (2026-10-02)
+
+**Status:** Branch `fix/admin-hydration-errors` from `main` `9f00a80`; PR open against `main`, not merged, not deployed. Independent of Native Signing PR #46.
+
+**Symptom:** Production showed minified React error #418 (hydration mismatch) on hard load / refresh of `/admin/users` (2×), `/admin/organizations` (1×), and `/admin/audit` (1×), identically on Next 16.3.5 and 16.3.6. Client-side navigation between admin pages was clean; non-admin pages were clean. React recovered by client-rendering the affected boundary, so users saw browser-local times.
+
+**Root cause (shared):** The `"use client"` admin components (`admin-users-page`, `admin-organizations-page`, `admin-audit-page`, and the nearby `admin-user-detail-page`) formatted timestamps with bare `new Date(value).toLocaleString()`. That uses the runtime's locale and time zone: the Vercel server renders in UTC, the browser in the agent's zone (America/Chicago), so the SSR text differed from the initial client render. It never reproduced in local dev because server and browser shared a time zone.
+
+**Reproduction (unchanged `main`, production build, disposable dev admin):** `next start` with `TZ=UTC` + Playwright browser `America/Chicago` → `#418` (`args[]=text`) on hard load and reload of all three routes and direct `/admin`; client nav and back/forward clean. Control with server and browser both in `America/Chicago` → no text mismatch. `next dev` with matching zones → no hydration error (only the known dev-only "runtime data outside `<Suspense>`" diagnostic on `/admin/audit`). `next-themes` is not involved.
+
+**Local-only artifact (not a production cause):** a build made with `NATIVE_SIGNING_ENABLED=false` but served with the dev `.env.local` value `true` adds an `#418` (`args[]=HTML`) on every page: `SigningsNavLink` reads the flag during prerender of the static nav shell, so the request-time render disagrees with the baked shell. Production builds and serves with the same env. Local production-mode QA must run `next start` with the same `NATIVE_SIGNING_ENABLED` value used for the build. Not changed (Native Signing scope).
+
+**Fix:** New shared deterministic formatter `lib/format-timestamp.ts` (`formatTimestamp`): fixed `America/Chicago` zone with an explicit zone label, assembled from `Intl.DateTimeFormat.formatToParts` so ICU spacing differences between Node and browsers cannot leak (e.g. `10/1/2026, 9:16:05 PM CDT`). Empty → `—` (unchanged); the audit page keeps showing the raw value for unparseable timestamps. The four admin components use it; no `suppressHydrationWarning`, no client-only rendering, no effects or `ssr: false`.
+
+**Date/time decision:** Admin timestamps display in Central time (CST/CDT) with the zone label, matching the brokerage's market and the Native Signing audit-certificate default. Before, users effectively saw their browser's local time after React's recovery re-render (unlabeled); for Central-time users the value is unchanged, now with a `CDT`/`CST` suffix.
+
+| Item | Result |
+|------|--------|
+| Regression (unit) | `npm run test:format-timestamp`: exact Central output (DST / standard / midnight), ASCII-only spacing, fallbacks, identical output under process `TZ` UTC / Chicago / Tokyo, and a source check banning `toLocale*String(` in `components/admin`. Source check fails on unchanged `main`; 5/5 pass after |
+| Regression (browser) | `scripts/qa-admin-hydration-browser.ts` (disposable dev admin, local production server): fails on unchanged `main` (7 failing phases); passes after the fix with server `TZ=UTC` and browser Chicago, browser Tokyo, and Chicago with 400 ms network latency — hard load, reload, direct `/admin`, `/admin/users/[id]`, client nav, back/forward: no `#418`, no console error/warning, no page error; user detail shows `… CDT/CST` timestamps |
+| R5 / F6 HTML + RSC role matrix (local) | Unauthenticated, ordinary, disabled, inactive-organization, and admin sessions × `/admin`, `/admin/users`, `/admin/organizations`, `/admin/audit`, `/admin/users/[id]`: no privileged marker in any non-admin HTML or RSC body; admin HTML and RSC contain it (positive control) |
+| Unit tests | `test:admin-audit` 20, `test:admin-orgs` 4, `test:admin-user-lifecycle` 23, `test:admin-invite` 37, `test:auth-confirm` 30, `test:auth-bootstrap` 7 — all pass |
+| Validators / checks | `validate:account-state-dev` pass; `npm audit --omit=dev` 0; `tsc` pass; changed-path ESLint clean; `git diff --check` clean; `build:validate` pass (Next 16.3.6, `NATIVE_SIGNING_ENABLED` off; only pre-existing `MODULE_TYPELESS_PACKAGE_JSON` / npm `devdir` warnings) |
+| Unchanged | Auth guards (`requireAppAdmin`, `requireAppAdminPage`), privileged readers, account-state, org authorization, audit access; no schema, migration, env, Native Signing, brace-expansion, or production change |
+
+**Not in scope (noted):** `lib/types/packet.ts` `formatDateTime` uses `toLocaleTimeString(undefined, …)` on packet pages — same class of risk; not changed here.
+
+**Rollout recommendation:** Ship to production as a small hotfix after merge approval: production runs `hotfix/next-16.3.6-prod` (`2a92d82`), not `main`, so the candidate should be that commit plus this PR's diff (no Native Signing code), deployed with `vercel deploy --prod --skip-domain`, validated on the unique URL (expect 0 `#418` on the admin pages), then `vercel promote`, re-checking `autoAssignCustomDomains=false`. Requires Lee's approval.
 
 ### Next.js 16.3.6 security patch — GHSA-vcvr-r3jv-pc5j (2026-10-01)
 

@@ -16,6 +16,7 @@ import { ListPageHeader } from "@/components/list-page-header";
 import { ListRowActions } from "@/components/list-row-actions";
 import type { AdminUserListItem } from "@/lib/admin/list-users";
 import type { InviteUserInput } from "@/lib/admin/invite-validation";
+import { formatTimestamp } from "@/lib/format-timestamp";
 import { formatPhoneInput } from "@/lib/phone-format";
 import { membershipRoleLabel } from "@/lib/ui/list-badges";
 import { Button } from "@/components/ui/button";
@@ -46,17 +47,6 @@ type AdminUsersPageProps = {
   users: AdminUserListItem[];
   organizations: OrgOption[];
 };
-
-function formatDate(value: string | null): string {
-  if (!value) {
-    return "—";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-  return date.toLocaleString();
-}
 
 export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
   const router = useRouter();
@@ -460,7 +450,7 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
                     <td className="px-3 py-2.5">
                       <OnboardingStatusBadge status={user.onboardingStatus} />
                       <div className="mt-1 text-xs text-muted-foreground">
-                        Invited {formatDate(user.invitedAt)}
+                        Invited {formatTimestamp(user.invitedAt)}
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
@@ -487,10 +477,10 @@ export function AdminUsersPage({ users, organizations }: AdminUsersPageProps) {
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-muted-foreground">
-                      {formatDate(user.createdAt)}
+                      {formatTimestamp(user.createdAt)}
                     </td>
                     <td className="px-3 py-2.5 text-muted-foreground">
-                      {formatDate(user.lastSignInAt)}
+                      {formatTimestamp(user.lastSignInAt)}
                     </td>
                     <td className="px-3 py-2.5">
                       <ListRowActions wrap>
