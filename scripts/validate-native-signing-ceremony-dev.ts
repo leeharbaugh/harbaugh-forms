@@ -1006,6 +1006,13 @@ async function main() {
       });
     if (restoreError) fail(`byte restore failed: ${restoreError.message}`);
     ok("prepared version bytes are served and altered bytes fail closed");
+    await expectSigningError("serving a malformed document id", "INVALID_INPUT", () =>
+      loadCeremonyDocumentBytes({ admin, session: janeSession, revisionDocumentId: "not-a-uuid" }),
+    );
+    await expectSigningError("serving an unknown document id", "CEREMONY_FORBIDDEN", () =>
+      loadCeremonyDocumentBytes({ admin, session: janeSession, revisionDocumentId: randomUUID() }),
+    );
+    ok("document requests with a malformed or unknown id are refused");
 
     // 12. Re-entry supersedes the prior session; accepted work survives.
     const handoff = await createInPersonHandoffWithActor(
@@ -1046,6 +1053,11 @@ async function main() {
     if (supersededResolution.ok || supersededResolution.code !== "SESSION_SUPERSEDED") {
       fail("the prior ceremony session was not reported as superseded");
     }
+    await expectSigningError(
+      "reading document bytes with a superseded ceremony session",
+      "SESSION_SUPERSEDED",
+      () => requireCeremonyBrowserSession(admin, janeSessionToken),
+    );
     const { data: consumedHandoff } = await admin
       .from("signing_in_person_handoffs")
       .select("consumed_at")
@@ -1288,6 +1300,17 @@ async function main() {
       danaReaffirmed.cookie.value,
     );
     await expectSigningError(
+      "a Signing B session reading a Signing A document",
+      "CEREMONY_FORBIDDEN",
+      () =>
+        loadCeremonyDocumentBytes({
+          admin,
+          session: danaSession,
+          revisionDocumentId: revisionDocument?.id as string,
+        }),
+    );
+    ok("a ceremony session cannot read another Signing's document");
+    await expectSigningError(
       "declining without explicit confirmation",
       "INVALID_INPUT",
       () =>
@@ -1335,6 +1358,11 @@ async function main() {
       fail("Decline did not release presence");
     }
     ok("Decline requires confirmation and ends every session and lease");
+    {
+      const afterDecline = await resolveCeremonyBrowserSession(admin, danaReaffirmed.cookie.value);
+      if (afterDecline.ok) fail("the declined participant's ceremony session still resolves for document reads");
+      ok(`after Decline the participant's ceremony session no longer authorizes document reads (${afterDecline.code})`);
+    }
 
     // 17. Every ceremony act is in the append-only event log.
     const { data: events } = await admin

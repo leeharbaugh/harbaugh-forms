@@ -83,7 +83,7 @@ async function SignCeremonyBody() {
 
 export default function Page() {
   return (
-    <main className="mx-auto min-h-screen max-w-2xl px-5 py-10">
+    <main className="mx-auto min-h-screen max-w-6xl px-3 py-8 sm:px-5 sm:py-10">
       <Suspense
         fallback={
           <p className="text-sm text-muted-foreground">Loading Signing…</p>

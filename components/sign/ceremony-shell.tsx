@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import type { CeremonyFocusRequest } from "@/components/sign/ceremony-document-viewer";
 import {
   acceptConsentAction,
   adoptCeremonyMarkAction,
@@ -26,9 +27,27 @@ import {
   replaceCeremonyPlacementAction,
 } from "@/lib/signing/ceremony-actions";
 import type { CeremonyOverview } from "@/lib/signing/ceremony-context";
-import { linkedDateSignedBySignatureField } from "@/lib/signing/ceremony-field-view";
+import {
+  isParticipantActionableField,
+  linkedDateSignedBySignatureField,
+  nextIncompleteCeremonyField,
+  orderCeremonyFields,
+  type CeremonyActionableField,
+} from "@/lib/signing/ceremony-field-view";
 import { SIGNING_PRESENCE_HEARTBEAT_SECONDS } from "@/lib/signing/presence";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState, useTransition } from "react";
+
+/** pdf.js is browser-only; keep it out of the server-rendered graph. */
+const CeremonyDocumentViewer = dynamic(
+  () => import("@/components/sign/ceremony-document-viewer"),
+  {
+    ssr: false,
+    loading: () => (
+      <p className="text-sm text-muted-foreground">Loading documents…</p>
+    ),
+  },
+);
 
 /**
  * Focused participant ceremony shell.
@@ -38,8 +57,10 @@ import { useCallback, useEffect, useState, useTransition } from "react";
  * nothing important exists only in this component's state, so a timeout or a
  * superseded session never loses confirmed work.
  *
- * Typed adoption is the keyboard-accessible path implemented here; the server
- * also accepts a drawn representation for a later drawing surface.
+ * The participant reads the exact prepared PDFs and acts on their own targets
+ * drawn on the document. Typed adoption is the keyboard-accessible path
+ * implemented here; the server also accepts a drawn representation for a later
+ * drawing surface.
  */
 export function CeremonyShell({
   initialOverview,
@@ -51,13 +72,22 @@ export function CeremonyShell({
   const [notice, setNotice] = useState<string | null>(null);
   const [sessionEnded, setSessionEnded] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [typedSignature, setTypedSignature] = useState("");
   const [typedInitials, setTypedInitials] = useState(
     initialOverview.suggestedTypedInitials,
   );
-  const [initialsPrefilled, setInitialsPrefilled] = useState(false);
+  const [initialsPrefilled, setInitialsPrefilled] = useState(
+    Boolean(initialOverview.suggestedTypedInitials),
+  );
   const [declineOpen, setDeclineOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
+  const [currentDocumentId, setCurrentDocumentId] = useState(
+    () =>
+      nextIncompleteCeremonyField(initialOverview.fields, initialOverview.documents)
+        ?.revisionDocumentId ??
+      initialOverview.documents[0]?.revisionDocumentId ??
+      "",
+  );
+  const [focusRequest, setFocusRequest] = useState<CeremonyFocusRequest | null>(null);
   const finished = overview.participantStatus === "FINISHED";
 
   const refresh = useCallback(async () => {
@@ -119,9 +149,41 @@ export function CeremonyShell({
     });
   }
 
+  /** Document navigation: free at any time, and counts as review activity. */
+  function goToField(field: CeremonyActionableField) {
+    setCurrentDocumentId(field.revisionDocumentId);
+    setFocusRequest({ fieldId: field.fieldId, nonce: Date.now() });
+    void noteCeremonyReviewActivityAction();
+  }
+
+  function placeField(field: CeremonyActionableField) {
+    const clientRequestId = `${field.fieldId}:${field.placementId ?? "new"}`;
+    run(
+      () =>
+        placeCeremonyFieldAction({
+          signingFieldId: field.fieldId,
+          clientRequestId: `accept:${clientRequestId}:${Date.now()}`,
+        }),
+      {
+        onSuccess: () => {
+          const next = nextIncompleteCeremonyField(
+            overview.fields.map((candidate) =>
+              candidate.fieldId === field.fieldId
+                ? { ...candidate, placementId: candidate.placementId ?? "accepted" }
+                : candidate,
+            ),
+            overview.documents,
+            field.fieldId,
+          );
+          if (next) goToField(next);
+        },
+      },
+    );
+  }
+
   if (sessionEnded) {
     return (
-      <Card>
+      <Card className="mx-auto max-w-2xl">
         <CardHeader>
           <CardTitle className="text-base">
             This signing session is no longer active
@@ -141,7 +203,7 @@ export function CeremonyShell({
 
   if (finished) {
     return (
-      <Card>
+      <Card className="mx-auto max-w-2xl">
         <CardHeader>
           <CardTitle className="text-base">You finished signing</CardTitle>
           <CardDescription>
@@ -170,8 +232,9 @@ export function CeremonyShell({
 
   const consentSatisfied = overview.consent.satisfied;
   const disclosure = overview.consent.currentDisclosure;
-  const actionableFields = overview.fields.filter(
-    (field) => field.fieldType === "SIGNATURE" || field.fieldType === "INITIALS",
+  const actionableFields = orderCeremonyFields(
+    overview.fields.filter(isParticipantActionableField),
+    overview.documents,
   );
   const dateSignedBySignature = linkedDateSignedBySignatureField(overview.fields);
   const needsSignature =
@@ -180,6 +243,103 @@ export function CeremonyShell({
   const needsInitials =
     actionableFields.some((field) => field.fieldType === "INITIALS") &&
     !overview.marks.initials;
+  const expectedSignatureText =
+    overview.expectedTypedSignatureText || overview.displayedName;
+  const nextField = nextIncompleteCeremonyField(
+    overview.fields,
+    overview.documents,
+    focusRequest?.fieldId ?? null,
+  );
+  const documentNameById = new Map(
+    overview.documents.map((document) => [
+      document.revisionDocumentId,
+      document.displayName,
+    ]),
+  );
+
+  const finishCard = (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Finish</CardTitle>
+        <CardDescription>
+          Finish when you are done. You can change your marks until you
+          finish.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button
+          type="button"
+          className="w-full"
+          disabled={pending || !overview.canFinish || !consentSatisfied}
+          onClick={() => run(() => finishCeremonyAction())}
+        >
+          Finish signing
+        </Button>
+
+        {declineOpen ? (
+          <div className="space-y-3 rounded-md border border-destructive/40 p-3">
+            <p className="text-sm text-foreground">
+              Declining ends this Signing for everyone. Your agent will be
+              notified.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="decline-reason">Reason (optional)</Label>
+              <Textarea
+                id="decline-reason"
+                value={declineReason}
+                onChange={(event) => setDeclineReason(event.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={pending}
+                onClick={() =>
+                  run(() =>
+                    declineCeremonyAction({
+                      confirmed: true,
+                      reason: declineReason,
+                    }),
+                  )
+                }
+              >
+                Confirm decline
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={() => setDeclineOpen(false)}
+              >
+                Keep signing
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={pending}
+            onClick={() => setDeclineOpen(true)}
+          >
+            Decline to sign
+          </Button>
+        )}
+
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full"
+          disabled={pending}
+          onClick={() => run(() => exitCeremonyAction())}
+        >
+          Exit signing
+        </Button>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="space-y-6">
@@ -214,181 +374,201 @@ export function CeremonyShell({
       ) : null}
 
       {!consentSatisfied ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{disclosure.title}</CardTitle>
-            <CardDescription>
-              {overview.consent.reason === "DISCLOSURE_CHANGED"
-                ? "This disclosure was updated since you last accepted it. Please review it again."
-                : "Please review this disclosure before signing electronically."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!disclosure.isProductionReady ? (
-              <Badge variant="secondary">Development disclosure copy</Badge>
-            ) : null}
-            <div className="max-h-72 overflow-y-auto rounded-md border border-input bg-card p-3 text-sm whitespace-pre-wrap">
-              {disclosure.bodyText}
-            </div>
-            <Button
-              type="button"
-              disabled={pending}
-              onClick={() =>
-                run(
-                  () =>
-                    acceptConsentAction({
-                      disclosureVersionId: disclosure.id,
-                    }),
-                  { successNotice: "Disclosure accepted." },
-                )
-              }
-            >
-              I agree to use electronic records and signatures
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {consentSatisfied && (needsSignature || needsInitials) ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Adopt your marks</CardTitle>
-            <CardDescription>
-              {overview.capacityMode === "REPRESENTATIVE"
-                ? "Type the prepared execution wording exactly. Your signature and initials are adopted separately. Capacity cannot be changed here."
-                : "Type your name exactly as it appears on this Signing. Your signature and initials are adopted separately."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {needsSignature ? (
-              <div className="space-y-2">
-                <Label htmlFor="typed-signature">
-                  Typed signature (must be{" "}
-                  {overview.expectedTypedSignatureText || overview.displayedName}
+        <div className="mx-auto max-w-2xl space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{disclosure.title}</CardTitle>
+              <CardDescription>
+                {overview.consent.reason === "DISCLOSURE_CHANGED"
+                  ? "This disclosure was updated since you last accepted it. Please review it again."
+                  : "Please review this disclosure before signing electronically."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!disclosure.isProductionReady ? (
+                <Badge variant="secondary">Development disclosure copy</Badge>
+              ) : null}
+              <div className="max-h-72 overflow-y-auto rounded-md border border-input bg-card p-3 text-sm whitespace-pre-wrap">
+                {disclosure.bodyText}
+              </div>
+              <Button
+                type="button"
+                disabled={pending}
+                onClick={() =>
+                  run(
+                    () =>
+                      acceptConsentAction({
+                        disclosureVersionId: disclosure.id,
+                      }),
+                    { successNotice: "Disclosure accepted." },
                   )
-                </Label>
-                <Input
-                  id="typed-signature"
-                  value={typedSignature}
-                  autoComplete="off"
-                  onChange={(event) => setTypedSignature(event.target.value)}
-                />
-                <Button
-                  type="button"
-                  disabled={pending || !typedSignature.trim()}
-                  onClick={() =>
-                    run(
-                      () =>
-                        adoptCeremonyMarkAction({
-                          markKind: "SIGNATURE",
-                          representationType: "TYPED",
-                          typedText: typedSignature,
-                        }),
-                      { successNotice: "Signature adopted." },
-                    )
-                  }
-                >
-                  Adopt signature
-                </Button>
-              </div>
-            ) : null}
-
-            {needsInitials ? (
-              <div className="space-y-2">
-                <Label htmlFor="typed-initials">Typed initials</Label>
-                <Input
-                  id="typed-initials"
-                  value={typedInitials}
-                  autoComplete="off"
-                  onChange={(event) => setTypedInitials(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Suggested from your name — you may edit before first use. Not
-                  a legal verification.
-                </p>
-                <Button
-                  type="button"
-                  disabled={pending || !typedInitials.trim()}
-                  onClick={() =>
-                    run(
-                      () =>
-                        adoptCeremonyMarkAction({
-                          markKind: "INITIALS",
-                          representationType: "TYPED",
-                          typedText: typedInitials,
-                        }),
-                      { successNotice: "Initials adopted." },
-                    )
-                  }
-                >
-                  Adopt initials
-                </Button>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {consentSatisfied ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Your documents</CardTitle>
-            <CardDescription>
-              {overview.requiredRemaining === 0
-                ? "Every required field is complete."
-                : overview.requiredRemaining === 1
-                  ? "One required field still needs you."
-                  : `${overview.requiredRemaining} required fields still need you.`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {overview.documents.map((document) => {
-              const documentFields = actionableFields.filter(
-                (field) =>
-                  field.revisionDocumentId === document.revisionDocumentId,
-              );
-              return (
-                <div
-                  key={document.revisionDocumentId}
-                  className="space-y-3 border-b border-border pb-5 last:border-b-0 last:pb-0"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="font-medium text-foreground">
-                        {document.displayName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {document.acceptedFieldCount} of{" "}
-                        {document.assignedFieldCount} of your fields complete
-                      </p>
-                    </div>
-                    <a
-                      className="text-sm text-primary underline-offset-4 hover:underline"
-                      href={`/sign/ceremony/document/${document.revisionDocumentId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={() => {
-                        void noteCeremonyReviewActivityAction();
-                      }}
+                }
+              >
+                I agree to use electronic records and signatures
+              </Button>
+            </CardContent>
+          </Card>
+          {finishCard}
+        </div>
+      ) : (
+        <>
+          {needsSignature || needsInitials ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Adopt your marks</CardTitle>
+                <CardDescription>
+                  {overview.capacityMode === "REPRESENTATIVE"
+                    ? "Your signature is the execution wording prepared by your agent. Capacity cannot be changed here. Your signature and initials are adopted separately."
+                    : "Your signature is your name exactly as it appears on this Signing. Your signature and initials are adopted separately."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-6 md:grid-cols-2">
+                {needsSignature ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="typed-signature">Your signature</Label>
+                    <Input
+                      id="typed-signature"
+                      value={expectedSignatureText}
+                      readOnly
+                      aria-readonly="true"
+                      aria-describedby="typed-signature-help"
+                      className="h-12 cursor-default bg-muted/40 text-2xl focus-visible:ring-2"
+                      style={{ fontFamily: "HarbaughCaveat, cursive" }}
+                    />
+                    <p
+                      id="typed-signature-help"
+                      className="text-xs text-muted-foreground"
                     >
-                      Review document
-                    </a>
+                      This is set by your Signing and cannot be edited. If it
+                      is wrong, exit and contact your agent before signing.
+                    </p>
+                    <Button
+                      type="button"
+                      disabled={pending || !expectedSignatureText.trim()}
+                      onClick={() =>
+                        run(
+                          () =>
+                            adoptCeremonyMarkAction({
+                              markKind: "SIGNATURE",
+                              representationType: "TYPED",
+                              typedText: expectedSignatureText,
+                            }),
+                          { successNotice: "Signature adopted." },
+                        )
+                      }
+                    >
+                      Adopt signature
+                    </Button>
                   </div>
+                ) : null}
 
-                  {documentFields.length === 0 ? (
+                {needsInitials ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="typed-initials">Typed initials</Label>
+                    <Input
+                      id="typed-initials"
+                      value={typedInitials}
+                      autoComplete="off"
+                      onChange={(event) => {
+                        setInitialsPrefilled(true);
+                        setTypedInitials(event.target.value);
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Suggested from your name — you may edit before first use. Not
+                      a legal verification.
+                    </p>
+                    <Button
+                      type="button"
+                      disabled={pending || !typedInitials.trim()}
+                      onClick={() =>
+                        run(
+                          () =>
+                            adoptCeremonyMarkAction({
+                              markKind: "INITIALS",
+                              representationType: "TYPED",
+                              typedText: typedInitials,
+                            }),
+                          { successNotice: "Initials adopted." },
+                        )
+                      }
+                    >
+                      Adopt initials
+                    </Button>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <Card className="min-w-0">
+              <CardHeader>
+                <CardTitle className="text-base">Your documents</CardTitle>
+                <CardDescription>
+                  Read every page and document. Your signature and initials
+                  spots are highlighted on the page; select one to apply your
+                  adopted mark.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CeremonyDocumentViewer
+                  documents={overview.documents}
+                  fields={overview.fields}
+                  currentDocumentId={currentDocumentId}
+                  onSelectDocument={setCurrentDocumentId}
+                  focusRequest={focusRequest}
+                  signatureText={overview.marks.signature?.typedText ?? null}
+                  initialsText={overview.marks.initials?.typedText ?? null}
+                  canSign={Boolean(overview.marks.signature)}
+                  canInitial={Boolean(overview.marks.initials)}
+                  pending={pending}
+                  onPlace={placeField}
+                  onReviewActivity={() => {
+                    void noteCeremonyReviewActivityAction();
+                  }}
+                />
+              </CardContent>
+            </Card>
+
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Your fields</CardTitle>
+                  <CardDescription aria-live="polite">
+                    {overview.requiredRemaining === 0
+                      ? "Every required field is complete."
+                      : overview.requiredRemaining === 1
+                        ? "One required field still needs you."
+                        : `${overview.requiredRemaining} required fields still need you.`}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {nextField ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => goToField(nextField)}
+                    >
+                      Go to next field
+                    </Button>
+                  ) : null}
+                  {actionableFields.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      No fields are assigned to you in this document.
+                      No fields are assigned to you in this Signing.
                     </p>
                   ) : (
                     <ul className="space-y-2">
-                      {documentFields.map((field) => {
+                      {actionableFields.map((field) => {
                         const clientRequestId = `${field.fieldId}:${
                           field.placementId ?? "new"
                         }`;
                         return (
                           <li
                             key={field.fieldId}
-                            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-input p-3"
+                            data-ceremony-field-row={field.fieldId}
+                            className="space-y-2 rounded-md border border-input p-3"
                           >
                             <div className="text-sm">
                               <span className="font-medium text-foreground">
@@ -398,8 +578,9 @@ export function CeremonyShell({
                               </span>
                               <span className="text-muted-foreground">
                                 {" "}
-                                · page {field.pageNumber}
-                                {field.isRequired ? " · required" : ""}
+                                · {documentNameById.get(field.revisionDocumentId)} ·
+                                page {field.pageNumber}
+                                {field.isRequired ? " · required" : " · optional"}
                               </span>
                               {field.placementId ? (
                                 <span className="block text-xs text-muted-foreground">
@@ -410,7 +591,16 @@ export function CeremonyShell({
                                 </span>
                               ) : null}
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                aria-label={`Show ${field.fieldType === "SIGNATURE" ? "signature" : "initials"} field on page ${field.pageNumber}`}
+                                onClick={() => goToField(field)}
+                              >
+                                Show on page
+                              </Button>
                               {field.placementId ? (
                                 <>
                                   <Button
@@ -446,124 +636,20 @@ export function CeremonyShell({
                                     Remove
                                   </Button>
                                 </>
-                              ) : (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={
-                                    pending ||
-                                    (field.fieldType === "SIGNATURE"
-                                      ? !overview.marks.signature
-                                      : !overview.marks.initials)
-                                  }
-                                  onClick={() =>
-                                    run(() =>
-                                      placeCeremonyFieldAction({
-                                        signingFieldId: field.fieldId,
-                                        clientRequestId: `accept:${clientRequestId}:${Date.now()}`,
-                                      }),
-                                    )
-                                  }
-                                >
-                                  {field.fieldType === "SIGNATURE"
-                                    ? "Sign here"
-                                    : "Initial here"}
-                                </Button>
-                              )}
+                              ) : null}
                             </div>
                           </li>
                         );
                       })}
                     </ul>
                   )}
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Finish</CardTitle>
-          <CardDescription>
-            Finish when you are done. You can change your marks until you
-            finish.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            type="button"
-            className="w-full"
-            disabled={pending || !overview.canFinish || !consentSatisfied}
-            onClick={() => run(() => finishCeremonyAction())}
-          >
-            Finish signing
-          </Button>
-
-          {declineOpen ? (
-            <div className="space-y-3 rounded-md border border-destructive/40 p-3">
-              <p className="text-sm text-foreground">
-                Declining ends this Signing for everyone. Your agent will be
-                notified.
-              </p>
-              <div className="space-y-2">
-                <Label htmlFor="decline-reason">Reason (optional)</Label>
-                <Textarea
-                  id="decline-reason"
-                  value={declineReason}
-                  onChange={(event) => setDeclineReason(event.target.value)}
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={pending}
-                  onClick={() =>
-                    run(() =>
-                      declineCeremonyAction({
-                        confirmed: true,
-                        reason: declineReason,
-                      }),
-                    )
-                  }
-                >
-                  Confirm decline
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => setDeclineOpen(false)}
-                >
-                  Keep signing
-                </Button>
-              </div>
+                </CardContent>
+              </Card>
+              {finishCard}
             </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              disabled={pending}
-              onClick={() => setDeclineOpen(true)}
-            >
-              Decline to sign
-            </Button>
-          )}
-
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full"
-            disabled={pending}
-            onClick={() => run(() => exitCeremonyAction())}
-          >
-            Exit signing
-          </Button>
-        </CardContent>
-      </Card>
+          </div>
+        </>
+      )}
     </div>
   );
 }

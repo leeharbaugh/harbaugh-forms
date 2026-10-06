@@ -92,6 +92,19 @@ describe("Browser PDF viewer / server module boundary", () => {
     assert.ok(offenders.some((line) => line.endsWith("-> react-pdf")));
   });
 
+  it("loads the participant ceremony document viewer client-only", () => {
+    const shell = read("components/sign/ceremony-shell.tsx");
+    assert.doesNotMatch(shell, /^import (?!type).*ceremony-document-viewer/m);
+    assert.match(
+      shell,
+      /dynamic\(\s*\(\) => import\("@\/components\/sign\/ceremony-document-viewer"\)[\s\S]*?\{\s*ssr: false/,
+    );
+    const offenders = serverGraphViewerImports([
+      join("components", "sign", "ceremony-document-viewer.tsx"),
+    ]);
+    assert.ok(offenders.some((line) => line.endsWith("-> react-pdf")));
+  });
+
   it("loads Prepare Documents client-only and only once it is first opened", () => {
     const dashboard = read("components/signings/signing-dashboard-page.tsx");
     assert.doesNotMatch(dashboard, /^import .*signing-preview-dialog/m);

@@ -325,11 +325,11 @@ describe("Native Signing ceremony placements, Finish, and Decline", () => {
     const shell = read("components/sign/ceremony-shell.tsx");
     const requestIds = [...shell.matchAll(/clientRequestId: `(\w+):\$\{clientRequestId\}([^`]*)`/g)];
     assert.deepEqual(
-      requestIds.map(([, operation, suffix]) => [operation, suffix]),
+      requestIds.map(([, operation, suffix]) => [operation, suffix]).sort(),
       [
-        ["replace", ":${Date.now()}"],
-        ["remove", ":${Date.now()}"],
         ["accept", ":${Date.now()}"],
+        ["remove", ":${Date.now()}"],
+        ["replace", ":${Date.now()}"],
       ],
     );
   });

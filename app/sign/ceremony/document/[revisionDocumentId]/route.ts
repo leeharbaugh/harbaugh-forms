@@ -16,7 +16,10 @@ import {
   requireCeremonyBrowserSession,
   SIGNING_CEREMONY_COOKIE_NAME,
 } from "@/lib/signing/browser-sessions";
-import { loadCeremonyDocumentBytes } from "@/lib/signing/ceremony-documents";
+import {
+  isRoutineCeremonyDocumentDenial,
+  loadCeremonyDocumentBytes,
+} from "@/lib/signing/ceremony-documents";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
@@ -71,7 +74,11 @@ export async function GET(
   } catch (error) {
     // Ceremony failures are not disclosed to the participant here; the ceremony
     // page reports session state. Never log a session token.
-    if (error instanceof Error && error.message) {
+    if (
+      !isRoutineCeremonyDocumentDenial(error) &&
+      error instanceof Error &&
+      error.message
+    ) {
       console.error(
         "[native-signing-ceremony] document request failed:",
         error.message,

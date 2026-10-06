@@ -5,18 +5,23 @@
  * Signings sent from the Draft page with the development email sandbox);
  * cleaned up in `finally` unless QA_KEEP_FIXTURES=1.
  *
- * Signing A (two participants + one copy recipient): link entry without
- * workspace login, identity affirmation, consent, typed Signature / Initials
- * adoption, Sign / Initial here, linked Date Signed, Remove / Replace before
- * Finish, package freeze on first accepted mark, Finish, participant
- * isolation, finalization through Complete, artifact + event-chain integrity,
- * completed PDF marks, completed-package access, manager view.
+ * Signing A (two participants + one copy recipient; a two-page contract and a
+ * one-page addendum): link entry without workspace login, identity
+ * affirmation, consent, read-only typed Signature / editable Initials
+ * adoption, the prepared PDFs rendered in the ceremony (every document, free
+ * scrolling, zoom, document switching), Sign / Initial here targets drawn at
+ * their stored coordinates and clicked on the page, linked Date Signed,
+ * Remove / Replace before Finish, package freeze on first accepted mark,
+ * Finish, participant isolation, document-route authorization, narrow and
+ * tablet viewports, finalization through Complete, artifact + event-chain
+ * integrity, completed PDF marks, completed-package access, manager view.
  *
- * Signing B: Resend / Replace / Revoke spot-check, then an explicit Decline.
+ * Signing B: Resend / Replace / Revoke spot-check (sessions derived from the
+ * replaced / revoked links lose document access), then an explicit Decline.
  *
  * Signing C (in person, on the manager's own browser): Begin In-Person, hand
- * the device over, sign, Finish → Return to agent with the device lock intact,
- * then unlock with the agent password.
+ * the device over, sign on the document, Finish → Return to agent with the
+ * device lock intact, then unlock with the agent password.
  *
  * Participant links come from the development-only Copy signing link helper;
  * secrets are held in memory only and never printed.
@@ -124,7 +129,7 @@ async function main() {
 
   let actor: SigningActor;
 
-  async function createPacketDocument(label: string): Promise<number> {
+  async function createPacketDocument(label: string, pageCount = 1): Promise<number> {
     const { data: form, error } = await admin
       .from("packet_forms")
       .insert({
@@ -148,9 +153,20 @@ async function main() {
     packetFormIds.push(packetFormId);
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
-    const page = doc.addPage([612, 792]);
-    page.drawText(label, { x: 72, y: 720, size: 18, font });
-    page.drawText("Signature lines below are for participant ceremony QA.", { x: 72, y: 690, size: 10, font });
+    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+      const page = doc.addPage([612, 792]);
+      page.drawText(label, { x: 72, y: 720, size: 18, font });
+      page.drawText(`Page ${pageNumber} of ${pageCount}`, { x: 72, y: 700, size: 10, font });
+      page.drawText("Signature lines below are for participant ceremony QA.", { x: 72, y: 684, size: 10, font });
+      for (let line = 0; line < 8; line += 1) {
+        page.drawText(`Clause ${pageNumber}.${line + 1}: the participant may read every page before signing.`, {
+          x: 72,
+          y: 650 - line * 16,
+          size: 10,
+          font,
+        });
+      }
+    }
     const generatedPath = `users/${userId}/packets/${packetId}/${packetFormId}-ceremony-qa.pdf`;
     const { error: uploadError } = await admin.storage
       .from(GENERATED_DOCUMENTS_BUCKET)
@@ -178,7 +194,7 @@ async function main() {
     participantId: string,
     fieldType: "SIGNATURE" | "INITIALS" | "DATE_SIGNED",
     box: { x: number; y: number; width: number; height: number },
-    extra: { isRequired?: boolean; linkedSignatureDraftFieldId?: string } = {},
+    extra: { isRequired?: boolean; linkedSignatureDraftFieldId?: string; pageNumber?: number } = {},
   ) {
     return upsertDraftSigningFieldWithActor(
       actor,
@@ -316,7 +332,7 @@ async function main() {
     );
     const { data, error } = await admin
       .from("signing_fields")
-      .select("id, field_type, package_revision_participant_id, page_number, x, y, width, height, is_required")
+      .select("id, field_type, package_revision_participant_id, package_revision_document_id, page_number, x, y, width, height, is_required")
       .eq("signing_id", signingId);
     if (error) fail(error.message);
     return (data ?? []).map((field) => ({
@@ -334,9 +350,90 @@ async function main() {
   }
 
   const row = (page: Page, type: "Signature" | "Initials", required: boolean) => {
-    const base = page.locator("li").filter({ hasText: type });
+    const base = page.locator("[data-ceremony-field-row]").filter({ hasText: type });
     return required ? base.filter({ hasText: "required" }) : base.filter({ hasNotText: "required" });
   };
+  const fieldRows = (page: Page) => page.locator("[data-ceremony-field-row]");
+  /** On-document Signature / Initials target for one field, in its current state. */
+  const target = (page: Page, fieldId: unknown, placed: boolean) =>
+    page.locator(`[data-ceremony-target="${String(fieldId)}"][data-placed="${placed ? "true" : "false"}"]`);
+  const dateOnPage = (page: Page, fieldId: unknown) =>
+    page.locator(`[data-ceremony-date-field="${String(fieldId)}"][data-placed="true"]`);
+  const firstOpenTarget = (page: Page, type: "SIGNATURE" | "INITIALS") =>
+    page.locator(`[data-ceremony-target][data-placed="false"][data-field-type="${type}"]`).first();
+  const pageCanvas = (page: Page, pageNumber: number) =>
+    page.locator(`[data-ceremony-page="${pageNumber}"] canvas`).first();
+
+  /** Typed Signature is pre-populated with the exact Signing name and cannot be edited. */
+  async function expectReadOnlySignature(page: Page, name: string, label: string) {
+    const input = page.locator("#typed-signature");
+    await input.waitFor({ timeout: 30000 });
+    if ((await input.inputValue()) !== name) fail(`${label}: typed Signature is not pre-populated with "${name}"`);
+    if ((await input.getAttribute("readonly")) === null || (await input.isEditable())) fail(`${label}: typed Signature is editable`);
+    await input.focus();
+    await page.keyboard.type("x");
+    await page.keyboard.press("Backspace");
+    if ((await input.inputValue()) !== name) fail(`${label}: typing changed the read-only typed Signature`);
+  }
+
+  async function adoptSignature(page: Page, name: string, label: string) {
+    await expectReadOnlySignature(page, name, label);
+    await page.getByRole("button", { name: "Adopt signature" }).click();
+    await page.getByText("Signature adopted.").waitFor({ timeout: 30000 });
+  }
+
+  /** Request ceremony document bytes in a fresh context carrying only `cookieValue` (or no cookie). */
+  async function documentStatusWith(cookieValue: string | null, revisionDocumentId: string) {
+    const context = await browser.newContext();
+    if (cookieValue) {
+      await context.addCookies([
+        { name: SIGNING_CEREMONY_COOKIE_NAME, value: cookieValue, url: APP_ORIGIN, httpOnly: true, sameSite: "Lax" },
+      ]);
+    }
+    const response = await context.request.get(`${APP_ORIGIN}/sign/ceremony/document/${revisionDocumentId}`);
+    const status = response.status();
+    await context.close();
+    return status;
+  }
+  async function ceremonyCookieValue(context: BrowserContext) {
+    const cookie = (await context.cookies()).find((entry) => entry.name === SIGNING_CEREMONY_COOKIE_NAME);
+    if (!cookie) fail("ceremony cookie missing");
+    return cookie.value;
+  }
+  async function revisionDocuments(signingId: string) {
+    const { data, error } = await admin
+      .from("signing_package_revision_documents")
+      .select("id, frozen_display_name, signing_document_version_id, display_order")
+      .eq("signing_id", signingId)
+      .order("display_order");
+    if (error) fail(error.message);
+    return (data ?? []) as { id: string; frozen_display_name: string; signing_document_version_id: string; display_order: number }[];
+  }
+
+  /** Overlay box vs. stored PDF-point geometry scaled to the rendered page canvas. */
+  async function expectTargetAligned(page: Page, field: Record<string, unknown>, locator: ReturnType<Page["locator"]>, label: string) {
+    await locator.scrollIntoViewIfNeeded();
+    const canvasBox = await pageCanvas(page, Number(field.page_number)).boundingBox();
+    const targetBox = await locator.boundingBox();
+    if (!canvasBox || !targetBox) fail(`${label}: page or target not rendered`);
+    const scale = canvasBox.width / 612;
+    const expected = {
+      x: canvasBox.x + Number(field.x) * scale,
+      y: canvasBox.y + Number(field.y) * scale,
+      width: Number(field.width) * scale,
+      height: Number(field.height) * scale,
+    };
+    const drift = Math.max(
+      Math.abs(targetBox.x - expected.x),
+      Math.abs(targetBox.y - expected.y),
+      Math.abs(targetBox.width - expected.width),
+      Math.abs(targetBox.height - expected.height),
+    );
+    if (drift > 1.5) {
+      fail(`${label}: overlay ${JSON.stringify(targetBox)} drifts ${drift.toFixed(2)}px from ${JSON.stringify(expected)}`);
+    }
+    return drift;
+  }
 
   async function waitIdle(page: Page) {
     await page.waitForLoadState("networkidle");
@@ -411,20 +508,22 @@ async function main() {
       memberships: [{ organizationId, membershipRole: "MEMBER", membershipStatus: "ACTIVE", organizationStatus: "ACTIVE" }],
     };
 
-    const formA = await createPacketDocument("Ceremony QA Contract");
+    const formA = await createPacketDocument("Ceremony QA Contract", 2);
+    const formA2 = await createPacketDocument("Ceremony QA Addendum");
     const titleA = `Ceremony QA ${stamp}`;
     const a = await createDraft(titleA, formA);
+    const a2 = await addDraftSigningDocumentWithActor(actor, { signingId: a.signingId, sourcePacketFormId: formA2 }, admin);
     const p1 = await addDraftSigningParticipantWithActor(actor, { signingId: a.signingId, fullName: P1, email: `avery-${stamp}@example.com` }, admin);
     const p2 = await addDraftSigningParticipantWithActor(actor, { signingId: a.signingId, fullName: P2, email: `blake-${stamp}@example.com` }, admin);
     const p1Sig = await addField(a.signingId, a.documentId, p1.id, "SIGNATURE", { x: 72, y: 560, width: 150, height: 28 });
     await addField(a.signingId, a.documentId, p1.id, "DATE_SIGNED", { x: 230, y: 566, width: 72, height: 18 }, { linkedSignatureDraftFieldId: p1Sig.id });
     await addField(a.signingId, a.documentId, p1.id, "INITIALS", { x: 72, y: 660, width: 40, height: 20 });
-    await addField(a.signingId, a.documentId, p1.id, "INITIALS", { x: 140, y: 660, width: 40, height: 20 }, { isRequired: false });
+    await addField(a.signingId, a.documentId, p1.id, "INITIALS", { x: 140, y: 300, width: 40, height: 20 }, { isRequired: false, pageNumber: 2 });
     const p2Sig = await addField(a.signingId, a.documentId, p2.id, "SIGNATURE", { x: 330, y: 560, width: 150, height: 28 });
     await addField(a.signingId, a.documentId, p2.id, "DATE_SIGNED", { x: 488, y: 566, width: 72, height: 18 }, { linkedSignatureDraftFieldId: p2Sig.id });
-    await addField(a.signingId, a.documentId, p2.id, "INITIALS", { x: 330, y: 660, width: 40, height: 20 });
+    await addField(a.signingId, a2.id, p2.id, "INITIALS", { x: 330, y: 660, width: 40, height: 20 });
     await addCopyRecipientWithActor(actor, { signingId: a.signingId, email: `copy-${stamp}@example.com`, displayName: "Copy Recipient QA" }, admin);
-    ok(`fixture Signing A ${a.signingId}: ${P1} (Signature + linked Date, required Initials, optional Initials), ${P2} (Signature + linked Date, Initials), 1 copy recipient`);
+    ok(`fixture Signing A ${a.signingId}: 2-page contract + 1-page addendum; ${P1} (contract: Signature + linked Date and required Initials on page 1, optional Initials on page 2; nothing on the addendum), ${P2} (contract Signature + linked Date, addendum Initials), 1 copy recipient`);
 
     // ---------- manager sign-in + Send ----------
     const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: "magiclink", email });
@@ -493,7 +592,7 @@ async function main() {
     for (const expected of [P1, AGENT, orgName, titleA]) {
       if (!preText.includes(expected)) fail(`pre-affirmation page is missing "${expected}"`);
     }
-    for (const hidden of ["Ceremony QA Contract", `avery-${stamp}@example.com`, P2, "Sign here"]) {
+    for (const hidden of ["Ceremony QA Contract", "Ceremony QA Addendum", `avery-${stamp}@example.com`, P2, "Sign here"]) {
       if (preText.includes(hidden)) fail(`pre-affirmation page discloses "${hidden}"`);
     }
     if ((await s1.getByRole("button", { name: `I am ${P2}` }).count()) !== 0) fail("another participant's affirmation offered");
@@ -551,21 +650,27 @@ async function main() {
     ok(`consent: "${disclosure!.title}" (version ${disclosure!.version_key}, sha256 ${String(disclosure!.content_sha256).slice(0, 12)}…, dev copy badge) shown; no marks/Finish before acceptance; reload keeps it unaccepted; acceptance records version id + fingerprint; reload does not re-prompt`);
 
     // ---------- Signature adoption ----------
-    const sigInput = s1.locator("#typed-signature");
-    await s1.getByText(`Typed signature (must be ${P1})`).waitFor();
-    for (const wrong of [P2, P1.toLowerCase()]) {
-      await sigInput.fill(wrong);
-      await s1.getByRole("button", { name: "Adopt signature" }).click();
-      await s1.getByRole("alert").getByText(`A typed signature must match your name on this Signing exactly: ${P1}`).waitFor({ timeout: 30000 });
-      await waitIdle(s1);
+    await expectReadOnlySignature(s1, P1, "P1");
+    {
+      const probe = await ceremonyContextFor(c1);
+      if (!probe.ok) fail(`P1 session probe failed: ${probe.code}`);
+      for (const wrong of [P2, P1.toLowerCase(), `${P1} `.repeat(2).trim()]) {
+        let code = "";
+        try {
+          await adoptCeremonyMark({ admin, context: probe.write, markKind: "SIGNATURE", representationType: "TYPED", typedText: wrong });
+        } catch (error) {
+          code = (error as { code?: string }).code ?? "";
+        }
+        if (code !== "VALIDATION_FAILED") fail(`server accepted typed Signature "${wrong}" (${code || "no error"})`);
+      }
     }
     if ((await marks(a.signingId, p1.id)).signature) fail("a mismatched signature was adopted");
-    await sigInput.fill(P1);
+    await shot(s1, "p1-02b-read-only-signature");
     await s1.getByRole("button", { name: "Adopt signature" }).click();
     await s1.getByText("Signature adopted.").waitFor({ timeout: 30000 });
     let m1 = await marks(a.signingId, p1.id);
     if (m1.signature?.typed_text !== P1 || m1.signature.locked_at) fail("signature adoption state wrong");
-    ok(`Signature: "${P2}" and lowercase name rejected with exact-match message; "${P1}" adopted (typed_text exact, not yet locked)`);
+    ok(`Typed Signature: pre-populated with "${P1}", read-only (typing does not change it); server still rejects "${P2}", the lowercase name and a doubled name with VALIDATION_FAILED; Adopt signature records typed_text exactly "${P1}" (not yet locked)`);
 
     // ---------- Initials adoption ----------
     const initialsInput = s1.locator("#typed-initials");
@@ -584,23 +689,119 @@ async function main() {
     m1 = await marks(a.signingId, p1.id);
     if (m1.initials?.typed_text !== "AJS" || m1.initials.locked_at) fail("server did not allow re-adopting initials before first use");
     await s1.reload({ waitUntil: "networkidle" });
-    await s1.getByText(/of \d+ of your fields complete/).waitFor({ timeout: 60000 });
+    await s1.getByText("Your fields", { exact: true }).waitFor({ timeout: 60000 });
     const uiReEdit = (await s1.locator("#typed-initials").count()) > 0;
     await shot(s1, "p1-03-adopted");
     ok(`Initials: suggestion "AJS" prefilled; edited to "AJX" and adopted; server accepted a re-adoption to "AJS" before first use (UI re-edit control after adoption: ${uiReEdit ? "present" : "absent"})`);
 
-    // ---------- apply marks ----------
-    const today = await expectedDate(a.signingId);
-    const fieldRows = s1.locator("li");
-    if ((await fieldRows.count()) !== 3) fail(`P1 sees ${await fieldRows.count()} actionable fields, expected 3`);
+    // ---------- the actual documents are visible while signing ----------
+    const docsA = await revisionDocuments(a.signingId);
+    if (docsA.length !== 2) fail(`Signing A has ${docsA.length} revision documents, expected 2`);
+    const [contractDoc, addendumDoc] = docsA;
+    await s1.getByTestId("ceremony-document-viewer").waitFor({ timeout: 60000 });
+    const docButtons = s1.locator("[data-ceremony-document]");
+    if ((await docButtons.count()) !== 2) fail(`P1 sees ${await docButtons.count()} documents, expected both (including the addendum without P1 fields)`);
+    await pageCanvas(s1, 1).waitFor({ timeout: 60000 });
+    await pageCanvas(s1, 2).waitFor({ timeout: 60000 });
+    await s1.getByText("Document 1 of 2 · 2 pages").waitFor();
+    {
+      const pixels = await pageCanvas(s1, 1).evaluate((canvas) => {
+        const element = canvas as HTMLCanvasElement;
+        const data = element.getContext("2d")!.getImageData(0, 0, element.width, element.height).data;
+        let dark = 0;
+        for (let index = 0; index < data.length; index += 4) if (data[index] < 128) dark += 1;
+        return dark;
+      });
+      if (pixels < 500) fail("page 1 canvas has no rendered document text");
+    }
+    const p1DocRequests = participantRequestUrls.filter((requestUrl) => requestUrl.includes("/sign/ceremony/document/"));
+    if (!p1DocRequests.some((requestUrl) => requestUrl.endsWith(`/sign/ceremony/document/${contractDoc.id}`))) fail("contract bytes were not requested from the ceremony document route");
+    const fieldRowCount = await fieldRows(s1).count();
+    if (fieldRowCount !== 3) fail(`P1 sees ${fieldRowCount} actionable fields, expected 3`);
     const p1Html = await s1.content();
     for (const other of [f.p2Sig.id, f.p2Init.id, f.p2Date.id] as string[]) {
       if (p1Html.includes(other)) fail("P1 page references a P2 field");
     }
     if ((await s1.locator("body").innerText()).includes(P2)) fail("P1 ceremony shows another participant");
+    if ((await s1.locator("[data-ceremony-target]").count()) !== 3) fail("P1 contract does not show exactly P1's 3 Signature / Initials targets");
+    await shot(s1, "p1-03b-document-visible");
+
+    // free scrolling: wheel down to page 2 and back, no forced order
+    await s1.mouse.move(400, 500);
+    for (let i = 0; i < 12 && !(await pageCanvas(s1, 2).isVisible().then(async () => (await pageCanvas(s1, 2).boundingBox())!.y < 900)); i += 1) {
+      await s1.mouse.wheel(0, 600);
+      await s1.waitForTimeout(150);
+    }
+    if ((await pageCanvas(s1, 2).boundingBox())!.y >= 900) fail("could not scroll to page 2");
+    await target(s1, f.p1InitOpt.id, false).waitFor();
+    await s1.mouse.wheel(0, -20000);
+    await s1.waitForTimeout(300);
+    if ((await pageCanvas(s1, 1).boundingBox())!.y > 900) fail("could not scroll back to page 1");
+    ok("free scrolling: wheel to page 2 (optional Initials target visible there) and back to page 1; no forced order or timers");
+
+    // zoom keeps targets aligned
+    const fitDrift = await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, false), "P1 Signature (fit)");
+    await s1.getByRole("button", { name: "Zoom in" }).click();
+    await s1.getByText("125%").waitFor();
+    await s1.waitForTimeout(500);
+    const zoomDrift = await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, false), "P1 Signature (125%)");
+    await expectTargetAligned(s1, f.p1InitReq, target(s1, f.p1InitReq.id, false), "P1 required Initials (125%)");
+    await expectTargetAligned(s1, f.p1InitOpt, target(s1, f.p1InitOpt.id, false), "P1 optional Initials page 2 (125%)");
+    await s1.getByRole("button", { name: "Zoom out" }).click();
+    await s1.getByText("Fit", { exact: true }).waitFor();
+    await s1.waitForTimeout(500);
+    ok(`coordinate fidelity: Signature / Initials overlays match stored PDF-point geometry on the rendered page within ${Math.max(fitDrift, zoomDrift).toFixed(2)}px at Fit and 125% (page 1 and page 2)`);
+
+    // switch documents: the addendum has no P1 fields but is fully readable
+    await s1.locator(`[data-ceremony-document="${addendumDoc.id}"]`).click();
+    await s1.getByText("Document 2 of 2 · 1 page").waitFor({ timeout: 60000 });
+    await pageCanvas(s1, 1).waitFor({ timeout: 60000 });
+    if ((await s1.locator("[data-ceremony-target]").count()) !== 0) fail("P1 sees an actionable target on the addendum (P2-only fields)");
+    if ((await s1.content()).includes(f.p2Init.id as string)) fail("addendum view references P2's field");
+    await shot(s1, "p1-03c-addendum");
+    await s1.locator(`[data-ceremony-document="${contractDoc.id}"]`).click();
+    await s1.getByText("Document 1 of 2 · 2 pages").waitFor({ timeout: 60000 });
+    await target(s1, f.p1Sig.id, false).waitFor({ timeout: 60000 });
+    ok("document navigation: contract → addendum (readable, no P1 targets, P2 field not exposed) → contract");
+
+    // document route authorization (bytes are the frozen prepared version)
+    {
+      const { data: versionRow } = await admin
+        .from("signing_document_versions")
+        .select("content_sha256, storage_object_key")
+        .eq("id", contractDoc.signing_document_version_id)
+        .single();
+      if (!String(versionRow?.storage_object_key).includes("/versions/")) fail("contract revision document is not a prepared version");
+      const response = await c1.request.get(`${APP_ORIGIN}/sign/ceremony/document/${contractDoc.id}`);
+      const headers = response.headers();
+      if (response.status() !== 200 || sha256(await response.body()) !== versionRow?.content_sha256) fail("ceremony document bytes differ from the prepared version");
+      if (headers["cache-control"] !== "no-store" || headers["referrer-policy"] !== "no-referrer" || !/noindex/.test(headers["x-robots-tag"] ?? "") || headers["content-type"] !== "application/pdf") {
+        fail(`ceremony document headers wrong: ${JSON.stringify(headers)}`);
+      }
+      const p1Cookie = await ceremonyCookieValue(c1);
+      const statuses = {
+        noCookie: await documentStatusWith(null, contractDoc.id),
+        unknownDocument: await documentStatusWith(p1Cookie, randomUUID()),
+        notUuid: await documentStatusWith(p1Cookie, "not-a-uuid"),
+        forgedCookie: await documentStatusWith(`${p1Cookie.slice(0, -4)}AAAA`, contractDoc.id),
+        ownAddendum: await documentStatusWith(p1Cookie, addendumDoc.id),
+      };
+      if (statuses.noCookie !== 404 || statuses.unknownDocument !== 404 || statuses.notUuid !== 404 || statuses.forgedCookie !== 404 || statuses.ownAddendum !== 200) {
+        fail(`document route authorization: ${JSON.stringify(statuses)}`);
+      }
+      ok(`document route: 200 with the session (bytes = prepared version sha256, no-store / no-referrer / noindex / application/pdf); no cookie 404, forged cookie 404, unknown id 404, non-uuid 404; the addendum (no P1 fields) 200`);
+    }
+
+    // ---------- apply marks on the document ----------
+    const today = await expectedDate(a.signingId);
     await s1.getByText("2 required fields still need you.").waitFor();
-    await row(s1, "Signature", true).getByRole("button", { name: "Sign here" }).click();
+    if ((await dateOnPage(s1, f.p1Date.id).count()) !== 0) fail("Date Signed shown as filled before signing");
+    if ((await s1.locator(`[data-ceremony-date-field="${f.p1Date.id}"] button, button[data-ceremony-date-field]`).count()) !== 0) fail("Date Signed offered as a control");
+    await target(s1, f.p1Sig.id, false).click();
+    await target(s1, f.p1Sig.id, true).waitFor({ timeout: 30000 });
+    await dateOnPage(s1, f.p1Date.id).getByText(today).waitFor({ timeout: 30000 });
     await row(s1, "Signature", true).getByText(`Applied · dated ${today}`).waitFor({ timeout: 30000 });
+    if ((await target(s1, f.p1Sig.id, true).innerText()).trim() !== P1) fail("applied Signature does not show the adopted name on the page");
     let pl = await placements(a.signingId);
     const sig1 = acceptedFor(pl, f.p1Sig.id as string);
     const date1 = acceptedFor(pl, f.p1Date.id as string);
@@ -638,9 +839,25 @@ async function main() {
     if ((await manager.getByRole("button", { name: /Prepare Documents|Add documents|Upload PDF/ }).count()) !== 0) fail("prep controls visible after Send");
     ok(`document versions unchanged (${versionsAfter}); manager page offers no preparation controls`);
 
-    // ---------- Initials apply + lock ----------
-    await row(s1, "Initials", true).getByRole("button", { name: "Initial here" }).click();
+    // ---------- Initials apply + lock (keyboard: auto-advanced focus → Enter) ----------
+    await s1.bringToFront();
+    await s1.waitForFunction((id) => document.activeElement?.getAttribute("data-ceremony-target") === id, String(f.p1InitReq.id), { timeout: 30000 });
+    const focusedName = await s1.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? "");
+    if (!/^Initial here: Initials, page 1 of Ceremony QA Contract, required$/.test(focusedName)) fail(`focused target has accessible name "${focusedName}"`);
+    const focusRing = await s1.evaluate(() => getComputedStyle(document.activeElement!).boxShadow);
+    if (!focusRing || focusRing === "none") fail("focused target has no visible focus ring");
+    await s1.keyboard.press("Enter");
+    await target(s1, f.p1InitReq.id, true).waitFor({ timeout: 30000 });
     await row(s1, "Initials", true).getByText("Applied").waitFor({ timeout: 30000 });
+    if ((await target(s1, f.p1InitReq.id, true).innerText()).trim() !== "AJS") fail("applied Initials do not show the adopted initials on the page");
+    ok(`auto-advance + keyboard: after Sign here, focus moved to the required Initials target (accessible name "${focusedName}", visible focus ring); Enter applies it`);
+    await s1.mouse.move(400, 500);
+    await s1.mouse.wheel(0, -20000);
+    await s1.waitForTimeout(300);
+    await s1.getByRole("button", { name: "Go to next field" }).click();
+    await s1.waitForFunction((id) => document.activeElement?.getAttribute("data-ceremony-target") === id, String(f.p1InitOpt.id), { timeout: 30000 });
+    if ((await pageCanvas(s1, 2).boundingBox())!.y > 900) fail("Go to next field did not scroll page 2 into view");
+    ok("Go to next field scrolls to and focuses the optional Initials target on page 2");
     m1 = await marks(a.signingId, p1.id);
     if (!m1.initials?.locked_at) fail("initials not locked after first use");
     {
@@ -659,18 +876,23 @@ async function main() {
     ok("Initial here: Initials ACCEPTED and locked on first use; re-adoption now MARK_LOCKED; required complete → Finish enabled (optional Initials still empty)");
 
     // ---------- remove / replace before Finish ----------
-    await row(s1, "Initials", false).getByRole("button", { name: "Initial here" }).click();
+    await row(s1, "Initials", false).getByRole("button", { name: /Show initials field on page 2/ }).click();
+    await target(s1, f.p1InitOpt.id, false).click();
+    await target(s1, f.p1InitOpt.id, true).waitFor({ timeout: 30000 });
     await row(s1, "Initials", false).getByText("Applied").waitFor({ timeout: 30000 });
     const optFirst = acceptedFor(await placements(a.signingId), f.p1InitOpt.id as string)[0];
     await row(s1, "Initials", false).getByRole("button", { name: "Remove" }).click();
-    await row(s1, "Initials", false).getByRole("button", { name: "Initial here" }).waitFor({ timeout: 30000 });
+    await target(s1, f.p1InitOpt.id, false).waitFor({ timeout: 30000 });
     await s1.reload({ waitUntil: "networkidle" });
-    await row(s1, "Initials", false).getByRole("button", { name: "Initial here" }).waitFor();
+    await pageCanvas(s1, 2).waitFor({ timeout: 60000 });
+    await target(s1, f.p1InitOpt.id, false).waitFor({ timeout: 60000 });
+    await target(s1, f.p1InitReq.id, true).waitFor();
+    await target(s1, f.p1Sig.id, true).waitFor();
     pl = await placements(a.signingId);
     if (acceptedFor(pl, f.p1InitOpt.id as string).length !== 0 || pl.find((p) => p.id === optFirst.id)?.disposition !== "REMOVED") fail("Initials Remove did not persist");
-    await row(s1, "Initials", false).getByRole("button", { name: "Initial here" }).click();
-    await row(s1, "Initials", false).getByText("Applied").waitFor({ timeout: 30000 });
-    ok("optional Initials: apply → Remove (REMOVED, survives reload) → reapply (new ACCEPTED placement)");
+    await target(s1, f.p1InitOpt.id, false).click();
+    await target(s1, f.p1InitOpt.id, true).waitFor({ timeout: 30000 });
+    ok("optional Initials (page 2): Show on page → click the target → Remove from the list (REMOVED; after reload the page shows the open target again while page-1 marks stay applied) → reapply on the page (new ACCEPTED placement)");
 
     const sigBefore = acceptedFor(await placements(a.signingId), f.p1Sig.id as string)[0];
     const dateBefore = acceptedFor(await placements(a.signingId), f.p1Date.id as string)[0];
@@ -693,28 +915,57 @@ async function main() {
     ok(`Signature Replace: old REPLACED → new ACCEPTED; old Date Signed ${oldDate.disposition}, new Date Signed ACCEPTED with fresh acceptance time`);
 
     await row(s1, "Signature", true).getByRole("button", { name: "Remove" }).click();
-    await row(s1, "Signature", true).getByRole("button", { name: "Sign here" }).waitFor({ timeout: 30000 });
+    await target(s1, f.p1Sig.id, false).waitFor({ timeout: 30000 });
     pl = await placements(a.signingId);
     if (acceptedFor(pl, f.p1Sig.id as string).length || acceptedFor(pl, f.p1Date.id as string).length) fail("Remove left an effective Signature/Date");
     await s1.reload({ waitUntil: "networkidle" });
     await s1.getByText("One required field still needs you.").waitFor();
+    await target(s1, f.p1Sig.id, false).waitFor({ timeout: 60000 });
+    if ((await dateOnPage(s1, f.p1Date.id).count()) !== 0) fail("Date Signed still shown after the Signature was removed");
     if (!(await s1.getByRole("button", { name: "Finish signing" }).isDisabled())) fail("Finish enabled after removing the required Signature");
-    await row(s1, "Signature", true).getByRole("button", { name: "Sign here" }).click();
+    {
+      // Double-click: the placement action is idempotent per field, so one ACCEPTED placement results.
+      const button = target(s1, f.p1Sig.id, false);
+      await button.dblclick();
+    }
+    await target(s1, f.p1Sig.id, true).waitFor({ timeout: 30000 });
+    await dateOnPage(s1, f.p1Date.id).getByText(today).waitFor({ timeout: 30000 });
     await row(s1, "Signature", true).getByText(`Applied · dated ${today}`).waitFor({ timeout: 30000 });
+    await waitIdle(s1);
     pl = await placements(a.signingId);
     for (const fieldId of [f.p1Sig.id, f.p1Date.id, f.p1InitReq.id, f.p1InitOpt.id] as string[]) {
       if (acceptedFor(pl, fieldId).length !== 1) fail("a P1 field does not have exactly one ACCEPTED placement");
     }
     await s1.reload({ waitUntil: "networkidle" });
     await s1.getByText("Every required field is complete.").waitFor();
+    await target(s1, f.p1Sig.id, true).waitFor({ timeout: 60000 });
+    await dateOnPage(s1, f.p1Date.id).getByText(today).waitFor();
     await shot(s1, "p1-04-ready-to-finish");
-    ok("Signature Remove: Signature + linked Date no longer effective, Finish disabled (persists after reload); re-sign → exactly one ACCEPTED placement per P1 field");
+    ok("Signature Remove: Signature + linked Date leave the page and are no longer effective, Finish disabled (persists after reload); double-clicking Sign here → exactly one ACCEPTED placement per P1 field; reload shows the signed page");
+
+    // ---------- narrow (phone) and tablet viewports ----------
+    for (const [label, viewport] of [["phone", { width: 390, height: 844 }], ["tablet", { width: 820, height: 1180 }]] as const) {
+      await s1.setViewportSize(viewport);
+      await s1.waitForTimeout(600);
+      const overflow = await s1.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      if (overflow > 1) fail(`${label}: page scrolls horizontally by ${overflow}px`);
+      const canvasBox = await pageCanvas(s1, 1).boundingBox();
+      if (!canvasBox || canvasBox.width < 250 || canvasBox.width > viewport.width) fail(`${label}: page 1 renders ${canvasBox?.width}px wide`);
+      await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, true), `P1 Signature (${label})`);
+      await shot(s1, `p1-04-${label}`);
+    }
+    await s1.setViewportSize({ width: 1280, height: 900 });
+    await s1.waitForTimeout(400);
+    ok("phone 390px and tablet 820px: the page fits the viewport without page-level horizontal scroll and overlays stay aligned");
 
     // ---------- Finish P1 ----------
+    const p1CookieBeforeFinish = await ceremonyCookieValue(c1);
     await s1.getByRole("button", { name: "Finish signing" }).click();
     await s1.waitForURL(/\/sign\/done\?outcome=finished$/, { timeout: 30000 });
     await s1.getByText("You finished signing").waitFor({ timeout: 30000 });
     if ((await c1.cookies()).some((cookie) => cookie.name === SIGNING_CEREMONY_COOKIE_NAME)) fail("ceremony cookie survived Finish");
+    if ((await documentStatusWith(p1CookieBeforeFinish, contractDoc.id)) !== 404) fail("P1's pre-Finish ceremony cookie still reads document bytes");
+    ok("after Finish, replaying P1's old ceremony cookie against the document route returns 404");
     p1Row = await participantRow(a.signingId, P1);
     const afterP1 = await signingRow(a.signingId);
     const { count: finalizeEarly } = await admin
@@ -760,20 +1011,23 @@ async function main() {
     await affirm(s2, P2);
     await s2.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
     await s2.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
-    await s2.locator("#typed-signature").fill(P1);
-    await s2.getByRole("button", { name: "Adopt signature" }).click();
-    await s2.getByRole("alert").getByText(`A typed signature must match your name on this Signing exactly: ${P2}`).waitFor({ timeout: 30000 });
-    await waitIdle(s2);
-    await s2.locator("#typed-signature").fill(P2);
-    await s2.getByRole("button", { name: "Adopt signature" }).click();
-    await s2.getByText("Signature adopted.").waitFor({ timeout: 30000 });
+    await adoptSignature(s2, P2, "P2");
     if ((await s2.locator("#typed-initials").inputValue()) !== "BR") fail("P2 suggested initials not BR");
     await s2.getByRole("button", { name: "Adopt initials" }).click();
     await s2.getByText("Initials adopted.").waitFor({ timeout: 30000 });
-    if ((await s2.locator("li").count()) !== 2) fail("P2 does not see exactly its 2 actionable fields");
+    await pageCanvas(s2, 1).waitFor({ timeout: 60000 });
+    if ((await fieldRows(s2).count()) !== 2) fail("P2 does not see exactly its 2 actionable fields");
+    if ((await s2.locator("[data-ceremony-document]").count()) !== 2) fail("P2 does not see both documents");
     const p2Html = await s2.content();
     for (const other of [f.p1Sig.id, f.p1InitReq.id, f.p1InitOpt.id, f.p1Date.id] as string[]) {
       if (p2Html.includes(other)) fail("P2 page references a P1 field");
+    }
+    {
+      const p1Signed = await s2.locator('[data-ceremony-target][data-placed="true"]').count();
+      const p2Text = await s2.locator("body").innerText();
+      if (p1Signed !== 0 || p2Text.includes("AJS")) fail("P2 sees P1's applied marks as overlays");
+      if ((await s2.locator("[data-ceremony-target]").count()) !== 1) fail("P2 contract shows other than its own single Signature target");
+      await expectTargetAligned(s2, f.p2Sig, target(s2, f.p2Sig.id, false), "P2 Signature");
     }
     {
       const probe = await ceremonyContextFor(c2);
@@ -791,10 +1045,12 @@ async function main() {
     }
 
     // ---------- Exit and resume (P2) ----------
+    const p2CookieBeforeExit = await ceremonyCookieValue(c2);
     await s2.getByRole("button", { name: "Exit signing" }).click();
     await s2.waitForURL(/\/sign\/done\?outcome=exited$/, { timeout: 30000 });
     await s2.getByText("You left the signing session").waitFor({ timeout: 30000 });
     if ((await c2.cookies()).some((cookie) => cookie.name === SIGNING_CEREMONY_COOKIE_NAME)) fail("ceremony cookie survived Exit");
+    if ((await documentStatusWith(p2CookieBeforeExit, addendumDoc.id)) !== 404) fail("P2's pre-Exit ceremony cookie still reads document bytes");
     {
       const { data: p2Sessions } = await admin
         .from("signing_browser_sessions")
@@ -808,20 +1064,28 @@ async function main() {
     await c2.close();
     ({ context: c2, page: s2 } = await enter(linkP2, P2, "p2-resume"));
     await affirm(s2, P2);
-    await s2.getByText(/of \d+ of your fields complete/).waitFor({ timeout: 60000 });
+    await s2.getByText("Your fields", { exact: true }).waitFor({ timeout: 60000 });
     if ((await s2.getByRole("button", { name: "I agree to use electronic records and signatures" }).count()) !== 0) fail("P2 re-prompted for consent after Exit");
     if ((await s2.locator("#typed-signature").count()) !== 0) fail("P2 adopted signature lost after Exit");
     ok(`P2 Exit: lands on "You left the signing session" (/sign/done?outcome=exited), ceremony cookie cleared, session no longer ACTIVE, participant not finished; reopening the same link + "I am ${P2}" resumes with consent and marks kept`);
 
-    await row(s2, "Signature", true).getByRole("button", { name: "Sign here" }).click();
+    await target(s2, f.p2Sig.id, false).click();
     await row(s2, "Signature", true).getByText(`Applied · dated ${today}`).waitFor({ timeout: 30000 });
-    await row(s2, "Initials", true).getByRole("button", { name: "Initial here" }).click();
+    // Auto-advance after a placement switches to the addendum and its Initials target.
+    await s2.getByText("Document 2 of 2 · 1 page").waitFor({ timeout: 60000 });
+    await target(s2, f.p2Init.id, false).waitFor({ timeout: 60000 });
+    await expectTargetAligned(s2, f.p2Init, target(s2, f.p2Init.id, false), "P2 addendum Initials");
+    await target(s2, f.p2Init.id, false).click();
+    await target(s2, f.p2Init.id, true).waitFor({ timeout: 30000 });
     await row(s2, "Initials", true).getByText("Applied").waitFor({ timeout: 30000 });
     await s2.getByText("Every required field is complete.").waitFor();
+    await s2.locator(`[data-ceremony-document="${contractDoc.id}"]`).click();
+    await target(s2, f.p2Sig.id, true).waitFor({ timeout: 60000 });
+    await dateOnPage(s2, f.p2Date.id).getByText(today).waitFor({ timeout: 30000 });
     const p1Unchanged = (await placements(a.signingId)).filter((p) => p.signing_participant_id === p1.id);
     if (JSON.stringify(p1Unchanged) !== JSON.stringify(p1Final)) fail("P1 placements changed during P2 ceremony");
     await shot(s2, "p2-01-ready-to-finish");
-    ok(`P2: entry, "I am ${P2}", consent, "${P1}" rejected / "${P2}" adopted, initials "BR", Sign + Initial (Date ${today}); sees only own 2 fields; P1 placements unchanged`);
+    ok(`P2: entry, "I am ${P2}", consent, read-only "${P2}" adopted, initials "BR"; Sign here on the contract (Date ${today}) auto-advances to the addendum, where Initial here is applied at its stored position; sees only own 2 fields and none of P1's marks; P1 placements unchanged`);
     await s2.getByRole("button", { name: "Finish signing" }).click();
     await s2.waitForURL(/\/sign\/done\?outcome=finished$/, { timeout: 30000 });
     await s2.getByText("You finished signing").waitFor({ timeout: 30000 });
@@ -858,11 +1122,16 @@ async function main() {
 
     const { data: artifacts } = await admin
       .from("signing_artifacts")
-      .select("id, artifact_category, storage_object_key, content_sha256, verified_at, page_count, frozen_filename, package_revision_id, generated_at")
+      .select("id, artifact_category, storage_object_key, content_sha256, verified_at, page_count, frozen_filename, package_revision_id, package_revision_document_id, generated_at")
       .eq("signing_id", a.signingId);
     const completed = (artifacts ?? []).filter((x) => x.artifact_category === "COMPLETED_DOCUMENT");
     const certificates = (artifacts ?? []).filter((x) => x.artifact_category === "AUDIT_CERTIFICATE");
-    if (completed.length !== 1 || certificates.length !== 1) fail(`artifacts: ${completed.length} completed, ${certificates.length} certificates`);
+    if (completed.length !== 2 || certificates.length !== 1) fail(`artifacts: ${completed.length} completed, ${certificates.length} certificates`);
+    const completedFile = (revisionDocumentId: string) =>
+      revisionDocumentId === contractDoc.id ? "completed_document-contract.pdf" : "completed_document-addendum.pdf";
+    if (new Set(completed.map((artifact) => artifact.package_revision_document_id)).size !== 2 || completed.some((artifact) => ![contractDoc.id, addendumDoc.id].includes(artifact.package_revision_document_id as string))) {
+      fail("completed documents are not one per revision document");
+    }
     for (const artifact of [...completed, ...certificates]) {
       if (!artifact.verified_at || artifact.package_revision_id !== complete.frozen_package_revision_id) fail("artifact unverified or wrong revision");
       if (new Date(artifact.verified_at) > new Date(complete.completed_at!)) fail("Complete recorded before artifact verification");
@@ -870,28 +1139,40 @@ async function main() {
       if (error || !blob) fail(`artifact download failed: ${error?.message}`);
       const bytes = Buffer.from(await blob.arrayBuffer());
       if (sha256(bytes) !== artifact.content_sha256) fail(`${artifact.artifact_category} sha256 mismatch`);
-      writeFileSync(path.join(OUT_DIR, `${artifact.artifact_category.toLowerCase()}.pdf`), bytes);
+      const fileName = artifact.artifact_category === "COMPLETED_DOCUMENT"
+        ? completedFile(artifact.package_revision_document_id as string)
+        : `${artifact.artifact_category.toLowerCase()}.pdf`;
+      writeFileSync(path.join(OUT_DIR, fileName), bytes);
     }
     const chain = await verifySigningEventChain(admin, a.signingId);
     if (!chain.ok) fail(`event chain verification failed: ${JSON.stringify(chain).slice(0, 300)}`);
-    ok(`artifacts: 1 COMPLETED_DOCUMENT + 1 AUDIT_CERTIFICATE, verified, bound to the frozen revision, stored bytes match sha256, verified before completed_at; protected event chain verifies`);
+    ok(`artifacts: 2 COMPLETED_DOCUMENT (one per revision document: contract + addendum) + 1 AUDIT_CERTIFICATE, verified, bound to the frozen revision, stored bytes match sha256, verified before completed_at; protected event chain verifies`);
 
     // ---------- completed PDF content ----------
-    const completedBytes = readFileSync(path.join(OUT_DIR, "completed_document.pdf"));
-    const parsedPdf = await PDFDocument.load(completedBytes);
-    const fontNames: string[] = [];
-    for (const [, object] of parsedPdf.context.enumerateIndirectObjects()) {
-      if (object instanceof PDFDict && object.get(PDFName.of("Type"))?.toString() === "/Font") {
-        fontNames.push(String(object.get(PDFName.of("BaseFont"))));
-      }
-    }
-    if (!fontNames.some((name) => name.includes("HarbaughCaveat"))) fail(`completed PDF has no Caveat font (${fontNames.join(", ")})`);
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const standardFontDataUrl = `${path.join(process.cwd(), "node_modules/pdfjs-dist/standard_fonts").replace(/\\/g, "/")}/`;
-    const loaded = await pdfjs.getDocument({ data: new Uint8Array(completedBytes), useSystemFonts: false, standardFontDataUrl }).promise;
-    const page1 = await loaded.getPage(1);
-    const pageHeight = page1.getViewport({ scale: 1 }).height;
-    const items = (await page1.getTextContent()).items as { str: string; transform: number[] }[];
+    type TextItem = { str: string; transform: number[] };
+    const pageText = new Map<string, { items: TextItem[]; height: number }>();
+    for (const [docKey, fileName, pageCount] of [["contract", "completed_document-contract.pdf", 2], ["addendum", "completed_document-addendum.pdf", 1]] as const) {
+      const bytes = readFileSync(path.join(OUT_DIR, fileName));
+      const parsedPdf = await PDFDocument.load(bytes);
+      const fontNames: string[] = [];
+      for (const [, object] of parsedPdf.context.enumerateIndirectObjects()) {
+        if (object instanceof PDFDict && object.get(PDFName.of("Type"))?.toString() === "/Font") {
+          fontNames.push(String(object.get(PDFName.of("BaseFont"))));
+        }
+      }
+      if (!fontNames.some((name) => name.includes("HarbaughCaveat"))) fail(`completed ${docKey} has no Caveat font (${fontNames.join(", ")})`);
+      const loaded = await pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: false, standardFontDataUrl }).promise;
+      if (loaded.numPages !== pageCount) fail(`completed ${docKey} has ${loaded.numPages} pages, expected ${pageCount}`);
+      for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+        const pdfPage = await loaded.getPage(pageNumber);
+        pageText.set(`${docKey}:${pageNumber}`, {
+          items: (await pdfPage.getTextContent()).items as TextItem[],
+          height: pdfPage.getViewport({ scale: 1 }).height,
+        });
+      }
+    }
     const box = (field: Record<string, unknown>): FieldBox => ({
       id: field.id as string,
       x: Number(field.x),
@@ -900,39 +1181,39 @@ async function main() {
       height: Number(field.height),
       page: Number(field.page_number),
     });
-    function expectTextIn(text: string, field: FieldBox, label: string) {
-      const hit = items.find((item) => item.str.trim() === text);
-      if (!hit) fail(`completed PDF is missing "${text}" (${label})`);
-      const [x, y] = [hit.transform[4], hit.transform[5]];
-      const top = pageHeight - field.y;
-      const bottom = top - field.height;
-      if (x < field.x - 1 || x > field.x + field.width || y < bottom - 1 || y > top + 1) {
-        fail(`"${text}" drawn at (${x.toFixed(1)}, ${y.toFixed(1)}) outside ${label} box`);
-      }
-    }
-    const occurrences = (text: string) => items.filter((item) => item.str.trim() === text).length;
-    expectTextIn(P1, box(f.p1Sig), "P1 Signature");
-    expectTextIn(P2, box(f.p2Sig), "P2 Signature");
-    expectTextIn("BR", box(f.p2Init), "P2 Initials");
-    if (occurrences("AJS") !== 2 || occurrences(today) !== 2) fail(`expected 2× AJS and 2× ${today}, saw ${occurrences("AJS")} / ${occurrences(today)}`);
-    for (const [field, text] of [[f.p1InitReq, "AJS"], [f.p1InitOpt, "AJS"], [f.p1Date, today], [f.p2Date, today]] as const) {
+    const docKeyOf = (field: Record<string, unknown>) => (field.package_revision_document_id === contractDoc.id ? "contract" : "addendum");
+    function expectTextIn(text: string, field: Record<string, unknown>, label: string) {
       const fb = box(field);
-      const inside = items.some((item) => {
+      const pageInfo = pageText.get(`${docKeyOf(field)}:${fb.page}`);
+      if (!pageInfo) fail(`${label}: completed ${docKeyOf(field)} page ${fb.page} missing`);
+      const top = pageInfo.height - fb.y;
+      const inside = pageInfo.items.some((item) => {
         const [x, y] = [item.transform[4], item.transform[5]];
-        const top = pageHeight - fb.y;
         return item.str.trim() === text && x >= fb.x - 1 && x <= fb.x + fb.width && y >= top - fb.height - 1 && y <= top + 1;
       });
-      if (!inside) fail(`"${text}" not inside its field box`);
+      if (!inside) fail(`completed ${docKeyOf(field)} page ${fb.page}: "${text}" not inside the ${label} box`);
+    }
+    const occurrences = (text: string) =>
+      [...pageText.values()].reduce((count, info) => count + info.items.filter((item) => item.str.trim() === text).length, 0);
+    expectTextIn(P1, f.p1Sig, "P1 Signature");
+    expectTextIn(P2, f.p2Sig, "P2 Signature");
+    expectTextIn("BR", f.p2Init, "P2 addendum Initials");
+    expectTextIn("AJS", f.p1InitReq, "P1 required Initials");
+    expectTextIn("AJS", f.p1InitOpt, "P1 optional Initials (page 2)");
+    expectTextIn(today, f.p1Date, "P1 Date Signed");
+    expectTextIn(today, f.p2Date, "P2 Date Signed");
+    if (occurrences("AJS") !== 2 || occurrences(today) !== 2 || occurrences("BR") !== 1) {
+      fail(`expected 2× AJS, 2× ${today}, 1× BR; saw ${occurrences("AJS")} / ${occurrences(today)} / ${occurrences("BR")}`);
     }
     for (const stale of [P1.toLowerCase(), "AJX", "ZZ"]) {
-      if (items.some((item) => item.str.includes(stale))) fail(`completed PDF contains stale/rejected mark "${stale}"`);
+      if ([...pageText.values()].some((info) => info.items.some((item) => item.str.includes(stale)))) fail(`completed PDF contains stale/rejected mark "${stale}"`);
     }
     const certificateItems = (await (await (await pdfjs.getDocument({ data: new Uint8Array(readFileSync(path.join(OUT_DIR, "audit_certificate.pdf"))), standardFontDataUrl }).promise).getPage(1)).getTextContent()).items as { str: string }[];
     const certificateText = certificateItems.map((item) => item.str).join(" ");
     for (const expected of [P1, P2]) {
       if (!certificateText.includes(expected)) fail(`audit certificate page 1 does not name ${expected}`);
     }
-    ok(`completed PDF: Caveat (HarbaughCaveat) embedded; "${P1}", "${P2}", "BR", 2× "AJS", 2× "${today}" each inside the assigned field boxes; no stale/rejected marks; audit certificate names both participants`);
+    ok(`completed PDFs: Caveat (HarbaughCaveat) embedded in both; contract page 1 has "${P1}", "${P2}", "AJS" and 2× "${today}", contract page 2 has the optional "AJS", the addendum has "BR" — each inside its assigned field box (same coordinates the ceremony overlay used); no stale/rejected marks; audit certificate names both participants`);
 
     // ---------- completed-package access + copy recipients ----------
     const { data: packageCreds } = await admin
@@ -954,13 +1235,22 @@ async function main() {
       await page.waitForURL(/\/sign\/package/, { timeout: 60000 });
       await page.getByText("Completed documents", { exact: true }).waitFor();
       await page.getByText("Audit certificate").waitFor();
-      await page.getByText("Completed document", { exact: true }).waitFor();
-      const href = await page.locator("a", { hasText: "Completed document" }).first().getAttribute("href");
-      const response = await context.request.get(`${APP_ORIGIN}${href}`);
-      if (response.status() !== 200 || sha256(await response.body()) !== completed[0].content_sha256) fail("completed-package download mismatch");
+      await page.getByText("Completed document", { exact: true }).first().waitFor();
+      const documentLinks = page.locator("a", { hasText: "Completed document" });
+      if ((await documentLinks.count()) !== 2) fail(`completed package lists ${await documentLinks.count()} completed documents, expected 2`);
+      const expectedHashes = new Set(completed.map((artifact) => artifact.content_sha256 as string));
+      const seenHashes = new Set<string>();
+      for (let index = 0; index < 2; index += 1) {
+        const href = await documentLinks.nth(index).getAttribute("href");
+        const response = await context.request.get(`${APP_ORIGIN}${href}`);
+        const hash = sha256(await response.body());
+        if (response.status() !== 200 || !expectedHashes.has(hash)) fail("completed-package download mismatch");
+        seenHashes.add(hash);
+      }
+      if (seenHashes.size !== 2) fail("completed-package downloads did not cover both documents");
       await shot(page, "a02-completed-package");
       await context.close();
-      ok("completed-package link (account-free) lists Completed document + Audit certificate; download is 200 and byte-identical to the verified artifact");
+      ok("completed-package link (account-free) lists both completed documents + Audit certificate; both downloads are 200 and byte-identical to the verified artifacts");
     }
 
     // ---------- manager completed view ----------
@@ -997,7 +1287,13 @@ async function main() {
       await addField(b.signingId, b.documentId, participant.id, "DATE_SIGNED", { x: x + 158, y: 566, width: 72, height: 18 }, { linkedSignatureDraftFieldId: signature.id });
     }
     await sendFromDraftPage(b.signingId);
+    const docB = (await revisionDocuments(b.signingId))[0];
     const l1 = await copySigningLink(P3, "P3 copy");
+    const c3Old = await enter(l1, P3, "p3-before-replace");
+    await affirm(c3Old.page, P3);
+    const p3OldCookie = await ceremonyCookieValue(c3Old.context);
+    if ((await documentStatusWith(p3OldCookie, docB.id)) !== 200) fail("P3 session from the original link cannot read Signing B's document");
+    await c3Old.context.close();
     await panel(P3).getByRole("button", { name: "Resend signing link" }).click();
     await panel(P3).locator('[data-testid="participant-link-status"]').getByText("Signing link resent.").waitFor({ timeout: 30000 });
     if ((await copySigningLink(P3, "P3 after Resend")) !== l1) fail("Resend changed the link");
@@ -1008,23 +1304,39 @@ async function main() {
     const l2 = await copySigningLink(P3, "P3 after Replace");
     if (l2 === l1) fail("Replace kept the link");
     await expectRefused(l1, "replaced P3 link");
+    if ((await documentStatusWith(p3OldCookie, docB.id)) !== 404) fail("a session from the replaced link still reads document bytes");
     const d1 = await copySigningLink(P4, "P4 copy");
+    const c4 = await enter(d1, P4, "p4-before-revoke");
+    await affirm(c4.page, P4);
+    const p4Cookie = await ceremonyCookieValue(c4.context);
+    if ((await documentStatusWith(p4Cookie, docB.id)) !== 200) fail("P4 session cannot read Signing B's document before Revoke");
+    await c4.context.close();
     await panel(P4).getByRole("button", { name: "Revoke signing link" }).click();
     await manager.getByRole("alertdialog").getByRole("button", { name: "Revoke signing link" }).click();
     await panel(P4).locator('[data-testid="participant-link-state"]').getByText("Revoked").waitFor({ timeout: 30000 });
     await expectRefused(d1, "revoked P4 link");
-    ok("Replace: old link refused, new link issued; Revoke: link refused");
+    if ((await documentStatusWith(p4Cookie, docB.id)) !== 404) fail("a session from the revoked link still reads document bytes");
+    ok("Replace: old link refused, new link issued, and the ceremony session opened from the old link now gets 404 for document bytes; Revoke: link refused and its open session gets 404");
 
     const { context: c3, page: s3 } = await enter(l2, P3, "p3");
     ok("Replace: new link reaches identity affirmation");
     await affirm(s3, P3);
+    {
+      const p3Cookie = await ceremonyCookieValue(c3);
+      const crossSigning = await documentStatusWith(p3Cookie, contractDoc.id);
+      if (crossSigning !== 404) fail(`P3's Signing B session read Signing A's document (${crossSigning})`);
+      ok("cross-Signing: a Signing B ceremony session requesting a Signing A document id gets 404");
+    }
     await s3.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
     await s3.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
-    await s3.locator("#typed-signature").fill(P3);
-    await s3.getByRole("button", { name: "Adopt signature" }).click();
-    await s3.getByText("Signature adopted.").waitFor({ timeout: 30000 });
-    await row(s3, "Signature", true).getByRole("button", { name: "Sign here" }).click();
+    await adoptSignature(s3, P3, "P3");
+    await pageCanvas(s3, 1).waitFor({ timeout: 60000 });
+    const p3SigField = (await revisionFields(b.signingId)).find((field) => field.signing_participant_id === p3.id && field.field_type === "SIGNATURE")!;
+    await expectTargetAligned(s3, p3SigField, target(s3, p3SigField.id, false), "P3 Signature");
+    await firstOpenTarget(s3, "SIGNATURE").click();
+    await target(s3, p3SigField.id, true).waitFor({ timeout: 30000 });
     await row(s3, "Signature", true).getByText("Applied").waitFor({ timeout: 30000 });
+    const p3CookieBeforeDecline = await ceremonyCookieValue(c3);
     await s3.getByRole("button", { name: "Decline to sign" }).click();
     await s3.getByText("Declining ends this Signing for everyone. Your agent will be notified.").waitFor();
     await shot(s3, "b01-decline-confirm");
@@ -1033,6 +1345,7 @@ async function main() {
     await s3.getByRole("button", { name: "Confirm decline" }).click();
     await s3.waitForURL(/\/sign\/done\?outcome=declined$/, { timeout: 30000 });
     await s3.getByText("You declined to sign").waitFor({ timeout: 30000 });
+    if ((await documentStatusWith(p3CookieBeforeDecline, docB.id)) !== 404) fail("P3's pre-Decline ceremony cookie still reads document bytes");
     const declinedText = await s3.locator("body").innerText();
     if (/Sign here|Initial here|no longer active|unavailable/i.test(declinedText)) fail("Decline landing is misleading");
     await shot(s3, "b02-after-decline");
@@ -1085,11 +1398,12 @@ async function main() {
     await affirm(manager, P5);
     await manager.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
     await manager.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
-    await manager.locator("#typed-signature").fill(P5);
-    await manager.getByRole("button", { name: "Adopt signature" }).click();
-    await manager.getByText("Signature adopted.").waitFor({ timeout: 30000 });
-    await row(manager, "Signature", true).getByRole("button", { name: "Sign here" }).click();
+    await adoptSignature(manager, P5, "P5 in person");
+    await pageCanvas(manager, 1).waitFor({ timeout: 60000 });
+    await firstOpenTarget(manager, "SIGNATURE").click();
     await row(manager, "Signature", true).getByText("Applied").waitFor({ timeout: 30000 });
+    await manager.locator('[data-ceremony-date-field][data-placed="true"]').first().waitFor({ timeout: 30000 });
+    await shot(manager, "c00-in-person-document");
     await manager.getByRole("button", { name: "Finish signing" }).click();
     await manager.waitForURL(/\/sign\/return-to-agent$/, { timeout: 30000 });
     await manager.getByText("Return to agent workspace", { exact: true }).waitFor({ timeout: 30000 });
@@ -1117,6 +1431,13 @@ async function main() {
     const devLog = existsSync(DEV_LOG) ? readFileSync(DEV_LOG, "utf8").slice(devLogStart) : "";
     if (secrets.some((secret) => devLog.includes(secret))) fail("a raw secret appeared in the dev server log");
     ok(`raw secrets (${secrets.length}) never appeared in ${participantRequestUrls.length} participant request URLs or the dev server log`);
+    {
+      const supabaseHost = new URL(url).host;
+      const direct = participantRequestUrls.filter((requestUrl) => requestUrl.includes(supabaseHost) || requestUrl.includes("/storage/v1/"));
+      if (direct.length) fail(`participant browser contacted Supabase directly (${direct.length} requests)`);
+      const documentRequests = participantRequestUrls.filter((requestUrl) => requestUrl.includes("/sign/ceremony/document/")).length;
+      ok(`participant browsers made 0 requests to Supabase / Storage; all ${documentRequests} document byte requests went through /sign/ceremony/document/{id}`);
+    }
     const issues = noise.issues();
     if (issues.length > 0) fail(`unexpected runtime errors/warnings:\n${issues.join("\n")}`);
     ok("no unexpected browser console errors/warnings, page errors, or dev server ERROR/WARN lines");
