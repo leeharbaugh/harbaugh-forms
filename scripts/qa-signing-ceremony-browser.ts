@@ -48,6 +48,7 @@ import { addDraftSigningDocumentWithActor } from "../lib/signing/draft-documents
 import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
 import { DEVICE_HANDOFF_LOCK_COOKIE_NAME } from "../lib/signing/device-handoff-lock.ts";
 import { upsertDraftSigningFieldWithActor } from "../lib/signing/draft-fields.ts";
+import { upsertDraftPreparedContentWithActor } from "../lib/signing/draft-prepared-content.ts";
 import { SIGNING_ENTRY_COOKIE_NAME } from "../lib/signing/entry-sessions.ts";
 import { verifySigningEventChain } from "../lib/signing/event-chain.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
@@ -57,6 +58,9 @@ import type { Profile } from "../lib/types/profile.ts";
 import { createRuntimeNoiseGuard } from "./qa-runtime-noise.ts";
 
 const EXPECTED_REF = "ewxsxwzezhkeawnjvigx";
+/** Manager-prepared content on contract page 1 (PDF points, y from top). */
+const PRINTED_NAME_BOX = { pageNumber: 1, x: 330, y: 596, width: 150, height: 16 };
+const CHECKMARK_BOX = { pageNumber: 1, x: 72, y: 620, width: 12, height: 12 };
 const APP_ORIGIN = process.env.MANUAL_QA_ORIGIN?.trim() || "http://localhost:3000";
 const OUT_DIR = path.join("_audit_tmp", "signing-ceremony-qa");
 const GENERATED_DOCUMENTS_BUCKET = "generated-documents";
@@ -332,7 +336,7 @@ async function main() {
     );
     const { data, error } = await admin
       .from("signing_fields")
-      .select("id, field_type, package_revision_participant_id, package_revision_document_id, page_number, x, y, width, height, is_required")
+      .select("id, field_type, package_revision_participant_id, package_revision_document_id, page_number, x, y, width, height, is_required, linked_signature_field_id")
       .eq("signing_id", signingId);
     if (error) fail(error.message);
     return (data ?? []).map((field) => ({
@@ -521,9 +525,23 @@ async function main() {
     await addField(a.signingId, a.documentId, p1.id, "INITIALS", { x: 140, y: 300, width: 40, height: 20 }, { isRequired: false, pageNumber: 2 });
     const p2Sig = await addField(a.signingId, a.documentId, p2.id, "SIGNATURE", { x: 330, y: 560, width: 150, height: 28 });
     await addField(a.signingId, a.documentId, p2.id, "DATE_SIGNED", { x: 488, y: 566, width: 72, height: 18 }, { linkedSignatureDraftFieldId: p2Sig.id });
-    await addField(a.signingId, a2.id, p2.id, "INITIALS", { x: 330, y: 660, width: 40, height: 20 });
+    const p2Ini = await addField(a.signingId, a2.id, p2.id, "INITIALS", { x: 330, y: 660, width: 40, height: 20 });
+    await addField(a.signingId, a2.id, p2.id, "DATE_SIGNED", { x: 380, y: 662, width: 72, height: 18 }, { linkedSignatureDraftFieldId: p2Ini.id });
+    await upsertDraftPreparedContentWithActor(actor, {
+      signingId: a.signingId,
+      signingDocumentId: a.documentId,
+      signingParticipantId: p2.id,
+      contentType: "PRINTED_NAME",
+      ...PRINTED_NAME_BOX,
+    }, admin);
+    await upsertDraftPreparedContentWithActor(actor, {
+      signingId: a.signingId,
+      signingDocumentId: a.documentId,
+      contentType: "CHECKMARK",
+      ...CHECKMARK_BOX,
+    }, admin);
     await addCopyRecipientWithActor(actor, { signingId: a.signingId, email: `copy-${stamp}@example.com`, displayName: "Copy Recipient QA" }, admin);
-    ok(`fixture Signing A ${a.signingId}: 2-page contract + 1-page addendum; ${P1} (contract: Signature + linked Date and required Initials on page 1, optional Initials on page 2; nothing on the addendum), ${P2} (contract Signature + linked Date, addendum Initials), 1 copy recipient`);
+    ok(`fixture Signing A ${a.signingId}: 2-page contract + 1-page addendum; ${P1} (contract: Signature + linked Date and required Initials on page 1, optional Initials on page 2; nothing on the addendum), ${P2} (contract Signature + linked Date, addendum Initials + Date linked to those Initials), prepared Printed Name (${P2}) + Checkmark on the contract, 1 copy recipient`);
 
     // ---------- manager sign-in + Send ----------
     const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: "magiclink", email });
@@ -559,9 +577,17 @@ async function main() {
       p1InitReq: fieldOf(p1.id, "INITIALS", true)[0],
       p1InitOpt: fieldOf(p1.id, "INITIALS", false)[0],
       p2Sig: fieldOf(p2.id, "SIGNATURE")[0],
-      p2Date: fieldOf(p2.id, "DATE_SIGNED")[0],
+      p2Date: fieldOf(p2.id, "DATE_SIGNED").find(
+        (date) => date.linked_signature_field_id === fieldOf(p2.id, "SIGNATURE")[0]?.id,
+      )!,
       p2Init: fieldOf(p2.id, "INITIALS")[0],
+      p2IniDate: fieldOf(p2.id, "DATE_SIGNED").find(
+        (date) => date.linked_signature_field_id === fieldOf(p2.id, "INITIALS")[0]?.id,
+      )!,
     };
+    if (fields.some((field) => !["SIGNATURE", "INITIALS", "DATE_SIGNED"].includes(field.field_type as string))) {
+      fail("prepared content was promoted as a signing field");
+    }
     if (Object.values(f).some((value) => !value)) {
       fail(
         `revision fields did not snapshot as prepared: ${JSON.stringify(
@@ -1077,7 +1103,25 @@ async function main() {
     await expectTargetAligned(s2, f.p2Init, target(s2, f.p2Init.id, false), "P2 addendum Initials");
     await target(s2, f.p2Init.id, false).click();
     await target(s2, f.p2Init.id, true).waitFor({ timeout: 30000 });
-    await row(s2, "Initials", true).getByText("Applied").waitFor({ timeout: 30000 });
+    await row(s2, "Initials", true).getByText(`Applied · dated ${today}`).waitFor({ timeout: 30000 });
+    await dateOnPage(s2, f.p2IniDate!.id).getByText(today).waitFor({ timeout: 30000 });
+    const iniDateFirst = acceptedFor(await placements(a.signingId), f.p2IniDate!.id as string);
+    if (iniDateFirst.length !== 1) fail("Initials-linked Date was not applied with the Initials");
+    await shot(s2, "p2-00-initials-linked-date");
+    await row(s2, "Initials", true).getByRole("button", { name: "Remove" }).click();
+    await target(s2, f.p2Init.id, false).waitFor({ timeout: 30000 });
+    if ((await dateOnPage(s2, f.p2IniDate!.id).count()) !== 0) fail("Initials-linked Date still shown after the Initials were removed");
+    if (acceptedFor(await placements(a.signingId), f.p2IniDate!.id as string).length !== 0) {
+      fail("Initials-linked Date still effective after the Initials were removed");
+    }
+    await target(s2, f.p2Init.id, false).click();
+    await target(s2, f.p2Init.id, true).waitFor({ timeout: 30000 });
+    await dateOnPage(s2, f.p2IniDate!.id).getByText(today).waitFor({ timeout: 30000 });
+    const iniDateSecond = acceptedFor(await placements(a.signingId), f.p2IniDate!.id as string);
+    if (iniDateSecond.length !== 1 || iniDateSecond[0].id === iniDateFirst[0].id) {
+      fail("reapplying the Initials did not apply a fresh linked Date");
+    }
+    ok(`P2 addendum: Initials apply their linked Date (${today}); Remove takes the Date off the page and out of effect; reapply gives a fresh Date placement`);
     await s2.getByText("Every required field is complete.").waitFor();
     await s2.locator(`[data-ceremony-document="${contractDoc.id}"]`).click();
     await target(s2, f.p2Sig.id, true).waitFor({ timeout: 60000 });
@@ -1202,9 +1246,60 @@ async function main() {
     expectTextIn("AJS", f.p1InitOpt, "P1 optional Initials (page 2)");
     expectTextIn(today, f.p1Date, "P1 Date Signed");
     expectTextIn(today, f.p2Date, "P2 Date Signed");
-    if (occurrences("AJS") !== 2 || occurrences(today) !== 2 || occurrences("BR") !== 1) {
-      fail(`expected 2× AJS, 2× ${today}, 1× BR; saw ${occurrences("AJS")} / ${occurrences(today)} / ${occurrences("BR")}`);
+    expectTextIn(today, f.p2IniDate, "P2 Initials-linked Date Signed (addendum)");
+    if (occurrences("AJS") !== 2 || occurrences(today) !== 3 || occurrences("BR") !== 1) {
+      fail(`expected 2× AJS, 3× ${today}, 1× BR; saw ${occurrences("AJS")} / ${occurrences(today)} / ${occurrences("BR")}`);
     }
+
+    // Manager-prepared content: in the prepared version and the completed PDF.
+    const printedField = {
+      id: "printed-name",
+      ...PRINTED_NAME_BOX,
+      page_number: PRINTED_NAME_BOX.pageNumber,
+      package_revision_document_id: contractDoc.id,
+    };
+    expectTextIn(P2, printedField, "Printed Name (completed)");
+    async function checkmarkPathIn(bytes: Uint8Array, label: string) {
+      const loadedPdf = await pdfjs.getDocument({ data: bytes, useSystemFonts: false, standardFontDataUrl }).promise;
+      const pdfPage = await loadedPdf.getPage(CHECKMARK_BOX.pageNumber);
+      const height = pdfPage.getViewport({ scale: 1 }).height;
+      const operators = await pdfPage.getOperatorList();
+      const top = height - CHECKMARK_BOX.y;
+      const found = operators.fnArray.some((fn: number, index: number) => {
+        if (fn !== pdfjs.OPS.constructPath) return false;
+        const args = operators.argsArray[index] as unknown[];
+        const minMax = Array.from((args[args.length - 1] ?? []) as ArrayLike<number>);
+        if (minMax.length !== 4) return false;
+        const [minX, minY, maxX, maxY] = minMax;
+        return (
+          minX >= CHECKMARK_BOX.x - 1 && maxX <= CHECKMARK_BOX.x + CHECKMARK_BOX.width + 1 &&
+          minY >= top - CHECKMARK_BOX.height - 1 && maxY <= top + 1
+        );
+      });
+      if (!found) fail(`${label}: no Checkmark strokes inside the checkmark box`);
+      const text = (await pdfPage.getTextContent()).items as TextItem[];
+      const printedTop = height - PRINTED_NAME_BOX.y;
+      if (!text.some((item) => item.str.trim() === P2 && item.transform[4] >= PRINTED_NAME_BOX.x - 1 && item.transform[5] >= printedTop - PRINTED_NAME_BOX.height - 1 && item.transform[5] <= printedTop + 1)) {
+        fail(`${label}: Printed Name "${P2}" not inside its box`);
+      }
+    }
+    await checkmarkPathIn(new Uint8Array(readFileSync(path.join(OUT_DIR, "completed_document-contract.pdf"))), "completed contract");
+    const { data: contractVersion } = await admin
+      .from("signing_package_revision_documents")
+      .select("signing_document_version_id")
+      .eq("id", contractDoc.id)
+      .single();
+    const { data: versionRow } = await admin
+      .from("signing_document_versions")
+      .select("storage_object_key")
+      .eq("id", contractVersion!.signing_document_version_id as string)
+      .single();
+    const { data: preparedBlob } = await admin.storage
+      .from(SIGNING_ARTIFACTS_BUCKET)
+      .download(versionRow!.storage_object_key as string);
+    if (!preparedBlob) fail("prepared contract version download failed");
+    await checkmarkPathIn(new Uint8Array(await preparedBlob.arrayBuffer()), "prepared contract version");
+    ok(`prepared content: Printed Name "${P2}" and the Checkmark are in the prepared contract version and the completed contract (inside their boxes); they never became fields, marks, or progress (P2 still had exactly 2 actionable fields)`);
     for (const stale of [P1.toLowerCase(), "AJX", "ZZ"]) {
       if ([...pageText.values()].some((info) => info.items.some((item) => item.str.includes(stale)))) fail(`completed PDF contains stale/rejected mark "${stale}"`);
     }
@@ -1519,6 +1614,7 @@ async function cleanup(
       "signing_document_versions",
       "signing_package_revisions",
       "signing_draft_fields",
+      "signing_draft_prepared_content",
       "signing_draft_source_snapshots",
       "signing_documents",
       "signing_copy_recipients",

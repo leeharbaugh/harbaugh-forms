@@ -2,9 +2,12 @@
  * Pure local-state rules for the Prepare Documents editor. The editor applies
  * these immediately for responsive edits; trusted server actions persist the
  * same change and the returned rows reconcile local state. Mirrors the server
- * rules in `draft-fields.ts` (paired Date Signed follows its Signature).
+ * rules in `draft-fields.ts` (a linked Date Signed follows its Signature or
+ * Initials) and `draft-prepared-content.ts`.
  */
+import { isDateSignedSourceType } from "./date-signed-link";
 import { DATE_SIGNED_DEFAULT_SIZE, expectedDraftMarkText } from "./draft-field-sizing";
+import { isPreparedContentType } from "./prepared-content-types";
 import type { SigningPreviewField, SigningPreviewModel } from "./preview";
 
 export type DraftFieldType = SigningPreviewField["fieldType"];
@@ -17,7 +20,16 @@ export function draftFieldTypeLabel(type: DraftFieldType): string {
       return "Initials";
     case "DATE_SIGNED":
       return "Date Signed";
+    case "PRINTED_NAME":
+      return "Printed Name";
+    case "CHECKMARK":
+      return "Checkmark";
   }
+}
+
+/** Checkmark is the only placement without a participant. */
+export function placementHasParticipant(type: DraftFieldType): boolean {
+  return type !== "CHECKMARK";
 }
 
 type LabelledField = Pick<
@@ -32,6 +44,8 @@ type LabelledField = Pick<
  */
 export function draftFieldCompactLabel(field: LabelledField): string {
   if (field.fieldType === "DATE_SIGNED") return "Date";
+  if (field.fieldType === "PRINTED_NAME") return field.participantFullName;
+  if (field.fieldType === "CHECKMARK") return "✓";
   return expectedDraftMarkText(field.fieldType, {
     fullName: field.participantFullName,
     capacityMode: field.capacityMode,
@@ -41,6 +55,10 @@ export function draftFieldCompactLabel(field: LabelledField): string {
 
 /** Full description for tooltips and assistive technology. */
 export function draftFieldDescription(field: LabelledField): string {
+  if (field.fieldType === "CHECKMARK") return "Checkmark (prepared content)";
+  if (field.fieldType === "PRINTED_NAME") {
+    return `Printed Name for ${field.participantFullName} (prepared content)`;
+  }
   const base = `${draftFieldTypeLabel(field.fieldType)} for ${field.participantFullName}`;
   return field.capacityMode === "REPRESENTATIVE" && field.representedPartyName
     ? `${base}, representing ${field.representedPartyName}`
@@ -169,8 +187,8 @@ export function moveField(
 }
 
 /**
- * Ids removed when `fieldId` is removed: a Signature takes its paired Date
- * Signed with it; Initials and Date Signed remove alone.
+ * Ids removed when `fieldId` is removed: a Signature or Initials takes any
+ * Date Signed linked to it; everything else removes alone.
  */
 export function removalIds(
   model: SigningPreviewModel,
@@ -178,7 +196,7 @@ export function removalIds(
 ): string[] {
   const located = findField(model, fieldId);
   if (!located) return [];
-  if (located.field.fieldType !== "SIGNATURE") return [fieldId];
+  if (!isDateSignedSourceType(located.field.fieldType)) return [fieldId];
   const linked = model.documents
     .flatMap((document) => document.fields)
     .filter((field) => field.linkedSignatureFieldId === fieldId)
@@ -202,8 +220,8 @@ export function removeFields(
 }
 
 /**
- * Reassign a field to another participant. A Signature's paired Date Signed
- * follows it; a Date Signed relinks to `linkedSignatureFieldId`.
+ * Reassign a field to another participant. A Signature's or Initials' linked
+ * Date Signed follows it; a Date Signed relinks to `linkedSignatureFieldId`.
  */
 export function reassignField(
   model: SigningPreviewModel,
@@ -215,7 +233,7 @@ export function reassignField(
   const participant = model.participants.find((row) => row.id === participantId);
   if (!located || !participant) return model;
   const followerIds = new Set(
-    located.field.fieldType === "SIGNATURE"
+    isDateSignedSourceType(located.field.fieldType)
       ? removalIds(model, fieldId).filter((id) => id !== fieldId)
       : [],
   );
@@ -250,7 +268,27 @@ export function reassignField(
   };
 }
 
-/** Signature a Date Signed should link to for `participantId` on a document. */
+/**
+ * Fields on a document a Date Signed for `participantId` may link to: that
+ * participant's Signatures and Initials, in page reading order.
+ */
+export function dateSourceOptions(
+  fields: SigningPreviewField[],
+  participantId: string,
+): SigningPreviewField[] {
+  return fields
+    .filter(
+      (field) =>
+        isDateSignedSourceType(field.fieldType) && field.participantId === participantId,
+    )
+    .sort((a, b) => a.pageNumber - b.pageNumber || a.y - b.y || a.x - b.x);
+}
+
+/**
+ * Signature a Date Signed should link to for `participantId` on a document.
+ * Only Signatures are chosen automatically; linking to Initials is always the
+ * manager's explicit choice.
+ */
 export function preferredSignatureForDate(
   fields: SigningPreviewField[],
   participantId: string,
@@ -405,82 +443,114 @@ export function copyPlacements(
 export const PASTE_OFFSET_PT = 12;
 
 export type PastePlan = {
-  /** New local fields in creation order (Signatures before their Dates). */
+  /** New local fields in creation order (Date sources before their Dates). */
   fields: SigningPreviewField[];
   rejected: string[];
 };
 
+/** Click point (PDF units) that places a pasted group in paste-placement mode. */
+export type PasteAnchor = { pageNumber: number; x: number; y: number };
+
+/**
+ * The clipboard item a paste anchor positions: the first copied placement
+ * that is not a Date Signed (dates follow their source), else the first item.
+ */
+export function pasteReferenceItem(
+  clipboard: readonly PlacementClipboardItem[],
+): PlacementClipboardItem | null {
+  return clipboard.find((item) => item.fieldType !== "DATE_SIGNED") ?? clipboard[0] ?? null;
+}
+
 /**
  * Plan pasting clipboard placements into `documentId`, keeping participant,
- * type, required state, page, and relative offsets, shifted by `offset` and
- * clamped per page as a group.
+ * type, required state, and relative geometry, clamped per page as a group.
  *
- * A copied Signature + Date pair pastes as a new linked pair; a Signature
- * alone gets a new paired Date Signed; a Date alone links only to a
- * same-participant Signature (its original, else one on that page without a
- * Date) and is otherwise rejected. Links never cross participants.
+ * With `anchor` (paste-placement mode) the reference placement is centred on
+ * the clicked point and the group lands on the clicked page (multi-page
+ * copies keep their page spacing). Without it the group shifts by `offset`
+ * on its original pages.
+ *
+ * A copied Signature/Initials + linked Date pastes as a new linked pair; a
+ * Signature alone gets a new paired Date Signed (Initials never do); a Date
+ * alone links only to a same-participant source (its original Signature or
+ * Initials, else a Signature on that page without a Date) and is otherwise
+ * rejected. Links never cross participants. Prepared content pastes as-is.
  */
 export function planPaste(options: {
   model: SigningPreviewModel;
   documentId: string;
   clipboard: readonly PlacementClipboardItem[];
   pageSizes: Readonly<Record<number, { width: number; height: number }>>;
-  offset: number;
+  offset?: number;
+  anchor?: PasteAnchor;
   newId: () => string;
 }): PastePlan {
-  const { model, documentId, clipboard, pageSizes, offset, newId } = options;
+  const { model, documentId, clipboard, pageSizes, anchor, newId } = options;
+  const offset = options.offset ?? PASTE_OFFSET_PT;
   const document = model.documents.find((row) => row.id === documentId);
   const rejected: string[] = [];
   if (!document) return { fields: [], rejected: ["The document is not available."] };
 
+  const reference = pasteReferenceItem(clipboard);
+  const pageShift = anchor && reference ? anchor.pageNumber - reference.pageNumber : 0;
+  const baseDelta =
+    anchor && reference
+      ? {
+          dx: anchor.x - (reference.x + reference.width / 2),
+          dy: anchor.y - (reference.y + reference.height / 2),
+        }
+      : { dx: offset, dy: offset };
+  const targetPage = (item: PlacementClipboardItem) => item.pageNumber + pageShift;
+
   const participants = new Map(model.participants.map((row) => [row.id, row]));
   const usable = clipboard.filter((item) => {
-    if (!participants.has(item.participantId)) {
+    if (placementHasParticipant(item.fieldType) && !participants.has(item.participantId)) {
       rejected.push("A copied placement's participant is no longer on this Signing.");
       return false;
     }
-    if (!pageSizes[item.pageNumber]) {
-      rejected.push(`Page ${item.pageNumber} does not exist in this document.`);
+    if (!pageSizes[targetPage(item)]) {
+      rejected.push(`Page ${targetPage(item)} does not exist in this document.`);
       return false;
     }
     return true;
   });
 
   const deltaByPage = new Map<number, { dx: number; dy: number }>();
-  for (const pageNumber of new Set(usable.map((item) => item.pageNumber))) {
+  for (const pageNumber of new Set(usable.map(targetPage))) {
     deltaByPage.set(
       pageNumber,
       clampGroupDelta(
-        usable.filter((item) => item.pageNumber === pageNumber),
-        { dx: offset, dy: offset },
+        usable.filter((item) => targetPage(item) === pageNumber),
+        baseDelta,
         pageSizes[pageNumber],
       ),
     );
   }
 
   const build = (
-    item: Pick<PlacementClipboardItem, "fieldType" | "participantId" | "isRequired" | "pageNumber">,
+    item: Pick<PlacementClipboardItem, "fieldType" | "participantId" | "isRequired">,
+    pageNumber: number,
     rect: PdfRect,
     linkedSignatureFieldId: string | null,
   ): SigningPreviewField => {
-    const participant = participants.get(item.participantId)!;
+    const participant = participants.get(item.participantId);
     return {
       id: newId(),
       fieldType: item.fieldType,
-      isRequired: item.isRequired,
-      pageNumber: item.pageNumber,
+      isRequired: isPreparedContentType(item.fieldType) ? false : item.isRequired,
+      pageNumber,
       ...rect,
-      participantId: participant.id,
-      participantFullName: participant.fullName,
-      capacityMode: participant.capacityMode,
-      representedPartyName: participant.representedPartyName,
+      participantId: participant?.id ?? "",
+      participantFullName: participant?.fullName ?? "",
+      capacityMode: participant?.capacityMode ?? "PERSONAL",
+      representedPartyName: participant?.representedPartyName ?? null,
       capacityLabel: null,
-      capacityWording: participant.capacityWording,
+      capacityWording: participant?.capacityWording ?? null,
       linkedSignatureFieldId,
     };
   };
   const shifted = (item: PlacementClipboardItem): PdfRect => {
-    const delta = deltaByPage.get(item.pageNumber)!;
+    const delta = deltaByPage.get(targetPage(item))!;
     return {
       x: item.x + delta.dx,
       y: item.y + delta.dy,
@@ -495,7 +565,7 @@ export function planPaste(options: {
 
   for (const item of usable) {
     if (item.fieldType === "DATE_SIGNED") continue;
-    const field = build(item, shifted(item), null);
+    const field = build(item, targetPage(item), shifted(item), null);
     newIdBySource.set(item.sourceId, field.id);
     fields.push(field);
     const dateCopied = usable.some(
@@ -507,7 +577,8 @@ export function planPaste(options: {
       fields.push(
         build(
           { ...item, fieldType: "DATE_SIGNED" },
-          pairedDatePlacement(field, pageSizes[item.pageNumber]),
+          targetPage(item),
+          pairedDatePlacement(field, pageSizes[targetPage(item)]),
           field.id,
         ),
       );
@@ -525,15 +596,17 @@ export function planPaste(options: {
     if (item.linkedSignatureSourceId && copiedIds.has(item.linkedSignatureSourceId)) {
       linkId = newIdBySource.get(item.linkedSignatureSourceId) ?? null;
     } else {
-      const sameParticipant = (field: SigningPreviewField) =>
-        field.fieldType === "SIGNATURE" && field.participantId === item.participantId;
       const original = document.fields.find(
-        (field) => field.id === item.linkedSignatureSourceId && sameParticipant(field),
+        (field) =>
+          field.id === item.linkedSignatureSourceId &&
+          isDateSignedSourceType(field.fieldType) &&
+          field.participantId === item.participantId,
       );
       const undated = document.fields.find(
         (field) =>
-          sameParticipant(field) &&
-          field.pageNumber === item.pageNumber &&
+          field.fieldType === "SIGNATURE" &&
+          field.participantId === item.participantId &&
+          field.pageNumber === targetPage(item) &&
           !datedSignatureIds.has(field.id),
       );
       linkId = original?.id ?? undated?.id ?? null;
@@ -541,12 +614,12 @@ export function planPaste(options: {
     if (!linkId) {
       const name = participants.get(item.participantId)!.fullName;
       rejected.push(
-        `Date Signed needs a Signature for ${name}. Copy the Signature with its Date Signed, or place a Signature for ${name} first.`,
+        `Date Signed needs a Signature or Initials for ${name}. Copy it with its Date Signed, or place a Signature for ${name} first.`,
       );
       continue;
     }
     datedSignatureIds.add(linkId);
-    fields.push(build(item, shifted(item), linkId));
+    fields.push(build(item, targetPage(item), shifted(item), linkId));
   }
 
   return { fields, rejected };

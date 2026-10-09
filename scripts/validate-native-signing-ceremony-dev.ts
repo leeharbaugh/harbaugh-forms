@@ -1532,6 +1532,7 @@ async function main() {
       await admin.from("signing_document_versions").delete().eq("signing_id", id);
       await admin.from("signing_package_revisions").delete().eq("signing_id", id);
       await admin.from("signing_draft_fields").delete().eq("signing_id", id);
+      await admin.from("signing_draft_prepared_content").delete().eq("signing_id", id);
       await admin
         .from("signing_documents")
         .update({

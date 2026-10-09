@@ -24,9 +24,10 @@ export const NATIVE_SIGNING_STAGE1_TABLES = [
   "signing_events",
 ] as const;
 
-/** Stage 3 additive Draft-preparation table (mutable; not revision evidence). */
+/** Stage 3 additive Draft-preparation tables (mutable; not revision evidence). */
 export const NATIVE_SIGNING_STAGE3_DRAFT_TABLES = [
   "signing_draft_fields",
+  "signing_draft_prepared_content",
 ] as const;
 
 export const NATIVE_SIGNING_STAGE3_MIGRATIONS = [

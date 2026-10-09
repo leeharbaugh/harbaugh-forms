@@ -7,6 +7,14 @@
  * place / drag / resize / reassign / remove persist without a page reload,
  * PDF remount, or scroll reset.
  *
+ * Draft-prep model tranche: Quick Fields are gone; ad hoc participants choose
+ * a role (editable, survives reload); a Packet contact added after Signing
+ * creation shows a notice and "Add from Packet" adds only it; Include me /
+ * Include broker add real participants once; paste is click-to-anchor (Esc,
+ * tool change cancel; no extra field); Date Signed links to chosen Initials;
+ * Printed Name renders the current name; Checkmark has no participant; and
+ * prepared content adds no participant requirement.
+ *
  *   NODE_PATH=_audit_tmp/pw-deps/node_modules npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/qa-signing-prepare-browser.ts
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -18,6 +26,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import {
   DATE_SIGNED_DEFAULT_SIZE,
   defaultDraftFieldSize,
+  defaultPreparedContentSize,
 } from "../lib/signing/draft-field-sizing.ts";
 import { createRuntimeNoiseGuard } from "./qa-runtime-noise.ts";
 
@@ -32,6 +41,8 @@ const PRINTED = {
   initials: { x: 470, width: 36, top: 740 },
   signatureA: { x: 110, width: 216, top: 560 },
   signatureB: { x: 110, width: 216, top: 640 },
+  checkbox: { x: 72, top: 200, size: 12 },
+  printedName: { x: 140, top: 260 },
 };
 
 class QaFailure extends Error {}
@@ -73,6 +84,17 @@ async function makePdf(label: string): Promise<Uint8Array> {
     }
     text("Buyer Initials", 405, PRINTED.initials.top);
     line(PRINTED.initials.x, PRINTED.initials.width, PRINTED.initials.top);
+    page.drawRectangle({
+      x: PRINTED.checkbox.x,
+      y: 792 - PRINTED.checkbox.top - PRINTED.checkbox.size,
+      width: PRINTED.checkbox.size,
+      height: PRINTED.checkbox.size,
+      borderColor: rgb(0, 0, 0),
+      borderWidth: 0.75,
+    });
+    text("Buyer elects this option", PRINTED.checkbox.x + 18, PRINTED.checkbox.top + 10);
+    text("Printed name", 72, PRINTED.printedName.top);
+    line(PRINTED.printedName.x, 200, PRINTED.printedName.top);
   }
   return doc.save();
 }
@@ -96,6 +118,7 @@ async function main() {
   const contactIds: number[] = [];
   const generatedPaths: string[] = [];
   let signingId = "";
+  let brokerageSettingsId = 0;
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -109,6 +132,39 @@ async function main() {
       .eq("signing_id", signingId);
     if (error) fail(error.message);
     return data ?? [];
+  }
+
+  async function preparedContent() {
+    const { data, error } = await admin
+      .from("signing_draft_prepared_content")
+      .select("id, content_type, x, y, width, height, signing_participant_id")
+      .eq("signing_id", signingId);
+    if (error) fail(error.message);
+    return data ?? [];
+  }
+
+  async function participantsInDb() {
+    const { data, error } = await admin
+      .from("signing_participants")
+      .select("id, full_name, role_code, optional_role, linked_user_id, linked_contact_id, linked_brokerage_settings_id")
+      .eq("signing_id", signingId);
+    if (error) fail(error.message);
+    return data ?? [];
+  }
+
+  /** Participant options carry the role ("Name — Role"); pick by name. */
+  async function selectParticipant(selectId: string, name: string) {
+    const select = page.locator(selectId);
+    const value = await select.evaluate(
+      (element, wanted) =>
+        Array.from((element as HTMLSelectElement).options).find(
+          (option) => option.text === wanted || option.text.startsWith(`${wanted} — `),
+        )?.value ?? null,
+      name,
+    );
+    if (!value) fail(`${selectId} has no option for ${name}`);
+    await select.selectOption(value);
+    return value;
   }
 
   async function waitSaved() {
@@ -134,6 +190,20 @@ async function main() {
       .select("id")
       .single();
     organizationId = org!.id as string;
+    const { data: brokerProfile, error: brokerError } = await admin
+      .from("brokerage_settings")
+      .insert({
+        organization_id: organizationId,
+        status: "ACTIVE",
+        brokerage_name: `Prepare QA Realty ${stamp}`,
+        broker_first_name: "Bob",
+        broker_last_name: "Broker",
+        broker_email: `broker-${stamp}@example.com`,
+      })
+      .select("id")
+      .single();
+    if (brokerError || !brokerProfile) fail(brokerError?.message ?? "broker profile");
+    brokerageSettingsId = brokerProfile.id as number;
     const { data: created, error: userError } = await admin.auth.admin.createUser({
       email,
       password: `PrepareQa-${randomUUID()}!aA1`,
@@ -261,10 +331,19 @@ async function main() {
     // An ad hoc participant first; it must survive Packet selection.
     await page.getByRole("button", { name: "Use this Packet" }).waitFor({ timeout: 60000 });
     const participantList = page.locator('[data-testid="draft-participant-list"]');
+    if ((await page.getByText("Add default fields").count()) !== 0 || (await page.getByText(/quick fields/i).count()) !== 0) {
+      fail("Quick Fields / Add default fields must be gone");
+    }
+    ok("Quick Fields / Add default fields are gone");
     await page.locator("#participant-name").fill(LONG_NAME);
-    await page.getByRole("button", { name: "Add participant", exact: true }).click();
+    const addParticipantButton = page.getByRole("button", { name: "Add participant", exact: true });
+    if (await addParticipantButton.isEnabled()) fail("Add participant must require a role");
+    await page.locator("#participant-role").selectOption("BUYER");
+    await page.locator("#participant-role-label").fill("Co-buyer");
+    await addParticipantButton.click();
     await participantList.getByText(LONG_NAME).waitFor({ timeout: 30000 });
-    ok("ad hoc participant added before choosing a Packet");
+    await participantList.getByText("Buyer · Co-buyer").waitFor({ timeout: 10000 });
+    ok("ad hoc participant added before choosing a Packet, with role Buyer · Co-buyer");
 
     // Select the Packet: its parties appear under Participants immediately.
     await page.locator("#source-packet").selectOption(String(packetId));
@@ -310,6 +389,97 @@ async function main() {
       .select("full_name")
       .eq("signing_id", signingId);
     if ((dbParticipants ?? []).length !== 3) fail("database must hold exactly 3 participants");
+    const packetRoles = (await participantsInDb()).filter((row) => row.linked_contact_id !== null);
+    if (packetRoles.some((row) => !row.role_code)) {
+      fail(`Packet participants must import a role: ${JSON.stringify(packetRoles)}`);
+    }
+    ok(`Packet participants imported with roles ${packetRoles.map((row) => `${row.full_name}=${row.role_code}`).join(", ")}`);
+
+    // Buyer 3 joins the Packet after the Signing exists: explicit additive refresh.
+    const beforeRefreshIds = (await participantsInDb()).map((row) => row.id).sort();
+    const { data: buyer3 } = await admin
+      .from("contacts")
+      .insert({
+        owner_user_id: userId,
+        contact_type: "INDIVIDUAL",
+        first_name: "Bea",
+        last_name: "Buyerthree",
+        email: `bea3-${stamp}@example.com`,
+        status: "ACTIVE",
+      })
+      .select("id")
+      .single();
+    contactIds.push(buyer3!.id as number);
+    await admin.from("representation_agreement_clients").insert({
+      representation_agreement_id: agreementId,
+      contact_id: buyer3!.id,
+      sort_order: 2,
+    });
+    await page.reload({ waitUntil: "networkidle" });
+    const refreshNotice = page.locator('[data-testid="packet-new-participants"]');
+    await refreshNotice.getByText("The source Packet has 1 new participant").waitFor({ timeout: 30000 });
+    await refreshNotice.getByText(/Bea Buyerthree/).waitFor();
+    if ((await participantsInDb()).length !== 3) fail("the refresh notice must not write participants");
+    await shot(page, "00b-packet-refresh-notice");
+    await refreshNotice.getByRole("button", { name: "Add from Packet" }).click();
+    await participantList.getByText("Bea Buyerthree").waitFor({ timeout: 30000 });
+    await refreshNotice.waitFor({ state: "detached", timeout: 10000 });
+    const afterRefresh = await participantsInDb();
+    if (
+      afterRefresh.length !== 4 ||
+      !beforeRefreshIds.every((id) => afterRefresh.some((row) => row.id === id))
+    ) {
+      fail(`refresh must add only Bea Buyerthree: ${JSON.stringify(afterRefresh)}`);
+    }
+    const adHocAfter = afterRefresh.find((row) => row.full_name === LONG_NAME);
+    if (adHocAfter?.role_code !== "BUYER" || adHocAfter.optional_role !== "Co-buyer") {
+      fail("refresh changed the ad hoc participant's role");
+    }
+    ok("Add from Packet added Buyer 3 only; ad hoc and existing participants untouched");
+
+    // Quick include agent / broker.
+    const signers = page.locator('[data-testid="internal-signers"]');
+    await signers.getByRole("button", { name: "Include me as a signer" }).click();
+    await signers.getByRole("button", { name: "You are a signer" }).waitFor({ timeout: 30000 });
+    await signers.getByRole("button", { name: "Include broker as a signer (Bob Broker)" }).click();
+    await signers.getByRole("button", { name: "Broker Bob Broker is a signer" }).waitFor({ timeout: 30000 });
+    if (
+      !(await signers.getByRole("button", { name: "You are a signer" }).isDisabled()) ||
+      !(await signers.getByRole("button", { name: "Broker Bob Broker is a signer" }).isDisabled())
+    ) {
+      fail("included agent/broker buttons must disable to prevent duplicates");
+    }
+    const withInternal = await participantsInDb();
+    const agentRows = withInternal.filter((row) => row.linked_user_id === userId);
+    const brokerRows = withInternal.filter((row) => row.linked_brokerage_settings_id === brokerageSettingsId);
+    if (
+      agentRows.length !== 1 ||
+      agentRows[0].role_code !== "AGENT" ||
+      agentRows[0].full_name !== "Prepare QA Agent" ||
+      brokerRows.length !== 1 ||
+      brokerRows[0].role_code !== "BROKER" ||
+      brokerRows[0].full_name !== "Bob Broker"
+    ) {
+      fail(`agent/broker quick-add: ${JSON.stringify(withInternal)}`);
+    }
+    await participantList.getByText("Prepare QA Agent").waitFor();
+    await participantList.getByText("Bob Broker").waitFor();
+    await shot(page, "00c-agent-broker-included");
+    ok("Include me / Include broker added real participants once (roles Agent / Broker)");
+
+    // Role edit persists across reload.
+    await page.getByLabel(`Role for ${LONG_NAME}`).selectOption("TENANT");
+    await participantList.getByText("Tenant · Co-buyer").waitFor({ timeout: 30000 });
+    await page.reload({ waitUntil: "networkidle" });
+    await participantList.getByText("Tenant · Co-buyer").waitFor({ timeout: 30000 });
+    if ((await page.getByLabel(`Role for ${LONG_NAME}`).inputValue()) !== "TENANT") {
+      fail("role edit did not survive reload");
+    }
+    if ((await participantsInDb()).find((row) => row.full_name === LONG_NAME)?.role_code !== "TENANT") {
+      fail("role edit did not persist");
+    }
+    ok("ad hoc role edit (Buyer -> Tenant) persists across reload; label kept");
+
     await page.getByRole("button", { name: "Add all remaining packet documents" }).click();
     await page.getByText(/Added 2 documents from the Packet/).waitFor({ timeout: 60000 });
     await shot(page, "01-dashboard-after-packet");
@@ -360,7 +530,7 @@ async function main() {
     if (scrollBefore <= 0) fail("expected the workspace to be scrolled to page 2");
 
     // Place a Signature on page 2 (auto Date Signed).
-    await page.locator("#prepare-participant").selectOption({ label: "Lee Harbaugh" });
+    await selectParticipant("#prepare-participant", "Lee Harbaugh");
     await page.locator("#prepare-field-type").selectOption("SIGNATURE");
     const page2 = page.locator(".react-pdf__Page").nth(1);
     await page2.click({ position: { x: 200, y: 300 } });
@@ -469,7 +639,7 @@ async function main() {
 
     // Initials: place and remove independently. With a placement selected, the
     // first click on empty page area only clears the selection.
-    await page.locator("#prepare-participant").selectOption({ label: "Lee Harbaugh" });
+    await selectParticipant("#prepare-participant", "Lee Harbaugh");
     await page.locator("#prepare-field-type").selectOption("INITIALS");
     const selectionStatus = page.locator('[data-testid="prepare-selection"]');
     await page2.click({ position: { x: 450, y: 650 } });
@@ -533,7 +703,7 @@ async function main() {
       line: { x: number; top: number },
       size: { width: number; height: number },
     ) => {
-      await page.locator("#prepare-participant").selectOption({ label: participant });
+      await selectParticipant("#prepare-participant", participant);
       await page.locator("#prepare-field-type").selectOption(type);
       await firstPage.click({
         position: {
@@ -710,34 +880,76 @@ async function main() {
     await assertStable("group drag");
     ok(`group drag moved both selected placements by (${dx.toFixed(1)}, ${dy.toFixed(1)}) pt and kept the selection`);
 
+    const pasteLayer = page.locator('[data-testid="paste-placement-layer"]').first();
+    /** In paste mode the capture layer (page-sized) receives the click. */
+    const clickPagePt = async (pt: { x: number; y: number }) => {
+      await pasteLayer.click({ position: { x: pt.x * scale, y: pt.y * scale } });
+    };
     await page.keyboard.press("Control+c");
     await page.getByText("Copied 2 placements.").waitFor({ timeout: 5000 });
+
+    // Escape and a tool change both cancel paste mode without creating anything.
     await page.keyboard.press("Control+v");
+    await pasteLayer.waitFor({ timeout: 5000 });
+    await page.getByText("Click the page where the pasted placements should go.", { exact: false }).waitFor();
+    await page.keyboard.press("Escape");
+    await pasteLayer.waitFor({ state: "detached", timeout: 5000 });
+    await page.getByRole("button", { name: "Paste", exact: true }).click();
+    await pasteLayer.waitFor({ timeout: 5000 });
+    await page.locator("#prepare-field-type").selectOption("SIGNATURE");
+    await pasteLayer.waitFor({ state: "detached", timeout: 5000 });
+    await page.locator("#prepare-field-type").selectOption("INITIALS");
+    if ((await draftFields()).length !== before.length) fail("cancelled paste created fields");
+    ok("Escape, Paste button parity, and a tool change: paste mode arms and cancels with nothing created");
+
+    // Ctrl+V, hover shows a ghost preview, the click anchors the group there.
+    await page.keyboard.press("Control+v");
+    await pasteLayer.waitFor({ timeout: 5000 });
+    const anchorPt = { x: 300, y: 400 };
+    await pasteLayer.hover({ position: { x: anchorPt.x * scale - 6, y: anchorPt.y * scale - 6 } });
+    await pasteLayer.hover({ position: { x: anchorPt.x * scale, y: anchorPt.y * scale } });
+    await page.waitForTimeout(300);
+    const ghostCount = await page.locator("[data-paste-preview]").count();
+    if (ghostCount < 2) fail(`expected a paste preview of the group, got ${ghostCount} ghosts`);
+    await shot(page, "08a-paste-preview");
+    await clickPagePt(anchorPt);
     await page.getByText("Pasted 3 placements.").waitFor({ timeout: 5000 });
+    await pasteLayer.waitFor({ state: "detached", timeout: 5000 });
     await expectSelected(3);
     await waitSaved();
     await page.waitForTimeout(1000);
     after = await draftFields();
-    if (after.length !== before.length + 3) fail(`paste created ${after.length - before.length} rows`);
+    if (after.length !== before.length + 3) {
+      fail(`anchored paste created ${after.length - before.length} rows (an extra field means the click also placed one)`);
+    }
     const pastedLh = byParticipant(after, "INITIALS", "Lee Harbaugh").find((row) => row.id !== lhBefore.id)!;
     const pastedCal = byParticipant(after, "SIGNATURE", "Cal Cobuyer").find((row) => row.id !== calSigBefore.id)!;
     const pastedCalDate = byParticipant(after, "DATE_SIGNED", "Cal Cobuyer").find((row) => row.id !== calDateBefore.id)!;
     if (!pastedLh || !pastedCal || !pastedCalDate) fail(`paste rows: ${JSON.stringify(after)}`);
+    if (
+      Math.abs(pastedLh.x - pastedCal.x - (lhMoved.x - calMoved.x)) > 0.5 ||
+      Math.abs(pastedLh.y - pastedCal.y - (lhMoved.y - calMoved.y)) > 0.5
+    ) {
+      fail("anchored paste lost the group's relative geometry");
+    }
     for (const [label, pasted, source] of [
       ["Initials", pastedLh, lhMoved],
       ["Signature", pastedCal, calMoved],
     ] as const) {
-      if (Math.abs(pasted.x - source.x - 12) > 0.5 || Math.abs(pasted.y - source.y - 12) > 0.5) {
-        fail(`${label} paste offset ${pasted.x - source.x},${pasted.y - source.y}`);
-      }
       if (pasted.width !== source.width || pasted.height !== source.height) fail(`${label} paste size changed`);
+    }
+    const contains = (row: { x: number; y: number; width: number; height: number }) =>
+      anchorPt.x >= row.x - 0.5 && anchorPt.x <= row.x + row.width + 0.5 &&
+      anchorPt.y >= row.y - 0.5 && anchorPt.y <= row.y + row.height + 0.5;
+    if (!contains(pastedLh) && !contains(pastedCal)) {
+      fail(`the clicked point (${anchorPt.x},${anchorPt.y}) is not on the pasted group`);
     }
     if (pastedCalDate.linked_signature_draft_field_id !== pastedCal.id) {
       fail("pasted Signature's Date Signed is not linked to the new Signature");
     }
     await assertStable("paste");
     await shot(page, "08-pasted");
-    ok("Ctrl+C / Ctrl+V pasted Initials + Signature (+ new linked Date) 12 pt offset, participants kept");
+    ok("Ctrl+V then click: group anchored at the click (relative geometry, participants, linked Date kept); no extra field");
 
     // Delete is ignored while a form control has focus.
     await page.locator("#prepare-participant").focus();
@@ -768,7 +980,9 @@ async function main() {
     await overlayFor(`Date Signed for ${LONG_NAME}`).click({ modifiers: ["Control"] });
     await expectSelected(2);
     await page.keyboard.press("Control+c");
-    await page.keyboard.press("Control+v");
+    await page.getByRole("button", { name: "Paste", exact: true }).click();
+    await pasteLayer.waitFor({ timeout: 5000 });
+    await clickPagePt({ x: 300, y: 330 });
     await page.getByText("Pasted 2 placements.").waitFor({ timeout: 5000 });
     await waitSaved();
     await page.waitForTimeout(1000);
@@ -800,11 +1014,15 @@ async function main() {
       fail("deleting the original Signature must remove its Date");
     }
     await page.keyboard.press("Control+v");
-    await page.getByText(`Date Signed needs a Signature for ${LONG_NAME}.`, { exact: false }).waitFor({ timeout: 5000 });
+    await pasteLayer.waitFor({ timeout: 5000 });
+    await clickPagePt({ x: 300, y: 330 });
+    await page.getByText(`Date Signed needs a Signature or Initials for ${LONG_NAME}.`, { exact: false }).waitFor({ timeout: 5000 });
     await page.waitForTimeout(800);
     if ((await draftFields()).length !== beforeOrphan.length) fail("an orphan Date was pasted");
     await shot(page, "09-orphan-date-rejected");
-    ok("orphan Date Signed paste rejected with clear feedback");
+    await page.keyboard.press("Escape");
+    await pasteLayer.waitFor({ state: "detached", timeout: 5000 });
+    ok("orphan Date Signed paste rejected with clear feedback; nothing placed");
 
     // Empty canvas click clears the selection without placing.
     await overlayFor(`Signature for ${LONG_NAME}`, 0).click();
@@ -831,6 +1049,156 @@ async function main() {
     if (!sameAgain) fail(`geometry after edits differs on reopen: ${JSON.stringify(finalRects)} vs ${JSON.stringify(reopenedAgain)}`);
     await shot(page, "10-reopened-after-multi-edit");
     ok(`geometry after group drag / paste / delete survives close and reopen (${finalRects.length} fields)`);
+
+    const pagePt = async (pt: { x: number; y: number }) => {
+      const reopenedPage = page.locator(".react-pdf__Page").first();
+      await reopenedPage.click({ position: { x: pt.x * scale, y: pt.y * scale } });
+    };
+    /** A click with a selection only clears it; place with a second click. */
+    const placeAtPt = async (pt: { x: number; y: number }) => {
+      if (!(await selectionStatus.getByText("No placements selected").isVisible())) {
+        await pagePt({ x: 20, y: 20 });
+        await expectSelected(0);
+      }
+      await pagePt(pt);
+      await waitSaved();
+      await page.waitForTimeout(500);
+    };
+    const center = (row: { x: number; y: number; width: number; height: number }) => ({
+      x: row.x + row.width / 2,
+      y: row.y + row.height / 2,
+    });
+
+    // Copy a single Initials -> Paste -> click: it lands exactly there, nothing else.
+    await page.locator('.signing-field-overlay:has([aria-label="Initials for Lee Harbaugh"])').first().click();
+    await expectSelected(1);
+    await page.keyboard.press("Control+c");
+    await page.getByText("Copied 1 placement.").waitFor({ timeout: 5000 });
+    const beforeSingle = await draftFields();
+    await page.getByRole("button", { name: "Paste", exact: true }).click();
+    const singleLayer = page.locator('[data-testid="paste-placement-layer"]').first();
+    await singleLayer.waitFor({ timeout: 5000 });
+    const singleAnchor = { x: 430, y: 330 };
+    await singleLayer.click({ position: { x: singleAnchor.x * scale, y: singleAnchor.y * scale } });
+    await page.getByText("Pasted 1 placement.").waitFor({ timeout: 5000 });
+    await waitSaved();
+    await page.waitForTimeout(800);
+    const afterSingle = await draftFields();
+    const single = afterSingle.find((row) => !beforeSingle.some((prior) => prior.id === row.id));
+    if (afterSingle.length !== beforeSingle.length + 1 || !single) {
+      fail(`single Initials paste created ${afterSingle.length - beforeSingle.length} rows`);
+    }
+    const singleCenter = center(single);
+    if (
+      single.field_type !== "INITIALS" ||
+      single.signing_participant_id !== pid("Lee Harbaugh") ||
+      Math.abs(singleCenter.x - singleAnchor.x) > 0.6 ||
+      Math.abs(singleCenter.y - singleAnchor.y) > 0.6
+    ) {
+      fail(`single Initials paste landed at ${JSON.stringify(singleCenter)}, wanted ${JSON.stringify(singleAnchor)}`);
+    }
+    await shot(page, "11-single-initials-pasted");
+    ok("copied Initials -> Paste -> click: appears centred on the click; exactly one new field");
+
+    // Date Signed deliberately linked to that Initials.
+    await selectParticipant("#prepare-participant", "Lee Harbaugh");
+    await page.locator("#prepare-field-type").selectOption("DATE_SIGNED");
+    const linkOptions = await page.locator("#prepare-date-link option").allTextContents();
+    if (!linkOptions.some((text) => text.startsWith("Initials"))) {
+      fail(`Link to must offer Initials: ${JSON.stringify(linkOptions)}`);
+    }
+    await page.locator("#prepare-date-link").selectOption(single.id);
+    const beforeIniDate = await draftFields();
+    await placeAtPt({ x: 500, y: 330 });
+    const iniDate = (await draftFields()).find(
+      (row) => row.field_type === "DATE_SIGNED" && !beforeIniDate.some((prior) => prior.id === row.id),
+    );
+    if (
+      !iniDate ||
+      iniDate.linked_signature_draft_field_id !== single.id ||
+      iniDate.signing_participant_id !== pid("Lee Harbaugh")
+    ) {
+      fail(`Date Signed was not linked to the chosen Initials: ${JSON.stringify(iniDate)}`);
+    }
+    await page
+      .locator('.signing-field-overlay:has([aria-label="Date Signed for Lee Harbaugh"])')
+      .first()
+      .click({ position: { x: 6, y: 6 } });
+    await expectSelected(1);
+    if ((await page.locator("#relink-date").inputValue()) !== single.id) {
+      fail("the selected Date must show its Initials link");
+    }
+    await shot(page, "12-initials-linked-date");
+    ok("Date Signed linked to Initials (manager choice); Linked to shows the Initials");
+
+    // Printed Name for Bea Buyerthree on the printed-name line.
+    await page.locator("#prepare-field-type").selectOption("PRINTED_NAME");
+    await selectParticipant("#prepare-participant", "Bea Buyerthree");
+    const printedSize = defaultPreparedContentSize("PRINTED_NAME", "Bea Buyerthree");
+    await placeAtPt({
+      x: PRINTED.printedName.x + printedSize.width / 2,
+      y: PRINTED.printedName.top - printedSize.height / 2,
+    });
+    let prepared = await preparedContent();
+    const printedRow = prepared.find((row) => row.content_type === "PRINTED_NAME");
+    if (!printedRow || printedRow.signing_participant_id !== pid("Bea Buyerthree")) {
+      fail(`Printed Name did not persist for Bea: ${JSON.stringify(prepared)}`);
+    }
+    if ((await draftFields()).some((row) => !["SIGNATURE", "INITIALS", "DATE_SIGNED"].includes(row.field_type))) {
+      fail("prepared content must never be stored as a signing field");
+    }
+    const printedOverlay = page.locator('[data-field-type="PRINTED_NAME"]').first();
+    if (!(await printedOverlay.innerText()).includes("Bea Buyerthree")) {
+      fail("Printed Name overlay must render the participant's name");
+    }
+    ok("Printed Name placed on the line; renders Bea Buyerthree; stored as prepared content");
+
+    // Checkmark over the printed box: no participant.
+    await page.locator("#prepare-field-type").selectOption("CHECKMARK");
+    if (!(await page.locator("#prepare-participant").isDisabled())) {
+      fail("participant choice must be disabled for a Checkmark");
+    }
+    await placeAtPt({
+      x: PRINTED.checkbox.x + PRINTED.checkbox.size / 2,
+      y: PRINTED.checkbox.top + PRINTED.checkbox.size / 2,
+    });
+    prepared = await preparedContent();
+    const checkRow = prepared.find((row) => row.content_type === "CHECKMARK");
+    if (
+      !checkRow ||
+      checkRow.signing_participant_id !== null ||
+      Math.abs(checkRow.x - PRINTED.checkbox.x) > 0.6 ||
+      Math.abs(checkRow.y - PRINTED.checkbox.top) > 0.6
+    ) {
+      fail(`Checkmark must sit on the box with no participant: ${JSON.stringify(checkRow)}`);
+    }
+    if ((await page.locator('[data-field-type="CHECKMARK"]').count()) !== 1) fail("Checkmark overlay missing");
+    const markPage = (await page.locator(".react-pdf__Page").first().boundingBox())!;
+    await page.screenshot({
+      path: path.join(OUT_DIR, "13-printed-name-and-checkmark.png"),
+      clip: { x: markPage.x + 60 * scale, y: markPage.y + 185 * scale, width: 320 * scale, height: 95 * scale },
+    });
+    ok("Checkmark placed over the box as participant-free prepared content");
+
+    // Prepared content adds no requirement: Bea still needs a signing field.
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("heading", { name: "Prepare Documents" }).waitFor({ state: "detached" });
+    const beaRow = participantList.locator("div.rounded-lg", { hasText: "Bea Buyerthree" }).first();
+    await beaRow.getByText("Needs at least one Signature or Initials field.").waitFor({ timeout: 10000 });
+    ok("a Printed Name does not satisfy (or add) a participant requirement");
+
+    // Draft rendering follows a Draft name change.
+    await admin
+      .from("signing_participants")
+      .update({ full_name: "Beatrice Buyerthree" })
+      .eq("id", pid("Bea Buyerthree"));
+    await page.reload({ waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "Prepare Documents", exact: true }).first().click();
+    await page.getByRole("heading", { name: "Prepare Documents" }).waitFor();
+    await page.locator(".react-pdf__Page canvas").first().waitFor({ timeout: 60000 });
+    await page.locator('[data-field-type="PRINTED_NAME"]', { hasText: "Beatrice Buyerthree" }).waitFor({ timeout: 20000 });
+    await shot(page, "14-printed-name-after-rename");
+    ok("Draft Printed Name re-renders the participant's current name");
     const issues = noise.issues();
     if (issues.length > 0) fail(`unexpected runtime errors/warnings:\n${issues.join("\n")}`);
     ok("no browser console errors/warnings, page errors, or dev server errors/warnings");
@@ -851,6 +1219,7 @@ async function main() {
         .update({ linked_signature_draft_field_id: null })
         .eq("signing_id", signingId);
       await admin.from("signing_draft_fields").delete().eq("signing_id", signingId);
+      await admin.from("signing_draft_prepared_content").delete().eq("signing_id", signingId);
       await admin
         .from("signing_documents")
         .update({ selected_draft_source_snapshot_id: null })
@@ -859,12 +1228,18 @@ async function main() {
       await admin.from("signing_documents").delete().eq("signing_id", signingId);
       await admin.from("signing_participants").delete().eq("signing_id", signingId);
       await admin.from("signing_events").delete().eq("signing_id", signingId);
+      await admin.from("signing_event_chain_state").delete().eq("signing_id", signingId);
       await admin
         .from("signings")
         .update({ current_primary_agent_association_id: null })
         .eq("id", signingId);
+      await admin.from("signing_operator_associations").delete().eq("signing_id", signingId);
       await admin.from("signing_agent_associations").delete().eq("signing_id", signingId);
-      await admin.from("signings").delete().eq("id", signingId);
+      const { error: signingDeleteError } = await admin.from("signings").delete().eq("id", signingId);
+      if (signingDeleteError) console.error(`Cleanup: Signing ${signingId}: ${signingDeleteError.message}`);
+    }
+    if (brokerageSettingsId) {
+      await admin.from("brokerage_settings").delete().eq("id", brokerageSettingsId);
     }
     if (generatedPaths.length > 0) {
       await admin.storage.from(GENERATED_DOCUMENTS_BUCKET).remove(generatedPaths);

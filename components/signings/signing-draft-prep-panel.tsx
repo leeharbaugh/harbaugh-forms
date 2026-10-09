@@ -16,19 +16,30 @@ import {
   type SigningCapacityMode,
   suggestCapacityWording,
 } from "@/lib/signing/capacity-notices";
+import type { InternalSignerOptions } from "@/lib/signing/draft-participants";
+import {
+  SIGNING_PARTICIPANT_ROLE_CODES,
+  participantRoleDisplay,
+  signingParticipantRoleLabel,
+} from "@/lib/signing/participant-roles";
 import {
   addAdHocDraftSigningDocumentAction,
   addDraftSigningDocumentAction,
   addDraftSigningParticipantAction,
   addRemainingPacketDocumentsAction,
+  getDraftPacketParticipantRefreshAction,
   getDraftSourcePacketStateAction,
+  getInternalSignerOptionsAction,
+  includeInternalSignerAction,
   listPacketFormsForDraftAction,
+  refreshDraftParticipantsFromPacketAction,
   removeDraftSigningDocumentAction,
   removeDraftSigningParticipantAction,
   selectDraftSourcePacketAction,
-  upsertDraftSigningFieldAction,
+  updateDraftSigningParticipantAction,
 } from "@/lib/signing/stage3-actions";
 import type {
+  DraftPacketParticipantRefresh,
   DraftSourcePacketState,
   SelectDraftSourcePacketResult,
 } from "@/lib/signing/source-packet";
@@ -54,6 +65,7 @@ type DraftParticipant = {
   fullName: string;
   email: string;
   optionalRole: string | null;
+  roleCode?: string | null;
   hasSignatureOrInitialsField: boolean;
   capacityMode?: SigningCapacityMode;
   representedPartyName?: string | null;
@@ -66,10 +78,8 @@ export function SigningDraftPrepPanel({
   signingId,
   canManage,
   sourcePacketId,
-  firstDocumentId,
   documents,
   participants,
-  participantsMissingFields,
   onChanged,
   onResolveDrift,
   busyDocumentId,
@@ -78,10 +88,8 @@ export function SigningDraftPrepPanel({
   signingId: string;
   canManage: boolean;
   sourcePacketId: number | null;
-  firstDocumentId: string | null;
   documents: DraftDocument[];
   participants: DraftParticipant[];
-  participantsMissingFields: { id: string; fullName: string }[];
   onChanged: () => Promise<void>;
   onResolveDrift: (
     documentId: string,
@@ -92,6 +100,13 @@ export function SigningDraftPrepPanel({
 }) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [roleCode, setRoleCode] = useState("");
+  const [roleLabel, setRoleLabel] = useState("");
+  const [internalSigners, setInternalSigners] = useState<InternalSignerOptions | null>(
+    null,
+  );
+  const [packetRefresh, setPacketRefresh] =
+    useState<DraftPacketParticipantRefresh | null>(null);
   const [signingCapacityMode, setSigningCapacityMode] =
     useState<SigningCapacityMode>("PERSONAL");
   const [representedPartyName, setRepresentedPartyName] = useState("");
@@ -149,6 +164,15 @@ export function SigningDraftPrepPanel({
     if (!state.canChangeSourcePacket) setChangingPacket(false);
   }, [signingId]);
 
+  const loadParticipantSources = useCallback(async () => {
+    const [signers, refresh] = await Promise.all([
+      getInternalSignerOptionsAction({ signingId }),
+      getDraftPacketParticipantRefreshAction({ signingId }),
+    ]);
+    if (signers.ok) setInternalSigners(signers.data as InternalSignerOptions);
+    if (refresh.ok) setPacketRefresh(refresh.data as DraftPacketParticipantRefresh);
+  }, [signingId]);
+
   const packetDocumentCount = documents.filter(
     (document) => document.sourceKind !== "AD_HOC_PDF",
   ).length;
@@ -157,10 +181,12 @@ export function SigningDraftPrepPanel({
     if (!canManage) return;
     void loadPacketForms();
     void loadSourceState();
+    void loadParticipantSources();
   }, [
     canManage,
     loadPacketForms,
     loadSourceState,
+    loadParticipantSources,
     sourcePacketId,
     packetDocumentCount,
     participants.length,
@@ -199,7 +225,9 @@ export function SigningDraftPrepPanel({
 
   const canAddParticipant =
     fullName.trim().length > 0 &&
+    roleCode !== "" &&
     (signingCapacityMode === "PERSONAL" || canAddRepresentative);
+  const newPacketParticipants = packetRefresh?.newParticipants ?? [];
 
   const noPacketForms = packetForms.length === 0;
   const packetIdForBulk = sourcePacketId;
@@ -251,6 +279,8 @@ export function SigningDraftPrepPanel({
       signingId,
       fullName,
       email: email.trim() ? email : undefined,
+      roleCode,
+      optionalRole: roleLabel.trim() ? roleLabel : undefined,
       signingCapacityMode,
       ...(signingCapacityMode === "REPRESENTATIVE"
         ? {
@@ -265,6 +295,8 @@ export function SigningDraftPrepPanel({
     } else {
       setFullName("");
       setEmail("");
+      setRoleCode("");
+      setRoleLabel("");
       setSigningCapacityMode("PERSONAL");
       setRepresentedPartyName("");
       setCapacityLabel(DEFAULT_CAPACITY_LABEL);
@@ -272,6 +304,66 @@ export function SigningDraftPrepPanel({
       setCapacityWordingTouched(false);
       setNotice("Participant added.");
       await onChanged();
+    }
+    setBusy(false);
+  }
+
+  async function changeParticipantRole(participantId: string, nextRoleCode: string) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = await updateDraftSigningParticipantAction({
+      signingId,
+      participantId,
+      roleCode: nextRoleCode,
+    });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      setNotice("Participant role updated.");
+      await onChanged();
+    }
+    setBusy(false);
+  }
+
+  async function includeInternalSigner(kind: "SELF" | "BROKER") {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = await includeInternalSignerAction({ signingId, kind });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      const data = result.data as { added: boolean; participant: { full_name: string } };
+      setNotice(
+        data.added
+          ? `${data.participant.full_name} added as a signer.`
+          : `${data.participant.full_name} is already a signer on this Signing.`,
+      );
+      await onChanged();
+      await loadParticipantSources();
+    }
+    setBusy(false);
+  }
+
+  async function addFromPacket() {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = await refreshDraftParticipantsFromPacketAction({ signingId });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      const added =
+        (result.data as { addedParticipantCount?: number } | undefined)
+          ?.addedParticipantCount ?? 0;
+      setNotice(
+        added > 0
+          ? `Added ${added} participant${added === 1 ? "" : "s"} from the Packet.`
+          : "Every eligible Packet party is already a participant.",
+      );
+      await onChanged();
+      await loadParticipantSources();
     }
     setBusy(false);
   }
@@ -380,57 +472,6 @@ export function SigningDraftPrepPanel({
     }
     setBusy(false);
     if (uploadInputRef.current) uploadInputRef.current.value = "";
-  }
-
-  async function addDefaultFields(participantId: string) {
-    if (!firstDocumentId) {
-      setError("Add a document before placing signature fields.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    const signature = await upsertDraftSigningFieldAction({
-      signingId,
-      signingDocumentId: firstDocumentId,
-      signingParticipantId: participantId,
-      fieldType: "SIGNATURE",
-      pageNumber: 1,
-      x: 72,
-      y: 720,
-      width: 160,
-      height: 40,
-    });
-    if (!signature.ok) {
-      setError(signature.error);
-      setBusy(false);
-      return;
-    }
-    const signatureId = (signature.data as { id?: string } | undefined)?.id;
-    if (!signatureId) {
-      setError("Signature field was created without an id.");
-      setBusy(false);
-      return;
-    }
-    const dateSigned = await upsertDraftSigningFieldAction({
-      signingId,
-      signingDocumentId: firstDocumentId,
-      signingParticipantId: participantId,
-      fieldType: "DATE_SIGNED",
-      linkedSignatureDraftFieldId: signatureId,
-      pageNumber: 1,
-      x: 250,
-      y: 720,
-      width: 100,
-      height: 24,
-    });
-    if (!dateSigned.ok) {
-      setError(dateSigned.error);
-    } else {
-      setNotice("Default Signature and Date Signed fields added.");
-      await onChanged();
-    }
-    setBusy(false);
   }
 
   return (
@@ -692,6 +733,71 @@ export function SigningDraftPrepPanel({
           <p id="draft-participants-heading" className="text-sm font-medium">
             Participants
           </p>
+          {newPacketParticipants.length > 0 ? (
+            <div
+              className="space-y-2 rounded-lg border border-sky-300 bg-sky-50 p-3 dark:border-sky-800 dark:bg-sky-950/40"
+              data-testid="packet-new-participants"
+              role="status"
+            >
+              <p className="text-sm font-medium">
+                The source Packet has {newPacketParticipants.length} new
+                participant{newPacketParticipants.length === 1 ? "" : "s"}
+              </p>
+              <ul className="text-sm text-muted-foreground">
+                {newPacketParticipants.map((party) => (
+                  <li key={party.linkedContactId}>
+                    {party.fullName}
+                    {" — "}
+                    {participantRoleDisplay(party.roleCode, party.optionalRole)}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground">
+                Adding them never changes or removes current participants.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() => void addFromPacket()}
+              >
+                Add from Packet
+              </Button>
+            </div>
+          ) : null}
+          {internalSigners ? (
+            <div className="flex flex-wrap items-center gap-2" data-testid="internal-signers">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={
+                  busy ||
+                  !internalSigners.self.available ||
+                  internalSigners.self.alreadyIncluded
+                }
+                title={internalSigners.self.unavailableReason ?? undefined}
+                onClick={() => void includeInternalSigner("SELF")}
+              >
+                {internalSigners.self.alreadyIncluded
+                  ? "You are a signer"
+                  : "Include me as a signer"}
+              </Button>
+              {internalSigners.broker.available ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || internalSigners.broker.alreadyIncluded}
+                  onClick={() => void includeInternalSigner("BROKER")}
+                >
+                  {internalSigners.broker.alreadyIncluded
+                    ? `Broker ${internalSigners.broker.fullName} is a signer`
+                    : `Include broker as a signer (${internalSigners.broker.fullName})`}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           <div className="space-y-3 rounded-lg border border-border p-3">
             <p className="text-sm font-medium">Add participant</p>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -714,7 +820,38 @@ export function SigningDraftPrepPanel({
                   disabled={busy}
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="participant-role">Role</Label>
+                <select
+                  id="participant-role"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  value={roleCode}
+                  onChange={(event) => setRoleCode(event.target.value)}
+                  disabled={busy}
+                >
+                  <option value="">Choose a role</option>
+                  {SIGNING_PARTICIPANT_ROLE_CODES.map((code) => (
+                    <option key={code} value={code}>
+                      {signingParticipantRoleLabel(code)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="participant-role-label">Role label (optional)</Label>
+                <Input
+                  id="participant-role-label"
+                  value={roleLabel}
+                  placeholder="e.g. Co-buyer"
+                  onChange={(event) => setRoleLabel(event.target.value)}
+                  disabled={busy}
+                />
+              </div>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Role labels the participant for preparation. It is not identity
+              proof and does not grant representative authority.
+            </p>
 
             <div className="space-y-2">
               <Label htmlFor="signing-capacity-mode">Signing as</Label>
@@ -807,9 +944,9 @@ export function SigningDraftPrepPanel({
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2 text-sm">
                       <span className="font-medium">{participant.fullName}</span>
-                      {participant.optionalRole ? (
-                        <span className="text-muted-foreground">
-                          {participant.optionalRole}
+                      {participantRoleDisplay(participant.roleCode, participant.optionalRole) ? (
+                        <span className="text-muted-foreground" data-testid="participant-role">
+                          {participantRoleDisplay(participant.roleCode, participant.optionalRole)}
                         </span>
                       ) : null}
                       {participant.capacityMode === "REPRESENTATIVE" ? (
@@ -838,48 +975,38 @@ export function SigningDraftPrepPanel({
                       </p>
                     ) : null}
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => void removeParticipant(participant.id)}
-                  >
-                    Remove participant
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label={`Role for ${participant.fullName}`}
+                      className="flex h-8 rounded-md border border-input bg-transparent px-2 text-sm shadow-sm"
+                      value={participant.roleCode ?? ""}
+                      onChange={(event) =>
+                        void changeParticipantRole(participant.id, event.target.value)
+                      }
+                      disabled={busy}
+                    >
+                      <option value="">No role</option>
+                      {SIGNING_PARTICIPANT_ROLE_CODES.map((code) => (
+                        <option key={code} value={code}>
+                          {signingParticipantRoleLabel(code)}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => void removeParticipant(participant.id)}
+                    >
+                      Remove participant
+                    </Button>
+                  </div>
                 </div>
               ))
             )}
           </div>
         </section>
-
-        {participantsMissingFields.length > 0 ? (
-          <div className="space-y-3 rounded-lg border border-border p-3">
-            <p className="text-sm font-medium">Optional quick fields</p>
-            <p className="text-sm text-muted-foreground">
-              Prefer Prepare Documents for visual placement. Add default fields
-              remains available as a quick fixture that places a typed Signature
-              + Date Signed pair on page 1 of the first document.
-            </p>
-            {participantsMissingFields.map((participant) => (
-              <div
-                key={participant.id}
-                className="flex flex-wrap items-center justify-between gap-2"
-              >
-                <span className="text-sm">{participant.fullName}</span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={busy || !firstDocumentId}
-                  onClick={() => void addDefaultFields(participant.id)}
-                >
-                  Add default fields
-                </Button>
-              </div>
-            ))}
-          </div>
-        ) : null}
       </CardContent>
     </Card>
   );

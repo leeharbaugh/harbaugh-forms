@@ -7,10 +7,13 @@
  * Widths are measured with the renderer's own font metrics.
  */
 import {
+  approximateHelveticaWidth,
   fitTypedSignatureFontSize,
+  resolveFieldFontSize,
   typedSignatureFontSize,
 } from "@/lib/pdf-text-layout";
 import { suggestTypedInitialsFromDisplayName } from "./initials-suggestion";
+import type { PreparedContentType } from "./prepared-content-types";
 import {
   CAVEAT_ADVANCE_WIDTHS,
   CAVEAT_DESCENT,
@@ -144,3 +147,31 @@ export function defaultDraftFieldSize(
 export const DATE_SIGNED_DEFAULT_SIZE = defaultDraftFieldSize("DATE_SIGNED", {
   fullName: "",
 });
+
+/** A checkmark box sized for a typical form checkbox. */
+export const CHECKMARK_DEFAULT_SIZE = { width: 12, height: 12 };
+
+const PRINTED_NAME_HEIGHT = 16;
+const PRINTED_NAME_WIDTH_BOUNDS = { min: 60, max: 260 };
+
+/** Default box for manager-prepared content (Printed Name sized to the name). */
+export function defaultPreparedContentSize(
+  type: PreparedContentType,
+  fullName: string,
+): { width: number; height: number } {
+  if (type === "CHECKMARK") return CHECKMARK_DEFAULT_SIZE;
+  const size = resolveFieldFontSize({
+    configuredFontSize: null,
+    boxHeightPdf: PRINTED_NAME_HEIGHT,
+    isMultiline: false,
+    scale: 1,
+  });
+  const width = approximateHelveticaWidth(fullName.trim() || "Printed Name", size) * 1.1;
+  return {
+    width: Math.min(
+      PRINTED_NAME_WIDTH_BOUNDS.max,
+      Math.max(PRINTED_NAME_WIDTH_BOUNDS.min, Math.ceil(width + 2 * HORIZONTAL_PADDING)),
+    ),
+    height: PRINTED_NAME_HEIGHT,
+  };
+}

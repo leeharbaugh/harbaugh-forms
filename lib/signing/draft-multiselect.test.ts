@@ -214,7 +214,7 @@ describe("Prepare Documents copy/paste", () => {
     ];
     const plan = planPaste({ model: orphan, documentId: "d1", clipboard, pageSizes: PAGES, offset: PASTE_OFFSET_PT, newId });
     assert.equal(plan.fields.length, 0);
-    assert.match(plan.rejected[0], /Date Signed needs a Signature for Cal Buyer/);
+    assert.match(plan.rejected[0], /Date Signed needs a Signature or Initials for Cal Buyer/);
   });
 
   it("clamps pasted groups to the page and rejects missing pages", () => {

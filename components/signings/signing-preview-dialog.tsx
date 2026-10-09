@@ -15,20 +15,21 @@ import {
   stepZoomPercent,
   type PdfZoomMode,
 } from "@/lib/pdf-editor-zoom";
-import type { SigningDraftFieldRow } from "@/lib/signing/draft-fields";
 import {
-  PASTE_OFFSET_PT,
   addField,
   clampGroupDelta,
   clampRectToPage,
   copyPlacements,
+  dateSourceOptions,
   expandRemovalIds,
   groupMoveIds,
   isSelectionToggle,
   isTypingTarget,
   moveGroup,
+  placementHasParticipant,
   planPaste,
   toggleSelection,
+  type PasteAnchor,
   type PlacementClipboardItem,
   dragExceededThreshold,
   draftFieldCompactLabel,
@@ -46,16 +47,24 @@ import {
 } from "@/lib/signing/draft-field-editor-state";
 import {
   defaultDraftFieldSize,
+  defaultPreparedContentSize,
   draftMarkFontSize,
 } from "@/lib/signing/draft-field-sizing";
+import { approximateHelveticaWidth } from "@/lib/pdf-text-layout";
+import { participantRoleDisplay } from "@/lib/signing/participant-roles";
+import { CHECKMARK_POINTS, printedNameFontSize } from "@/lib/signing/prepared-content-geometry";
+import { isPreparedContentType } from "@/lib/signing/prepared-content-types";
 import { getSigningPreviewAction } from "@/lib/signing/preview-actions";
 import type {
   SigningPreviewDocument,
   SigningPreviewField,
   SigningPreviewModel,
+  SigningPreviewParticipant,
 } from "@/lib/signing/preview";
 import {
+  removeDraftPreparedContentAction,
   removeDraftSigningFieldAction,
+  upsertDraftPreparedContentAction,
   upsertDraftSigningFieldAction,
 } from "@/lib/signing/stage3-actions";
 import {
@@ -85,6 +94,19 @@ const ADOPTION_BOUNDARY_COPY =
 
 const fieldTypeLabel = draftFieldTypeLabel;
 
+function participantOptionLabel(participant: SigningPreviewParticipant): string {
+  const role = participantRoleDisplay(participant.roleCode, participant.optionalRole);
+  const representing =
+    participant.capacityMode === "REPRESENTATIVE" && participant.representedPartyName
+      ? ` (representing ${participant.representedPartyName})`
+      : "";
+  return `${participant.fullName}${role ? ` — ${role}` : ""}${representing}`;
+}
+
+function dateSourceLabel(field: SigningPreviewField): string {
+  return `${draftFieldTypeLabel(field.fieldType)} · page ${field.pageNumber}`;
+}
+
 /**
  * The renderer puts the baseline 1pt + font size below the box top; a
  * line-height:1 CSS box puts it about 0.84em down, so pad the difference.
@@ -105,7 +127,34 @@ const FIELD_BORDER: Record<DraftFieldType, string> = {
   SIGNATURE: "border-sky-600",
   INITIALS: "border-emerald-600",
   DATE_SIGNED: "border-amber-600",
+  PRINTED_NAME: "border-dashed border-violet-600",
+  CHECKMARK: "border-dashed border-slate-500",
 };
+
+/** Overlay font size (PDF pt) for the text a placement will show. */
+function overlayFontPt(field: SigningPreviewField, text: string): number {
+  if (field.fieldType === "PRINTED_NAME") {
+    return printedNameFontSize({
+      text,
+      width: field.width,
+      height: field.height,
+      measureWidth: approximateHelveticaWidth,
+    });
+  }
+  if (field.fieldType === "CHECKMARK") return field.height;
+  return draftMarkFontSize(field.fieldType, text, field);
+}
+
+function CheckmarkGlyph() {
+  const path = CHECKMARK_POINTS.map(([x, y], index) =>
+    `${index === 0 ? "M" : "L"}${x * 100} ${y * 100}`,
+  ).join(" ");
+  return (
+    <svg aria-hidden viewBox="0 0 100 100" className="h-full w-full text-foreground/80">
+      <path d={path} fill="none" stroke="currentColor" strokeWidth={12} strokeLinecap="square" />
+    </svg>
+  );
+}
 
 function SigningFieldOverlay({
   field,
@@ -139,32 +188,48 @@ function SigningFieldOverlay({
   const description = draftFieldDescription(field);
   const markText = draftFieldCompactLabel(field);
   const scale = metrics.renderedWidth / metrics.originalWidth;
-  const markFontPt = draftMarkFontSize(field.fieldType, markText, field);
+  const markFontPt = overlayFontPt(field, markText);
   const markFontPx = markFontPt * scale;
-  const typed = field.fieldType !== "DATE_SIGNED";
-  const label = (
-    <div
-      className={cn(
-        "flex h-full items-start overflow-hidden",
-        typed ? "justify-start" : "justify-center",
-      )}
-      aria-label={description}
-      data-field-type={field.fieldType}
-      data-field-label={markText}
-      style={{ paddingTop: (1 + BASELINE_OFFSET_EM * markFontPt) * scale }}
-    >
-      <span
-        aria-hidden
-        className="whitespace-nowrap leading-none text-foreground/80"
-        style={{
-          fontSize: markFontPx,
-          fontFamily: typed ? "Caveat, cursive" : "Helvetica, Arial, sans-serif",
-        }}
+  const typed = field.fieldType === "SIGNATURE" || field.fieldType === "INITIALS";
+  const printed = field.fieldType === "PRINTED_NAME";
+  const label =
+    field.fieldType === "CHECKMARK" ? (
+      <div
+        className="flex h-full items-center justify-center"
+        aria-label={description}
+        data-field-type={field.fieldType}
+        data-field-label={markText}
       >
-        {markText}
-      </span>
-    </div>
-  );
+        <CheckmarkGlyph />
+      </div>
+    ) : (
+      <div
+        className={cn(
+          "flex h-full overflow-hidden",
+          printed ? "items-center" : "items-start",
+          typed || printed ? "justify-start" : "justify-center",
+        )}
+        aria-label={description}
+        data-field-type={field.fieldType}
+        data-field-label={markText}
+        style={
+          printed
+            ? { paddingLeft: 2 * scale }
+            : { paddingTop: (1 + BASELINE_OFFSET_EM * markFontPt) * scale }
+        }
+      >
+        <span
+          aria-hidden
+          className="whitespace-nowrap leading-none text-foreground/80"
+          style={{
+            fontSize: markFontPx,
+            fontFamily: typed ? "Caveat, cursive" : "Helvetica, Arial, sans-serif",
+          }}
+        >
+          {markText}
+        </span>
+      </div>
+    );
 
   if (!editable) {
     return (
@@ -186,8 +251,8 @@ function SigningFieldOverlay({
       bounds="parent"
       size={{ width: rect.width, height: rect.height }}
       position={{ x: rect.x + (offset?.dx ?? 0), y: rect.y + (offset?.dy ?? 0) }}
-      minWidth={12}
-      minHeight={8}
+      minWidth={field.fieldType === "CHECKMARK" ? 6 : 12}
+      minHeight={field.fieldType === "CHECKMARK" ? 6 : 8}
       cancel=".signing-field-remove"
       className={cn(
         "signing-field-overlay absolute box-border rounded-sm border bg-background/85",
@@ -282,10 +347,15 @@ export function SigningPreviewDialog({
     dx: number;
     dy: number;
   } | null>(null);
-  const [clipboard, setClipboard] = useState<{
-    items: PlacementClipboardItem[];
-    pastes: number;
-  } | null>(null);
+  const [clipboard, setClipboard] = useState<PlacementClipboardItem[] | null>(null);
+  /**
+   * Paste-placement mode: the next page click anchors the clipboard group and
+   * never places a normal field. `pastePreview` is the hovered anchor.
+   */
+  const [pasteMode, setPasteMode] = useState(false);
+  const [pastePreview, setPastePreview] = useState<PasteAnchor | null>(null);
+  /** Explicit Date Signed source chosen in the sidebar ("" = preferred Signature). */
+  const [dateLinkSourceId, setDateLinkSourceId] = useState("");
   const [editorNotice, setEditorNotice] = useState<string | null>(null);
   const pressRef = useRef<{ id: string; toggle: boolean; wasSelected: boolean } | null>(null);
   const [pageSizes, setPageSizes] = useState<
@@ -329,6 +399,8 @@ export function SigningPreviewDialog({
     setError(null);
     setSelectedFieldIds([]);
     setClipboard(null);
+    setPasteMode(false);
+    setPastePreview(null);
     setEditorNotice(null);
     idMapRef.current = new Map();
     dirtyRef.current = false;
@@ -451,6 +523,44 @@ export function SigningPreviewDialog({
     };
   }
 
+  /** Trusted write for one placement: signer field or prepared content. */
+  function savePlacement(
+    documentId: string,
+    field: SigningPreviewField,
+    existingId: string | undefined,
+  ) {
+    if (isPreparedContentType(field.fieldType)) {
+      return upsertDraftPreparedContentAction({
+        signingId,
+        contentId: existingId,
+        signingDocumentId: documentId,
+        signingParticipantId: field.participantId || undefined,
+        contentType: field.fieldType,
+        pageNumber: field.pageNumber,
+        x: field.x,
+        y: field.y,
+        width: field.width,
+        height: field.height,
+      });
+    }
+    return upsertDraftSigningFieldAction({
+      signingId,
+      fieldId: existingId,
+      signingDocumentId: documentId,
+      signingParticipantId: field.participantId,
+      fieldType: field.fieldType,
+      isRequired: field.isRequired,
+      pageNumber: field.pageNumber,
+      x: field.x,
+      y: field.y,
+      width: field.width,
+      height: field.height,
+      linkedSignatureDraftFieldId: field.linkedSignatureFieldId
+        ? resolveId(field.linkedSignatureFieldId)
+        : undefined,
+    });
+  }
+
   function persistField(fieldId: string) {
     enqueue(async () => {
       const realId = resolveId(fieldId);
@@ -458,23 +568,7 @@ export function SigningPreviewDialog({
       if (realId.startsWith("local-")) return;
       const located = modelRef.current ? findField(modelRef.current, realId) : null;
       if (!located) return;
-      const { field, documentId } = located;
-      const result = await upsertDraftSigningFieldAction({
-        signingId,
-        fieldId: realId,
-        signingDocumentId: documentId,
-        signingParticipantId: field.participantId,
-        fieldType: field.fieldType,
-        isRequired: field.isRequired,
-        pageNumber: field.pageNumber,
-        x: field.x,
-        y: field.y,
-        width: field.width,
-        height: field.height,
-        linkedSignatureDraftFieldId: field.linkedSignatureFieldId
-          ? resolveId(field.linkedSignatureFieldId)
-          : undefined,
-      });
+      const result = await savePlacement(located.documentId, located.field, realId);
       if (!result.ok) {
         setError(result.error);
         await reconcile();
@@ -494,24 +588,51 @@ export function SigningPreviewDialog({
     rect: PdfRect,
     linkedSignatureFieldId: string | null,
   ): SigningPreviewField | null {
-    const participant = model?.participants.find(
-      (row) => row.id === selectedParticipantId,
-    );
-    if (!participant) return null;
+    const participant = placementHasParticipant(fieldType)
+      ? model?.participants.find((row) => row.id === selectedParticipantId)
+      : null;
+    if (placementHasParticipant(fieldType) && !participant) return null;
     return {
       id,
       fieldType,
-      isRequired: true,
+      isRequired: !isPreparedContentType(fieldType),
       pageNumber,
       ...rect,
-      participantId: participant.id,
-      participantFullName: participant.fullName,
-      capacityMode: participant.capacityMode,
-      representedPartyName: participant.representedPartyName,
+      participantId: participant?.id ?? "",
+      participantFullName: participant?.fullName ?? "",
+      capacityMode: participant?.capacityMode ?? "PERSONAL",
+      representedPartyName: participant?.representedPartyName ?? null,
       capacityLabel: null,
-      capacityWording: participant.capacityWording,
+      capacityWording: participant?.capacityWording ?? null,
       linkedSignatureFieldId,
     };
+  }
+
+  /** Point on a page (PDF units) for a mouse event over that page. */
+  function eventPdfPoint(
+    event: ReactMouseEvent<HTMLElement>,
+    pageNumber: number,
+  ): PasteAnchor | null {
+    if (!currentDocument) return null;
+    const metrics = metricsFor(currentDocument.id, pageNumber);
+    if (!metrics) return null;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const point = clickToPdfCoordinates(
+      event.clientX - bounds.left,
+      event.clientY - bounds.top,
+      metrics,
+    );
+    return { pageNumber, x: point.x, y: point.y };
+  }
+
+  /** Date Signed source for the selected participant on the current document. */
+  function chosenDateSource(pageNumber: number): SigningPreviewField | null {
+    if (!currentDocument) return null;
+    const options = dateSourceOptions(currentDocument.fields, selectedParticipantId);
+    return (
+      options.find((field) => field.id === dateLinkSourceId) ??
+      preferredSignatureForDate(currentDocument.fields, selectedParticipantId, pageNumber)
+    );
   }
 
   function placeFieldAt(
@@ -519,6 +640,8 @@ export function SigningPreviewDialog({
     pageNumber: number,
   ) {
     if (!editable || !currentDocument || !model) return;
+    // Paste-placement mode is handled by its capture layer; never place here.
+    if (pasteMode) return;
     // A press that began on a field (select, drag, resize, Remove) never places.
     if (pointerStartedOnFieldRef.current) {
       pointerStartedOnFieldRef.current = false;
@@ -530,26 +653,24 @@ export function SigningPreviewDialog({
       setSelectedFieldIds([]);
       return;
     }
-    if (!selectedParticipantId) {
+    const needsParticipant = placementHasParticipant(selectedFieldType);
+    if (needsParticipant && !selectedParticipantId) {
       setError("Add a participant before placing fields.");
       return;
     }
     const metrics = metricsFor(currentDocument.id, pageNumber);
-    if (!metrics) return;
+    const point = eventPdfPoint(event, pageNumber);
+    if (!metrics || !point) return;
     setError(null);
 
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const point = clickToPdfCoordinates(
-      event.clientX - bounds.left,
-      event.clientY - bounds.top,
-      metrics,
-    );
     const page = { width: metrics.originalWidth, height: metrics.originalHeight };
     const participant = model.participants.find(
       (row) => row.id === selectedParticipantId,
     );
-    if (!participant) return;
-    const size = defaultDraftFieldSize(selectedFieldType, participant);
+    if (needsParticipant && !participant) return;
+    const size = isPreparedContentType(selectedFieldType)
+      ? defaultPreparedContentSize(selectedFieldType, participant?.fullName ?? "")
+      : defaultDraftFieldSize(selectedFieldType, participant!);
     const rect = clampRectToPage(
       {
         x: point.x - size.width / 2,
@@ -561,18 +682,14 @@ export function SigningPreviewDialog({
 
     let linkedSignatureDraftFieldId: string | null = null;
     if (selectedFieldType === "DATE_SIGNED") {
-      const signature = preferredSignatureForDate(
-        currentDocument.fields,
-        selectedParticipantId,
-        pageNumber,
-      );
-      if (!signature) {
+      const source = chosenDateSource(pageNumber);
+      if (!source) {
         setError(
-          "Place a Signature for this participant before adding Date Signed.",
+          "Choose the Signature or Initials this Date Signed belongs to (place one for this participant first).",
         );
         return;
       }
-      linkedSignatureDraftFieldId = signature.id;
+      linkedSignatureDraftFieldId = source.id;
     }
 
     const documentId = currentDocument.id;
@@ -608,27 +725,13 @@ export function SigningPreviewDialog({
     documentId: string,
     local: SigningPreviewField,
   ): Promise<boolean> {
-    const result = await upsertDraftSigningFieldAction({
-      signingId,
-      signingDocumentId: documentId,
-      signingParticipantId: local.participantId,
-      fieldType: local.fieldType,
-      isRequired: local.isRequired,
-      pageNumber: local.pageNumber,
-      x: local.x,
-      y: local.y,
-      width: local.width,
-      height: local.height,
-      linkedSignatureDraftFieldId: local.linkedSignatureFieldId
-        ? resolveId(local.linkedSignatureFieldId)
-        : undefined,
-    });
+    const result = await savePlacement(documentId, local, undefined);
     if (!result.ok) {
       setError(result.error);
       await reconcile();
       return false;
     }
-    const row = result.data as SigningDraftFieldRow;
+    const row = result.data as { id: string };
     idMapRef.current.set(local.id, row.id);
     updateModel((current) => replaceFieldId(current, local.id, row.id));
     setSelectedFieldIds((previous) =>
@@ -739,6 +842,12 @@ export function SigningPreviewDialog({
     if (ids.length === 0) return;
     setError(null);
     setEditorNotice(null);
+    const preparedIds = new Set(
+      fieldIds.filter((id) => {
+        const located = findField(model, id);
+        return located !== null && isPreparedContentType(located.field.fieldType);
+      }),
+    );
     updateModel((current) => removeFields(current, ids));
     setSelectedFieldIds([]);
     const primary = [...fieldIds];
@@ -746,10 +855,9 @@ export function SigningPreviewDialog({
       for (const fieldId of primary) {
         const realId = resolveId(fieldId);
         if (realId.startsWith("local-")) continue;
-        const result = await removeDraftSigningFieldAction({
-          signingId,
-          fieldId: realId,
-        });
+        const result = preparedIds.has(fieldId)
+          ? await removeDraftPreparedContentAction({ signingId, contentId: realId })
+          : await removeDraftSigningFieldAction({ signingId, fieldId: realId });
         if (!result.ok) {
           setError(result.error);
           await reconcile();
@@ -770,36 +878,57 @@ export function SigningPreviewDialog({
   function copySelection() {
     if (!model || selectedFieldIds.length === 0) return;
     const items = copyPlacements(model, selectedFieldIds);
-    setClipboard({ items, pastes: 0 });
+    setClipboard(items);
     setError(null);
     setEditorNotice(
       `Copied ${items.length} placement${items.length === 1 ? "" : "s"}.`,
     );
   }
 
-  function pasteClipboard() {
-    if (!model || !currentDocument || !clipboard || clipboard.items.length === 0) return;
-    const documentPageSizes: Record<number, { width: number; height: number }> = {};
+  function currentDocumentPageSizes(): Record<number, { width: number; height: number }> {
+    const sizes: Record<number, { width: number; height: number }> = {};
+    if (!currentDocument) return sizes;
     for (let pageNumber = 1; pageNumber <= numPages; pageNumber += 1) {
       const size = pageSizes[`${currentDocument.id}:${pageNumber}`];
-      if (size) documentPageSizes[pageNumber] = size;
+      if (size) sizes[pageNumber] = size;
     }
-    const pastes = clipboard.pastes + 1;
+    return sizes;
+  }
+
+  /** Paste (button or Ctrl/⌘+V) arms paste-placement mode; the next page click places. */
+  function startPasteMode() {
+    if (!model || !currentDocument || !clipboard || clipboard.length === 0) return;
+    setSelectedFieldIds([]);
+    setError(null);
+    setPasteMode(true);
+    setPastePreview(null);
+    setEditorNotice(
+      "Click the page where the pasted placements should go. Press Esc to cancel.",
+    );
+  }
+
+  function cancelPasteMode() {
+    if (!pasteMode) return;
+    setPasteMode(false);
+    setPastePreview(null);
+    setEditorNotice(null);
+  }
+
+  function pasteAt(anchor: PasteAnchor) {
+    if (!model || !currentDocument || !clipboard || clipboard.length === 0) return;
     const plan = planPaste({
       model,
       documentId: currentDocument.id,
-      clipboard: clipboard.items,
-      pageSizes: documentPageSizes,
-      offset: PASTE_OFFSET_PT * pastes,
+      clipboard,
+      pageSizes: currentDocumentPageSizes(),
+      anchor,
       newId: newLocalId,
     });
     setError(plan.rejected.length > 0 ? plan.rejected.join(" ") : null);
-    if (plan.fields.length === 0) {
-      setEditorNotice(null);
-      return;
-    }
+    if (plan.fields.length === 0) return;
     const documentId = currentDocument.id;
-    setClipboard({ ...clipboard, pastes });
+    setPasteMode(false);
+    setPastePreview(null);
     updateModel((current) =>
       plan.fields.reduce((next, field) => addField(next, documentId, field), current),
     );
@@ -810,34 +939,72 @@ export function SigningPreviewDialog({
     persistNewFields(documentId, plan.fields);
   }
 
+  /** Ghost rects (one page) for the hovered paste anchor; nothing is created. */
+  function pastePreviewRects(pageNumber: number): SigningPreviewField[] {
+    if (!pasteMode || !pastePreview || !model || !currentDocument || !clipboard) return [];
+    let ghost = 0;
+    const plan = planPaste({
+      model,
+      documentId: currentDocument.id,
+      clipboard,
+      pageSizes: currentDocumentPageSizes(),
+      anchor: pastePreview,
+      newId: () => `paste-preview-${(ghost += 1)}`,
+    });
+    return plan.fields.filter((field) => field.pageNumber === pageNumber);
+  }
+
   function reassignSelectedField(participantId: string) {
     if (!model || !selectedFieldId) return;
     const located = findField(model, selectedFieldId);
     if (!located || located.field.participantId === participantId) return;
     setError(null);
 
+    if (!placementHasParticipant(located.field.fieldType)) return;
+
     let linkedSignatureDraftFieldId: string | null = null;
     if (located.field.fieldType === "DATE_SIGNED") {
       const document = model.documents.find((row) => row.id === located.documentId);
-      const signature = document
-        ? preferredSignatureForDate(
+      const source = document
+        ? (preferredSignatureForDate(
             document.fields,
             participantId,
             located.field.pageNumber,
-          )
+          ) ?? dateSourceOptions(document.fields, participantId)[0] ?? null)
         : null;
-      if (!signature) {
+      if (!source) {
         setError(
-          "Reassign Date Signed only to a participant who already has a Signature on this document.",
+          "Reassign Date Signed only to a participant who already has a Signature or Initials on this document.",
         );
         return;
       }
-      linkedSignatureDraftFieldId = signature.id;
+      linkedSignatureDraftFieldId = source.id;
     }
 
     const fieldId = selectedFieldId;
     updateModel((current) =>
       reassignField(current, fieldId, participantId, linkedSignatureDraftFieldId),
+    );
+    persistField(fieldId);
+  }
+
+  /** Link the selected Date Signed to another Signature/Initials of its participant. */
+  function relinkSelectedDate(sourceId: string) {
+    if (!model || !selectedFieldId) return;
+    const located = findField(model, selectedFieldId);
+    if (!located || located.field.fieldType !== "DATE_SIGNED") return;
+    if (located.field.linkedSignatureFieldId === sourceId) return;
+    const document = model.documents.find((row) => row.id === located.documentId);
+    const source = document
+      ? dateSourceOptions(document.fields, located.field.participantId).find(
+          (field) => field.id === sourceId,
+        )
+      : null;
+    if (!source) return;
+    setError(null);
+    const fieldId = selectedFieldId;
+    updateModel((current) =>
+      reassignField(current, fieldId, located.field.participantId, source.id),
     );
     persistField(fieldId);
   }
@@ -851,6 +1018,7 @@ export function SigningPreviewDialog({
   }
 
   function goToDocument(documentId: string) {
+    cancelPasteMode();
     setCurrentDocumentId(documentId);
     setSelectedFieldIds([]);
     pageRefs.current = {};
@@ -869,7 +1037,9 @@ export function SigningPreviewDialog({
     if (!open) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        if (selectedFieldIds.length > 0) {
+        if (pasteMode) {
+          cancelPasteMode();
+        } else if (selectedFieldIds.length > 0) {
           setSelectedFieldIds([]);
         } else {
           handleClose();
@@ -887,9 +1057,9 @@ export function SigningPreviewDialog({
         event.preventDefault();
         copySelection();
       } else if (command && event.key.toLowerCase() === "v") {
-        if (!clipboard) return;
+        if (!clipboard || clipboard.length === 0) return;
         event.preventDefault();
-        pasteClipboard();
+        startPasteMode();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -1112,7 +1282,10 @@ export function SigningPreviewDialog({
                         <div
                           className={cn(
                             "relative w-fit border bg-white shadow-md",
-                            editable && selectedParticipantId && "cursor-crosshair",
+                            editable &&
+                              (selectedParticipantId ||
+                                !placementHasParticipant(selectedFieldType)) &&
+                              "cursor-crosshair",
                           )}
                           onMouseDownCapture={(event) => {
                             pointerStartedOnFieldRef.current =
@@ -1166,6 +1339,41 @@ export function SigningPreviewDialog({
                                 />
                               ))
                             : null}
+                          {metrics
+                            ? pastePreviewRects(pageNumber).map((ghost) => {
+                                const rect = toRenderRect(ghost, metrics);
+                                return (
+                                  <div
+                                    key={ghost.id}
+                                    aria-hidden
+                                    data-paste-preview
+                                    className="pointer-events-none absolute z-20 rounded-sm border-2 border-dashed border-sky-500 bg-sky-100/40"
+                                    style={{
+                                      left: rect.x,
+                                      top: rect.y,
+                                      width: rect.width,
+                                      height: rect.height,
+                                    }}
+                                  />
+                                );
+                              })
+                            : null}
+                          {editable && pasteMode ? (
+                            <div
+                              data-testid="paste-placement-layer"
+                              className="absolute inset-0 z-30 cursor-copy"
+                              onMouseDown={(event) => event.stopPropagation()}
+                              onMouseMove={(event) =>
+                                setPastePreview(eventPdfPoint(event, pageNumber))
+                              }
+                              onMouseLeave={() => setPastePreview(null)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                const anchor = eventPdfPoint(event, pageNumber);
+                                if (anchor) pasteAt(anchor);
+                              }}
+                            />
+                          ) : null}
                         </div>
                       </div>
                     );
@@ -1188,23 +1396,31 @@ export function SigningPreviewDialog({
                       id="prepare-participant"
                       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
                       value={selectedParticipantId}
-                      onChange={(event) => setSelectedParticipantId(event.target.value)}
-                      disabled={model.participants.length === 0}
+                      onChange={(event) => {
+                        cancelPasteMode();
+                        setDateLinkSourceId("");
+                        setSelectedParticipantId(event.target.value);
+                      }}
+                      disabled={
+                        model.participants.length === 0 ||
+                        !placementHasParticipant(selectedFieldType)
+                      }
                     >
                       {model.participants.length === 0 ? (
                         <option value="">Add a participant first</option>
                       ) : (
                         model.participants.map((participant) => (
                           <option key={participant.id} value={participant.id}>
-                            {participant.fullName}
-                            {participant.capacityMode === "REPRESENTATIVE" &&
-                            participant.representedPartyName
-                              ? ` (representing ${participant.representedPartyName})`
-                              : ""}
+                            {participantOptionLabel(participant)}
                           </option>
                         ))
                       )}
                     </select>
+                    {!placementHasParticipant(selectedFieldType) ? (
+                      <p className="text-xs text-muted-foreground">
+                        A Checkmark is prepared content and belongs to no participant.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="prepare-field-type">Field type</Label>
@@ -1212,20 +1428,67 @@ export function SigningPreviewDialog({
                       id="prepare-field-type"
                       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
                       value={selectedFieldType}
-                      onChange={(event) =>
-                        setSelectedFieldType(event.target.value as DraftFieldType)
-                      }
+                      onChange={(event) => {
+                        cancelPasteMode();
+                        setSelectedFieldType(event.target.value as DraftFieldType);
+                      }}
                     >
-                      <option value="SIGNATURE">Signature</option>
-                      <option value="INITIALS">Initials</option>
-                      <option value="DATE_SIGNED">Date Signed</option>
+                      <optgroup label="Signing fields">
+                        <option value="SIGNATURE">Signature</option>
+                        <option value="INITIALS">Initials</option>
+                        <option value="DATE_SIGNED">Date Signed</option>
+                      </optgroup>
+                      <optgroup label="Prepared content">
+                        <option value="PRINTED_NAME">Printed Name</option>
+                        <option value="CHECKMARK">Checkmark</option>
+                      </optgroup>
                     </select>
                   </div>
+                  {selectedFieldType === "DATE_SIGNED" && currentDocument ? (
+                    <div className="space-y-1">
+                      <Label htmlFor="prepare-date-link">Link to</Label>
+                      <select
+                        id="prepare-date-link"
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                        value={
+                          dateSourceOptions(currentDocument.fields, selectedParticipantId).some(
+                            (field) => field.id === dateLinkSourceId,
+                          )
+                            ? dateLinkSourceId
+                            : ""
+                        }
+                        onChange={(event) => setDateLinkSourceId(event.target.value)}
+                      >
+                        <option value="">
+                          {preferredSignatureForDate(
+                            currentDocument.fields,
+                            selectedParticipantId,
+                            1,
+                          )
+                            ? "Signature on the clicked page (default)"
+                            : "Choose a Signature or Initials"}
+                        </option>
+                        {dateSourceOptions(currentDocument.fields, selectedParticipantId).map(
+                          (field) => (
+                            <option key={field.id} value={field.id}>
+                              {dateSourceLabel(field)}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                      <p className="text-xs text-muted-foreground">
+                        The date shows when that Signature or Initials is applied.
+                      </p>
+                    </div>
+                  ) : null}
                   <p className="text-xs text-muted-foreground">
                     Click the page to place. Drag or resize to adjust. A
-                    Signature also places its Date Signed. Ctrl-click (⌘-click
-                    on Mac) selects several; Ctrl/⌘+C and Ctrl/⌘+V copy and
-                    paste; Delete removes the selection.
+                    Signature also places its Date Signed; Initials do not.
+                    Printed Name and Checkmark are prepared content: they are
+                    printed into the document when it is sent and are not
+                    signing actions. Ctrl-click (⌘-click on Mac) selects
+                    several; Ctrl/⌘+C copies; Paste or Ctrl/⌘+V, then click
+                    the page to place the copy; Delete removes the selection.
                   </p>
                 </div>
               ) : null}
@@ -1247,15 +1510,26 @@ export function SigningPreviewDialog({
                     >
                       Copy
                     </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={!clipboard || clipboard.items.length === 0}
-                      onClick={pasteClipboard}
-                    >
-                      Paste
-                    </Button>
+                    {pasteMode ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={cancelPasteMode}
+                      >
+                        Cancel paste
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={!clipboard || clipboard.length === 0}
+                        onClick={startPasteMode}
+                      >
+                        Paste
+                      </Button>
+                    )}
                     {selectedFieldIds.length > 1 ? (
                       <Button
                         type="button"
@@ -1286,25 +1560,55 @@ export function SigningPreviewDialog({
                   <p className="font-medium">
                     Selected: {fieldTypeLabel(selectedField.fieldType)}
                   </p>
-                  <div className="space-y-1">
-                    <Label htmlFor="reassign-participant">Participant</Label>
-                    <select
-                      id="reassign-participant"
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                      value={selectedField.participantId}
-                      onChange={(event) => reassignSelectedField(event.target.value)}
-                    >
-                      {model.participants.map((participant) => (
-                        <option key={participant.id} value={participant.id}>
-                          {participant.fullName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {selectedField.fieldType === "SIGNATURE" ? (
+                  {placementHasParticipant(selectedField.fieldType) ? (
+                    <div className="space-y-1">
+                      <Label htmlFor="reassign-participant">Participant</Label>
+                      <select
+                        id="reassign-participant"
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                        value={selectedField.participantId}
+                        onChange={(event) => reassignSelectedField(event.target.value)}
+                      >
+                        {model.participants.map((participant) => (
+                          <option key={participant.id} value={participant.id}>
+                            {participantOptionLabel(participant)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                  {selectedField.fieldType === "DATE_SIGNED" && currentDocument ? (
+                    <div className="space-y-1">
+                      <Label htmlFor="relink-date">Linked to</Label>
+                      <select
+                        id="relink-date"
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                        value={selectedField.linkedSignatureFieldId ?? ""}
+                        onChange={(event) => relinkSelectedDate(event.target.value)}
+                      >
+                        {dateSourceOptions(
+                          currentDocument.fields,
+                          selectedField.participantId,
+                        ).map((field) => (
+                          <option key={field.id} value={field.id}>
+                            {dateSourceLabel(field)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                  {selectedField.fieldType === "SIGNATURE" ||
+                  selectedField.fieldType === "INITIALS" ? (
                     <p className="text-xs text-muted-foreground">
-                      Its Date Signed follows this participant and is removed
-                      with it.
+                      Any Date Signed linked to it follows this participant and
+                      is removed with it.
+                    </p>
+                  ) : null}
+                  {isPreparedContentType(selectedField.fieldType) ? (
+                    <p className="text-xs text-muted-foreground">
+                      Prepared content: printed into the document when it is
+                      sent. It is not a signing action and adds nothing to any
+                      participant&apos;s progress.
                     </p>
                   ) : null}
                   <Button
@@ -1340,10 +1644,14 @@ export function SigningPreviewDialog({
                       )}
                       onClick={() => selectField(field.id, true)}
                     >
-                      <span className="font-medium text-foreground">
-                        {field.participantFullName}
-                      </span>
-                      {" · "}
+                      {field.participantFullName ? (
+                        <>
+                          <span className="font-medium text-foreground">
+                            {field.participantFullName}
+                          </span>
+                          {" · "}
+                        </>
+                      ) : null}
                       {fieldTypeLabel(field.fieldType)}
                       {" · p."}
                       {field.pageNumber}

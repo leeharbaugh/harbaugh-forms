@@ -163,13 +163,14 @@ describe("manager QA wiring", () => {
     assert.match(completed, /Completed package delivery/);
   });
 
-  it("exposes visual Prepare Documents and demotes Add default fields", () => {
+  it("exposes visual Prepare Documents and no fixed-coordinate Quick Fields", () => {
     const prep = read("components/signings/signing-draft-prep-panel.tsx");
     const dialog = read("components/signings/signing-preview-dialog.tsx");
     assert.match(prep, /Prepare Documents/);
     assert.match(prep, /Upload PDF/);
-    assert.match(prep, /Optional quick fields/);
-    assert.match(prep, /Add default fields/);
+    assert.doesNotMatch(prep, /Optional quick fields/);
+    assert.doesNotMatch(prep, /Add default fields/);
+    assert.doesNotMatch(prep, /upsertDraftSigningFieldAction/);
     assert.match(dialog, /Prepare Documents/);
     assert.match(dialog, /upsertDraftSigningFieldAction/);
   });

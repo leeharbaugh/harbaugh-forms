@@ -43,6 +43,7 @@ export type SigningDashboardParticipant = {
   fullName: string;
   email: string;
   optionalRole: string | null;
+  roleCode: string | null;
   participantStatus: string;
   displayOrder: number;
   hasSignatureOrInitialsField: boolean;
@@ -234,6 +235,7 @@ export async function loadSigningDashboardForActor(
     fullName: row.full_name as string,
     email: row.email as string,
     optionalRole: (row.optional_role as string | null) ?? null,
+    roleCode: (row.role_code as string | null) ?? null,
     participantStatus: row.participant_status as string,
     displayOrder: row.display_order as number,
     hasSignatureOrInitialsField: (draftFieldRows ?? []).some(

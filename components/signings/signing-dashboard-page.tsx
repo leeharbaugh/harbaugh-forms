@@ -6,6 +6,7 @@ import { SigningCopyRecipientsPanel } from "@/components/signings/signing-copy-r
 import { SigningDraftPrepPanel } from "@/components/signings/signing-draft-prep-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { participantRoleDisplay } from "@/lib/signing/participant-roles";
 import {
   Card,
   CardContent,
@@ -387,7 +388,6 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
           signingId={signingId}
           canManage={canManage}
           sourcePacketId={dashboard.signing.sourcePacketId}
-          firstDocumentId={dashboard.documents[0]?.id ?? null}
           documents={dashboard.documents.map((document) => ({
             id: document.id,
             displayName: document.displayName,
@@ -397,12 +397,6 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
             sourceKind: document.sourceKind,
           }))}
           participants={dashboard.participants}
-          participantsMissingFields={dashboard.participants
-            .filter((participant) => !participant.hasSignatureOrInitialsField)
-            .map((participant) => ({
-              id: participant.id,
-              fullName: participant.fullName,
-            }))}
           onChanged={reload}
           onResolveDrift={resolveDrift}
           busyDocumentId={busyDocumentId}
@@ -703,8 +697,10 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                     <span className="text-sm font-medium">
                       {participant.fullName}
                     </span>
-                    {participant.optionalRole ? (
-                      <Badge variant="outline">{participant.optionalRole}</Badge>
+                    {participantRoleDisplay(participant.roleCode, participant.optionalRole) ? (
+                      <Badge variant="outline">
+                        {participantRoleDisplay(participant.roleCode, participant.optionalRole)}
+                      </Badge>
                     ) : null}
                     {participant.capacityMode === "REPRESENTATIVE" ? (
                       <Badge variant="outline">

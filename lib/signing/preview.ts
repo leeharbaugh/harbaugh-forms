@@ -2,7 +2,8 @@
  * Manager Draft Signing preview (non-evidentiary).
  *
  * Renders from each document's selected Draft source snapshot — the same
- * source activation would consume — and overlays current signing_draft_fields.
+ * source activation would consume — and overlays current signing_draft_fields
+ * and manager-prepared content (baked into the PDF only at activation).
  * Never creates package revisions, document versions, credentials, or work items.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -11,12 +12,18 @@ import type { SigningCapacityLabel, SigningCapacityMode } from "./capacity-notic
 import { renderPreparedPdfFromSelectedDraftSnapshot } from "./draft-source-snapshots";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
+import type { PreparedContentType } from "./prepared-content-types";
 import type { SigningActor } from "./types";
 import { isUuid } from "./types";
 
+/**
+ * One placement in the editor: a signer field (Signature, Initials, Date
+ * Signed) or manager-prepared content (Printed Name, Checkmark). A Checkmark
+ * has no participant: `participantId` and `participantFullName` are "".
+ */
 export type SigningPreviewField = {
   id: string;
-  fieldType: "SIGNATURE" | "INITIALS" | "DATE_SIGNED";
+  fieldType: DraftSignerFieldType | PreparedContentType;
   isRequired: boolean;
   pageNumber: number;
   x: number;
@@ -32,9 +39,13 @@ export type SigningPreviewField = {
   linkedSignatureFieldId: string | null;
 };
 
+export type DraftSignerFieldType = "SIGNATURE" | "INITIALS" | "DATE_SIGNED";
+
 export type SigningPreviewParticipant = {
   id: string;
   fullName: string;
+  roleCode: string | null;
+  optionalRole: string | null;
   capacityMode: SigningCapacityMode;
   representedPartyName: string | null;
   capacityWording: string | null;
@@ -97,6 +108,7 @@ export async function loadSigningPreviewForActor(
     { data: documentRows, error: documentError },
     { data: participantRows, error: participantError },
     { data: fieldRows, error: fieldError },
+    { data: preparedRows, error: preparedError },
   ] = await Promise.all([
     admin
       .from("signing_documents")
@@ -109,14 +121,21 @@ export async function loadSigningPreviewForActor(
     admin
       .from("signing_participants")
       .select(
-        "id, full_name, signing_capacity_mode, represented_party_name, capacity_label, capacity_wording",
+        "id, full_name, role_code, optional_role, display_order, signing_capacity_mode, represented_party_name, capacity_label, capacity_wording",
       )
       .eq("signing_id", signingId)
-      .neq("participant_status", "REMOVED"),
+      .neq("participant_status", "REMOVED")
+      .order("display_order", { ascending: true }),
     admin
       .from("signing_draft_fields")
       .select(
         "id, signing_document_id, signing_participant_id, field_type, is_required, page_number, x, y, width, height, linked_signature_draft_field_id",
+      )
+      .eq("signing_id", signingId),
+    admin
+      .from("signing_draft_prepared_content")
+      .select(
+        "id, signing_document_id, signing_participant_id, content_type, page_number, x, y, width, height",
       )
       .eq("signing_id", signingId),
   ]);
@@ -124,6 +143,7 @@ export async function loadSigningPreviewForActor(
   if (documentError) throw new Error(documentError.message);
   if (participantError) throw new Error(participantError.message);
   if (fieldError) throw new Error(fieldError.message);
+  if (preparedError) throw new Error(preparedError.message);
 
   const participantsById = new Map(
     (participantRows ?? []).map((row) => [
@@ -171,10 +191,38 @@ export async function loadSigningPreviewForActor(
     fieldsByDocument.set(documentId, list);
   }
 
+  for (const row of preparedRows ?? []) {
+    const participantId = (row.signing_participant_id as string | null) ?? "";
+    const participant = participantId ? participantsById.get(participantId) : null;
+    if (participantId && !participant) continue;
+    const documentId = row.signing_document_id as string;
+    const list = fieldsByDocument.get(documentId) ?? [];
+    list.push({
+      id: row.id as string,
+      fieldType: row.content_type as PreparedContentType,
+      isRequired: false,
+      pageNumber: row.page_number as number,
+      x: Number(row.x),
+      y: Number(row.y),
+      width: Number(row.width),
+      height: Number(row.height),
+      participantId,
+      participantFullName: participant?.fullName ?? "",
+      capacityMode: participant?.capacityMode ?? "PERSONAL",
+      representedPartyName: participant?.representedPartyName ?? null,
+      capacityLabel: participant?.capacityLabel ?? null,
+      capacityWording: participant?.capacityWording ?? null,
+      linkedSignatureFieldId: null,
+    });
+    fieldsByDocument.set(documentId, list);
+  }
+
   const participants: SigningPreviewParticipant[] = (participantRows ?? []).map(
     (row) => ({
       id: row.id as string,
       fullName: row.full_name as string,
+      roleCode: (row.role_code as string | null) ?? null,
+      optionalRole: (row.optional_role as string | null) ?? null,
       capacityMode:
         (row.signing_capacity_mode as SigningCapacityMode | null) ?? "PERSONAL",
       representedPartyName:

@@ -176,16 +176,14 @@ async function requirePlaceableField(options: {
       .eq("signing_id", context.session.signingId)
       .eq("package_revision_id", context.packageRevisionId)
       .maybeSingle(),
-    fieldType === "SIGNATURE"
-      ? admin
-          .from("signing_fields")
-          .select("id")
-          .eq("signing_id", context.session.signingId)
-          .eq("package_revision_id", context.packageRevisionId)
-          .eq("package_revision_participant_id", context.revisionParticipantId)
-          .eq("field_type", "DATE_SIGNED")
-          .eq("linked_signature_field_id", field.id as string)
-      : Promise.resolve({ data: [], error: null }),
+    admin
+      .from("signing_fields")
+      .select("id")
+      .eq("signing_id", context.session.signingId)
+      .eq("package_revision_id", context.packageRevisionId)
+      .eq("package_revision_participant_id", context.revisionParticipantId)
+      .eq("field_type", "DATE_SIGNED")
+      .eq("linked_signature_field_id", field.id as string),
   ]);
   if (revisionDocumentError) throw new Error(revisionDocumentError.message);
   if (linkedDateFieldError) throw new Error(linkedDateFieldError.message);

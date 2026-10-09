@@ -361,8 +361,9 @@ describe("Prepare Documents compact field labels", () => {
     assert.doesNotMatch(dialog, /Math\.max\(\s*\(field\.width/);
     assert.doesNotMatch(dialog, /Math\.max\(\s*\(field\.height/);
     assert.match(dialog, /onResizeStop/);
-    assert.match(dialog, /defaultDraftFieldSize\(selectedFieldType, participant\)/);
-    assert.match(dialog, /draftMarkFontSize\(field\.fieldType, markText, field\)/);
+    assert.match(dialog, /defaultDraftFieldSize\(selectedFieldType, participant!\)/);
+    assert.match(dialog, /defaultPreparedContentSize\(selectedFieldType/);
+    assert.match(dialog, /draftMarkFontSize\(field\.fieldType, text, field\)/);
   });
 });
 
@@ -534,6 +535,6 @@ describe("One source Packet per Signing", () => {
   it("removes a Signature's paired Date Signed server-side and moves it on reassign", () => {
     assert.match(draftFields, /\.eq\("linked_signature_draft_field_id", input\.fieldId\)\s*\.select\("id"\)/);
     assert.doesNotMatch(draftFields, /update\(\{ linked_signature_draft_field_id: null \}\)/);
-    assert.match(draftFields, /A paired Date Signed always belongs to its Signature's participant/);
+    assert.match(draftFields, /A linked Date Signed always belongs to its source field's participant/);
   });
 });

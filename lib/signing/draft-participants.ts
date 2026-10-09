@@ -7,13 +7,21 @@ import {
 } from "./capacity-notices";
 import { SigningError } from "./errors";
 import {
+  isSigningParticipantRoleCode,
+  type SigningParticipantRoleCode,
+} from "./participant-roles";
+import {
   normalizeOptionalText,
   normalizeRequiredText,
   parseNonNegativeInt,
   requireManageableDraftSigning,
 } from "./manage";
-import type { SigningActor } from "./types";
+import type { SigningActor, SigningRow } from "./types";
 import { isUuid } from "./types";
+import {
+  brokerFullName,
+  fetchActiveBrokerageSettings,
+} from "@/lib/types/brokerage-settings";
 
 export type SigningParticipantRow = {
   id: string;
@@ -24,6 +32,8 @@ export type SigningParticipantRow = {
   full_name: string;
   email: string;
   optional_role: string | null;
+  role_code: SigningParticipantRoleCode | null;
+  linked_brokerage_settings_id: number | null;
   display_order: number;
   signing_capacity_mode: SigningCapacityMode;
   represented_party_name: string | null;
@@ -43,6 +53,15 @@ async function nextParticipantDisplayOrder(
     .limit(1);
   if (error) throw new Error(error.message);
   return ((data?.[0]?.display_order as number | undefined) ?? -1) + 1;
+}
+
+/** `undefined` leaves the role unchanged; null or "" clears it. */
+function parseRoleCode(value: unknown): SigningParticipantRoleCode | null {
+  if (value === null || value === "") return null;
+  if (!isSigningParticipantRoleCode(value)) {
+    throw new SigningError("INVALID_INPUT", "Choose a valid participant role.");
+  }
+  return value;
 }
 
 function normalizeEmailOptional(value: unknown): string {
@@ -112,7 +131,7 @@ export async function addDraftSigningParticipantWithActor(
     fullName: unknown;
     email?: unknown;
     optionalRole?: unknown;
-    linkedUserId?: unknown;
+    roleCode?: unknown;
     linkedContactId?: unknown;
     displayOrder?: unknown;
     signingCapacityMode?: unknown;
@@ -131,15 +150,9 @@ export async function addDraftSigningParticipantWithActor(
   const fullName = normalizeRequiredText(input.fullName, "full name", 200);
   const email = normalizeEmailOptional(input.email);
   const optionalRole = normalizeOptionalText(input.optionalRole, "role", 120);
+  const roleCode =
+    input.roleCode === undefined ? null : parseRoleCode(input.roleCode);
   const capacity = parseCapacityFields(input);
-
-  let linkedUserId: string | null = null;
-  if (input.linkedUserId !== undefined && input.linkedUserId !== null) {
-    if (!isUuid(input.linkedUserId)) {
-      throw new SigningError("INVALID_INPUT", "Invalid linked User id.");
-    }
-    linkedUserId = input.linkedUserId;
-  }
 
   let linkedContactId: number | null = null;
   if (input.linkedContactId !== undefined && input.linkedContactId !== null) {
@@ -180,7 +193,7 @@ export async function addDraftSigningParticipantWithActor(
       full_name: fullName,
       email,
       optional_role: optionalRole,
-      linked_user_id: linkedUserId,
+      role_code: roleCode,
       linked_contact_id: linkedContactId,
       participant_status: "PENDING",
       display_order: displayOrder,
@@ -203,6 +216,7 @@ export async function updateDraftSigningParticipantWithActor(
     fullName?: unknown;
     email?: unknown;
     optionalRole?: unknown;
+    roleCode?: unknown;
     signingCapacityMode?: unknown;
     representedPartyName?: unknown;
     capacityLabel?: unknown;
@@ -228,6 +242,9 @@ export async function updateDraftSigningParticipantWithActor(
   }
   if (input.optionalRole !== undefined) {
     patch.optional_role = normalizeOptionalText(input.optionalRole, "role", 120);
+  }
+  if (input.roleCode !== undefined) {
+    patch.role_code = parseRoleCode(input.roleCode);
   }
   if (
     input.signingCapacityMode !== undefined ||
@@ -306,6 +323,12 @@ export async function removeDraftSigningParticipantWithActor(
     .delete()
     .eq("signing_id", signing.id)
     .eq("signing_participant_id", input.participantId);
+  const { error: preparedError } = await admin
+    .from("signing_draft_prepared_content")
+    .delete()
+    .eq("signing_id", signing.id)
+    .eq("signing_participant_id", input.participantId);
+  if (preparedError) throw new Error(preparedError.message);
 
   const { error } = await admin
     .from("signing_participants")
@@ -313,4 +336,182 @@ export async function removeDraftSigningParticipantWithActor(
     .eq("id", input.participantId)
     .eq("signing_id", signing.id);
   if (error) throw new Error(error.message);
+}
+
+export type InternalSignerKind = "SELF" | "BROKER";
+
+export type InternalSignerOption = {
+  available: boolean;
+  alreadyIncluded: boolean;
+  fullName: string | null;
+  unavailableReason: string | null;
+};
+
+export type InternalSignerOptions = {
+  self: InternalSignerOption;
+  broker: InternalSignerOption;
+};
+
+type InternalSignerIdentity = {
+  fullName: string;
+  email: string;
+  roleCode: SigningParticipantRoleCode;
+  linkedUserId: string | null;
+  linkedBrokerageSettingsId: number | null;
+};
+
+/** The signed-in User, from the server session profile (never browser input). */
+function selfSignerIdentity(actor: SigningActor): InternalSignerIdentity | null {
+  const fullName = actor.displayName?.trim();
+  if (!fullName) return null;
+  return {
+    fullName,
+    email: (actor.email ?? "").trim().toLowerCase(),
+    roleCode: "AGENT",
+    linkedUserId: actor.userId,
+    linkedBrokerageSettingsId: null,
+  };
+}
+
+/**
+ * The broker from the Signing's originating organization's active brokerage
+ * profile (the same organization-scoped source Packet fields use). Requires a
+ * broker name and email; never another organization's profile.
+ */
+async function brokerSignerIdentity(
+  admin: SupabaseClient,
+  signing: SigningRow,
+): Promise<InternalSignerIdentity | null> {
+  const settings = await fetchActiveBrokerageSettings(
+    admin,
+    signing.originating_organization_id,
+  );
+  if (!settings) return null;
+  const fullName = brokerFullName(settings).trim();
+  const email = (settings.broker_email ?? "").trim().toLowerCase();
+  if (!fullName || !email) return null;
+  return {
+    fullName,
+    email,
+    roleCode: "BROKER",
+    linkedUserId: null,
+    linkedBrokerageSettingsId: settings.id,
+  };
+}
+
+async function findInternalSigner(
+  admin: SupabaseClient,
+  signingId: string,
+  identity: InternalSignerIdentity,
+): Promise<SigningParticipantRow | null> {
+  let query = admin
+    .from("signing_participants")
+    .select("*")
+    .eq("signing_id", signingId)
+    .neq("participant_status", "REMOVED");
+  query = identity.linkedUserId
+    ? query.eq("linked_user_id", identity.linkedUserId)
+    : query.eq("linked_brokerage_settings_id", identity.linkedBrokerageSettingsId!);
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as SigningParticipantRow | null) ?? null;
+}
+
+export async function loadInternalSignerOptionsWithActor(
+  actor: SigningActor,
+  input: { signingId: unknown },
+  admin: SupabaseClient,
+): Promise<InternalSignerOptions> {
+  const { signing } = await requireManageableDraftSigning(
+    actor,
+    input.signingId,
+    admin,
+  );
+
+  async function option(
+    identity: InternalSignerIdentity | null,
+    unavailableReason: string,
+  ): Promise<InternalSignerOption> {
+    if (!identity) {
+      return { available: false, alreadyIncluded: false, fullName: null, unavailableReason };
+    }
+    const existing = await findInternalSigner(admin, signing.id, identity);
+    return {
+      available: true,
+      alreadyIncluded: existing !== null,
+      fullName: identity.fullName,
+      unavailableReason: null,
+    };
+  }
+
+  return {
+    self: await option(
+      selfSignerIdentity(actor),
+      "Your profile needs a name before you can sign.",
+    ),
+    broker: await option(
+      await brokerSignerIdentity(admin, signing),
+      "No broker name and email in this organization's brokerage profile.",
+    ),
+  };
+}
+
+/**
+ * Add the signed-in User (role Agent) or the organization's broker (role
+ * Broker) as an ordinary signing participant. Identity is server-derived;
+ * the participant goes through the same ceremony as everyone else. Adding the
+ * same User / broker profile twice returns the existing participant.
+ */
+export async function includeInternalSignerWithActor(
+  actor: SigningActor,
+  input: { signingId: unknown; kind: unknown },
+  admin: SupabaseClient,
+): Promise<{ added: boolean; participant: SigningParticipantRow }> {
+  const { signing } = await requireManageableDraftSigning(
+    actor,
+    input.signingId,
+    admin,
+  );
+  if (input.kind !== "SELF" && input.kind !== "BROKER") {
+    throw new SigningError("INVALID_INPUT", "Choose who to include as a signer.");
+  }
+  const identity =
+    input.kind === "SELF"
+      ? selfSignerIdentity(actor)
+      : await brokerSignerIdentity(admin, signing);
+  if (!identity) {
+    throw new SigningError(
+      "INVALID_INPUT",
+      input.kind === "SELF"
+        ? "Your profile needs a name before you can sign."
+        : "This organization's brokerage profile has no broker name and email.",
+    );
+  }
+
+  const existing = await findInternalSigner(admin, signing.id, identity);
+  if (existing) return { added: false, participant: existing };
+
+  const { data, error } = await admin
+    .from("signing_participants")
+    .insert({
+      signing_id: signing.id,
+      full_name: identity.fullName,
+      email: identity.email,
+      role_code: identity.roleCode,
+      linked_user_id: identity.linkedUserId,
+      linked_brokerage_settings_id: identity.linkedBrokerageSettingsId,
+      participant_status: "PENDING",
+      display_order: await nextParticipantDisplayOrder(admin, signing.id),
+      signing_capacity_mode: "PERSONAL",
+    })
+    .select("*")
+    .single();
+  if (error?.code === "23505") {
+    const raced = await findInternalSigner(admin, signing.id, identity);
+    if (raced) return { added: false, participant: raced };
+  }
+  if (error || !data) {
+    throw new Error(error?.message ?? "Failed to add participant.");
+  }
+  return { added: true, participant: data as SigningParticipantRow };
 }

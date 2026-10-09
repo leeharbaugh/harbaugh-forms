@@ -18,6 +18,10 @@ import { addDraftSigningParticipantWithActor } from "./draft-participants";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { createDraftSigningWithActor } from "./operations";
+import {
+  roleCodeForPacketRole,
+  type SigningParticipantRoleCode,
+} from "./participant-roles";
 import type { SigningActor } from "./types";
 
 /** Roles treated as transaction parties who may need to sign. */
@@ -37,6 +41,7 @@ export type DerivedPacketSigningParticipant = {
   fullName: string;
   email: string;
   optionalRole: string | null;
+  roleCode: SigningParticipantRoleCode;
   linkedContactId: number;
   contactOwnerUserId: string | null;
   packetRole: PacketContactRole;
@@ -180,6 +185,7 @@ export async function deriveSigningParticipantsFromPacket(
       fullName: formatContactDisplayName(contact),
       email,
       optionalRole: roleLabel(role),
+      roleCode: roleCodeForPacketRole(role),
       linkedContactId: contactId,
       contactOwnerUserId: contact.owner_user_id ?? null,
       packetRole: role,
@@ -317,6 +323,7 @@ export async function createSigningFromPacketWithActor(
         fullName: party.fullName,
         email: party.email,
         optionalRole: party.optionalRole,
+        roleCode: party.roleCode,
         linkedContactId: party.linkedContactId,
         signingCapacityMode: "PERSONAL",
       },

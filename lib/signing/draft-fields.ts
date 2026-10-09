@@ -3,6 +3,7 @@ import { SigningError } from "./errors";
 import {
   requireManageableDraftSigning,
 } from "./manage";
+import { DATE_SIGNED_SOURCE_TYPES } from "./date-signed-link";
 import type { SigningActor } from "./types";
 import { isUuid } from "./types";
 
@@ -100,7 +101,7 @@ export async function upsertDraftSigningFieldWithActor(
   if (fieldType === "DATE_SIGNED" && !linkedSignatureDraftFieldId) {
     throw new SigningError(
       "INVALID_INPUT",
-      "DATE_SIGNED fields require a linked Signature field.",
+      "Date Signed must be linked to a Signature or Initials field.",
     );
   }
   if (fieldType !== "DATE_SIGNED") {
@@ -143,16 +144,19 @@ export async function upsertDraftSigningFieldWithActor(
       .eq("signing_id", signing.id)
       .maybeSingle();
     if (linkedError) throw new Error(linkedError.message);
-    if (!linked || linked.field_type !== "SIGNATURE") {
+    if (
+      !linked ||
+      !DATE_SIGNED_SOURCE_TYPES.includes(linked.field_type as string)
+    ) {
       throw new SigningError(
         "INVALID_INPUT",
-        "DATE_SIGNED fields require a linked Signature field.",
+        "Date Signed must be linked to a Signature or Initials field.",
       );
     }
     if (linked.signing_participant_id !== input.signingParticipantId) {
       throw new SigningError(
         "INVALID_INPUT",
-        "DATE_SIGNED fields must link to a Signature field for the same participant.",
+        "Date Signed must link to a Signature or Initials field for the same participant.",
       );
     }
   }
@@ -193,10 +197,13 @@ export async function upsertDraftSigningFieldWithActor(
       .eq("linked_signature_draft_field_id", input.fieldId);
     if (linkedDatesError) throw new Error(linkedDatesError.message);
     const linkedDateIds = (linkedDates ?? []).map((row) => row.id as string);
-    if (linkedDateIds.length > 0 && fieldType !== "SIGNATURE") {
+    if (
+      linkedDateIds.length > 0 &&
+      !DATE_SIGNED_SOURCE_TYPES.includes(fieldType)
+    ) {
       throw new SigningError(
         "INVALID_INPUT",
-        "Remove the linked Date Signed before changing this Signature's type.",
+        "Remove the linked Date Signed before changing this field's type.",
       );
     }
 
@@ -211,7 +218,7 @@ export async function upsertDraftSigningFieldWithActor(
       throw new Error(error?.message ?? "Failed to update draft field.");
     }
 
-    // A paired Date Signed always belongs to its Signature's participant.
+    // A linked Date Signed always belongs to its source field's participant.
     if (linkedDateIds.length > 0) {
       const { error: followError } = await admin
         .from("signing_draft_fields")
@@ -235,9 +242,9 @@ export async function upsertDraftSigningFieldWithActor(
 }
 
 /**
- * Remove a Draft field. Removing a Signature also removes its paired Date
- * Signed so no unlinked Date Signed remains; Initials and Date Signed remove
- * independently. Returns every removed field id for local reconciliation.
+ * Remove a Draft field. Removing a Signature or Initials also removes any Date
+ * Signed linked to it so no unlinked Date Signed remains. Returns every removed
+ * field id for local reconciliation.
  */
 export async function removeDraftSigningFieldWithActor(
   actor: SigningActor,

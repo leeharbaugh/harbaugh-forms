@@ -3,8 +3,10 @@
  *
  * Selecting a Packet binds `signings.source_packet_id`, scopes Packet document
  * picking to that Packet, and imports its transaction parties as Draft
- * participants (snapshot, no live sync). Switching is allowed only while the
- * Signing holds no Packet-derived documents or participants; it never remaps.
+ * participants. While Draft, the manager may add parties added to the Packet
+ * later (additive refresh, matched by Contact); nothing syncs after
+ * activation. Switching is allowed only while the Signing holds no
+ * Packet-derived documents or participants; it never remaps.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listIncludedPacketDocumentPacketIds } from "./draft-documents";
@@ -16,6 +18,7 @@ import {
   requireManageableDraftSigning,
 } from "./manage";
 import { deriveSigningParticipantsFromPacket } from "./packet-to-signing";
+import type { SigningParticipantRoleCode } from "./participant-roles";
 import type { SigningActor, SigningRow } from "./types";
 
 export type DraftSourcePacketState = {
@@ -184,6 +187,154 @@ function selectionError(message: string): Error {
   return new SigningError(code, text);
 }
 
+type PacketPartyInsert = {
+  full_name: string;
+  email: string;
+  optional_role: string | null;
+  role_code: SigningParticipantRoleCode;
+  linked_contact_id: number;
+};
+
+/**
+ * Eligible Packet parties as participant inserts. Only contacts the actor owns
+ * are usable; another owner's contact is never imported.
+ */
+async function buildPacketParties(
+  actor: SigningActor,
+  admin: SupabaseClient,
+  packetId: number,
+): Promise<{ parties: PacketPartyInsert[]; reviewNote: string | null }> {
+  const derived = await deriveSigningParticipantsFromPacket(admin, packetId);
+  const usable = derived.participants.filter(
+    (party) => party.contactOwnerUserId === actor.userId,
+  );
+  const unavailable = derived.participants.length - usable.length;
+  const reviewNote = [
+    derived.reviewNote,
+    unavailable > 0
+      ? `${unavailable} Packet party(ies) were skipped because the contact is not available to you.`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" ") || null;
+  const parties = usable.map((party) => ({
+    full_name: normalizeRequiredText(party.fullName, "full name", 200),
+    email: party.email
+      ? normalizeRequiredText(party.email, "email", 320).toLowerCase()
+      : "",
+    optional_role: normalizeOptionalText(party.optionalRole, "role", 120),
+    role_code: party.roleCode,
+    linked_contact_id: party.linkedContactId,
+  }));
+  return { parties, reviewNote };
+}
+
+async function linkedContactIds(
+  admin: SupabaseClient,
+  signingId: string,
+): Promise<Set<number>> {
+  const { data, error } = await admin
+    .from("signing_participants")
+    .select("linked_contact_id")
+    .eq("signing_id", signingId)
+    .neq("participant_status", "REMOVED")
+    .not("linked_contact_id", "is", null);
+  if (error) throw new Error(error.message);
+  return new Set((data ?? []).map((row) => row.linked_contact_id as number));
+}
+
+export type DraftPacketParticipantRefresh = {
+  available: boolean;
+  newParticipants: {
+    fullName: string;
+    roleCode: SigningParticipantRoleCode;
+    optionalRole: string | null;
+    linkedContactId: number;
+  }[];
+};
+
+/**
+ * Read-only: eligible source-Packet parties not yet in this Draft (matched by
+ * linked Contact only — never by name or email). Drives the "Packet has new
+ * participants" notice.
+ */
+export async function loadDraftPacketParticipantRefreshWithActor(
+  actor: SigningActor,
+  input: { signingId: unknown },
+  admin: SupabaseClient,
+): Promise<DraftPacketParticipantRefresh> {
+  const { signing } = await requireManageableDraftSigning(
+    actor,
+    input.signingId,
+    admin,
+  );
+  const packetId = signing.source_packet_id;
+  if (packetId == null) return { available: false, newParticipants: [] };
+  const { data: packet, error } = await admin
+    .from("packets")
+    .select("id, owner_user_id, status")
+    .eq("id", packetId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!packet || packet.status === "DELETED" || packet.owner_user_id !== actor.userId) {
+    return { available: false, newParticipants: [] };
+  }
+
+  const [{ parties }, existing] = await Promise.all([
+    buildPacketParties(actor, admin, packetId),
+    linkedContactIds(admin, signing.id),
+  ]);
+  return {
+    available: true,
+    newParticipants: parties
+      .filter((party) => !existing.has(party.linked_contact_id))
+      .map((party) => ({
+        fullName: party.full_name,
+        roleCode: party.role_code,
+        optionalRole: party.optional_role,
+        linkedContactId: party.linked_contact_id,
+      })),
+  };
+}
+
+/**
+ * Additive Draft refresh from the bound source Packet: inserts eligible
+ * parties whose Contact is not already linked. Never deletes, merges, or
+ * overwrites existing participants (manual names, roles, and representative
+ * capacity stay as edited); ad hoc participants are untouched. Draft only —
+ * once activated, participants are frozen and Packet changes never sync.
+ */
+export async function refreshDraftParticipantsFromPacketWithActor(
+  actor: SigningActor,
+  input: { signingId: unknown },
+  admin: SupabaseClient,
+): Promise<{ addedParticipantCount: number; skippedExistingParticipantCount: number }> {
+  const { signing } = await requireManageableDraftSigning(
+    actor,
+    input.signingId,
+    admin,
+  );
+  const packetId = signing.source_packet_id;
+  if (packetId == null) {
+    throw new SigningError("INVALID_PACKET", "Choose a source Packet first.");
+  }
+  await requireOwnedPacket(actor, admin, packetId);
+  const { parties } = await buildPacketParties(actor, admin, packetId);
+
+  const { data, error } = await admin.rpc("signing_select_source_packet", {
+    p_signing_id: signing.id,
+    p_expected_source_packet_id: packetId,
+    p_packet_id: packetId,
+    p_parties: parties,
+  });
+  if (error) throw selectionError(error.message);
+  const counts = (data ?? {}) as { added?: number; skipped?: number };
+  return {
+    addedParticipantCount: counts.added ?? 0,
+    skippedExistingParticipantCount: counts.skipped ?? 0,
+  };
+}
+
 /**
  * Select the Signing's source Packet and import that Packet's transaction
  * parties as one operation. Parties are derived and validated first; the bind
@@ -213,27 +364,7 @@ export async function selectDraftSourcePacketWithActor(
     }
   }
 
-  const derived = await deriveSigningParticipantsFromPacket(admin, packetId);
-  const usable = derived.participants.filter(
-    (party) => party.contactOwnerUserId === actor.userId,
-  );
-  const unavailable = derived.participants.length - usable.length;
-  const reviewNote = [
-    derived.reviewNote,
-    unavailable > 0
-      ? `${unavailable} Packet party(ies) were skipped because the contact is not available to you.`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" ") || null;
-  const parties = usable.map((party) => ({
-    full_name: normalizeRequiredText(party.fullName, "full name", 200),
-    email: party.email
-      ? normalizeRequiredText(party.email, "email", 320).toLowerCase()
-      : "",
-    optional_role: normalizeOptionalText(party.optionalRole, "role", 120),
-    linked_contact_id: party.linkedContactId,
-  }));
+  const { parties, reviewNote } = await buildPacketParties(actor, admin, packetId);
 
   const { data, error } = await admin.rpc("signing_select_source_packet", {
     p_signing_id: signing.id,

@@ -70,8 +70,8 @@ describe("Visual Signing field editor", () => {
     assert.match(dialog, /representing/);
     assert.match(prep, /Prepare Documents/);
     assert.match(prep, /Open \/ Prepare/);
-    assert.match(prep, /Optional quick fields/);
-    assert.match(draftFields, /DATE_SIGNED fields require a linked Signature/);
+    assert.doesNotMatch(prep, /Optional quick fields/);
+    assert.match(draftFields, /Date Signed must be linked to a Signature or Initials field/);
     assert.match(preview, /linkedSignatureFieldId/);
     assert.match(preview, /participants/);
   });

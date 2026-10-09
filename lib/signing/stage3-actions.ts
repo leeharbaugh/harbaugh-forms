@@ -16,6 +16,8 @@ import {
 } from "@/lib/signing/ad-hoc-documents";
 import {
   addDraftSigningParticipantWithActor,
+  includeInternalSignerWithActor,
+  loadInternalSignerOptionsWithActor,
   removeDraftSigningParticipantWithActor,
   updateDraftSigningParticipantWithActor,
 } from "@/lib/signing/draft-participants";
@@ -23,9 +25,15 @@ import {
   removeDraftSigningFieldWithActor,
   upsertDraftSigningFieldWithActor,
 } from "@/lib/signing/draft-fields";
+import {
+  removeDraftPreparedContentWithActor,
+  upsertDraftPreparedContentWithActor,
+} from "@/lib/signing/draft-prepared-content";
 import { requireManageableDraftSigning } from "@/lib/signing/manage";
 import {
+  loadDraftPacketParticipantRefreshWithActor,
   loadDraftSourcePacketStateWithActor,
+  refreshDraftParticipantsFromPacketWithActor,
   selectDraftSourcePacketWithActor,
 } from "@/lib/signing/source-packet";
 import { SigningError } from "@/lib/signing/errors";
@@ -145,7 +153,7 @@ export async function addDraftSigningParticipantAction(input: {
   fullName: unknown;
   email?: unknown;
   optionalRole?: unknown;
-  linkedUserId?: unknown;
+  roleCode?: unknown;
   linkedContactId?: unknown;
   displayOrder?: unknown;
   signingCapacityMode?: unknown;
@@ -154,7 +162,40 @@ export async function addDraftSigningParticipantAction(input: {
   capacityWording?: unknown;
 }): Promise<SigningStage3ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
-    addDraftSigningParticipantWithActor(actor, input, admin),
+    addDraftSigningParticipantWithActor(
+      actor,
+      {
+        signingId: input.signingId,
+        fullName: input.fullName,
+        email: input.email,
+        optionalRole: input.optionalRole,
+        roleCode: input.roleCode,
+        linkedContactId: input.linkedContactId,
+        displayOrder: input.displayOrder,
+        signingCapacityMode: input.signingCapacityMode,
+        representedPartyName: input.representedPartyName,
+        capacityLabel: input.capacityLabel,
+        capacityWording: input.capacityWording,
+      },
+      admin,
+    ),
+  );
+}
+
+export async function getInternalSignerOptionsAction(input: {
+  signingId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    loadInternalSignerOptionsWithActor(actor, input, admin),
+  );
+}
+
+export async function includeInternalSignerAction(input: {
+  signingId: unknown;
+  kind: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    includeInternalSignerWithActor(actor, input, admin),
   );
 }
 
@@ -164,6 +205,7 @@ export async function updateDraftSigningParticipantAction(input: {
   fullName?: unknown;
   email?: unknown;
   optionalRole?: unknown;
+  roleCode?: unknown;
   signingCapacityMode?: unknown;
   representedPartyName?: unknown;
   capacityLabel?: unknown;
@@ -209,6 +251,48 @@ export async function removeDraftSigningFieldAction(input: {
 }): Promise<SigningStage3ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
     removeDraftSigningFieldWithActor(actor, input, admin),
+  );
+}
+
+export async function upsertDraftPreparedContentAction(input: {
+  signingId: unknown;
+  contentId?: unknown;
+  signingDocumentId: unknown;
+  signingParticipantId?: unknown;
+  contentType: unknown;
+  pageNumber: unknown;
+  x: unknown;
+  y: unknown;
+  width: unknown;
+  height: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    upsertDraftPreparedContentWithActor(actor, input, admin),
+  );
+}
+
+export async function removeDraftPreparedContentAction(input: {
+  signingId: unknown;
+  contentId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    removeDraftPreparedContentWithActor(actor, input, admin),
+  );
+}
+
+export async function getDraftPacketParticipantRefreshAction(input: {
+  signingId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    loadDraftPacketParticipantRefreshWithActor(actor, input, admin),
+  );
+}
+
+export async function refreshDraftParticipantsFromPacketAction(input: {
+  signingId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    refreshDraftParticipantsFromPacketWithActor(actor, input, admin),
   );
 }
 

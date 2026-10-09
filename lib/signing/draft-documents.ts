@@ -345,12 +345,18 @@ export async function removeDraftSigningDocumentWithActor(
     throw new SigningError("NOT_FOUND", "Signing document not found.");
   }
 
-  // Clear Draft field instructions for this document either way.
+  // Clear Draft field instructions and prepared content for this document either way.
   await admin
     .from("signing_draft_fields")
     .delete()
     .eq("signing_id", signing.id)
     .eq("signing_document_id", input.signingDocumentId);
+  const { error: preparedError } = await admin
+    .from("signing_draft_prepared_content")
+    .delete()
+    .eq("signing_id", signing.id)
+    .eq("signing_document_id", input.signingDocumentId);
+  if (preparedError) throw new Error(preparedError.message);
 
   const [{ data: versions, error: versionError }, { data: revisionDocs, error: revisionDocError }] =
     await Promise.all([

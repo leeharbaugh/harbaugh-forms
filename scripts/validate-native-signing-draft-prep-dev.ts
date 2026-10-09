@@ -12,6 +12,12 @@
  * paired Date Signed, Initials and Date Signed remove independently, and
  * reassigning a Signature moves its paired Date Signed to the same participant.
  *
+ * Draft-prep model tranche: Packet import derives participant roles; the
+ * explicit Packet refresh is additive (no deletes, no overwrites, owner-only
+ * contacts); Include me / Include broker add server-identified participants
+ * once; Date Signed may link to same-participant Initials (server + database);
+ * prepared content requires manage authority and stays same-Signing.
+ *
  * Never targets production. Refuses to run unless the URL is the development
  * project.
  */
@@ -31,11 +37,22 @@ import {
   DATE_SIGNED_DEFAULT_SIZE,
   defaultDraftFieldSize,
 } from "../lib/signing/draft-field-sizing.ts";
-import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
+import {
+  addDraftSigningParticipantWithActor,
+  includeInternalSignerWithActor,
+  loadInternalSignerOptionsWithActor,
+  updateDraftSigningParticipantWithActor,
+} from "../lib/signing/draft-participants.ts";
+import {
+  removeDraftPreparedContentWithActor,
+  upsertDraftPreparedContentWithActor,
+} from "../lib/signing/draft-prepared-content.ts";
 import { SigningError } from "../lib/signing/errors.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
 import {
+  loadDraftPacketParticipantRefreshWithActor,
   loadDraftSourcePacketStateWithActor,
+  refreshDraftParticipantsFromPacketWithActor,
   selectDraftSourcePacketWithActor,
 } from "../lib/signing/source-packet.ts";
 import { SIGNING_ARTIFACTS_BUCKET } from "../lib/signing/stage1-schema.ts";
@@ -161,6 +178,7 @@ async function main() {
   const agreementIds: number[] = [];
   const generatedPaths: string[] = [];
   const signingIds: string[] = [];
+  const brokerageSettingsIds: number[] = [];
 
   async function createUser(label: string) {
     const { data: org, error: orgError } = await admin
@@ -926,6 +944,465 @@ async function main() {
         ),
     );
 
+    // --- Participant roles: Packet import derives role_code ---------------------
+    const { data: roleRows, error: roleError } = await admin
+      .from("signing_participants")
+      .select("linked_contact_id, role_code, optional_role")
+      .eq("signing_id", signingId);
+    if (roleError) fail(roleError.message);
+    const roleOf = (contactId: number) =>
+      roleRows?.find((row) => row.linked_contact_id === contactId)?.role_code;
+    if (roleOf(coBuyer) !== "OTHER") {
+      fail(`Packet CO_CLIENT should import as role OTHER, got ${roleOf(coBuyer)}`);
+    }
+    ok("Packet import derives role_code (CO_CLIENT -> Other)");
+
+    const adHocRole = await addDraftSigningParticipantWithActor(
+      agent,
+      { signingId, fullName: "Tia Tenant", roleCode: "TENANT", optionalRole: "Primary tenant" },
+      admin,
+    );
+    const editedRole = await updateDraftSigningParticipantWithActor(
+      agent,
+      { signingId, participantId: adHocRole.id, roleCode: "LANDLORD" },
+      admin,
+    );
+    if (editedRole.role_code !== "LANDLORD" || editedRole.optional_role !== "Primary tenant") {
+      fail("editing role_code must keep the optional label");
+    }
+    await expectSigningError("an unknown role code", ["INVALID_INPUT"], () =>
+      updateDraftSigningParticipantWithActor(
+        agent,
+        { signingId, participantId: adHocRole.id, roleCode: "ADMIN" },
+        admin,
+      ),
+    );
+    ok("ad hoc participant role add/edit keeps the optional label; unknown codes rejected");
+
+    // --- Additive Packet participant refresh ------------------------------------
+    // Manager edits to a Packet-derived participant must survive a refresh.
+    await updateDraftSigningParticipantWithActor(
+      agent,
+      {
+        signingId,
+        participantId: buyerParticipant,
+        roleCode: "OTHER",
+        optionalRole: "Trustee",
+        signingCapacityMode: "REPRESENTATIVE",
+        representedPartyName: "Buyer Family Trust",
+        capacityLabel: "TRUSTEE",
+        capacityWording: "Bea Buyer, Trustee of the Buyer Family Trust",
+      },
+      admin,
+    );
+    const buyer3 = await createContact(agent.userId, "Dee", "Buyer", "dee@example.com");
+    await linkContact(packetA.packetId, buyer3, "BUYER", 5);
+    const foreignForRefresh = await createContact(outsider.userId, "Fay", "Foreign", "fay@example.com");
+    await linkContact(packetA.packetId, foreignForRefresh, "BUYER", 6);
+
+    const beforeRefresh = await participantsOf(signingId);
+    const pending = await loadDraftPacketParticipantRefreshWithActor(agent, { signingId }, admin);
+    if (
+      !pending.available ||
+      pending.newParticipants.length !== 1 ||
+      pending.newParticipants[0].linkedContactId !== buyer3 ||
+      pending.newParticipants[0].roleCode !== "BUYER"
+    ) {
+      fail(`refresh notice should list only Dee Buyer: ${JSON.stringify(pending.newParticipants)}`);
+    }
+    ok("Packet refresh notice lists only the new owned contact (foreign contact excluded)");
+
+    const refreshed = await refreshDraftParticipantsFromPacketWithActor(agent, { signingId }, admin);
+    const afterRefresh = await participantsOf(signingId);
+    if (
+      refreshed.addedParticipantCount !== 1 ||
+      afterRefresh.length !== beforeRefresh.length + 1 ||
+      afterRefresh.some((row) => row.linked_contact_id === foreignForRefresh)
+    ) {
+      fail("refresh must add exactly the new owned Packet contact");
+    }
+    for (const prior of beforeRefresh) {
+      if (!afterRefresh.some((row) => row.id === prior.id)) {
+        fail(`refresh deleted participant ${prior.full_name}`);
+      }
+    }
+    const { data: preservedBuyer } = await admin
+      .from("signing_participants")
+      .select("role_code, optional_role, signing_capacity_mode, represented_party_name")
+      .eq("id", buyerParticipant)
+      .single();
+    if (
+      preservedBuyer?.role_code !== "OTHER" ||
+      preservedBuyer?.optional_role !== "Trustee" ||
+      preservedBuyer?.signing_capacity_mode !== "REPRESENTATIVE" ||
+      preservedBuyer?.represented_party_name !== "Buyer Family Trust"
+    ) {
+      fail("refresh overwrote a manager edit (role/capacity)");
+    }
+    const refreshedAgain = await refreshDraftParticipantsFromPacketWithActor(agent, { signingId }, admin);
+    if (refreshedAgain.addedParticipantCount !== 0) fail("a second refresh must be a no-op");
+    ok("refresh is additive: adds Dee Buyer, keeps ad hoc + edited participants, no duplicates, idempotent");
+
+    await expectSigningError("another User refreshing this Signing", ["NOT_FOUND", "FORBIDDEN"], () =>
+      refreshDraftParticipantsFromPacketWithActor(outsider, { signingId }, admin),
+    );
+
+    // --- Quick include agent / broker ------------------------------------------
+    const smuggled = await addDraftSigningParticipantWithActor(
+      agent,
+      {
+        signingId,
+        fullName: "Smuggled Link",
+        linkedUserId: outsider.userId,
+      } as Parameters<typeof addDraftSigningParticipantWithActor>[1],
+      admin,
+    );
+    if (smuggled.linked_user_id !== null) {
+      fail("a browser-supplied linkedUserId must be ignored");
+    }
+    await expectSigningError("linking another User's Contact", ["INVALID_INPUT"], () =>
+      addDraftSigningParticipantWithActor(
+        agent,
+        { signingId, fullName: "Foreign Contact", linkedContactId: foreignForRefresh },
+        admin,
+      ),
+    );
+    ok("ad hoc add ignores a browser linkedUserId and rejects a foreign Contact");
+
+    const selfFirst = await includeInternalSignerWithActor(agent, { signingId, kind: "SELF" }, admin);
+    const selfAgain = await includeInternalSignerWithActor(agent, { signingId, kind: "SELF" }, admin);
+    if (
+      !selfFirst.added ||
+      selfAgain.added ||
+      selfAgain.participant.id !== selfFirst.participant.id ||
+      selfFirst.participant.linked_user_id !== agent.userId ||
+      selfFirst.participant.role_code !== "AGENT" ||
+      selfFirst.participant.full_name !== agent.displayName
+    ) {
+      fail("Include me must add the actor once as role Agent");
+    }
+    ok("Include me adds the signed-in User once (role Agent, server identity)");
+
+    const noBroker = await loadInternalSignerOptionsWithActor(agent, { signingId }, admin);
+    if (noBroker.broker.available) fail("broker option must be hidden without a brokerage profile");
+    await expectSigningError("Include broker without a brokerage profile", ["INVALID_INPUT"], () =>
+      includeInternalSignerWithActor(agent, { signingId, kind: "BROKER" }, admin),
+    );
+    const { data: brokerProfile, error: brokerProfileError } = await admin
+      .from("brokerage_settings")
+      .insert({
+        organization_id: agent.memberships[0].organizationId,
+        status: "ACTIVE",
+        brokerage_name: `Draft Prep Realty ${stamp}`,
+        broker_first_name: "Bob",
+        broker_last_name: "Broker",
+        broker_email: `broker-${stamp}@example.com`,
+      })
+      .select("id")
+      .single();
+    if (brokerProfileError || !brokerProfile) fail(brokerProfileError?.message ?? "broker profile");
+    brokerageSettingsIds.push(brokerProfile.id as number);
+    const withBroker = await loadInternalSignerOptionsWithActor(agent, { signingId }, admin);
+    if (!withBroker.broker.available || withBroker.broker.fullName !== "Bob Broker") {
+      fail("broker option must appear from the organization's brokerage profile");
+    }
+    const brokerFirst = await includeInternalSignerWithActor(agent, { signingId, kind: "BROKER" }, admin);
+    const brokerAgain = await includeInternalSignerWithActor(agent, { signingId, kind: "BROKER" }, admin);
+    if (
+      !brokerFirst.added ||
+      brokerAgain.added ||
+      brokerFirst.participant.role_code !== "BROKER" ||
+      brokerFirst.participant.linked_user_id !== null ||
+      brokerFirst.participant.signing_capacity_mode !== "PERSONAL"
+    ) {
+      fail("Include broker must add the broker once as role Broker, personal capacity");
+    }
+    const outsiderBroker = await loadInternalSignerOptionsWithActor(
+      outsider,
+      { signingId: await createSigning(outsider, "Outsider broker check") },
+      admin,
+    );
+    if (outsiderBroker.broker.available) {
+      fail("another organization's brokerage profile must not be offered");
+    }
+    await expectSigningError("another User including themself here", ["NOT_FOUND", "FORBIDDEN"], () =>
+      includeInternalSignerWithActor(outsider, { signingId, kind: "SELF" }, admin),
+    );
+    ok("Include broker uses only this organization's profile, once, role Broker; no representative authority inferred");
+
+    // --- Date Signed linked to Initials -----------------------------------------
+    const ini = await upsertDraftSigningFieldWithActor(
+      agent,
+      {
+        signingId,
+        signingDocumentId: documentId,
+        signingParticipantId: buyerParticipant,
+        fieldType: "INITIALS",
+        x: 400,
+        y: 200,
+        pageNumber: 1,
+        ...initialsGeometry,
+      },
+      admin,
+    );
+    const iniDate = await upsertDraftSigningFieldWithActor(
+      agent,
+      {
+        signingId,
+        signingDocumentId: documentId,
+        signingParticipantId: buyerParticipant,
+        fieldType: "DATE_SIGNED",
+        linkedSignatureDraftFieldId: ini.id,
+        x: 460,
+        y: 200,
+        pageNumber: 1,
+        ...dateGeometry,
+      },
+      admin,
+    );
+    ok("Date Signed links to same-participant Initials");
+
+    await expectSigningError("a cross-participant Date link", ["INVALID_INPUT"], () =>
+      upsertDraftSigningFieldWithActor(
+        agent,
+        {
+          signingId,
+          signingDocumentId: documentId,
+          signingParticipantId: coBuyerParticipant,
+          fieldType: "DATE_SIGNED",
+          linkedSignatureDraftFieldId: ini.id,
+          x: 460,
+          y: 260,
+          pageNumber: 1,
+          ...dateGeometry,
+        },
+        admin,
+      ),
+    );
+    const otherSigningId = await createSigning(agent, "Draft prep other");
+    const otherDoc = await addAdHocDraftSigningDocumentWithActor(
+      agent,
+      { signingId: otherSigningId, filename: "other.pdf", pdfBytes: await makeFixturePdf("Other") },
+      admin,
+    );
+    const otherParticipant = await addDraftSigningParticipantWithActor(
+      agent,
+      { signingId: otherSigningId, fullName: "Otto Other" },
+      admin,
+    );
+    await expectSigningError("a cross-Signing Date link", ["INVALID_INPUT"], () =>
+      upsertDraftSigningFieldWithActor(
+        agent,
+        {
+          signingId: otherSigningId,
+          signingDocumentId: otherDoc.id,
+          signingParticipantId: otherParticipant.id,
+          fieldType: "DATE_SIGNED",
+          linkedSignatureDraftFieldId: ini.id,
+          x: 72,
+          y: 72,
+          pageNumber: 1,
+          ...dateGeometry,
+        },
+        admin,
+      ),
+    );
+    const { error: triggerCrossParticipant } = await admin.from("signing_draft_fields").insert({
+      signing_id: signingId,
+      signing_document_id: documentId,
+      signing_participant_id: coBuyerParticipant,
+      field_type: "DATE_SIGNED",
+      linked_signature_draft_field_id: ini.id,
+      page_number: 1,
+      x: 10,
+      y: 10,
+      width: 60,
+      height: 20,
+    });
+    if (!triggerCrossParticipant?.message.includes("SIGNING_DATE_LINK_INVALID")) {
+      fail("database must reject a cross-participant Date link");
+    }
+    const { error: triggerDateToDate } = await admin.from("signing_draft_fields").insert({
+      signing_id: signingId,
+      signing_document_id: documentId,
+      signing_participant_id: buyerParticipant,
+      field_type: "DATE_SIGNED",
+      linked_signature_draft_field_id: iniDate.id,
+      page_number: 1,
+      x: 10,
+      y: 10,
+      width: 60,
+      height: 20,
+    });
+    if (!triggerDateToDate?.message.includes("SIGNING_DATE_LINK_INVALID")) {
+      fail("database must reject a Date linked to a Date");
+    }
+    ok("cross-participant, cross-Signing, and Date-to-Date links rejected (server + database)");
+
+    await expectSigningError("changing linked Initials into a Date", ["INVALID_INPUT"], () =>
+      upsertDraftSigningFieldWithActor(
+        agent,
+        {
+          signingId,
+          fieldId: ini.id,
+          signingDocumentId: documentId,
+          signingParticipantId: buyerParticipant,
+          fieldType: "DATE_SIGNED",
+          x: 400,
+          y: 200,
+          pageNumber: 1,
+          ...dateGeometry,
+        },
+        admin,
+      ),
+    );
+    await upsertDraftSigningFieldWithActor(
+      agent,
+      {
+        signingId,
+        fieldId: ini.id,
+        signingDocumentId: documentId,
+        signingParticipantId: coBuyerParticipant,
+        fieldType: "INITIALS",
+        x: 400,
+        y: 200,
+        pageNumber: 1,
+        ...initialsGeometry,
+      },
+      admin,
+    );
+    if ((await fieldsOf(signingId)).find((row) => row.id === iniDate.id)?.signing_participant_id !== coBuyerParticipant) {
+      fail("reassigning Initials must move its linked Date");
+    }
+    const removedIni = await removeDraftSigningFieldWithActor(agent, { signingId, fieldId: ini.id }, admin);
+    if (removedIni.removedFieldIds.length !== 2 || !removedIni.removedFieldIds.includes(iniDate.id)) {
+      fail("removing Initials must remove its linked Date");
+    }
+    ok("Initials-linked Date follows reassign and is removed with its Initials");
+
+    // --- Prepared content authorization ----------------------------------------
+    const printed = await upsertDraftPreparedContentWithActor(
+      agent,
+      {
+        signingId,
+        signingDocumentId: documentId,
+        signingParticipantId: buyerParticipant,
+        contentType: "PRINTED_NAME",
+        pageNumber: 1,
+        x: 72,
+        y: 300,
+        width: 160,
+        height: 16,
+      },
+      admin,
+    );
+    const check = await upsertDraftPreparedContentWithActor(
+      agent,
+      {
+        signingId,
+        signingDocumentId: documentId,
+        signingParticipantId: buyerParticipant,
+        contentType: "CHECKMARK",
+        pageNumber: 1,
+        x: 300,
+        y: 300,
+        width: 12,
+        height: 12,
+      },
+      admin,
+    );
+    if (check.signing_participant_id !== null) fail("Checkmark must store no participant");
+    await expectSigningError("a Printed Name without a participant", ["INVALID_INPUT"], () =>
+      upsertDraftPreparedContentWithActor(
+        agent,
+        {
+          signingId,
+          signingDocumentId: documentId,
+          contentType: "PRINTED_NAME",
+          pageNumber: 1,
+          x: 72,
+          y: 72,
+          width: 100,
+          height: 16,
+        },
+        admin,
+      ),
+    );
+    await expectSigningError("a Printed Name for another Signing's participant", ["INVALID_INPUT"], () =>
+      upsertDraftPreparedContentWithActor(
+        agent,
+        {
+          signingId,
+          signingDocumentId: documentId,
+          signingParticipantId: otherParticipant.id,
+          contentType: "PRINTED_NAME",
+          pageNumber: 1,
+          x: 72,
+          y: 72,
+          width: 100,
+          height: 16,
+        },
+        admin,
+      ),
+    );
+    await expectSigningError("prepared content on another Signing's document", ["INVALID_INPUT"], () =>
+      upsertDraftPreparedContentWithActor(
+        agent,
+        {
+          signingId,
+          signingDocumentId: otherDoc.id,
+          contentType: "CHECKMARK",
+          pageNumber: 1,
+          x: 72,
+          y: 72,
+          width: 12,
+          height: 12,
+        },
+        admin,
+      ),
+    );
+    await expectSigningError("a wrong-org manager writing prepared content", ["NOT_FOUND", "FORBIDDEN"], () =>
+      upsertDraftPreparedContentWithActor(
+        outsider,
+        {
+          signingId,
+          contentId: check.id,
+          signingDocumentId: documentId,
+          contentType: "CHECKMARK",
+          pageNumber: 1,
+          x: 1,
+          y: 1,
+          width: 12,
+          height: 12,
+        },
+        admin,
+      ),
+    );
+    await expectSigningError("a wrong-org manager removing prepared content", ["NOT_FOUND", "FORBIDDEN"], () =>
+      removeDraftPreparedContentWithActor(outsider, { signingId, contentId: printed.id }, admin),
+    );
+    const { data: stillThere } = await admin
+      .from("signing_draft_prepared_content")
+      .select("id, x")
+      .in("id", [printed.id, check.id]);
+    if (stillThere?.length !== 2 || stillThere.some((row) => Number(row.x) === 1)) {
+      fail("an unauthorized prepared-content write took effect");
+    }
+    const { error: checkmarkParticipantError } = await admin
+      .from("signing_draft_prepared_content")
+      .update({ signing_participant_id: buyerParticipant })
+      .eq("id", check.id);
+    if (!checkmarkParticipantError) fail("database must keep Checkmark participant-free");
+    ok("prepared content: manage authority required, same-Signing only, Checkmark never has a participant");
+
+    const removedPrinted = await removeDraftPreparedContentWithActor(
+      agent,
+      { signingId, contentId: printed.id },
+      admin,
+    );
+    if (removedPrinted.removedFieldIds[0] !== printed.id) fail("prepared content removal failed");
+    ok("prepared content removes independently");
+
     console.log("\nDraft preparation validator: all checks passed.");
   } finally {
     process.env.NATIVE_SIGNING_ENABLED = previousGate;
@@ -953,6 +1430,7 @@ async function main() {
         .update({ linked_signature_draft_field_id: null })
         .eq("signing_id", id);
       await admin.from("signing_draft_fields").delete().eq("signing_id", id);
+      await admin.from("signing_draft_prepared_content").delete().eq("signing_id", id);
       await admin
         .from("signing_documents")
         .update({ selected_draft_source_snapshot_id: null })
@@ -961,15 +1439,21 @@ async function main() {
       await admin.from("signing_documents").delete().eq("signing_id", id);
       await admin.from("signing_participants").delete().eq("signing_id", id);
       await admin.from("signing_events").delete().eq("signing_id", id);
+      await admin.from("signing_event_chain_state").delete().eq("signing_id", id);
       await admin
         .from("signings")
         .update({ current_primary_agent_association_id: null })
         .eq("id", id);
+      await admin.from("signing_operator_associations").delete().eq("signing_id", id);
       await admin.from("signing_agent_associations").delete().eq("signing_id", id);
-      await admin.from("signings").delete().eq("id", id);
+      const { error: signingDeleteError } = await admin.from("signings").delete().eq("id", id);
+      if (signingDeleteError) console.error(`Cleanup: Signing ${id}: ${signingDeleteError.message}`);
     }
     if (packetContactIds.length > 0) {
       await admin.from("packet_contacts").delete().in("id", packetContactIds);
+    }
+    if (brokerageSettingsIds.length > 0) {
+      await admin.from("brokerage_settings").delete().in("id", brokerageSettingsIds);
     }
     if (agreementIds.length > 0) {
       await admin
