@@ -17,7 +17,10 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { startInPersonHandoffAction } from "@/lib/signing/ceremony-agent-actions";
 import { SIGNING_CAPACITY_LABEL_OPTIONS } from "@/lib/signing/capacity-notices";
-import { cancelSigningAction } from "@/lib/signing/actions";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cancelSigningAction, renameSigningAction } from "@/lib/signing/actions";
+import { SIGNING_TITLE_MAX_LENGTH } from "@/lib/signing/types";
 import type { SigningDashboard } from "@/lib/signing/dashboard";
 import { invitationStatusLabel } from "@/lib/signing/participant-access-status";
 import {
@@ -28,10 +31,12 @@ import {
   replaceParticipantInvitationAction,
   resendParticipantInvitationAction,
   revokeParticipantInvitationAction,
+  type SigningStage4ActionResult,
   updateDraftSourceToLatestAction,
 } from "@/lib/signing/stage4-actions";
+import { useHistoryRestoreRefresh } from "@/components/signings/use-history-restore-refresh";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 /** pdf.js needs browser APIs (DOMMatrix, canvas, workers): never load it on the server. */
 const SigningPreviewDialog = dynamic(
@@ -75,10 +80,21 @@ const LINK_OP_CONFIRM: Record<
   },
 };
 
-export function SigningDashboardPage({ signingId }: { signingId: string }) {
-  const [dashboard, setDashboard] = useState<SigningDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export function SigningDashboardPage({
+  signingId,
+  initial,
+}: {
+  signingId: string;
+  /** Rendered by the page request (authorize → Draft sync → load). */
+  initial: SigningStage4ActionResult;
+}) {
+  const [served, setServed] = useState(initial);
+  const [dashboard, setDashboard] = useState<SigningDashboard | null>(
+    initial.ok ? (initial.data as SigningDashboard) : null,
+  );
+  const [error, setError] = useState<string | null>(
+    initial.ok ? null : initial.error,
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
   const [busyParticipantId, setBusyParticipantId] = useState<string | null>(
@@ -108,31 +124,13 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
   } | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [renameValue, setRenameValue] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [workspaceMounted, setWorkspaceMounted] = useState(false);
   const [workspaceDocumentId, setWorkspaceDocumentId] = useState<string | null>(
     null,
-  );
-
-  // Auto-add happens on whichever load sees the new party first, and later
-  // loads report nothing new, so the notice accumulates per Signing.
-  const [autoAdded, setAutoAdded] = useState<{ signingId: string; names: string[] }>({
-    signingId,
-    names: [],
-  });
-  const rememberAutoAdded = useCallback(
-    (forSigningId: string, data: SigningDashboard) => {
-      const names = data.participantSync.addedFromPacket;
-      if (names.length === 0) return;
-      setAutoAdded((previous) => {
-        const base = previous.signingId === forSigningId ? previous.names : [];
-        return {
-          signingId: forSigningId,
-          names: [...base, ...names.filter((name) => !base.includes(name))],
-        };
-      });
-    },
-    [],
   );
 
   const reload = useCallback(async () => {
@@ -141,27 +139,47 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
       setError(result.error);
       return;
     }
-    rememberAutoAdded(signingId, result.data as SigningDashboard);
     setDashboard(result.data as SigningDashboard);
-  }, [signingId, rememberAutoAdded]);
+  }, [signingId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const result = await getSigningDashboardAction({ signingId });
-      if (result.ok) rememberAutoAdded(signingId, result.data as SigningDashboard);
-      if (cancelled) return;
-      if (!result.ok) {
-        setError(result.error);
-      } else {
-        setDashboard(result.data as SigningDashboard);
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [signingId, rememberAutoAdded]);
+  // A push navigation back to this preserved route re-renders the page on the
+  // server; adopt that payload instead of the state kept from the last visit.
+  if (served !== initial) {
+    setServed(initial);
+    if (initial.ok) {
+      setDashboard(initial.data as SigningDashboard);
+      setError(null);
+    } else {
+      setError(initial.error);
+    }
+  }
+
+  const restoring = useHistoryRestoreRefresh(reload);
+
+  async function saveRename() {
+    if (renameValue == null) return;
+    const title = renameValue.trim();
+    if (!title) {
+      setRenameError("A Signing name is required.");
+      return;
+    }
+    setRenaming(true);
+    setRenameError(null);
+    setNotice(null);
+    const result = await renameSigningAction({ signingId, title });
+    setRenaming(false);
+    if (!result.ok) {
+      setRenameError(result.error);
+      return;
+    }
+    setDashboard((previous) =>
+      previous
+        ? { ...previous, signing: { ...previous.signing, title: result.signing.title } }
+        : previous,
+    );
+    setRenameValue(null);
+    setNotice("Signing renamed.");
+  }
 
   async function confirmCancelSigning() {
     setCancelling(true);
@@ -338,10 +356,6 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     await runInvitationOp(participantId, op);
     setPendingLinkOp(null);
   }
-  if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading Signing…</p>;
-  }
-
   if (!dashboard) {
     return (
       <p className="text-sm text-destructive">
@@ -387,7 +401,20 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
           </span>
         }
         action={
-          isDraft ? (
+          <>
+          {dashboard.canRename && renameValue == null ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setRenameError(null);
+                setRenameValue(dashboard.signing.title);
+              }}
+            >
+              Rename
+            </Button>
+          ) : null}
+          {isDraft ? (
             <>
               <Button
                 type="button"
@@ -423,10 +450,55 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
             >
               Cancel Signing
             </Button>
-          ) : null
+          ) : null}
+          </>
         }
       />
 
+      {renameValue != null ? (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveRename();
+          }}
+        >
+          <div className="flex min-w-64 flex-1 flex-col gap-1.5">
+            <Label htmlFor="signing-rename">Signing name</Label>
+            <Input
+              id="signing-rename"
+              value={renameValue}
+              maxLength={SIGNING_TITLE_MAX_LENGTH}
+              autoFocus
+              disabled={renaming}
+              onChange={(event) => setRenameValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && !renaming) setRenameValue(null);
+              }}
+            />
+          </div>
+          <Button type="submit" disabled={renaming || renameValue.trim().length === 0}>
+            {renaming ? "Saving…" : "Save"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={renaming}
+            onClick={() => setRenameValue(null)}
+          >
+            Cancel
+          </Button>
+          {renameError ? (
+            <p className="w-full text-sm text-destructive">{renameError}</p>
+          ) : null}
+        </form>
+      ) : null}
+
+      {restoring ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Updating to the current Signing…
+        </p>
+      ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {notice ? (
         <p className="text-sm text-muted-foreground">{notice}</p>
@@ -437,6 +509,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
           signingId={signingId}
           canManage={canManage}
           sourcePacketId={dashboard.signing.sourcePacketId}
+          prep={dashboard.draftPrep}
           documents={dashboard.documents.map((document) => ({
             id: document.id,
             displayName: document.displayName,
@@ -446,13 +519,7 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
             sourceKind: document.sourceKind,
           }))}
           participants={dashboard.participants}
-          autoAddedFromPacket={
-            autoAdded.signingId === signingId
-              ? autoAdded.names.filter((name) =>
-                  dashboard.participants.some((participant) => participant.fullName === name),
-                )
-              : []
-          }
+          autoAddedFromPacket={dashboard.participantSync.addedFromPacket}
           onChanged={reload}
           onResolveDrift={resolveDrift}
           busyDocumentId={busyDocumentId}
@@ -845,11 +912,13 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         </Card>
       )}
 
-      <SigningCompletedOpsPanel
-        signingId={signingId}
-        lifecycleState={dashboard.signing.lifecycleState}
-        finalizationCondition={dashboard.signing.finalizationCondition}
-      />
+      {isDraft ? null : (
+        <SigningCompletedOpsPanel
+          signingId={signingId}
+          lifecycleState={dashboard.signing.lifecycleState}
+          finalizationCondition={dashboard.signing.finalizationCondition}
+        />
+      )}
 
       {workspaceMounted ? (
         <SigningPreviewDialog

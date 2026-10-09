@@ -6,6 +6,7 @@ import { requireSigningActor } from "@/lib/signing/actor";
 import {
   addDraftSigningDocumentWithActor,
   addRemainingPacketDocumentsWithActor,
+  listPacketFormsForDraftWithActor,
   removeDraftSigningDocumentWithActor,
   reorderDraftSigningDocumentsWithActor,
   updateDraftSigningDocumentMetadataWithActor,
@@ -29,7 +30,6 @@ import {
   removeDraftPreparedContentWithActor,
   upsertDraftPreparedContentWithActor,
 } from "@/lib/signing/draft-prepared-content";
-import { requireManageableDraftSigning } from "@/lib/signing/manage";
 import {
   loadDraftRemovedPacketParticipantsWithActor,
   loadDraftSourcePacketStateWithActor,
@@ -328,72 +328,7 @@ export async function selectDraftSourcePacketAction(input: {
 export async function listPacketFormsForDraftAction(input: {
   signingId: unknown;
 }): Promise<SigningStage3ActionResult> {
-  return withAuthorizedAdmin(async (actor, admin) => {
-    const { signing } = await requireManageableDraftSigning(
-      actor,
-      input.signingId,
-      admin,
-    );
-
-    if (signing.source_packet_id == null) {
-      return [];
-    }
-
-    const { data: packets, error: packetError } = await admin
-      .from("packets")
-      .select("id, label, status")
-      .eq("owner_user_id", actor.userId)
-      .neq("status", "DELETED")
-      .eq("id", signing.source_packet_id);
-    if (packetError) throw new Error(packetError.message);
-
-    const packetIds = (packets ?? []).map((row) => row.id as number);
-    if (packetIds.length === 0) {
-      return [];
-    }
-
-    const packetLabelById = new Map(
-      (packets ?? []).map((row) => [
-        row.id as number,
-        (row.label as string | null) ?? null,
-      ]),
-    );
-
-    const { data: includedDocs, error: includedError } = await admin
-      .from("signing_documents")
-      .select("source_packet_form_id")
-      .eq("signing_id", signing.id)
-      .eq("included_in_draft", true)
-      .not("source_packet_form_id", "is", null);
-    if (includedError) throw new Error(includedError.message);
-    const includedFormIds = new Set(
-      (includedDocs ?? [])
-        .map((row) => row.source_packet_form_id as number | null)
-        .filter((id): id is number => id != null),
-    );
-
-    const { data: forms, error: formError } = await admin
-      .from("packet_forms")
-      .select(
-        "id, packet_id, document_name, status, availability_state, storage_path, sort_order",
-      )
-      .in("packet_id", packetIds)
-      .eq("status", "ACTIVE")
-      .eq("availability_state", "AVAILABLE")
-      .order("sort_order", { ascending: true })
-      .order("id", { ascending: true })
-      .limit(200);
-    if (formError) throw new Error(formError.message);
-
-    return (forms ?? [])
-      .filter((form) => Boolean(form.storage_path))
-      .filter((form) => !includedFormIds.has(form.id as number))
-      .map((form) => ({
-        id: form.id as number,
-        packetId: form.packet_id as number,
-        documentName: String(form.document_name ?? "Document"),
-        packetLabel: packetLabelById.get(form.packet_id as number) ?? null,
-        alreadyIncluded: false,
-      }));
-  });
+  return withAuthorizedAdmin((actor, admin) =>
+    listPacketFormsForDraftWithActor(actor, input, admin),
+  );
 }

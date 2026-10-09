@@ -50,6 +50,7 @@ import {
 } from "../lib/signing/event-chain-keys.ts";
 import { processNextFinalizationWorkItem } from "../lib/signing/finalization-worker.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
+import { renameSigningForActor } from "../lib/signing/rename.ts";
 import {
   acceptFieldPlacement,
   removeFieldPlacement,
@@ -299,6 +300,14 @@ async function main() {
     }
 
     for (const id of signingIds) {
+      await admin
+        .from("signings")
+        .update({
+          current_primary_agent_association_id: null,
+          current_package_revision_id: null,
+          frozen_package_revision_id: null,
+        })
+        .eq("id", id);
       await cleanupCompletionDeliveryTables(id);
       await admin.from("signing_work_items").delete().eq("signing_id", id);
       await admin.from("signing_artifacts").delete().eq("signing_id", id);
@@ -320,14 +329,27 @@ async function main() {
         .from("signing_draft_prepared_content")
         .delete()
         .eq("signing_id", id);
-      await admin.from("signing_documents").delete().eq("signing_id", id);
-      await admin.from("signing_package_revisions").delete().eq("signing_id", id);
       await admin
-        .from("signing_participant_credentials")
+        .from("signing_documents")
+        .update({ selected_draft_source_snapshot_id: null })
+        .eq("signing_id", id);
+      await admin
+        .from("signing_draft_source_snapshots")
         .delete()
         .eq("signing_id", id);
-      await admin.from("signing_browser_sessions").delete().eq("signing_id", id);
-      await admin.from("signing_entry_sessions").delete().eq("signing_id", id);
+      await admin
+        .from("signing_draft_fields")
+        .update({ linked_signature_draft_field_id: null })
+        .eq("signing_id", id);
+      await admin.from("signing_draft_fields").delete().eq("signing_id", id);
+      const { error: documentsDeleteError } = await admin
+        .from("signing_documents")
+        .delete()
+        .eq("signing_id", id);
+      if (documentsDeleteError) {
+        console.error(`Cleanup: documents ${id}: ${documentsDeleteError.message}`);
+      }
+      await admin.from("signing_package_revisions").delete().eq("signing_id", id);
       await admin
         .from("signing_participant_presence_leases")
         .delete()
@@ -338,11 +360,12 @@ async function main() {
         .delete()
         .eq("signing_id", id);
       await admin.from("signing_in_person_handoffs").delete().eq("signing_id", id);
+      await admin.from("signing_browser_sessions").delete().eq("signing_id", id);
+      await admin.from("signing_entry_sessions").delete().eq("signing_id", id);
       await admin
-        .from("signing_draft_source_snapshots")
+        .from("signing_participant_credentials")
         .delete()
         .eq("signing_id", id);
-      await admin.from("signing_draft_fields").delete().eq("signing_id", id);
       await admin.from("signing_participants").delete().eq("signing_id", id);
       await admin
         .from("signing_operator_associations")
@@ -353,14 +376,16 @@ async function main() {
         .delete()
         .eq("signing_id", id);
       await admin
+        .from("signing_operation_idempotency")
+        .delete()
+        .eq("signing_id", id);
+      const { error: signingDeleteError } = await admin
         .from("signings")
-        .update({
-          current_primary_agent_association_id: null,
-          current_package_revision_id: null,
-          frozen_package_revision_id: null,
-        })
+        .delete()
         .eq("id", id);
-      await admin.from("signings").delete().eq("id", id);
+      if (signingDeleteError) {
+        console.error(`Cleanup: Signing ${id}: ${signingDeleteError.message}`);
+      }
     }
     if (artifactKeys.length > 0) {
       await admin.storage.from(SIGNING_ARTIFACTS_BUCKET).remove(artifactKeys);
@@ -521,6 +546,111 @@ async function main() {
     });
 
     await loadCurrentConsentDisclosure(admin);
+
+    const EVIDENCE_TABLES = [
+      "signing_package_revisions",
+      "signing_package_revision_documents",
+      "signing_package_revision_participants",
+      "signing_document_versions",
+      "signing_documents",
+      "signing_participants",
+      "signing_fields",
+      "signing_adopted_marks",
+      "signing_field_placements",
+      "signing_artifacts",
+      "signing_participant_credentials",
+      "signing_agent_associations",
+    ];
+
+    // Contents are compared, never printed (credential rows hold token hashes).
+    async function evidenceSnapshot(signingId: string): Promise<string> {
+      const parts: Record<string, unknown> = {};
+      for (const table of EVIDENCE_TABLES) {
+        const { data, error } = await admin
+          .from(table)
+          .select("*")
+          .eq("signing_id", signingId)
+          .order("id");
+        if (error) fail(`${table}: ${error.message}`);
+        parts[table] = data ?? [];
+      }
+      const { data: signingRow, error } = await admin
+        .from("signings")
+        .select("*")
+        .eq("id", signingId)
+        .single();
+      if (error || !signingRow) fail(error?.message ?? "signing missing");
+      const rest: Record<string, unknown> = { ...signingRow };
+      delete rest.title;
+      delete rest.update_date;
+      parts.signings = rest;
+      return JSON.stringify(parts);
+    }
+
+    async function expectSigningError(
+      label: string,
+      codes: string[],
+      action: () => Promise<unknown>,
+    ) {
+      try {
+        await action();
+      } catch (error) {
+        if (error instanceof SigningError && codes.includes(error.code)) {
+          ok(`${label} rejected (${error.code})`);
+          return;
+        }
+        fail(`${label} threw unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      fail(`${label} unexpectedly succeeded`);
+    }
+
+    async function renameAndVerify(signingId: string, newTitle: string, stage: string) {
+      const before = await evidenceSnapshot(signingId);
+      const { data: previous } = await admin
+        .from("signings")
+        .select("title")
+        .eq("id", signingId)
+        .single();
+      const renamed = await renameSigningForActor(
+        agent,
+        { signingId, title: `  ${newTitle}  ` },
+        admin,
+      );
+      if (renamed.title !== newTitle) fail(`${stage}: rename did not trim/apply`);
+      const { data: stored } = await admin
+        .from("signings")
+        .select("title, lifecycle_state")
+        .eq("id", signingId)
+        .single();
+      if (stored?.title !== newTitle) fail(`${stage}: rename not persisted`);
+      if ((await evidenceSnapshot(signingId)) !== before) {
+        fail(`${stage}: rename changed documents, participants, revisions, hashes, links or marks`);
+      }
+      const { data: events } = await admin
+        .from("signing_events")
+        .select("event_type, actor_user_id, details_json, visibility, create_date")
+        .eq("signing_id", signingId)
+        .eq("event_type", "SIGNING_TITLE_UPDATED")
+        .order("create_date", { ascending: false })
+        .limit(1);
+      const event = events?.[0];
+      const details = (event?.details_json ?? {}) as Record<string, unknown>;
+      if (
+        !event ||
+        event.actor_user_id !== agentUserId ||
+        event.visibility !== "BUSINESS" ||
+        !event.create_date ||
+        details.previousTitle !== previous?.title ||
+        details.newTitle !== newTitle ||
+        details.lifecycleState !== stored?.lifecycle_state
+      ) {
+        fail(`${stage}: rename event missing or incomplete`);
+      }
+      if (/token|https?:\/\/|\/sign\//i.test(JSON.stringify(details))) {
+        fail(`${stage}: rename event carries a link or secret`);
+      }
+      ok(`${stage}: rename persisted, event recorded, evidence unchanged`);
+    }
 
     async function buildActivatedSigning(options: {
       title: string;
@@ -745,8 +875,21 @@ async function main() {
       participantName: "Pat Participant",
       participantEmail: `pat-${stamp}@example.com`,
     });
+    await renameAndVerify(primary.signingId, `CompDel Renamed In Progress ${stamp}`, "IN_PROGRESS");
+    await expectSigningError("rename to blank name", ["INVALID_INPUT"], () =>
+      renameSigningForActor(agent, { signingId: primary.signingId, title: "   " }, admin),
+    );
+    await expectSigningError("rename over max length", ["INVALID_INPUT"], () =>
+      renameSigningForActor(
+        agent,
+        { signingId: primary.signingId, title: "x".repeat(201) },
+        admin,
+      ),
+    );
+    // The participant link issued before the rename still drives the ceremony.
     await runCeremonyToComplete(primary);
     ok("primary Signing COMPLETE with artifacts");
+    await renameAndVerify(primary.signingId, `CompDel Renamed Complete ${stamp}`, "COMPLETE");
 
     const { data: fanOutCred } = await admin
       .from("signing_completed_package_credentials")

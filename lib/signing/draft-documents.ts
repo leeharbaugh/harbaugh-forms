@@ -8,6 +8,7 @@ import {
   requireManageableDraftSigning,
 } from "./manage";
 import { resolveSigningPacketOwnerUserId } from "./operations";
+import { packetSourceEligibility } from "./packet-signing-eligibility";
 import { SIGNING_ARTIFACTS_BUCKET } from "./stage1-schema";
 import type { SigningActor } from "./types";
 import { isUuid } from "./types";
@@ -179,10 +180,11 @@ export async function addDraftSigningDocumentWithActor(
   const packet = Array.isArray(packetForm.packets)
     ? packetForm.packets[0]
     : packetForm.packets;
-  if (!packet || packet.status === "DELETED") {
+  const packetEligibility = packetSourceEligibility(packet ?? null, actor.userId);
+  if (!packet || packetEligibility.reasonCode === "PACKET_DELETED") {
     throw new SigningError("INVALID_PACKET", "The Packet is not available.");
   }
-  if (packet.owner_user_id !== actor.userId) {
+  if (!packetEligibility.eligible) {
     throw new SigningError(
       "INVALID_PACKET",
       "The Packet Form is not available to this Signing.",
@@ -586,10 +588,11 @@ export async function addRemainingPacketDocumentsWithActor(
     .eq("id", packetId)
     .maybeSingle();
   if (packetError) throw new Error(packetError.message);
-  if (!packet || packet.status === "DELETED") {
+  const packetEligibility = packetSourceEligibility(packet, actor.userId);
+  if (!packet || packetEligibility.reasonCode === "PACKET_DELETED") {
     throw new SigningError("INVALID_PACKET", "The Packet is not available.");
   }
-  if (packet.owner_user_id !== actor.userId) {
+  if (!packetEligibility.eligible) {
     throw new SigningError(
       "INVALID_PACKET",
       "The Packet is not available to this Signing.",
@@ -646,4 +649,91 @@ export async function addRemainingPacketDocumentsWithActor(
   }
 
   return { addedCount, skippedDuplicateCount };
+}
+
+export type DraftPacketFormOption = {
+  id: number;
+  packetId: number;
+  documentName: string;
+  packetLabel: string | null;
+  alreadyIncluded: false;
+};
+
+/**
+ * List AVAILABLE Packet Forms from this Draft Signing's source Packet that may
+ * still be added. Empty until a source Packet is selected (one source Packet
+ * per Signing). Used by the manager Draft preparation UI.
+ */
+export async function listPacketFormsForDraftWithActor(
+  actor: SigningActor,
+  input: { signingId: unknown },
+  admin: SupabaseClient,
+): Promise<DraftPacketFormOption[]> {
+  const { signing } = await requireManageableDraftSigning(
+    actor,
+    input.signingId,
+    admin,
+  );
+
+  if (signing.source_packet_id == null) {
+    return [];
+  }
+
+  const { data: rows, error: packetError } = await admin
+    .from("packets")
+    .select("id, label, status, owner_user_id")
+    .eq("id", signing.source_packet_id);
+  if (packetError) throw new Error(packetError.message);
+  const packets = (rows ?? []).filter(
+    (row) => packetSourceEligibility(row, actor.userId).eligible,
+  );
+
+  const packetIds = packets.map((row) => row.id as number);
+  if (packetIds.length === 0) {
+    return [];
+  }
+
+  const packetLabelById = new Map(
+    packets.map((row) => [
+      row.id as number,
+      (row.label as string | null) ?? null,
+    ]),
+  );
+
+  const { data: includedDocs, error: includedError } = await admin
+    .from("signing_documents")
+    .select("source_packet_form_id")
+    .eq("signing_id", signing.id)
+    .eq("included_in_draft", true)
+    .not("source_packet_form_id", "is", null);
+  if (includedError) throw new Error(includedError.message);
+  const includedFormIds = new Set(
+    (includedDocs ?? [])
+      .map((row) => row.source_packet_form_id as number | null)
+      .filter((id): id is number => id != null),
+  );
+
+  const { data: forms, error: formError } = await admin
+    .from("packet_forms")
+    .select(
+      "id, packet_id, document_name, status, availability_state, storage_path, sort_order",
+    )
+    .in("packet_id", packetIds)
+    .eq("status", "ACTIVE")
+    .eq("availability_state", "AVAILABLE")
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(200);
+  if (formError) throw new Error(formError.message);
+
+  return (forms ?? [])
+    .filter((form) => Boolean(form.storage_path))
+    .filter((form) => !includedFormIds.has(form.id as number))
+    .map((form) => ({
+      id: form.id as number,
+      packetId: form.packet_id as number,
+      documentName: String(form.document_name ?? "Document"),
+      packetLabel: packetLabelById.get(form.packet_id as number) ?? null,
+      alreadyIncluded: false as const,
+    }));
 }

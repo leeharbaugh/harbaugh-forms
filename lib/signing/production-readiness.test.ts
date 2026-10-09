@@ -144,10 +144,10 @@ describe("production readiness helpers", () => {
     assert.equal(worker?.publicValue, undefined);
   });
 
-  it("matches migration inventory on disk (25 Native Signing migrations)", () => {
+  it("matches migration inventory on disk (26 Native Signing migrations)", () => {
     const inventory = assertNativeSigningMigrationInventoryMatchesDisk();
     assert.equal(inventory.ok, true);
-    assert.equal(NATIVE_SIGNING_ALL_MIGRATIONS.length, 25);
+    assert.equal(NATIVE_SIGNING_ALL_MIGRATIONS.length, 26);
   });
 
   it("detects Cron route, vercel.json, and worker feature-off posture", () => {

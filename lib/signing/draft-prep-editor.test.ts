@@ -481,7 +481,7 @@ describe("One source Packet per Signing", () => {
     assert.match(draftDocuments, /already includes documents from a different Packet/);
     assert.match(sourcePacket, /deriveSigningParticipantsFromPacket/);
     assert.match(sourcePacket, /requireManageableDraftSigning/);
-    assert.match(sourcePacket, /owner_user_id !== actor\.userId/);
+    assert.match(sourcePacket, /packetSourceEligibility\(packet, actor\.userId\)\.eligible/);
     assert.doesNotMatch(sourcePacket, /\.delete\(/);
   });
 
@@ -519,7 +519,11 @@ describe("One source Packet per Signing", () => {
   });
 
   it("lists Packet forms only from the bound source Packet", () => {
-    assert.match(stage3, /if \(signing\.source_packet_id == null\) \{\s*return \[\];/);
+    const body = draftDocuments.slice(
+      draftDocuments.indexOf("export async function listPacketFormsForDraftWithActor"),
+    );
+    assert.match(body, /if \(signing\.source_packet_id == null\) \{\s*return \[\];/);
+    assert.match(stage3, /listPacketFormsForDraftWithActor\(actor, input, admin\)/);
     assert.match(stage3, /selectDraftSourcePacketAction/);
     assert.match(stage3, /getDraftSourcePacketStateAction/);
   });

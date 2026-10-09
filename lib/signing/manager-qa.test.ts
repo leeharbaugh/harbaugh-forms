@@ -62,12 +62,12 @@ describe("manager QA wiring", () => {
     assert.doesNotMatch(dashboard, /Native Signing/);
   });
 
-  it("gates Packet Create Signing on packet ownership", () => {
+  it("gates Packet Create Signing on the server eligibility result", () => {
     const packetDetail = read("components/packets/packet-detail.tsx");
-    assert.match(packetDetail, /canCreateSigning/);
-    assert.match(packetDetail, /owner_user_id === currentUserId/);
+    assert.match(packetDetail, /getPacketSigningEligibilityAction\(\{ packetId \}\)/);
+    assert.doesNotMatch(packetDetail, /owner_user_id === currentUserId/);
     assert.match(packetDetail, /createSigningFromPacketAction/);
-    assert.match(packetDetail, /Create Signing/);
+    assert.match(packetDetail, /Create Signing unavailable: /);
   });
 
   it("supports Draft document add/remove and whole-packet import", () => {
@@ -86,7 +86,7 @@ describe("manager QA wiring", () => {
     assert.match(stage3, /addRemainingPacketDocumentsAction/);
     assert.match(draftDocs, /addRemainingPacketDocumentsWithActor/);
     assert.match(draftDocs, /already included/);
-    assert.match(stage3, /included_in_draft/);
+    assert.match(draftDocs, /included_in_draft/);
   });
 
   it("uses ready/not-ready readiness and concise Send confirmation", () => {

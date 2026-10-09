@@ -1,4 +1,5 @@
 import { SigningsListPage } from "@/components/signings/signings-list-page";
+import { listSigningsAction } from "@/lib/signing/actions";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import type { Metadata } from "next";
 import { connection } from "next/server";
@@ -17,5 +18,5 @@ export default async function Page() {
     notFound();
   }
 
-  return <SigningsListPage />;
+  return <SigningsListPage initial={await listSigningsAction()} />;
 }

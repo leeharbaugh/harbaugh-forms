@@ -139,11 +139,12 @@ function PacketsPageContent() {
       query = query.eq("owner_user_id", visibility.userId);
     }
 
-    if (showDeleted) {
-      query = query.in("status", ["ACTIVE", "DELETED"]);
-    } else {
-      query = query.eq("status", "ACTIVE");
-    }
+    // Inactive is a user-set, still-usable status (and a valid Signing
+    // source), so it is always listed; only Deleted waits for Show deleted.
+    query = query.in(
+      "status",
+      showDeleted ? ["ACTIVE", "INACTIVE", "DELETED"] : ["ACTIVE", "INACTIVE"],
+    );
 
     const trimmedSearch = searchQuery.trim();
     if (trimmedSearch) {
@@ -363,8 +364,8 @@ function PacketsPageContent() {
                         >
                           {packet.label}
                         </span>
-                        {deleted ? (
-                          <RecordStatusBadge status="DELETED" />
+                        {packet.status !== "ACTIVE" ? (
+                          <RecordStatusBadge status={packet.status} />
                         ) : null}
                       </div>
                     </ResizableDataTableCell>

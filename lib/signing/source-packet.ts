@@ -23,6 +23,10 @@ import {
   parsePositiveInt,
   requireManageableDraftSigning,
 } from "./manage";
+import {
+  INELIGIBLE_SOURCE_PACKET_STATUSES,
+  packetSourceEligibility,
+} from "./packet-signing-eligibility";
 import { deriveSigningParticipantsFromPacket } from "./packet-to-signing";
 import type { SigningParticipantRoleCode } from "./participant-roles";
 import type { SigningActor, SigningRow } from "./types";
@@ -100,11 +104,7 @@ async function requireOwnedPacket(
     .eq("id", packetId)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (
-    !packet ||
-    packet.status === "DELETED" ||
-    packet.owner_user_id !== actor.userId
-  ) {
+  if (!packet || !packetSourceEligibility(packet, actor.userId).eligible) {
     throw new SigningError(
       "INVALID_PACKET",
       "The Packet is not available to this Signing.",
@@ -147,13 +147,15 @@ export async function loadDraftSourcePacketStateWithActor(
   if (allowed) {
     const { data, error } = await admin
       .from("packets")
-      .select("id, label")
+      .select("id, label, owner_user_id, status")
       .eq("owner_user_id", actor.userId)
-      .neq("status", "DELETED")
+      .not("status", "in", `(${INELIGIBLE_SOURCE_PACKET_STATUSES.join(",")})`)
       .order("id", { ascending: false })
       .limit(50);
     if (error) throw new Error(error.message);
-    selectablePackets = (data ?? []).map((row) => ({
+    selectablePackets = (data ?? [])
+      .filter((row) => packetSourceEligibility(row, actor.userId).eligible)
+      .map((row) => ({
       id: row.id as number,
       label: packetLabel({
         id: row.id as number,
@@ -263,7 +265,7 @@ async function ownedSourcePacketId(
     .eq("id", packetId)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!packet || packet.status === "DELETED" || packet.owner_user_id !== actor.userId) {
+  if (!packet || !packetSourceEligibility(packet, actor.userId).eligible) {
     return null;
   }
   return packetId;
@@ -281,6 +283,10 @@ export type DraftPacketAutoAddResult = {
  * deletes, merges or overwrites participants; ad hoc and Include me /
  * Include broker participants are untouched. Does nothing once a package
  * revision exists or the Signing leaves Draft.
+ *
+ * An automatic add (not a Restore) marks its rows `auto_added_from_packet_at`
+ * in the same transaction as the insert, so the notice never depends on
+ * which request performed the add.
  */
 export async function autoAddDraftPacketParticipants(
   actor: SigningActor,
@@ -311,11 +317,12 @@ export async function autoAddDraftPacketParticipants(
   );
   if (candidates.length === 0) return { addedParticipants: [] };
 
+  const autoAdded = options.onlyContactId === undefined;
   const { error } = await admin.rpc("signing_select_source_packet", {
     p_signing_id: signing.id,
     p_expected_source_packet_id: packetId,
     p_packet_id: packetId,
-    p_parties: candidates,
+    p_parties: candidates.map((party) => ({ ...party, auto_added: autoAdded })),
   });
   if (error) {
     if (
@@ -336,6 +343,25 @@ export async function autoAddDraftPacketParticipants(
         linkedContactId: party.linked_contact_id,
       })),
   };
+}
+
+/**
+ * Draft notice: participants Draft auto-add inserted that are still on this
+ * Signing (current names), from the marker written with the insert.
+ */
+export async function listDraftPacketAutoAddedParticipantNames(
+  admin: SupabaseClient,
+  signingId: string,
+): Promise<string[]> {
+  const { data, error } = await admin
+    .from("signing_participants")
+    .select("full_name")
+    .eq("signing_id", signingId)
+    .neq("participant_status", "REMOVED")
+    .not("auto_added_from_packet_at", "is", null)
+    .order("display_order", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => String(row.full_name));
 }
 
 export type DraftRemovedPacketParticipants = {

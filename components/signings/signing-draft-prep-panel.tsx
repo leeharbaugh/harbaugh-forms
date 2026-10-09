@@ -16,7 +16,7 @@ import {
   type SigningCapacityMode,
   suggestCapacityWording,
 } from "@/lib/signing/capacity-notices";
-import type { InternalSignerOptions } from "@/lib/signing/draft-participants";
+import type { SigningDraftPrep } from "@/lib/signing/dashboard";
 import {
   SIGNING_PARTICIPANT_ROLE_CODES,
   participantRoleDisplay,
@@ -27,11 +27,7 @@ import {
   addDraftSigningDocumentAction,
   addDraftSigningParticipantAction,
   addRemainingPacketDocumentsAction,
-  getDraftRemovedPacketParticipantsAction,
-  getDraftSourcePacketStateAction,
-  getInternalSignerOptionsAction,
   includeInternalSignerAction,
-  listPacketFormsForDraftAction,
   removeDraftSigningDocumentAction,
   removeDraftSigningParticipantAction,
   restoreDraftPacketParticipantAction,
@@ -41,18 +37,9 @@ import {
 import type { ParticipantIdentitySourceKind } from "@/lib/signing/draft-participant-sync";
 import type {
   DraftPacketAutoAddResult,
-  DraftRemovedPacketParticipants,
-  DraftSourcePacketState,
   SelectDraftSourcePacketResult,
 } from "@/lib/signing/source-packet";
-import { useCallback, useEffect, useRef, useState } from "react";
-
-type PacketFormOption = {
-  id: number;
-  packetId: number;
-  documentName: string;
-  packetLabel: string | null;
-};
+import { useEffect, useRef, useState } from "react";
 
 type DraftDocument = {
   id: string;
@@ -111,10 +98,13 @@ export function SigningDraftPrepPanel({
   busyDocumentId,
   onPrepareDocument,
   autoAddedFromPacket = [],
+  prep,
 }: {
   signingId: string;
   canManage: boolean;
   sourcePacketId: number | null;
+  /** Loaded with the dashboard (same authorized request). */
+  prep: SigningDraftPrep | null;
   documents: DraftDocument[];
   participants: DraftParticipant[];
   /** Packet participants the latest load added automatically. */
@@ -131,11 +121,10 @@ export function SigningDraftPrepPanel({
   const [email, setEmail] = useState("");
   const [roleCode, setRoleCode] = useState("");
   const [roleLabel, setRoleLabel] = useState("");
-  const [internalSigners, setInternalSigners] = useState<InternalSignerOptions | null>(
-    null,
-  );
-  const [removedPacket, setRemovedPacket] =
-    useState<DraftRemovedPacketParticipants | null>(null);
+  const internalSigners = prep?.internalSigners ?? null;
+  const removedPacket = prep?.removedPacket ?? null;
+  const packetForms = prep?.packetForms ?? [];
+  const sourceState = prep?.sourceState ?? null;
   const [editingParticipantId, setEditingParticipantId] = useState<string | null>(
     null,
   );
@@ -149,82 +138,30 @@ export function SigningDraftPrepPanel({
   const [capacityWording, setCapacityWording] = useState("");
   const [capacityWordingTouched, setCapacityWordingTouched] = useState(false);
 
-  const [packetForms, setPacketForms] = useState<PacketFormOption[]>([]);
-  const [selectedPacketFormId, setSelectedPacketFormId] = useState("");
-  const [sourceState, setSourceState] = useState<DraftSourcePacketState | null>(
-    null,
-  );
-  const [packetChoice, setPacketChoice] = useState("");
-  const [changingPacket, setChangingPacket] = useState(false);
+  const [pickedPacketFormId, setSelectedPacketFormId] = useState("");
+  const selectedPacketFormId = packetForms.some(
+    (form) => String(form.id) === pickedPacketFormId,
+  )
+    ? pickedPacketFormId
+    : packetForms[0]
+      ? String(packetForms[0].id)
+      : "";
+  const selectablePackets = sourceState?.selectablePackets ?? [];
+  const [pickedPacket, setPacketChoice] = useState("");
+  const packetChoice = selectablePackets.some(
+    (packet) => String(packet.id) === pickedPacket,
+  )
+    ? pickedPacket
+    : selectablePackets[0]
+      ? String(selectablePackets[0].id)
+      : "";
+  const [changingPacketRequested, setChangingPacket] = useState(false);
+  const changingPacket =
+    changingPacketRequested && (sourceState?.canChangeSourcePacket ?? false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-
-  const loadPacketForms = useCallback(async () => {
-    const result = await listPacketFormsForDraftAction({ signingId });
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    const rows = (result.data as PacketFormOption[] | undefined) ?? [];
-    setPacketForms(rows);
-    setSelectedPacketFormId((previous) => {
-      if (rows.length === 0) return "";
-      if (previous && rows.some((row) => String(row.id) === previous)) {
-        return previous;
-      }
-      return String(rows[0].id);
-    });
-  }, [signingId]);
-
-  const loadSourceState = useCallback(async () => {
-    const result = await getDraftSourcePacketStateAction({ signingId });
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    const state = result.data as DraftSourcePacketState;
-    setSourceState(state);
-    setPacketChoice((previous) => {
-      if (
-        previous &&
-        state.selectablePackets.some((packet) => String(packet.id) === previous)
-      ) {
-        return previous;
-      }
-      return state.selectablePackets[0] ? String(state.selectablePackets[0].id) : "";
-    });
-    if (!state.canChangeSourcePacket) setChangingPacket(false);
-  }, [signingId]);
-
-  const loadParticipantSources = useCallback(async () => {
-    const [signers, removed] = await Promise.all([
-      getInternalSignerOptionsAction({ signingId }),
-      getDraftRemovedPacketParticipantsAction({ signingId }),
-    ]);
-    if (signers.ok) setInternalSigners(signers.data as InternalSignerOptions);
-    if (removed.ok) setRemovedPacket(removed.data as DraftRemovedPacketParticipants);
-  }, [signingId]);
-
-  const packetDocumentCount = documents.filter(
-    (document) => document.sourceKind !== "AD_HOC_PDF",
-  ).length;
-
-  useEffect(() => {
-    if (!canManage) return;
-    void loadPacketForms();
-    void loadSourceState();
-    void loadParticipantSources();
-  }, [
-    canManage,
-    loadPacketForms,
-    loadSourceState,
-    loadParticipantSources,
-    sourcePacketId,
-    packetDocumentCount,
-    participants.length,
-  ]);
 
   useEffect(() => {
     if (signingCapacityMode !== "REPRESENTATIVE") return;
@@ -287,8 +224,6 @@ export function SigningDraftPrepPanel({
       const added = data.addedParticipantCount;
       setChangingPacket(false);
       await onChanged();
-      await loadPacketForms();
-      await loadSourceState();
       const skipped = data.skippedExistingParticipantCount;
       setNotice(
         added > 0
@@ -375,7 +310,6 @@ export function SigningDraftPrepPanel({
           : `${data.participant.full_name} is already a signer on this Signing.`,
       );
       await onChanged();
-      await loadParticipantSources();
     }
     setBusy(false);
   }
@@ -398,7 +332,6 @@ export function SigningDraftPrepPanel({
           : "This Packet participant is already on the Signing.",
       );
       await onChanged();
-      await loadParticipantSources();
     }
     setBusy(false);
   }
@@ -446,7 +379,6 @@ export function SigningDraftPrepPanel({
           : "Participant removed.",
       );
       await onChanged();
-      await loadParticipantSources();
     }
     setBusy(false);
   }
@@ -465,7 +397,6 @@ export function SigningDraftPrepPanel({
     } else {
       setNotice("Document added.");
       await onChanged();
-      await loadPacketForms();
     }
     setBusy(false);
   }
@@ -488,7 +419,6 @@ export function SigningDraftPrepPanel({
       const added = data?.addedCount ?? 0;
       const skipped = data?.skippedDuplicateCount ?? 0;
       await onChanged();
-      await loadPacketForms();
       setNotice(
         added === 0
           ? skipped > 0
@@ -515,7 +445,6 @@ export function SigningDraftPrepPanel({
     } else {
       setNotice("Document removed.");
       await onChanged();
-      await loadPacketForms();
     }
     setBusy(false);
   }

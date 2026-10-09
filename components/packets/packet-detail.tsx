@@ -40,7 +40,10 @@ import { formatCollectionType } from "@/lib/types/collection";
 import { formatPropertyAddress } from "@/lib/types/property";
 import { PacketFormsLiveEditor } from "@/components/packets/packet-forms-live-editor";
 import { sortPacketForms } from "@/lib/types/packet-form";
-import { createSigningFromPacketAction } from "@/lib/signing/actions";
+import {
+  createSigningFromPacketAction,
+  getPacketSigningEligibilityAction,
+} from "@/lib/signing/actions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -81,7 +84,11 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isCreatingSigning, setIsCreatingSigning] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [signingEligibility, setSigningEligibility] = useState<{
+    eligible: boolean;
+    reasonCode: string | null;
+    message: string | null;
+  } | null>(null);
   const [duplicateSigningDialogOpen, setDuplicateSigningDialogOpen] =
     useState(false);
   const [duplicateSigningMessage, setDuplicateSigningMessage] = useState("");
@@ -91,16 +98,23 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
     setLoadError(null);
 
     const supabase = createClient();
-    const [{ data, error }, authResult] = await Promise.all([
+    const [{ data, error }, eligibility] = await Promise.all([
       supabase
         .from("packets")
         .select(PACKET_DETAIL_SELECT)
         .eq("id", packetId)
         .maybeSingle(),
-      supabase.auth.getUser(),
+      getPacketSigningEligibilityAction({ packetId }),
     ]);
 
-    setCurrentUserId(authResult.data.user?.id ?? null);
+    // Hidden only when Signing is off; otherwise shown, disabled with a reason.
+    setSigningEligibility(
+      eligibility.ok
+        ? eligibility.data
+        : eligibility.code === "NATIVE_SIGNING_DISABLED"
+          ? null
+          : { eligible: false, reasonCode: null, message: eligibility.error },
+    );
 
     if (error) {
       setLoadError(error.message);
@@ -375,10 +389,6 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
     ? getOrderedContactNames(agreement)
     : packetContactNames;
   const isDeleted = isPacketDeleted(packet);
-  const canCreateSigning =
-    !isDeleted &&
-    currentUserId != null &&
-    packet.owner_user_id === currentUserId;
   const documents = sortPacketForms(
     [...(packet.packet_forms ?? [])].filter((document) =>
       isDeleted
@@ -455,8 +465,8 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
             <h1 className="text-2xl font-semibold tracking-tight">
               {packet.label}
             </h1>
-            {isDeleted && (
-              <Badge variant="destructive">
+            {packet.status !== "ACTIVE" && (
+              <Badge variant={isDeleted ? "destructive" : "warning"}>
                 {formatPacketStatus(packet.status)}
               </Badge>
             )}
@@ -472,24 +482,34 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
               <Button variant="outline" asChild>
                 <Link href={`/packets/${packetId}/edit`}>Edit packet</Link>
               </Button>
-              {canCreateSigning ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isCreatingSigning || isDeleting || isRestoring}
-                  onClick={() => void handleCreateSigning(false)}
-                >
-                  {isCreatingSigning ? "Creating…" : "Create Signing"}
-                </Button>
-              ) : null}
-              <Button
-                variant="destructive"
-                onClick={openDeleteDialog}
-                disabled={isDeleting || isRestoring}
-              >
-                {isDeleting ? "Deleting…" : "Delete"}
-              </Button>
             </>
+          )}
+          {signingEligibility ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={
+                !signingEligibility.eligible ||
+                isCreatingSigning ||
+                isDeleting ||
+                isRestoring
+              }
+              aria-describedby={
+                signingEligibility.eligible ? undefined : "create-signing-unavailable"
+              }
+              onClick={() => void handleCreateSigning(false)}
+            >
+              {isCreatingSigning ? "Creating…" : "Create Signing"}
+            </Button>
+          ) : null}
+          {!isDeleted && (
+            <Button
+              variant="destructive"
+              onClick={openDeleteDialog}
+              disabled={isDeleting || isRestoring}
+            >
+              {isDeleting ? "Deleting…" : "Delete"}
+            </Button>
           )}
           {isDeleted && (
             <Button
@@ -510,6 +530,11 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
           {createWarnings}
         </p>
       )}
+      {signingEligibility && !signingEligibility.eligible ? (
+        <p id="create-signing-unavailable" className="text-sm text-muted-foreground">
+          Create Signing unavailable: {signingEligibility.message}
+        </p>
+      ) : null}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       {isDeleted && (

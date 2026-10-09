@@ -435,7 +435,7 @@ describe("Draft prep security boundaries (source)", () => {
 
   it("imports only the actor's own Packet contacts and never by name/email", () => {
     assert.match(sourcePacket, /party\.contactOwnerUserId === actor\.userId/);
-    assert.match(sourcePacket, /owner_user_id !== actor\.userId/);
+    assert.match(sourcePacket, /packetSourceEligibility\(packet, actor\.userId\)\.eligible/);
     assert.doesNotMatch(sourcePacket, /\.eq\("full_name"|\.eq\("email"/);
   });
 

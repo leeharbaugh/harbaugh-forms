@@ -34,7 +34,32 @@ import {
   type ParticipantIdentitySourceKind,
 } from "./draft-participant-sync";
 import { requireManageableDraftSigning } from "./manage";
-import { autoAddDraftPacketParticipants } from "./source-packet";
+import { loadSigningAuthorityBundle } from "./authority-context";
+import { canRenameSigning } from "./rename";
+import {
+  autoAddDraftPacketParticipants,
+  listDraftPacketAutoAddedParticipantNames,
+  loadDraftRemovedPacketParticipantsWithActor,
+  loadDraftSourcePacketStateWithActor,
+  type DraftRemovedPacketParticipants,
+  type DraftSourcePacketState,
+} from "./source-packet";
+import {
+  listPacketFormsForDraftWithActor,
+  type DraftPacketFormOption,
+} from "./draft-documents";
+import {
+  loadInternalSignerOptionsWithActor,
+  type InternalSignerOptions,
+} from "./draft-participants";
+
+/** Draft preparation choices, loaded with the dashboard for a Draft manager. */
+export type SigningDraftPrep = {
+  packetForms: DraftPacketFormOption[];
+  sourceState: DraftSourcePacketState;
+  internalSigners: InternalSignerOptions;
+  removedPacket: DraftRemovedPacketParticipants;
+};
 
 export type SigningDashboardDocument = {
   id: string;
@@ -69,8 +94,12 @@ export type SigningDashboardParticipant = {
 };
 
 export type SigningDashboard = {
-  /** Draft only: Packet participants added automatically on this load. */
+  /** Draft only: participants the source Packet added automatically that are still present. */
   participantSync: { addedFromPacket: string[] };
+  /** Draft managers only; null otherwise. */
+  draftPrep: SigningDraftPrep | null;
+  /** May rename (any lifecycle state); never true for read-only viewers. */
+  canRename: boolean;
   signing: SigningSummary & {
     activationMode: string | null;
     activatedAt: string | null;
@@ -94,21 +123,41 @@ export async function loadSigningDashboardForActor(
   const packetOwnerUserId =
     summary.originalSenderUserId ?? actor.userId;
 
-  const addedFromPacket: string[] = [];
+  let addedFromPacket: string[] = [];
   if (summary.lifecycleState === "DRAFT" && summary.canManage) {
     const { signing } = await requireManageableDraftSigning(
       actor,
       summary.id,
       admin,
     );
-    const { addedParticipants } = await autoAddDraftPacketParticipants(
-      actor,
-      admin,
-      signing,
-    );
-    addedFromPacket.push(...addedParticipants.map((party) => party.fullName));
+    await autoAddDraftPacketParticipants(actor, admin, signing);
     await syncDraftParticipantIdentities(admin, signing);
+    addedFromPacket = await listDraftPacketAutoAddedParticipantNames(
+      admin,
+      summary.id,
+    );
   }
+
+  const draftPrepLoad: Promise<SigningDraftPrep | null> =
+    summary.lifecycleState === "DRAFT" && summary.canManage
+      ? Promise.all([
+          listPacketFormsForDraftWithActor(actor, { signingId: summary.id }, admin),
+          loadDraftSourcePacketStateWithActor(actor, { signingId: summary.id }, admin),
+          loadInternalSignerOptionsWithActor(actor, { signingId: summary.id }, admin),
+          loadDraftRemovedPacketParticipantsWithActor(
+            actor,
+            { signingId: summary.id },
+            admin,
+          ),
+        ]).then(([packetForms, sourceState, internalSigners, removedPacket]) => ({
+          packetForms,
+          sourceState,
+          internalSigners,
+          removedPacket,
+        }))
+      : Promise.resolve(null);
+  // Awaited below; if an earlier read throws first, its rejection is moot.
+  draftPrepLoad.catch(() => undefined);
 
   const [
     { data: activation, error: activationError },
@@ -300,8 +349,23 @@ export async function loadSigningDashboardForActor(
     }),
   }));
 
+  let canRename = summary.canManage;
+  if (!isDraft && summary.lifecycleState !== "IN_PROGRESS") {
+    const bundle = await loadSigningAuthorityBundle(admin, actor, summary.id);
+    canRename =
+      bundle != null &&
+      canRenameSigning({
+        authority: bundle.authority,
+        lifecycleState: bundle.signing.lifecycle_state,
+        originatingOrganizationId: bundle.signing.originating_organization_id,
+        memberships: actor.memberships,
+      });
+  }
+
   return {
     participantSync: { addedFromPacket },
+    draftPrep: await draftPrepLoad,
+    canRename,
     signing: {
       ...summary,
       activationMode: (activation?.activation_mode as string | null) ?? null,

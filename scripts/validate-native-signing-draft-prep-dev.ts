@@ -52,6 +52,8 @@ import {
 } from "../lib/signing/draft-participants.ts";
 import { cancelSigningWithActor } from "../lib/signing/cancel.ts";
 import { loadSigningDashboardForActor } from "../lib/signing/dashboard.ts";
+import { createSigningFromPacketWithActor } from "../lib/signing/packet-to-signing.ts";
+import { renameSigningForActor } from "../lib/signing/rename.ts";
 import { loadSigningPreviewForActor } from "../lib/signing/preview.ts";
 import {
   removeDraftPreparedContentWithActor,
@@ -1049,12 +1051,20 @@ async function main() {
     }
     const autoAddAgain = await loadSigningDashboardForActor(agent, signingId, admin);
     if (
-      autoAddAgain.participantSync.addedFromPacket.length !== 0 ||
+      JSON.stringify(autoAddAgain.participantSync.addedFromPacket) !== JSON.stringify(["Dee Buyer"]) ||
       (await participantsOf(signingId)).length !== afterAutoAdd.length
     ) {
-      fail("a second load must not add or duplicate participants");
+      fail("a second load must not add or duplicate participants, and must keep the auto-add notice");
     }
-    ok("auto-add on load: adds Dee Buyer only (foreign contact excluded), keeps ad hoc + edited participants, idempotent");
+    const { data: markedRows } = await admin
+      .from("signing_participants")
+      .select("linked_contact_id")
+      .eq("signing_id", signingId)
+      .not("auto_added_from_packet_at", "is", null);
+    if (markedRows?.length !== 1 || markedRows[0].linked_contact_id !== buyer3) {
+      fail(`only the auto-added participant may carry the auto-add marker: ${JSON.stringify(markedRows)}`);
+    }
+    ok("auto-add on load: adds Dee Buyer only (foreign contact excluded), keeps ad hoc + edited participants, idempotent, marked, notice persists");
 
     // --- Removal suppression and restore ----------------------------------------
     const dee = afterAutoAdd.find((row) => row.linked_contact_id === buyer3)!;
@@ -1668,6 +1678,120 @@ async function main() {
     );
     if (removedPrinted.removedFieldIds[0] !== printed.id) fail("prepared content removal failed");
     ok("prepared content removes independently");
+
+    // --- Create Signing eligibility and Packet visibility -----------------------
+    const inactivePacket = await createPacket(agent.userId, "Inactive", 1);
+    const deletedPacket = await createPacket(agent.userId, "Deleted", 1);
+    await admin.from("packets").update({ status: "INACTIVE" }).eq("id", inactivePacket.packetId);
+    await admin.from("packets").update({ status: "DELETED" }).eq("id", deletedPacket.packetId);
+
+    const { error: adminMemberError } = await admin.from("organization_members").insert({
+      organization_id: agent.memberships[0].organizationId,
+      user_id: outsider.userId,
+      membership_role: "ORG_ADMIN",
+      status: "ACTIVE",
+    });
+    if (adminMemberError) fail(adminMemberError.message);
+    const brokerageAdmin: SigningActor = {
+      ...outsider,
+      profile: { ...outsider.profile, primary_organization_id: agent.memberships[0].organizationId },
+      memberships: [{ ...agent.memberships[0], membershipRole: "ORG_ADMIN" }],
+    };
+
+    for (const [who, label, packetId, codes] of [
+      [outsider, "another brokerage's User", packetA.packetId, ["FORBIDDEN"]],
+      [brokerageAdmin, "a brokerage admin who can view the Packet", packetA.packetId, ["FORBIDDEN"]],
+      [agent, "the owner on a Deleted Packet", deletedPacket.packetId, ["INVALID_PACKET"]],
+    ] as const) {
+      await expectSigningError(`Create Signing by ${label}`, [...codes], () =>
+        createSigningFromPacketWithActor(who, { packetId, confirmDuplicate: true }, admin),
+      );
+      const { count } = await admin
+        .from("signings")
+        .select("id", { count: "exact", head: true })
+        .eq("source_packet_id", packetId)
+        .neq("original_sender_user_id", agent.userId);
+      if (count !== 0) fail("a denied Create Signing must not create a Signing");
+    }
+    const fromInactive = await createSigningFromPacketWithActor(
+      agent,
+      { packetId: inactivePacket.packetId, confirmDuplicate: true },
+      admin,
+    );
+    signingIds.push(fromInactive.signingId);
+    if ((await sourcePacketOf(fromInactive.signingId)) !== inactivePacket.packetId) {
+      fail("Create Signing from an Inactive owned Packet must bind it");
+    }
+    const secondFromInactive = await createSigningFromPacketWithActor(
+      agent,
+      { packetId: inactivePacket.packetId, confirmDuplicate: true },
+      admin,
+    );
+    signingIds.push(secondFromInactive.signingId);
+    ok("Create Signing: owner allowed on Active/Inactive (repeatable); other brokerage, viewing admin and Deleted denied");
+
+    const selectorSigning = await createSigning(agent, "Selector visibility");
+    const selector = await loadDraftSourcePacketStateWithActor(agent, { signingId: selectorSigning }, admin);
+    const selectorIds = selector.selectablePackets.map((row) => row.id);
+    if (
+      !selectorIds.includes(inactivePacket.packetId) ||
+      selectorIds.includes(deletedPacket.packetId) ||
+      selectorIds.includes(outsiderPacket.packetId)
+    ) {
+      fail(`selector must list owned Active/Inactive only: ${JSON.stringify(selectorIds)}`);
+    }
+    await expectSigningError("binding a Deleted Packet as source", ["INVALID_PACKET", "FORBIDDEN"], () =>
+      selectDraftSourcePacketWithActor(agent, { signingId: selectorSigning, packetId: deletedPacket.packetId }, admin),
+    );
+    const { data: rlsVisible } = await admin
+      .from("packets")
+      .select("id, status")
+      .eq("owner_user_id", agent.userId)
+      .in("status", ["ACTIVE", "INACTIVE"]);
+    const listIds = (rlsVisible ?? []).map((row) => row.id as number);
+    for (const id of selectorIds) {
+      if (!listIds.includes(id)) fail(`selector Packet ${id} is missing from the Packets list statuses`);
+    }
+    ok("selector: owned Active + Inactive, Deleted and other Users' Packets excluded, all present in the Packets list");
+
+    // --- Draft rename --------------------------------------------------------
+    const renameTarget = fromInactive.signingId;
+    await renameSigningForActor(agent, { signingId: renameTarget, title: "  Renamed Draft  " }, admin);
+    const renamedLoad = await loadSigningDashboardForActor(agent, renameTarget, admin);
+    if (renamedLoad.signing.title !== "Renamed Draft" || !renamedLoad.canRename) {
+      fail("Draft rename must persist (trimmed) and show on the next load");
+    }
+    const { data: renameEvents } = await admin
+      .from("signing_events")
+      .select("actor_user_id, details_json")
+      .eq("signing_id", renameTarget)
+      .eq("event_type", "SIGNING_TITLE_UPDATED");
+    const renameDetails = (renameEvents?.[0]?.details_json ?? {}) as Record<string, unknown>;
+    if (
+      renameEvents?.length !== 1 ||
+      renameEvents[0].actor_user_id !== agent.userId ||
+      renameDetails.newTitle !== "Renamed Draft" ||
+      renameDetails.lifecycleState !== "DRAFT"
+    ) {
+      fail("Draft rename must record exactly one event with old/new name");
+    }
+    await renameSigningForActor(agent, { signingId: renameTarget, title: "Renamed Draft" }, admin);
+    const { count: unchangedCount } = await admin
+      .from("signing_events")
+      .select("id", { count: "exact", head: true })
+      .eq("signing_id", renameTarget)
+      .eq("event_type", "SIGNING_TITLE_UPDATED");
+    if (unchangedCount !== 1) fail("an unchanged name must not record another event");
+    await expectSigningError("rename by another brokerage's User", ["NOT_FOUND"], () =>
+      renameSigningForActor(outsider, { signingId: renameTarget, title: "Hijack" }, admin),
+    );
+    await renameSigningForActor(brokerageAdmin, { signingId: renameTarget, title: "Admin Renamed" }, admin);
+    await expectSigningError("rename with no title", ["INVALID_INPUT"], () =>
+      renameSigningForActor(agent, { signingId: renameTarget, title: "" }, admin),
+    );
+    const { data: afterDenied } = await admin.from("signings").select("title").eq("id", renameTarget).single();
+    if (afterDenied?.title !== "Admin Renamed") fail("denied renames must not change the title");
+    ok("Draft rename: trimmed, persisted, one event per change; brokerage admin allowed; other brokerage denied");
 
     console.log("\nDraft preparation validator: all checks passed.");
   } finally {

@@ -13,14 +13,16 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useHistoryRestoreRefresh } from "@/components/signings/use-history-restore-refresh";
 import {
   createDraftSigningAction,
   listSigningsAction,
+  type SigningListActionResult,
 } from "@/lib/signing/actions";
 import type { SigningSummary } from "@/lib/signing/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 function lifecycleVariant(
   state: string,
@@ -41,11 +43,20 @@ function lifecycleVariant(
   }
 }
 
-export function SigningsListPage() {
+export function SigningsListPage({
+  initial,
+}: {
+  /** Rendered by the page request. */
+  initial: SigningListActionResult;
+}) {
   const router = useRouter();
-  const [signings, setSignings] = useState<SigningSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [served, setServed] = useState(initial);
+  const [signings, setSignings] = useState<SigningSummary[]>(
+    initial.ok ? initial.signings : [],
+  );
+  const [error, setError] = useState<string | null>(
+    initial.ok ? null : initial.error,
+  );
   const [title, setTitle] = useState("DEV QA Test Signing");
   const [creating, setCreating] = useState(false);
 
@@ -60,22 +71,14 @@ export function SigningsListPage() {
     setSignings(result.signings);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const result = await listSigningsAction();
-      if (cancelled) return;
-      if (!result.ok) {
-        setError(result.error);
-      } else {
-        setSignings(result.signings);
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // A push navigation back to this preserved route re-renders the page on the
+  // server; adopt that payload instead of the list kept from the last visit.
+  if (served !== initial) {
+    setServed(initial);
+    setSignings(initial.ok ? initial.signings : []);
+    setError(initial.ok ? null : initial.error);
+  }
+  useHistoryRestoreRefresh(reload);
 
   async function createDraft() {
     setCreating(true);
@@ -129,9 +132,7 @@ export function SigningsListPage() {
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading Signings…</p>
-      ) : signings.length === 0 ? (
+      {signings.length === 0 ? (
         <ListEmptyState
           title="No Signings yet"
           description="Create a Draft Signing to begin preparation."

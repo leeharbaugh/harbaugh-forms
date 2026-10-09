@@ -19,6 +19,10 @@ import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { createDraftSigningWithActor } from "./operations";
 import {
+  assertPacketSigningEligible,
+  getPacketSigningEligibility,
+} from "./packet-signing-eligibility";
+import {
   roleCodeForPacketRole,
   type SigningParticipantRoleCode,
 } from "./participant-roles";
@@ -251,15 +255,8 @@ export async function createSigningFromPacketWithActor(
     .eq("id", packetId)
     .maybeSingle();
   if (packetError) throw new Error(packetError.message);
-  if (!packet || packet.status === "DELETED") {
-    throw new SigningError("INVALID_PACKET", "The Packet is not available.");
-  }
-  if (packet.owner_user_id !== actor.userId) {
-    throw new SigningError(
-      "FORBIDDEN",
-      "You can only create a Signing from your own Packet.",
-    );
-  }
+  assertPacketSigningEligible(getPacketSigningEligibility({ packet, actor }));
+  if (!packet) throw new SigningError("INVALID_PACKET", "Invalid Packet.");
 
   const { count: activeCount, error: activeError } = await admin
     .from("signings")

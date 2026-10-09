@@ -12,6 +12,90 @@ Each decision should include:
 
 ---
 
+## Packet visibility and Create Signing eligibility are one server-authoritative rule
+
+**Date:** 2026-10-09 (correctness tranche)
+
+**Decision:**
+1. `lib/signing/packet-signing-eligibility.ts` is the only definition of "may this Packet start a Signing". It returns `{ eligible, reasonCode, message }`. The rules are the existing ones, consolidated and not extended: the Packet exists and is not Deleted (Active and Inactive both qualify), and the Signing's responsible User owns the Packet. Creating a Signing also needs the actor's originating brokerage (an active membership, plus a primary organization when there is more than one). An administrator who can view another agent's Packet still cannot start a Signing from it.
+2. The Packet page control (`getPacketSigningEligibilityAction`), the Draft source-Packet selector, Create Signing, source-Packet binding, Packet document listing and Draft auto-add all call this helper. The server re-checks on every write, and the UI only explains the result.
+3. Multiple Signings per Packet remain allowed (Create Signing still asks for confirmation). A Packet without documents may still start a Signing.
+4. The Packets list shows Active and Inactive Packets, with a status badge for Inactive. Only Deleted Packets wait for **Show deleted**. The selector lists the actor's own non-Deleted Packets (newest 50), so every selectable Packet is also visible in the list.
+
+**Reason:**
+Lee's QA. Packet #21 showed no Create Signing control. The page hid it client-side whenever the viewer was not the owner; #21 is owned by another account Lee can see as an administrator. Packet #12 was selectable in a Signing but missing from the Packets list. #12 is Inactive: the list queried only Active (or Active + Deleted), while the selector excluded only Deleted.
+
+**Consequences:**
+* Soft-delete behavior. Before: the list showed Active only, **Show deleted** added Deleted, Inactive was never listed, and the selector offered Active + Inactive. After: the list shows Active + Inactive, **Show deleted** adds Deleted, and the selector offers Active + Inactive. Create Signing and source binding reject Deleted Packets on the server.
+* The selector's 50-Packet cap is unchanged; an older owned Packet can still start a Signing from its Packet page.
+
+**Related:** `lib/signing/packet-signing-eligibility.ts`, `lib/signing/actions.ts` (`getPacketSigningEligibilityAction`), `lib/signing/packet-to-signing.ts`, `lib/signing/source-packet.ts`, `lib/signing/draft-documents.ts`, `components/packets/packet-detail.tsx`, `components/packets/packets-page.tsx`.
+
+---
+
+## An ineligible Create Signing is shown disabled with its reason
+
+**Date:** 2026-10-09 (correctness tranche)
+
+**Decision:**
+When Native Signing is enabled, the Packet page always shows **Create Signing**. If the server's eligibility result is not eligible, the button is disabled and the page reads "Create Signing unavailable: <reason>", using the helper's message (for example "Only the Packet's owner can create a Signing from it."). The control is hidden only when Native Signing is off.
+
+**Reason:**
+A hidden control gave no way to tell "not allowed" from "broken" (Packet #21).
+
+**Consequences:**
+* The reason text comes from the server, so the page cannot drift from what the server enforces.
+
+**Related:** `components/packets/packet-detail.tsx`, `lib/signing/packet-signing-eligibility.ts`.
+
+---
+
+## Opening a Draft Signing completes its sync in the same request
+
+**Date:** 2026-10-09 (correctness tranche)
+
+**Decision:**
+1. The Signing page and the Signings list render from server data. `app/signings/[signingId]/page.tsx` runs the same authorized load as the client action before rendering: authorize, then (if Draft) Packet auto-add, then identity sync, then load. The first paint is current, with no loading state, polling, timer or forced reload.
+2. A push navigation back to a preserved route adopts the fresh server payload. Back/Forward reuses the cached payload, so `useHistoryRestoreRefresh` refreshes once on a real history traversal (Navigation API `traverse` event, unchanged `bfcacheId`).
+3. The "Added from the source Packet" notice is derived from data. Draft auto-add marks its inserted rows `signing_participants.auto_added_from_packet_at` in the same transaction as the insert, under the Signing row lock. The notice lists marked participants who are still present, with their current names. Restore and the initial Packet import leave the marker null.
+
+This supersedes the per-Signing client accumulation of the notice recorded in the Draft polish tranche.
+
+**Reason:**
+Before this change, the dashboard rendered an empty shell and loaded in a client `useEffect`. Server actions run one at a time, so that load queued behind the prep panel's own mount actions. Next 16 `cacheComponents` also keeps a visited route mounted, so returning did not re-run the effect, and new participants or Contact name/email changes appeared only after a manual reload. Moving the load into the render fixed that. However, a page render can run more than once (in development an extra render may be discarded), so a notice taken from "what this render added" was lost when another render performed the add. Writes stay idempotent: the RPC dedupes by Contact id under the row lock, and identity sync converges.
+
+**Consequences:**
+* The notice persists while the participant stays on the Draft, instead of appearing only on the load that added them.
+* The marker is Draft preparation state, never evidence. Package fingerprints use explicit fields, so it does not affect hashes.
+
+**Related:** `app/signings/[signingId]/page.tsx`, `app/signings/page.tsx`, `components/signings/signing-dashboard-page.tsx`, `components/signings/signings-list-page.tsx`, `components/signings/use-history-restore-refresh.ts`, `lib/signing/dashboard.ts`, `lib/signing/source-packet.ts`, `supabase/migrations/20261009130000_native_signing_draft_auto_add_marker.sql`.
+
+---
+
+## A Signing's name is operational metadata, renamable in any lifecycle state
+
+**Date:** 2026-10-09 (correctness tranche)
+
+**Decision:**
+1. Managers may rename a Signing in Draft, In Progress, Complete, Cancelled or Expired. Only `signings.title` changes. Documents, participants, package revisions, hashes, participant links and adopted marks are untouched, and none of them read the name again.
+2. Authority is existing manage authority only:
+   * while Draft / In Progress, `canManage`;
+   * once finished, the same people, provided they remain eligible in the originating brokerage: brokerage administrator, active primary or co-agent, or active TC.
+   * Historical readers, former agents, revoked TCs, other brokerages and participants cannot rename. There is no Global Admin bypass.
+   * Authorization runs before any elevated write.
+3. Each change appends one BUSINESS `SIGNING_TITLE_UPDATED` event with the actor, old and new name, lifecycle state and timestamp. It never contains links, tokens or secrets. An unchanged name records nothing.
+4. The name is trimmed, required, and at most 200 characters. The dashboard header has **Rename**, which opens an inline form with Save and Cancel and doesn't navigate. The participant ceremony has no rename control.
+
+**Reason:**
+Lee asked to correct Signing names after creation, including after completion.
+
+**Consequences:**
+* The dashboard and list show the new name immediately, and it persists across reloads.
+
+**Related:** `lib/signing/rename.ts`, `lib/signing/actions.ts` (`renameSigningAction`), `lib/signing/types.ts` (`SIGNING_TITLE_MAX_LENGTH`), `components/signings/signing-dashboard-page.tsx`.
+
+---
+
 ## Draft participant identity is live from its source; activation canonizes it
 
 **Date:** 2026-10-08 (Draft polish tranche)

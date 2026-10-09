@@ -17,6 +17,7 @@ import {
 import { assertNativeSigningEnabled } from "./feature-gate";
 import { SigningError } from "./errors";
 import { findActiveOperatorDelegation } from "./operator-delegations";
+import { packetSourceEligibility } from "./packet-signing-eligibility";
 import { appendSigningEvent } from "./signing-events";
 import {
   isUuid,
@@ -267,20 +268,17 @@ export async function createDraftSigningWithActor(
     if (packetError) {
       throw new Error(packetError.message);
     }
-    if (!packet || packet.status === "DELETED") {
-      throw new SigningError(
-        "INVALID_PACKET",
-        "The selected Packet is not available.",
-      );
-    }
     // Packet ownership is the responsible User (not the TC operational actor).
-    if (packet.owner_user_id !== responsibleUserId) {
+    const eligibility = packetSourceEligibility(packet, responsibleUserId);
+    if (!eligibility.eligible) {
       throw new SigningError(
         "INVALID_PACKET",
-        "The selected Packet is not available to this Signing.",
+        eligibility.reasonCode === "NOT_PACKET_OWNER"
+          ? "The selected Packet is not available to this Signing."
+          : "The selected Packet is not available.",
       );
     }
-    sourcePacketId = packet.id as number;
+    sourcePacketId = packet!.id as number;
   }
 
   const { data: signingInsert, error: signingInsertError } = await admin
