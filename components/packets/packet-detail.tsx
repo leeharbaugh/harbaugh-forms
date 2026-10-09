@@ -465,8 +465,8 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
             <h1 className="text-2xl font-semibold tracking-tight">
               {packet.label}
             </h1>
-            {packet.status !== "ACTIVE" && (
-              <Badge variant={isDeleted ? "destructive" : "warning"}>
+            {isDeleted && (
+              <Badge variant="destructive">
                 {formatPacketStatus(packet.status)}
               </Badge>
             )}

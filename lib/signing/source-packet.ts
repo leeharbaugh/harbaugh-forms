@@ -24,8 +24,8 @@ import {
   requireManageableDraftSigning,
 } from "./manage";
 import {
-  INELIGIBLE_SOURCE_PACKET_STATUSES,
   packetSourceEligibility,
+  SIGNING_SOURCE_PACKET_STATUS,
 } from "./packet-signing-eligibility";
 import { deriveSigningParticipantsFromPacket } from "./packet-to-signing";
 import type { SigningParticipantRoleCode } from "./participant-roles";
@@ -149,7 +149,7 @@ export async function loadDraftSourcePacketStateWithActor(
       .from("packets")
       .select("id, label, owner_user_id, status")
       .eq("owner_user_id", actor.userId)
-      .not("status", "in", `(${INELIGIBLE_SOURCE_PACKET_STATUSES.join(",")})`)
+      .eq("status", SIGNING_SOURCE_PACKET_STATUS)
       .order("id", { ascending: false })
       .limit(50);
     if (error) throw new Error(error.message);

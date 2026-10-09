@@ -61,7 +61,6 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
   const [packetType, setPacketType] = useState<PacketWorkflowType | "">("");
   const [collectionId, setCollectionId] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
-  const [status, setStatus] = useState("ACTIVE");
   const [propertyMode, setPropertyMode] =
     useState<PropertySelectionMode>("existing");
   const [propertyId, setPropertyId] = useState<number | null>(null);
@@ -102,7 +101,6 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
     setPacketType((detail.packet_type as PacketWorkflowType) ?? "");
     setCollectionId(detail.collection_id);
     setNotes(detail.notes ?? "");
-    setStatus(detail.status);
     setPropertyId(detail.property_id);
     if (detail.properties) {
       setProperty(propertyToInput(detail.properties));
@@ -177,7 +175,6 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
           collectionId: packetType === "custom" ? null : collectionId,
           propertyId: showPropertySelection ? propertyId : null,
           notes,
-          status,
         },
         { hasLegacyAgreement },
       );
@@ -324,19 +321,6 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
               onChange={(event) => setNotes(event.target.value)}
               disabled={isSaving}
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="packet_status">Status</Label>
-            <Select
-              id="packet_status"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-              disabled={isSaving}
-            >
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-            </Select>
           </div>
 
           {showPropertySelection && (

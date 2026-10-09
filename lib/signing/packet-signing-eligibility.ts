@@ -7,7 +7,7 @@
  * documents. The server is authoritative; the UI only explains the result.
  *
  * Rules (2026-09-22 "owned Packet" eligibility; 2026-10-09 consolidation):
- *   - the Packet exists and is not Deleted (Active and Inactive both qualify);
+ *   - the Packet exists and is ACTIVE (Packets are ACTIVE or DELETED only);
  *   - the Signing's responsible User owns the Packet: only the owner's
  *     Contacts can become participants, and Packet references are validated
  *     for the owner, so an administrator who can view another agent's Packet
@@ -42,8 +42,8 @@ export type PacketEligibilityRow = {
   status: string;
 };
 
-/** Packet statuses that can never be a Signing source. */
-export const INELIGIBLE_SOURCE_PACKET_STATUSES = ["DELETED"] as const;
+/** The only Packet status that can be a Signing source. */
+export const SIGNING_SOURCE_PACKET_STATUS = "ACTIVE";
 
 const MESSAGES: Record<PacketSigningIneligibleReason, string> = {
   PACKET_UNAVAILABLE: "The Packet is not available.",
@@ -73,12 +73,9 @@ export function packetSourceEligibility(
   ownerUserId: string,
 ): PacketSigningEligibility {
   if (!packet) return ineligible("PACKET_UNAVAILABLE");
-  if (
-    (INELIGIBLE_SOURCE_PACKET_STATUSES as readonly string[]).includes(
-      packet.status,
-    )
-  ) {
-    return ineligible("PACKET_DELETED");
+  if (packet.status === "DELETED") return ineligible("PACKET_DELETED");
+  if (packet.status !== SIGNING_SOURCE_PACKET_STATUS) {
+    return ineligible("PACKET_UNAVAILABLE");
   }
   if (packet.owner_user_id !== ownerUserId) return ineligible("NOT_PACKET_OWNER");
   return ELIGIBLE;

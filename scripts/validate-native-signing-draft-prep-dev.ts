@@ -191,6 +191,23 @@ async function main() {
   const generatedPaths: string[] = [];
   const signingIds: string[] = [];
   const brokerageSettingsIds: number[] = [];
+  const passwords = new Map<string, string>();
+
+  async function browserClientFor(user: SigningActor) {
+    const browserKey =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if (!browserKey) fail("Missing Supabase browser key");
+    const client = createClient(url, browserKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { error } = await client.auth.signInWithPassword({
+      email: user.email,
+      password: passwords.get(user.userId) ?? "",
+    });
+    if (error) fail(`browser sign-in failed: ${error.message}`);
+    return client;
+  }
 
   async function createUser(label: string) {
     const { data: org, error: orgError } = await admin
@@ -202,14 +219,16 @@ async function main() {
     organizationIds.push(org.id as string);
 
     const email = `draft-prep-${label}-${stamp}@example.com`;
+    const password = `DraftPrep-${randomUUID()}!aA1`;
     const { data: created, error: userError } = await admin.auth.admin.createUser({
       email,
-      password: `DraftPrep-${randomUUID()}!aA1`,
+      password,
       email_confirm: true,
     });
     if (userError || !created.user) fail(userError?.message ?? "user create failed");
     const userId = created.user.id;
     userIds.push(userId);
+    passwords.set(userId, password);
 
     const { error: profileError } = await admin.from("profiles").upsert({
       id: userId,
@@ -1679,11 +1698,78 @@ async function main() {
     if (removedPrinted.removedFieldIds[0] !== printed.id) fail("prepared content removal failed");
     ok("prepared content removes independently");
 
-    // --- Create Signing eligibility and Packet visibility -----------------------
-    const inactivePacket = await createPacket(agent.userId, "Inactive", 1);
+    // --- Packet lifecycle: ACTIVE and DELETED only -----------------------------
+    const activePacket = await createPacket(agent.userId, "Active", 1);
     const deletedPacket = await createPacket(agent.userId, "Deleted", 1);
-    await admin.from("packets").update({ status: "INACTIVE" }).eq("id", inactivePacket.packetId);
     await admin.from("packets").update({ status: "DELETED" }).eq("id", deletedPacket.packetId);
+
+    const { data: activeBefore } = await admin
+      .from("packets")
+      .select("status, owner_user_id")
+      .eq("id", activePacket.packetId)
+      .single();
+    const { error: serviceInactiveError } = await admin
+      .from("packets")
+      .update({ status: "INACTIVE" })
+      .eq("id", activePacket.packetId);
+    if (!serviceInactiveError || !/packets_status_check/.test(serviceInactiveError.message)) {
+      fail(`the database must reject a Packet INACTIVE status: ${serviceInactiveError?.message ?? "accepted"}`);
+    }
+    const { data: insertedInactive, error: insertInactiveError } = await admin
+      .from("packets")
+      .insert({
+        owner_user_id: agent.userId,
+        label: `Inactive insert ${stamp}`,
+        status: "INACTIVE",
+        packet_type: "custom",
+      })
+      .select("id");
+    for (const row of insertedInactive ?? []) packetIds.push(row.id as number);
+    if (!insertInactiveError || !/packets_status_check/.test(insertInactiveError.message)) {
+      fail("the database must reject inserting an INACTIVE Packet");
+    }
+
+    const agentBrowser = await browserClientFor(agent);
+    const outsiderBrowser = await browserClientFor(outsider);
+    const { error: browserInactiveError } = await agentBrowser
+      .from("packets")
+      .update({ status: "INACTIVE" })
+      .eq("id", activePacket.packetId);
+    if (!browserInactiveError) fail("the owner's browser client must not set a Packet INACTIVE");
+    const { error: browserArbitraryError } = await agentBrowser
+      .from("packets")
+      .update({ status: "ARCHIVED" })
+      .eq("id", activePacket.packetId);
+    if (!browserArbitraryError) fail("the owner's browser client must not set an arbitrary Packet status");
+
+    const { data: outsiderDelete } = await outsiderBrowser
+      .from("packets")
+      .update({ status: "DELETED" })
+      .eq("id", activePacket.packetId)
+      .select("id");
+    const { data: outsiderRestore } = await outsiderBrowser
+      .from("packets")
+      .update({ status: "ACTIVE" })
+      .eq("id", deletedPacket.packetId)
+      .select("id");
+    const { data: lifecycleRows } = await admin
+      .from("packets")
+      .select("id, status, owner_user_id")
+      .in("id", [activePacket.packetId, deletedPacket.packetId]);
+    const statusOf = (id: number) => lifecycleRows?.find((row) => row.id === id)?.status;
+    if (
+      (outsiderDelete ?? []).length !== 0 ||
+      (outsiderRestore ?? []).length !== 0 ||
+      statusOf(activePacket.packetId) !== "ACTIVE" ||
+      statusOf(deletedPacket.packetId) !== "DELETED" ||
+      lifecycleRows?.some((row) => row.owner_user_id !== agent.userId) ||
+      activeBefore?.status !== "ACTIVE"
+    ) {
+      fail(`another User must not delete or restore someone else's Packet: ${JSON.stringify(lifecycleRows)}`);
+    }
+    ok("Packet status: database rejects INACTIVE (service and browser) and arbitrary values; another User cannot delete or restore; ownership unchanged");
+
+    // --- Create Signing eligibility and Packet visibility -----------------------
 
     const { error: adminMemberError } = await admin.from("organization_members").insert({
       organization_id: agent.memberships[0].organizationId,
@@ -1713,49 +1799,68 @@ async function main() {
         .neq("original_sender_user_id", agent.userId);
       if (count !== 0) fail("a denied Create Signing must not create a Signing");
     }
-    const fromInactive = await createSigningFromPacketWithActor(
+    const fromActive = await createSigningFromPacketWithActor(
       agent,
-      { packetId: inactivePacket.packetId, confirmDuplicate: true },
+      { packetId: activePacket.packetId, confirmDuplicate: true },
       admin,
     );
-    signingIds.push(fromInactive.signingId);
-    if ((await sourcePacketOf(fromInactive.signingId)) !== inactivePacket.packetId) {
-      fail("Create Signing from an Inactive owned Packet must bind it");
+    signingIds.push(fromActive.signingId);
+    if ((await sourcePacketOf(fromActive.signingId)) !== activePacket.packetId) {
+      fail("Create Signing from an Active owned Packet must bind it");
     }
-    const secondFromInactive = await createSigningFromPacketWithActor(
+    const secondFromActive = await createSigningFromPacketWithActor(
       agent,
-      { packetId: inactivePacket.packetId, confirmDuplicate: true },
+      { packetId: activePacket.packetId, confirmDuplicate: true },
       admin,
     );
-    signingIds.push(secondFromInactive.signingId);
-    ok("Create Signing: owner allowed on Active/Inactive (repeatable); other brokerage, viewing admin and Deleted denied");
+    signingIds.push(secondFromActive.signingId);
+    ok("Create Signing: owner allowed on Active (repeatable); other brokerage, viewing admin and Deleted denied");
 
     const selectorSigning = await createSigning(agent, "Selector visibility");
     const selector = await loadDraftSourcePacketStateWithActor(agent, { signingId: selectorSigning }, admin);
     const selectorIds = selector.selectablePackets.map((row) => row.id);
     if (
-      !selectorIds.includes(inactivePacket.packetId) ||
+      !selectorIds.includes(activePacket.packetId) ||
       selectorIds.includes(deletedPacket.packetId) ||
       selectorIds.includes(outsiderPacket.packetId)
     ) {
-      fail(`selector must list owned Active/Inactive only: ${JSON.stringify(selectorIds)}`);
+      fail(`selector must list owned Active Packets only: ${JSON.stringify(selectorIds)}`);
     }
     await expectSigningError("binding a Deleted Packet as source", ["INVALID_PACKET", "FORBIDDEN"], () =>
       selectDraftSourcePacketWithActor(agent, { signingId: selectorSigning, packetId: deletedPacket.packetId }, admin),
     );
-    const { data: rlsVisible } = await admin
+    const { data: listVisible } = await agentBrowser
       .from("packets")
       .select("id, status")
-      .eq("owner_user_id", agent.userId)
-      .in("status", ["ACTIVE", "INACTIVE"]);
-    const listIds = (rlsVisible ?? []).map((row) => row.id as number);
+      .eq("status", "ACTIVE");
+    const listIds = (listVisible ?? []).map((row) => row.id as number);
     for (const id of selectorIds) {
-      if (!listIds.includes(id)) fail(`selector Packet ${id} is missing from the Packets list statuses`);
+      if (!listIds.includes(id)) fail(`selector Packet ${id} is missing from the normal Packets list`);
     }
-    ok("selector: owned Active + Inactive, Deleted and other Users' Packets excluded, all present in the Packets list");
+    const { data: selectorStatuses } = await admin.from("packets").select("status").in("id", selectorIds);
+    if ((selectorStatuses ?? []).some((row) => row.status !== "ACTIVE")) {
+      fail("selector must offer ACTIVE Packets only");
+    }
+
+    await admin.from("packets").update({ status: "ACTIVE" }).eq("id", deletedPacket.packetId);
+    const selectorAfterRestore = await loadDraftSourcePacketStateWithActor(
+      agent,
+      { signingId: selectorSigning },
+      admin,
+    );
+    if (!selectorAfterRestore.selectablePackets.some((row) => row.id === deletedPacket.packetId)) {
+      fail("a restored Packet must be selectable again");
+    }
+    const fromRestored = await createSigningFromPacketWithActor(
+      agent,
+      { packetId: deletedPacket.packetId, confirmDuplicate: true },
+      admin,
+    );
+    signingIds.push(fromRestored.signingId);
+    ok("selector: owned Active only, Deleted and other Users' Packets excluded, all in the normal list; restore makes a Packet eligible again");
 
     // --- Draft rename --------------------------------------------------------
-    const renameTarget = fromInactive.signingId;
+    const renameTarget = fromActive.signingId;
     await renameSigningForActor(agent, { signingId: renameTarget, title: "  Renamed Draft  " }, admin);
     const renamedLoad = await loadSigningDashboardForActor(agent, renameTarget, admin);
     if (renamedLoad.signing.title !== "Renamed Draft" || !renamedLoad.canRename) {

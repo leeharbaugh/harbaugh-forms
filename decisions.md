@@ -12,9 +12,35 @@ Each decision should include:
 
 ---
 
+## Packets use ACTIVE and DELETED only
+
+**Date:** 2026-10-09 (Packet lifecycle cleanup)
+
+**Decision:**
+1. A Packet is ACTIVE or DELETED. DELETED is the soft-delete state. There is no Packet INACTIVE state. `packets_status_check` allows only `ACTIVE` and `DELETED`, and `PacketStatus` is `"ACTIVE" | "DELETED"`.
+2. Transitions: a new Packet is ACTIVE (column default). Soft delete moves ACTIVE to DELETED. Restore moves DELETED back to ACTIVE. Editing Packet details never changes status; `updatePacket` takes no status and the edit form has no Status control.
+3. The Packets list shows ACTIVE. **Show deleted** shows ACTIVE and DELETED. There is no Inactive badge, filter or label.
+4. Create Signing: an ACTIVE Packet is eligible, subject to the existing owner and originating-brokerage rules. A DELETED Packet is not, and the Packet page shows the control disabled with "This Packet is deleted. Restore it to create a Signing." The source-Packet selector offers the actor's own ACTIVE Packets only. Multiple Signings per Packet remain allowed.
+5. Age alone does not make a Packet inactive. Old Packets stay ACTIVE until deleted.
+
+**Reason:**
+INACTIVE had no business meaning. It came from the initial schema's generic ACTIVE / INACTIVE / DELETED template. Its only writer was an unexplained Status select on the Packet edit form, and `updatePacket` passed the browser's value through. The code disagreed about it: the list hid it, Fill Form resolution and soft delete only handled ACTIVE, yet Create Signing accepted it. Dev Packet #12 was the only INACTIVE Packet. Its owner set it through that select on 2026-07-15 02:49 UTC (the evening of 2026-07-14, Central). It had ACTIVE Draft forms and ACTIVE contacts, and nothing indicated an intent to delete. The 2026-10-09 correctness tranche listed Inactive Packets with a badge. That was temporary exposure of legacy data, not an approved state.
+
+**Consequences:**
+* Migration `20261009140000_packets_active_deleted_only.sql` sets every INACTIVE Packet to ACTIVE and then narrows the constraint. Deletion is a separate, explicit action, so INACTIVE is not evidence of intent to delete. Ownership and all other columns are unchanged; only `update_date` moves. Production must inspect its INACTIVE Packets before applying it, and it runs after PR #46's earlier dev-only migrations.
+* The database rejects INACTIVE and any other value from every client, including the owner's browser client. Owners can still only delete or restore their own Packets under RLS.
+* INACTIVE stays legitimate on other entities (for example Forms, profiles, organizations and memberships). This decision is Packet-only.
+* This supersedes, in part, the next decision ("Packet visibility and Create Signing eligibility are one server-authoritative rule"): its Inactive references in points 1 and 4 and in Consequences no longer apply. The single server-authoritative eligibility helper it introduced still applies.
+
+**Related:** `supabase/migrations/20261009140000_packets_active_deleted_only.sql`, `lib/types/packet.ts`, `lib/types/packet-lifecycle.test.ts`, `components/packets/packet-edit-form.tsx`, `components/packets/packets-page.tsx`, `components/packets/packet-detail.tsx`, `lib/signing/packet-signing-eligibility.ts`, `lib/signing/source-packet.ts`.
+
+---
+
 ## Packet visibility and Create Signing eligibility are one server-authoritative rule
 
 **Date:** 2026-10-09 (correctness tranche)
+
+**Superseded in part (2026-10-09):** by "Packets use ACTIVE and DELETED only". Packet INACTIVE was removed, so the Inactive references below are historical.
 
 **Decision:**
 1. `lib/signing/packet-signing-eligibility.ts` is the only definition of "may this Packet start a Signing". It returns `{ eligible, reasonCode, message }`. The rules are the existing ones, consolidated and not extended: the Packet exists and is not Deleted (Active and Inactive both qualify), and the Signing's responsible User owns the Packet. Creating a Signing also needs the actor's originating brokerage (an active membership, plus a primary organization when there is more than one). An administrator who can view another agent's Packet still cannot start a Signing from it.

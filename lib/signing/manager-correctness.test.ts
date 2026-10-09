@@ -11,8 +11,8 @@ import { SigningError } from "./errors";
 import {
   assertPacketSigningEligible,
   getPacketSigningEligibility,
-  INELIGIBLE_SOURCE_PACKET_STATUSES,
   packetSourceEligibility,
+  SIGNING_SOURCE_PACKET_STATUS,
 } from "./packet-signing-eligibility";
 import { canRenameSigning } from "./rename";
 
@@ -41,13 +41,17 @@ const actor = (
 ) => ({ userId, profile: { primary_organization_id: primary }, memberships });
 
 describe("Create Signing eligibility (canonical helper)", () => {
-  it("allows the owner of an Active or Inactive Packet", () => {
-    for (const status of ["ACTIVE", "INACTIVE"]) {
-      const result = getPacketSigningEligibility({
-        packet: { owner_user_id: OWNER, status },
-        actor: actor(OWNER),
-      });
-      assert.deepEqual(result, { eligible: true, reasonCode: null, message: null });
+  it("allows the owner of an Active Packet", () => {
+    const result = getPacketSigningEligibility({
+      packet: { owner_user_id: OWNER, status: "ACTIVE" },
+      actor: actor(OWNER),
+    });
+    assert.deepEqual(result, { eligible: true, reasonCode: null, message: null });
+  });
+
+  it("never treats a status other than ACTIVE as a source", () => {
+    for (const status of ["INACTIVE", "", "UNKNOWN"]) {
+      assert.equal(packetSourceEligibility({ owner_user_id: OWNER, status }, OWNER).eligible, false);
     }
   });
 
@@ -93,8 +97,8 @@ describe("Create Signing eligibility (canonical helper)", () => {
     expectCode("ACTIVE", OTHER, "FORBIDDEN");
   });
 
-  it("excludes only Deleted Packets as a source", () => {
-    assert.deepEqual([...INELIGIBLE_SOURCE_PACKET_STATUSES], ["DELETED"]);
+  it("accepts only ACTIVE Packets as a source", () => {
+    assert.equal(SIGNING_SOURCE_PACKET_STATUS, "ACTIVE");
   });
 
   it("is the one rule used by Create Signing, the source selector and Draft documents", () => {
@@ -109,7 +113,7 @@ describe("Create Signing eligibility (canonical helper)", () => {
     );
     assert.match(operations, /packetSourceEligibility\(packet, responsibleUserId\)/);
     assert.match(sourcePacket, /\.filter\(\(row\) => packetSourceEligibility\(row, actor\.userId\)\.eligible\)/);
-    assert.match(sourcePacket, /INELIGIBLE_SOURCE_PACKET_STATUSES\.join/);
+    assert.match(sourcePacket, /\.eq\("status", SIGNING_SOURCE_PACKET_STATUS\)/);
     assert.match(draftDocuments, /packetSourceEligibility\(row, actor\.userId\)\.eligible/);
     for (const source of [packetToSigning, sourcePacket, draftDocuments]) {
       assert.doesNotMatch(source, /owner_user_id !== actor\.userId/);
@@ -130,13 +134,12 @@ describe("Create Signing eligibility (canonical helper)", () => {
 });
 
 describe("Packet visibility", () => {
-  it("lists Inactive Packets with the same statuses the selector accepts", () => {
+  it("lists Active Packets, adding Deleted only for Show deleted", () => {
     const packets = read("components/packets/packets-page.tsx");
-    assert.match(
-      packets,
-      /showDeleted \? \["ACTIVE", "INACTIVE", "DELETED"\] : \["ACTIVE", "INACTIVE"\]/,
-    );
-    assert.match(packets, /RecordStatusBadge status=\{packet\.status\}/);
+    assert.match(packets, /query = query\.in\("status", \["ACTIVE", "DELETED"\]\)/);
+    assert.match(packets, /query = query\.eq\("status", "ACTIVE"\)/);
+    assert.match(packets, /<RecordStatusBadge status="DELETED" \/>/);
+    assert.doesNotMatch(packets, /INACTIVE/);
   });
 });
 
