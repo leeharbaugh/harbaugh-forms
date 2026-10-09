@@ -17,6 +17,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { startInPersonHandoffAction } from "@/lib/signing/ceremony-agent-actions";
 import { SIGNING_CAPACITY_LABEL_OPTIONS } from "@/lib/signing/capacity-notices";
+import { cancelSigningAction } from "@/lib/signing/actions";
 import type { SigningDashboard } from "@/lib/signing/dashboard";
 import { invitationStatusLabel } from "@/lib/signing/participant-access-status";
 import {
@@ -105,10 +106,33 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     path: string;
     expiresAt: string;
   } | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [workspaceMounted, setWorkspaceMounted] = useState(false);
   const [workspaceDocumentId, setWorkspaceDocumentId] = useState<string | null>(
     null,
+  );
+
+  // Auto-add happens on whichever load sees the new party first, and later
+  // loads report nothing new, so the notice accumulates per Signing.
+  const [autoAdded, setAutoAdded] = useState<{ signingId: string; names: string[] }>({
+    signingId,
+    names: [],
+  });
+  const rememberAutoAdded = useCallback(
+    (forSigningId: string, data: SigningDashboard) => {
+      const names = data.participantSync.addedFromPacket;
+      if (names.length === 0) return;
+      setAutoAdded((previous) => {
+        const base = previous.signingId === forSigningId ? previous.names : [];
+        return {
+          signingId: forSigningId,
+          names: [...base, ...names.filter((name) => !base.includes(name))],
+        };
+      });
+    },
+    [],
   );
 
   const reload = useCallback(async () => {
@@ -117,13 +141,15 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
       setError(result.error);
       return;
     }
+    rememberAutoAdded(signingId, result.data as SigningDashboard);
     setDashboard(result.data as SigningDashboard);
-  }, [signingId]);
+  }, [signingId, rememberAutoAdded]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const result = await getSigningDashboardAction({ signingId });
+      if (result.ok) rememberAutoAdded(signingId, result.data as SigningDashboard);
       if (cancelled) return;
       if (!result.ok) {
         setError(result.error);
@@ -135,7 +161,22 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [signingId]);
+  }, [signingId, rememberAutoAdded]);
+
+  async function confirmCancelSigning() {
+    setCancelling(true);
+    setError(null);
+    setNotice(null);
+    const result = await cancelSigningAction({ signingId });
+    setCancelling(false);
+    setConfirmingCancel(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setNotice("Signing cancelled. Create a new Signing to send corrected documents.");
+    await reload();
+  }
 
   async function resolveDrift(
     documentId: string,
@@ -374,6 +415,14 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
                 Send
               </Button>
             </>
+          ) : isInProgress && canManage ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConfirmingCancel(true)}
+            >
+              Cancel Signing
+            </Button>
           ) : null
         }
       />
@@ -397,6 +446,13 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
             sourceKind: document.sourceKind,
           }))}
           participants={dashboard.participants}
+          autoAddedFromPacket={
+            autoAdded.signingId === signingId
+              ? autoAdded.names.filter((name) =>
+                  dashboard.participants.some((participant) => participant.fullName === name),
+                )
+              : []
+          }
           onChanged={reload}
           onResolveDrift={resolveDrift}
           busyDocumentId={busyDocumentId}
@@ -681,6 +737,13 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         <Card>
           <CardHeader>
             <CardTitle>Participants</CardTitle>
+            {isInProgress ? (
+              <CardDescription data-testid="participant-identity-locked">
+                Participant names and emails are locked once a Signing is sent
+                or started. If a name or email is wrong, cancel this Signing
+                and create a new one with the corrected details.
+              </CardDescription>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-3">
             {dashboard.participants.length === 0 ? (
@@ -815,6 +878,21 @@ export function SigningDashboardPage({ signingId }: { signingId: string }) {
         onConfirm={() => void confirmLinkOp()}
         onCancel={() => {
           if (!busyParticipantId) setPendingLinkOp(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmingCancel}
+        title="Cancel this Signing?"
+        message="Signing links stop working and no one can sign. This cannot be undone. To fix a participant's name or email, create a new Signing afterwards."
+        confirmLabel="Cancel Signing"
+        confirmingLabel="Cancelling…"
+        cancelLabel="Keep Signing"
+        variant="destructive"
+        isConfirming={cancelling}
+        onConfirm={() => void confirmCancelSigning()}
+        onCancel={() => {
+          if (!cancelling) setConfirmingCancel(false);
         }}
       />
 

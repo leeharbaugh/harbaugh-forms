@@ -37,7 +37,11 @@ import {
 } from "../lib/signing/credentials.ts";
 import { addDraftSigningDocumentWithActor } from "../lib/signing/draft-documents.ts";
 import { upsertDraftSigningFieldWithActor } from "../lib/signing/draft-fields.ts";
-import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
+import {
+  addDraftSigningParticipantWithActor,
+  updateDraftSigningParticipantWithActor,
+} from "../lib/signing/draft-participants.ts";
+import { loadSigningDashboardForActor } from "../lib/signing/dashboard.ts";
 import { createSigningEntrySession } from "../lib/signing/entry-sessions.ts";
 import { requireCeremonyBrowserSession } from "../lib/signing/browser-sessions.ts";
 import {
@@ -246,6 +250,7 @@ async function main() {
   let packetId: number | null = null;
   let packetFormId: number | null = null;
   const signingIds: string[] = [];
+  const contactIds: number[] = [];
   const generatedPaths: string[] = [];
   const artifactKeys: string[] = [];
   let suspendedForTest = false;
@@ -362,6 +367,9 @@ async function main() {
     }
     if (generatedPaths.length > 0) {
       await admin.storage.from(GENERATED_DOCUMENTS_BUCKET).remove(generatedPaths);
+    }
+    if (contactIds.length > 0) {
+      await admin.from("contacts").delete().in("id", contactIds);
     }
     if (packetFormId != null) {
       await admin.from("packet_forms").delete().eq("id", packetFormId);
@@ -1117,17 +1125,37 @@ async function main() {
         { signingId: draft.id, sourcePacketFormId: packetFormId! },
         admin,
       );
-      const signerName = "Ivy Initials";
+      const { data: ivyContact, error: ivyContactError } = await admin
+        .from("contacts")
+        .insert({
+          owner_user_id: agent.userId,
+          contact_type: "INDIVIDUAL",
+          first_name: "Ivy",
+          last_name: "Initials",
+          email: `ivy-${stamp}@example.com`,
+          status: "ACTIVE",
+        })
+        .select("id")
+        .single();
+      if (ivyContactError || !ivyContact) fail(ivyContactError?.message ?? "contact create failed");
+      const ivyContactId = ivyContact.id as number;
+      contactIds.push(ivyContactId);
       const participant = await addDraftSigningParticipantWithActor(
         agent,
         {
           signingId: draft.id,
-          fullName: signerName,
-          email: `ivy-${stamp}@example.com`,
+          fullName: "Browser Supplied",
+          linkedContactId: ivyContactId,
           roleCode: "BUYER",
         },
         admin,
       );
+      if (participant.full_name !== "Ivy Initials") {
+        fail("a Contact-linked participant must take its name from the Contact");
+      }
+      // Draft: the Contact rename flows into the participant (and its Printed Name).
+      await admin.from("contacts").update({ first_name: "Ivana" }).eq("id", ivyContactId);
+      const signerName = "Ivana Initials";
       const initials = await upsertDraftSigningFieldWithActor(
         agent,
         {
@@ -1247,12 +1275,52 @@ async function main() {
         new Uint8Array(await preparedBlob.arrayBuffer()),
       );
       if (!preparedContent.includes(pdfHexText(signerName))) {
-        fail("Printed Name was not baked into the prepared version");
+        fail("Printed Name was not baked into the prepared version with the current Contact name");
       }
       if ((preparedContent.match(/ L\b/g) ?? []).length < 2) {
         fail("Checkmark strokes were not baked into the prepared version");
       }
-      ok("Printed Name and Checkmark are baked into the prepared version at activation");
+      ok("Printed Name (current Contact name at activation) and Checkmark are baked into the prepared version");
+
+      // After activation the identity is canonized: later source changes never apply.
+      await admin.from("contacts").update({ first_name: "Changed", email: `changed-${stamp}@example.com` }).eq("id", ivyContactId);
+      await loadSigningDashboardForActor(agent, draft.id, admin);
+      const { data: liveAfter } = await admin
+        .from("signing_participants")
+        .select("full_name, email")
+        .eq("id", participant.id)
+        .single();
+      const { data: frozenIdentity } = await admin
+        .from("signing_package_revision_participants")
+        .select("frozen_full_name, frozen_email")
+        .eq("signing_id", draft.id)
+        .single();
+      if (
+        liveAfter?.full_name !== signerName ||
+        liveAfter.email !== `ivy-${stamp}@example.com` ||
+        frozenIdentity?.frozen_full_name !== signerName ||
+        frozenIdentity.frozen_email !== `ivy-${stamp}@example.com`
+      ) {
+        fail(`identity must stay frozen after activation: ${JSON.stringify({ liveAfter, frozenIdentity })}`);
+      }
+      const { error: hiddenMutation } = await admin
+        .from("signing_participants")
+        .update({ email: `hidden-${stamp}@example.com` })
+        .eq("id", participant.id);
+      if (!hiddenMutation?.message.includes("SIGNING_PARTICIPANT_IDENTITY_FROZEN")) {
+        fail("the database must reject a participant email change after activation");
+      }
+      try {
+        await updateDraftSigningParticipantWithActor(
+          agent,
+          { signingId: draft.id, participantId: participant.id, fullName: "Edited Later" },
+          admin,
+        );
+        fail("post-activation participant identity edit unexpectedly succeeded");
+      } catch (error) {
+        if (!(error instanceof SigningError) || error.code !== "CONFLICT") throw error;
+      }
+      ok("after activation: Contact changes and refresh never alter the participant; edits and direct writes rejected");
 
       try {
         await upsertDraftPreparedContentWithActor(

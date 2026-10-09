@@ -28,6 +28,7 @@ export const NATIVE_SIGNING_STAGE1_TABLES = [
 export const NATIVE_SIGNING_STAGE3_DRAFT_TABLES = [
   "signing_draft_fields",
   "signing_draft_prepared_content",
+  "signing_draft_packet_participant_suppressions",
 ] as const;
 
 export const NATIVE_SIGNING_STAGE3_MIGRATIONS = [

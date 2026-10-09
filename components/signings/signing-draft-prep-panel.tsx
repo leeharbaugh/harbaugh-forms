@@ -27,19 +27,21 @@ import {
   addDraftSigningDocumentAction,
   addDraftSigningParticipantAction,
   addRemainingPacketDocumentsAction,
-  getDraftPacketParticipantRefreshAction,
+  getDraftRemovedPacketParticipantsAction,
   getDraftSourcePacketStateAction,
   getInternalSignerOptionsAction,
   includeInternalSignerAction,
   listPacketFormsForDraftAction,
-  refreshDraftParticipantsFromPacketAction,
   removeDraftSigningDocumentAction,
   removeDraftSigningParticipantAction,
+  restoreDraftPacketParticipantAction,
   selectDraftSourcePacketAction,
   updateDraftSigningParticipantAction,
 } from "@/lib/signing/stage3-actions";
+import type { ParticipantIdentitySourceKind } from "@/lib/signing/draft-participant-sync";
 import type {
-  DraftPacketParticipantRefresh,
+  DraftPacketAutoAddResult,
+  DraftRemovedPacketParticipants,
   DraftSourcePacketState,
   SelectDraftSourcePacketResult,
 } from "@/lib/signing/source-packet";
@@ -70,9 +72,33 @@ type DraftParticipant = {
   capacityMode?: SigningCapacityMode;
   representedPartyName?: string | null;
   capacityLabel?: SigningCapacityLabel | null;
+  identitySource: ParticipantIdentitySourceKind;
 };
 
 const DEFAULT_CAPACITY_LABEL: SigningCapacityLabel = "ATTORNEY_IN_FACT";
+
+const IDENTITY_SOURCE_LABEL: Record<ParticipantIdentitySourceKind, string> = {
+  CONTACT: "From Contact",
+  USER: "From your profile",
+  BROKER: "From brokerage profile",
+  AD_HOC: "Entered here",
+};
+
+const IDENTITY_SOURCE_HELP: Record<ParticipantIdentitySourceKind, string> = {
+  CONTACT:
+    "Name and email follow the linked Contact until this Signing is sent or started. Edit the Contact to change them.",
+  USER:
+    "Name and email follow your profile until this Signing is sent or started. Edit your profile to change them.",
+  BROKER:
+    "Name and email follow the brokerage profile until this Signing is sent or started. Edit the brokerage profile to change them.",
+  AD_HOC:
+    "Name and email can be edited here until this Signing is sent or started.",
+};
+
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
 
 export function SigningDraftPrepPanel({
   signingId,
@@ -84,12 +110,15 @@ export function SigningDraftPrepPanel({
   onResolveDrift,
   busyDocumentId,
   onPrepareDocument,
+  autoAddedFromPacket = [],
 }: {
   signingId: string;
   canManage: boolean;
   sourcePacketId: number | null;
   documents: DraftDocument[];
   participants: DraftParticipant[];
+  /** Packet participants the latest load added automatically. */
+  autoAddedFromPacket?: string[];
   onChanged: () => Promise<void>;
   onResolveDrift: (
     documentId: string,
@@ -105,8 +134,13 @@ export function SigningDraftPrepPanel({
   const [internalSigners, setInternalSigners] = useState<InternalSignerOptions | null>(
     null,
   );
-  const [packetRefresh, setPacketRefresh] =
-    useState<DraftPacketParticipantRefresh | null>(null);
+  const [removedPacket, setRemovedPacket] =
+    useState<DraftRemovedPacketParticipants | null>(null);
+  const [editingParticipantId, setEditingParticipantId] = useState<string | null>(
+    null,
+  );
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
   const [signingCapacityMode, setSigningCapacityMode] =
     useState<SigningCapacityMode>("PERSONAL");
   const [representedPartyName, setRepresentedPartyName] = useState("");
@@ -165,12 +199,12 @@ export function SigningDraftPrepPanel({
   }, [signingId]);
 
   const loadParticipantSources = useCallback(async () => {
-    const [signers, refresh] = await Promise.all([
+    const [signers, removed] = await Promise.all([
       getInternalSignerOptionsAction({ signingId }),
-      getDraftPacketParticipantRefreshAction({ signingId }),
+      getDraftRemovedPacketParticipantsAction({ signingId }),
     ]);
     if (signers.ok) setInternalSigners(signers.data as InternalSignerOptions);
-    if (refresh.ok) setPacketRefresh(refresh.data as DraftPacketParticipantRefresh);
+    if (removed.ok) setRemovedPacket(removed.data as DraftRemovedPacketParticipants);
   }, [signingId]);
 
   const packetDocumentCount = documents.filter(
@@ -227,7 +261,7 @@ export function SigningDraftPrepPanel({
     fullName.trim().length > 0 &&
     roleCode !== "" &&
     (signingCapacityMode === "PERSONAL" || canAddRepresentative);
-  const newPacketParticipants = packetRefresh?.newParticipants ?? [];
+  const removedPacketParticipants = removedPacket?.removedParticipants ?? [];
 
   const noPacketForms = packetForms.length === 0;
   const packetIdForBulk = sourcePacketId;
@@ -346,21 +380,22 @@ export function SigningDraftPrepPanel({
     setBusy(false);
   }
 
-  async function addFromPacket() {
+  async function restorePacketParticipant(contactId: number) {
     setBusy(true);
     setError(null);
     setNotice(null);
-    const result = await refreshDraftParticipantsFromPacketAction({ signingId });
+    const result = await restoreDraftPacketParticipantAction({
+      signingId,
+      contactId,
+    });
     if (!result.ok) {
       setError(result.error);
     } else {
-      const added =
-        (result.data as { addedParticipantCount?: number } | undefined)
-          ?.addedParticipantCount ?? 0;
+      const added = (result.data as DraftPacketAutoAddResult).addedParticipants;
       setNotice(
-        added > 0
-          ? `Added ${added} participant${added === 1 ? "" : "s"} from the Packet.`
-          : "Every eligible Packet party is already a participant.",
+        added.length > 0
+          ? `${joinNames(added.map((party) => party.fullName))} restored from the Packet.`
+          : "This Packet participant is already on the Signing.",
       );
       await onChanged();
       await loadParticipantSources();
@@ -368,19 +403,50 @@ export function SigningDraftPrepPanel({
     setBusy(false);
   }
 
-  async function removeParticipant(participantId: string) {
+  function startEditingParticipant(participant: DraftParticipant) {
+    setEditingParticipantId(participant.id);
+    setEditName(participant.fullName);
+    setEditEmail(participant.email);
+  }
+
+  async function saveParticipantIdentity(participantId: string) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = await updateDraftSigningParticipantAction({
+      signingId,
+      participantId,
+      fullName: editName,
+      email: editEmail,
+    });
+    if (!result.ok) {
+      setError(result.error);
+    } else {
+      setEditingParticipantId(null);
+      setNotice("Participant details updated.");
+      await onChanged();
+    }
+    setBusy(false);
+  }
+
+  async function removeParticipant(participant: DraftParticipant) {
     setBusy(true);
     setError(null);
     setNotice(null);
     const result = await removeDraftSigningParticipantAction({
       signingId,
-      participantId,
+      participantId: participant.id,
     });
     if (!result.ok) {
       setError(result.error);
     } else {
-      setNotice("Participant removed.");
+      setNotice(
+        participant.identitySource === "CONTACT"
+          ? `${participant.fullName} removed. They will not be added back from the Packet unless you restore them.`
+          : "Participant removed.",
+      );
       await onChanged();
+      await loadParticipantSources();
     }
     setBusy(false);
   }
@@ -733,36 +799,49 @@ export function SigningDraftPrepPanel({
           <p id="draft-participants-heading" className="text-sm font-medium">
             Participants
           </p>
-          {newPacketParticipants.length > 0 ? (
-            <div
-              className="space-y-2 rounded-lg border border-sky-300 bg-sky-50 p-3 dark:border-sky-800 dark:bg-sky-950/40"
-              data-testid="packet-new-participants"
+          {autoAddedFromPacket.length > 0 ? (
+            <p
+              className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm dark:border-sky-800 dark:bg-sky-950/40"
+              data-testid="packet-auto-added"
               role="status"
             >
-              <p className="text-sm font-medium">
-                The source Packet has {newPacketParticipants.length} new
-                participant{newPacketParticipants.length === 1 ? "" : "s"}
+              Added from the source Packet: {joinNames(autoAddedFromPacket)}.
+            </p>
+          ) : null}
+          {removedPacketParticipants.length > 0 ? (
+            <div
+              className="space-y-2 rounded-lg border border-border bg-muted/40 p-3"
+              data-testid="removed-packet-participants"
+            >
+              <p className="text-sm font-medium">Removed Packet participants</p>
+              <p className="text-xs text-muted-foreground">
+                These Packet parties stay off this Signing until you restore
+                them.
               </p>
-              <ul className="text-sm text-muted-foreground">
-                {newPacketParticipants.map((party) => (
-                  <li key={party.linkedContactId}>
-                    {party.fullName}
-                    {" — "}
-                    {participantRoleDisplay(party.roleCode, party.optionalRole)}
+              <ul className="space-y-2">
+                {removedPacketParticipants.map((party) => (
+                  <li
+                    key={party.linkedContactId}
+                    className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                  >
+                    <span>
+                      {party.fullName}
+                      {participantRoleDisplay(party.roleCode, party.optionalRole)
+                        ? ` — ${participantRoleDisplay(party.roleCode, party.optionalRole)}`
+                        : null}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => void restorePacketParticipant(party.linkedContactId)}
+                    >
+                      Restore
+                    </Button>
                   </li>
                 ))}
               </ul>
-              <p className="text-xs text-muted-foreground">
-                Adding them never changes or removes current participants.
-              </p>
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy}
-                onClick={() => void addFromPacket()}
-              >
-                Add from Packet
-              </Button>
             </div>
           ) : null}
           {internalSigners ? (
@@ -966,8 +1045,67 @@ export function SigningDraftPrepPanel({
                         </span>
                       ) : null}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {participant.email || "No email"}
+                    {editingParticipantId === participant.id ? (
+                      <div
+                        className="grid gap-2 pt-1 sm:grid-cols-2"
+                        data-testid="participant-identity-editor"
+                      >
+                        <div className="space-y-1">
+                          <Label htmlFor={`edit-name-${participant.id}`}>Full name</Label>
+                          <Input
+                            id={`edit-name-${participant.id}`}
+                            value={editName}
+                            onChange={(event) => setEditName(event.target.value)}
+                            disabled={busy}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`edit-email-${participant.id}`}>
+                            Email (optional)
+                          </Label>
+                          <Input
+                            id={`edit-email-${participant.id}`}
+                            type="email"
+                            value={editEmail}
+                            onChange={(event) => setEditEmail(event.target.value)}
+                            disabled={busy}
+                          />
+                        </div>
+                        <div className="flex gap-2 sm:col-span-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={busy || editName.trim().length === 0}
+                            onClick={() => void saveParticipantIdentity(participant.id)}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={busy}
+                            onClick={() => setEditingParticipantId(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        {participant.email || "No email"}
+                      </p>
+                    )}
+                    <p
+                      className="text-xs text-muted-foreground"
+                      data-testid="participant-identity-source"
+                      data-identity-source={participant.identitySource}
+                      title={IDENTITY_SOURCE_HELP[participant.identitySource]}
+                    >
+                      {IDENTITY_SOURCE_LABEL[participant.identitySource]}
+                      {participant.identitySource === "AD_HOC"
+                        ? null
+                        : " · updates automatically until sent or started"}
                     </p>
                     {!participant.hasSignatureOrInitialsField ? (
                       <p className="text-xs text-warning-foreground">
@@ -992,12 +1130,24 @@ export function SigningDraftPrepPanel({
                         </option>
                       ))}
                     </select>
+                    {participant.identitySource === "AD_HOC" &&
+                    editingParticipantId !== participant.id ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => startEditingParticipant(participant)}
+                      >
+                        Edit details
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
                       disabled={busy}
-                      onClick={() => void removeParticipant(participant.id)}
+                      onClick={() => void removeParticipant(participant)}
                     >
                       Remove participant
                     </Button>

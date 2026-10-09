@@ -19,9 +19,29 @@ import {
 import type { SigningActor, SigningRow } from "./types";
 import { isUuid } from "./types";
 import {
-  brokerFullName,
-  fetchActiveBrokerageSettings,
-} from "@/lib/types/brokerage-settings";
+  brokerSignerIdentityFromSettings,
+  contactSignerIdentity,
+  participantIdentitySourceKind,
+  userSignerIdentity,
+  type ParticipantIdentitySourceKind,
+} from "./draft-participant-sync";
+import {
+  clearDraftPacketParticipantSuppression,
+  suppressDraftPacketParticipant,
+} from "./draft-packet-suppressions";
+import { fetchActiveBrokerageSettings } from "@/lib/types/brokerage-settings";
+import type { Contact } from "@/lib/types/contact";
+
+const LINKED_IDENTITY_EDIT_MESSAGE: Record<
+  Exclude<ParticipantIdentitySourceKind, "AD_HOC">,
+  string
+> = {
+  CONTACT:
+    "This participant's name and email come from the linked Contact. Edit the Contact instead.",
+  USER: "Your name and email come from your profile. Edit your profile instead.",
+  BROKER:
+    "The broker's name and email come from the brokerage profile. Edit the brokerage profile instead.",
+};
 
 export type SigningParticipantRow = {
   id: string;
@@ -147,15 +167,18 @@ export async function addDraftSigningParticipantWithActor(
     admin,
   );
 
-  const fullName = normalizeRequiredText(input.fullName, "full name", 200);
-  const email = normalizeEmailOptional(input.email);
   const optionalRole = normalizeOptionalText(input.optionalRole, "role", 120);
   const roleCode =
     input.roleCode === undefined ? null : parseRoleCode(input.roleCode);
   const capacity = parseCapacityFields(input);
 
+  let fullName: string;
+  let email: string;
   let linkedContactId: number | null = null;
-  if (input.linkedContactId !== undefined && input.linkedContactId !== null) {
+  if (input.linkedContactId === undefined || input.linkedContactId === null) {
+    fullName = normalizeRequiredText(input.fullName, "full name", 200);
+    email = normalizeEmailOptional(input.email);
+  } else {
     const raw = input.linkedContactId;
     const parsed =
       typeof raw === "number"
@@ -168,7 +191,7 @@ export async function addDraftSigningParticipantWithActor(
     }
     const { data: contact, error: contactError } = await admin
       .from("contacts")
-      .select("id, owner_user_id, status")
+      .select("*")
       .eq("id", parsed)
       .maybeSingle();
     if (contactError) throw new Error(contactError.message);
@@ -178,7 +201,30 @@ export async function addDraftSigningParticipantWithActor(
     if (contact.owner_user_id !== actor.userId) {
       throw new SigningError("INVALID_INPUT", "Contact is not available.");
     }
+    const identity = contactSignerIdentity(contact as Contact);
+    if (!identity) {
+      throw new SigningError(
+        "INVALID_INPUT",
+        "This Contact needs a name before it can sign.",
+      );
+    }
+    const { count: alreadyLinked, error: linkedError } = await admin
+      .from("signing_participants")
+      .select("id", { count: "exact", head: true })
+      .eq("signing_id", signing.id)
+      .eq("linked_contact_id", parsed)
+      .neq("participant_status", "REMOVED");
+    if (linkedError) throw new Error(linkedError.message);
+    if ((alreadyLinked ?? 0) > 0) {
+      throw new SigningError(
+        "CONFLICT",
+        "This Contact is already a participant on this Signing.",
+      );
+    }
+    fullName = identity.fullName;
+    email = identity.email;
     linkedContactId = parsed;
+    await clearDraftPacketParticipantSuppression(admin, signing.id, parsed);
   }
 
   const displayOrder =
@@ -233,7 +279,27 @@ export async function updateDraftSigningParticipantWithActor(
     throw new SigningError("INVALID_INPUT", "Invalid participant id.");
   }
 
+  const { data: current, error: currentError } = await admin
+    .from("signing_participants")
+    .select("id, linked_contact_id, linked_user_id, linked_brokerage_settings_id")
+    .eq("id", input.participantId)
+    .eq("signing_id", signing.id)
+    .maybeSingle();
+  if (currentError) throw new Error(currentError.message);
+  if (!current) {
+    throw new SigningError("NOT_FOUND", "Participant not found.");
+  }
+
   const patch: Record<string, string | null> = {};
+  if (input.fullName !== undefined || input.email !== undefined) {
+    const source = participantIdentitySourceKind(current);
+    if (source !== "AD_HOC") {
+      throw new SigningError(
+        "INVALID_INPUT",
+        LINKED_IDENTITY_EDIT_MESSAGE[source],
+      );
+    }
+  }
   if (input.fullName !== undefined) {
     patch.full_name = normalizeRequiredText(input.fullName, "full name", 200);
   }
@@ -294,6 +360,12 @@ export async function updateDraftSigningParticipantWithActor(
     .eq("signing_id", signing.id)
     .select("*")
     .single();
+  if (error?.message.includes("SIGNING_PARTICIPANT_IDENTITY_FROZEN")) {
+    throw new SigningError(
+      "CONFLICT",
+      "Participant details are locked once the Signing is sent or started.",
+    );
+  }
   if (error || !data) {
     throw new Error(error?.message ?? "Failed to update participant.");
   }
@@ -316,6 +388,25 @@ export async function removeDraftSigningParticipantWithActor(
   );
   if (!isUuid(input.participantId)) {
     throw new SigningError("INVALID_INPUT", "Invalid participant id.");
+  }
+
+  const { data: participant, error: participantError } = await admin
+    .from("signing_participants")
+    .select("id, linked_contact_id")
+    .eq("id", input.participantId)
+    .eq("signing_id", signing.id)
+    .maybeSingle();
+  if (participantError) throw new Error(participantError.message);
+  if (!participant) {
+    throw new SigningError("NOT_FOUND", "Participant not found.");
+  }
+  if (participant.linked_contact_id != null) {
+    await suppressDraftPacketParticipant(
+      admin,
+      signing.id,
+      participant.linked_contact_id as number,
+      actor.userId,
+    );
   }
 
   await admin
@@ -362,11 +453,10 @@ type InternalSignerIdentity = {
 
 /** The signed-in User, from the server session profile (never browser input). */
 function selfSignerIdentity(actor: SigningActor): InternalSignerIdentity | null {
-  const fullName = actor.displayName?.trim();
-  if (!fullName) return null;
+  const identity = userSignerIdentity(actor.profile, actor.email);
+  if (!identity) return null;
   return {
-    fullName,
-    email: (actor.email ?? "").trim().toLowerCase(),
+    ...identity,
     roleCode: "AGENT",
     linkedUserId: actor.userId,
     linkedBrokerageSettingsId: null,
@@ -387,12 +477,10 @@ async function brokerSignerIdentity(
     signing.originating_organization_id,
   );
   if (!settings) return null;
-  const fullName = brokerFullName(settings).trim();
-  const email = (settings.broker_email ?? "").trim().toLowerCase();
-  if (!fullName || !email) return null;
+  const identity = brokerSignerIdentityFromSettings(settings);
+  if (!identity) return null;
   return {
-    fullName,
-    email,
+    ...identity,
     roleCode: "BROKER",
     linkedUserId: null,
     linkedBrokerageSettingsId: settings.id,

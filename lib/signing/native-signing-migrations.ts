@@ -29,6 +29,7 @@ export const NATIVE_SIGNING_ALL_MIGRATIONS = [
   "20260923200000_native_signing_ad_hoc_documents",
   "20260928120000_native_signing_source_packet_selection",
   "20261008120000_native_signing_draft_prep_roles_prepared_content",
+  "20261009120000_native_signing_draft_identity_sync",
 ] as const;
 
 export function listNativeSigningMigrationFilesFromDisk(

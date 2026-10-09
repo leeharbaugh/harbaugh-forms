@@ -31,9 +31,9 @@ import {
 } from "@/lib/signing/draft-prepared-content";
 import { requireManageableDraftSigning } from "@/lib/signing/manage";
 import {
-  loadDraftPacketParticipantRefreshWithActor,
+  loadDraftRemovedPacketParticipantsWithActor,
   loadDraftSourcePacketStateWithActor,
-  refreshDraftParticipantsFromPacketWithActor,
+  restoreDraftPacketParticipantWithActor,
   selectDraftSourcePacketWithActor,
 } from "@/lib/signing/source-packet";
 import { SigningError } from "@/lib/signing/errors";
@@ -280,19 +280,20 @@ export async function removeDraftPreparedContentAction(input: {
   );
 }
 
-export async function getDraftPacketParticipantRefreshAction(input: {
+export async function getDraftRemovedPacketParticipantsAction(input: {
   signingId: unknown;
 }): Promise<SigningStage3ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
-    loadDraftPacketParticipantRefreshWithActor(actor, input, admin),
+    loadDraftRemovedPacketParticipantsWithActor(actor, input, admin),
   );
 }
 
-export async function refreshDraftParticipantsFromPacketAction(input: {
+export async function restoreDraftPacketParticipantAction(input: {
   signingId: unknown;
+  contactId: unknown;
 }): Promise<SigningStage3ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
-    refreshDraftParticipantsFromPacketWithActor(actor, input, admin),
+    restoreDraftPacketParticipantWithActor(actor, input, admin),
   );
 }
 

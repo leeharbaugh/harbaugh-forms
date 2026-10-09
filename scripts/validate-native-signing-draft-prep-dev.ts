@@ -12,11 +12,17 @@
  * paired Date Signed, Initials and Date Signed remove independently, and
  * reassigning a Signature moves its paired Date Signed to the same participant.
  *
- * Draft-prep model tranche: Packet import derives participant roles; the
- * explicit Packet refresh is additive (no deletes, no overwrites, owner-only
- * contacts); Include me / Include broker add server-identified participants
- * once; Date Signed may link to same-participant Initials (server + database);
- * prepared content requires manage authority and stays same-Signing.
+ * Draft-prep model tranche: Packet import derives participant roles;
+ * Include me / Include broker add server-identified participants once; Date
+ * Signed may link to same-participant Initials (server + database); prepared
+ * content requires manage authority and stays same-Signing.
+ *
+ * Draft identity tranche: loading a Draft auto-adds new owned Packet parties
+ * (additive, no click); removing a Packet participant records a Signing-scoped
+ * suppression (no re-add, Restore re-adds); linked name/email follow the
+ * Contact / profile / brokerage profile while Draft and cannot be overridden;
+ * ad hoc name/email stay editable; outside Draft nothing syncs and the
+ * database rejects identity changes.
  *
  * Never targets production. Refuses to run unless the URL is the development
  * project.
@@ -41,8 +47,12 @@ import {
   addDraftSigningParticipantWithActor,
   includeInternalSignerWithActor,
   loadInternalSignerOptionsWithActor,
+  removeDraftSigningParticipantWithActor,
   updateDraftSigningParticipantWithActor,
 } from "../lib/signing/draft-participants.ts";
+import { cancelSigningWithActor } from "../lib/signing/cancel.ts";
+import { loadSigningDashboardForActor } from "../lib/signing/dashboard.ts";
+import { loadSigningPreviewForActor } from "../lib/signing/preview.ts";
 import {
   removeDraftPreparedContentWithActor,
   upsertDraftPreparedContentWithActor,
@@ -50,9 +60,9 @@ import {
 import { SigningError } from "../lib/signing/errors.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
 import {
-  loadDraftPacketParticipantRefreshWithActor,
+  loadDraftRemovedPacketParticipantsWithActor,
   loadDraftSourcePacketStateWithActor,
-  refreshDraftParticipantsFromPacketWithActor,
+  restoreDraftPacketParticipantWithActor,
   selectDraftSourcePacketWithActor,
 } from "../lib/signing/source-packet.ts";
 import { SIGNING_ARTIFACTS_BUCKET } from "../lib/signing/stage1-schema.ts";
@@ -1000,30 +1010,28 @@ async function main() {
     const foreignForRefresh = await createContact(outsider.userId, "Fay", "Foreign", "fay@example.com");
     await linkContact(packetA.packetId, foreignForRefresh, "BUYER", 6);
 
-    const beforeRefresh = await participantsOf(signingId);
-    const pending = await loadDraftPacketParticipantRefreshWithActor(agent, { signingId }, admin);
-    if (
-      !pending.available ||
-      pending.newParticipants.length !== 1 ||
-      pending.newParticipants[0].linkedContactId !== buyer3 ||
-      pending.newParticipants[0].roleCode !== "BUYER"
-    ) {
-      fail(`refresh notice should list only Dee Buyer: ${JSON.stringify(pending.newParticipants)}`);
+    // --- Draft Packet auto-add (no click) ----------------------------------------
+    const beforeAutoAdd = await participantsOf(signingId);
+    await expectSigningError("another User loading this Signing", ["NOT_FOUND", "FORBIDDEN"], () =>
+      loadSigningDashboardForActor(outsider, signingId, admin),
+    );
+    if ((await participantsOf(signingId)).length !== beforeAutoAdd.length) {
+      fail("an unauthorized load must not auto-add participants");
     }
-    ok("Packet refresh notice lists only the new owned contact (foreign contact excluded)");
-
-    const refreshed = await refreshDraftParticipantsFromPacketWithActor(agent, { signingId }, admin);
-    const afterRefresh = await participantsOf(signingId);
+    const autoAddLoad = await loadSigningDashboardForActor(agent, signingId, admin);
+    const afterAutoAdd = await participantsOf(signingId);
     if (
-      refreshed.addedParticipantCount !== 1 ||
-      afterRefresh.length !== beforeRefresh.length + 1 ||
-      afterRefresh.some((row) => row.linked_contact_id === foreignForRefresh)
+      JSON.stringify(autoAddLoad.participantSync.addedFromPacket) !== JSON.stringify(["Dee Buyer"]) ||
+      afterAutoAdd.length !== beforeAutoAdd.length + 1 ||
+      afterAutoAdd.some((row) => row.linked_contact_id === foreignForRefresh)
     ) {
-      fail("refresh must add exactly the new owned Packet contact");
+      fail(
+        `auto-add must add exactly the new owned Packet contact: ${JSON.stringify(autoAddLoad.participantSync)}`,
+      );
     }
-    for (const prior of beforeRefresh) {
-      if (!afterRefresh.some((row) => row.id === prior.id)) {
-        fail(`refresh deleted participant ${prior.full_name}`);
+    for (const prior of beforeAutoAdd) {
+      if (!afterAutoAdd.some((row) => row.id === prior.id)) {
+        fail(`auto-add deleted participant ${prior.full_name}`);
       }
     }
     const { data: preservedBuyer } = await admin
@@ -1037,15 +1045,181 @@ async function main() {
       preservedBuyer?.signing_capacity_mode !== "REPRESENTATIVE" ||
       preservedBuyer?.represented_party_name !== "Buyer Family Trust"
     ) {
-      fail("refresh overwrote a manager edit (role/capacity)");
+      fail("auto-add overwrote a manager edit (role/capacity)");
     }
-    const refreshedAgain = await refreshDraftParticipantsFromPacketWithActor(agent, { signingId }, admin);
-    if (refreshedAgain.addedParticipantCount !== 0) fail("a second refresh must be a no-op");
-    ok("refresh is additive: adds Dee Buyer, keeps ad hoc + edited participants, no duplicates, idempotent");
+    const autoAddAgain = await loadSigningDashboardForActor(agent, signingId, admin);
+    if (
+      autoAddAgain.participantSync.addedFromPacket.length !== 0 ||
+      (await participantsOf(signingId)).length !== afterAutoAdd.length
+    ) {
+      fail("a second load must not add or duplicate participants");
+    }
+    ok("auto-add on load: adds Dee Buyer only (foreign contact excluded), keeps ad hoc + edited participants, idempotent");
 
-    await expectSigningError("another User refreshing this Signing", ["NOT_FOUND", "FORBIDDEN"], () =>
-      refreshDraftParticipantsFromPacketWithActor(outsider, { signingId }, admin),
+    // --- Removal suppression and restore ----------------------------------------
+    const dee = afterAutoAdd.find((row) => row.linked_contact_id === buyer3)!;
+    await removeDraftSigningParticipantWithActor(agent, { signingId, participantId: dee.id }, admin);
+    const { data: suppressionRows } = await admin
+      .from("signing_draft_packet_participant_suppressions")
+      .select("signing_id, linked_contact_id, removed_by_user_id")
+      .eq("signing_id", signingId);
+    if (
+      suppressionRows?.length !== 1 ||
+      suppressionRows[0].linked_contact_id !== buyer3 ||
+      suppressionRows[0].removed_by_user_id !== agent.userId
+    ) {
+      fail(`removing a Packet participant must record one suppression keyed by Contact: ${JSON.stringify(suppressionRows)}`);
+    }
+    const afterRemovalLoad = await loadSigningDashboardForActor(agent, signingId, admin);
+    if (
+      afterRemovalLoad.participantSync.addedFromPacket.length !== 0 ||
+      (await participantsOf(signingId)).some((row) => row.linked_contact_id === buyer3)
+    ) {
+      fail("a removed Packet participant must not be re-added on reload");
+    }
+    const { data: deeContact } = await admin
+      .from("contacts")
+      .select("first_name, status")
+      .eq("id", buyer3)
+      .single();
+    const { count: deePacketLinks } = await admin
+      .from("packet_contacts")
+      .select("id", { count: "exact", head: true })
+      .eq("packet_id", packetA.packetId)
+      .eq("contact_id", buyer3)
+      .eq("status", "ACTIVE");
+    if (deeContact?.first_name !== "Dee" || deeContact.status !== "ACTIVE" || deePacketLinks !== 1) {
+      fail("removal must not alter the Contact or the Packet");
+    }
+    const removedList = await loadDraftRemovedPacketParticipantsWithActor(agent, { signingId }, admin);
+    if (
+      removedList.removedParticipants.length !== 1 ||
+      removedList.removedParticipants[0].linkedContactId !== buyer3
+    ) {
+      fail("the Restore list must show the removed Packet participant");
+    }
+    ok("removal records a Signing-scoped suppression; reload does not re-add; Contact and Packet untouched");
+
+    const sameDealSigningId = await createSigning(agent, "Draft prep same Packet");
+    await selectDraftSourcePacketWithActor(
+      agent,
+      { signingId: sameDealSigningId, packetId: packetA.packetId },
+      admin,
     );
+    if (!(await participantsOf(sameDealSigningId)).some((row) => row.linked_contact_id === buyer3)) {
+      fail("a suppression on one Signing must not affect another Signing");
+    }
+    ok("suppression is scoped to its Signing (another Signing on the same Packet still imports Dee)");
+
+    const browserKey =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if (!browserKey) fail("Missing Supabase browser key");
+    const { error: browserSuppressionInsert } = await createClient(url, browserKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+      .from("signing_draft_packet_participant_suppressions")
+      .insert({ signing_id: signingId, linked_contact_id: buyer });
+    if (!browserSuppressionInsert) fail("an anonymous client must not write suppressions");
+    await expectSigningError("restoring a Contact not on the source Packet", ["INVALID_INPUT"], () =>
+      restoreDraftPacketParticipantWithActor(agent, { signingId, contactId: foreignForRefresh }, admin),
+    );
+    await expectSigningError("another User restoring here", ["NOT_FOUND", "FORBIDDEN"], () =>
+      restoreDraftPacketParticipantWithActor(outsider, { signingId, contactId: buyer3 }, admin),
+    );
+    await expectSigningError("a malformed restore Contact id", ["INVALID_INPUT"], () =>
+      restoreDraftPacketParticipantWithActor(agent, { signingId, contactId: "1 or 1=1" }, admin),
+    );
+    const restored = await restoreDraftPacketParticipantWithActor(
+      agent,
+      { signingId, contactId: buyer3 },
+      admin,
+    );
+    const afterRestore = await participantsOf(signingId);
+    const { count: suppressionsLeft } = await admin
+      .from("signing_draft_packet_participant_suppressions")
+      .select("id", { count: "exact", head: true })
+      .eq("signing_id", signingId);
+    if (
+      restored.addedParticipants.length !== 1 ||
+      afterRestore.filter((row) => row.linked_contact_id === buyer3).length !== 1 ||
+      suppressionsLeft !== 0
+    ) {
+      fail("Restore must clear the suppression and add the participant back once");
+    }
+    ok("suppression cannot be spoofed (browser, foreign Contact, other User); Restore re-adds once");
+
+    // --- Live Draft identity from authoritative sources ------------------------
+    const deeRestored = afterRestore.find((row) => row.linked_contact_id === buyer3)!;
+    await admin
+      .from("contacts")
+      .update({ first_name: "Deanna", email: "Deanna@Example.com" })
+      .eq("id", buyer3);
+    await loadSigningPreviewForActor(agent, signingId, admin);
+    const { data: deeLive } = await admin
+      .from("signing_participants")
+      .select("full_name, email")
+      .eq("id", deeRestored.id)
+      .single();
+    if (deeLive?.full_name !== "Deanna Buyer" || deeLive.email !== "deanna@example.com") {
+      fail(`Contact name/email must flow into the Draft participant: ${JSON.stringify(deeLive)}`);
+    }
+    await admin.from("contacts").update({ first_name: null, last_name: null }).eq("id", buyer3);
+    await loadSigningDashboardForActor(agent, signingId, admin);
+    const { data: deeKept } = await admin
+      .from("signing_participants")
+      .select("full_name")
+      .eq("id", deeRestored.id)
+      .single();
+    if (deeKept?.full_name !== "Deanna Buyer") {
+      fail("an unusable Contact name must not blank the participant");
+    }
+    await admin.from("contacts").update({ first_name: "Deanna", last_name: "Buyer" }).eq("id", buyer3);
+    ok("linked Contact name/email update the Draft participant live; an unusable source keeps the last values");
+
+    await expectSigningError("a manual name override on a Contact participant", ["INVALID_INPUT"], () =>
+      updateDraftSigningParticipantWithActor(
+        agent,
+        { signingId, participantId: deeRestored.id, fullName: "Spoofed Name" },
+        admin,
+      ),
+    );
+    await expectSigningError("a manual email override on a Contact participant", ["INVALID_INPUT"], () =>
+      updateDraftSigningParticipantWithActor(
+        agent,
+        { signingId, participantId: deeRestored.id, email: "spoof@example.com" },
+        admin,
+      ),
+    );
+    const spoofedLinkedAdd = await addDraftSigningParticipantWithActor(
+      agent,
+      {
+        signingId: sameDealSigningId,
+        fullName: "Browser Name",
+        email: "browser@example.com",
+        linkedContactId: packetBParty,
+      },
+      admin,
+    );
+    if (spoofedLinkedAdd.full_name !== "Pat Seller" || spoofedLinkedAdd.email !== "pat@example.com") {
+      fail("a linked add must take name/email from the Contact, not the browser");
+    }
+    await expectSigningError("linking the same Contact twice", ["CONFLICT"], () =>
+      addDraftSigningParticipantWithActor(
+        agent,
+        { signingId: sameDealSigningId, fullName: "Pat Seller", linkedContactId: packetBParty },
+        admin,
+      ),
+    );
+    const adHocIdentity = await updateDraftSigningParticipantWithActor(
+      agent,
+      { signingId, participantId: adHocRole.id, fullName: "Tia Q. Tenant", email: "Tia@Example.com" },
+      admin,
+    );
+    if (adHocIdentity.full_name !== "Tia Q. Tenant" || adHocIdentity.email !== "tia@example.com") {
+      fail("ad hoc name/email must stay editable in Draft");
+    }
+    ok("browser cannot set linked name/email (update or add); ad hoc name/email editable in Draft");
 
     // --- Quick include agent / broker ------------------------------------------
     const smuggled = await addDraftSigningParticipantWithActor(
@@ -1129,6 +1303,98 @@ async function main() {
       includeInternalSignerWithActor(outsider, { signingId, kind: "SELF" }, admin),
     );
     ok("Include broker uses only this organization's profile, once, role Broker; no representative authority inferred");
+
+    // --- Include me / Include broker follow their profiles while Draft ---------
+    await admin.from("profiles").update({ preferred_name: "Ann Agent-Smith" }).eq("id", agent.userId);
+    await admin
+      .from("brokerage_settings")
+      .update({ broker_first_name: "Roberta", broker_email: `roberta-${stamp}@example.com` })
+      .eq("id", brokerProfile.id);
+    await loadSigningDashboardForActor(agent, signingId, admin);
+    const { data: internalRows } = await admin
+      .from("signing_participants")
+      .select("id, full_name, email, linked_user_id, linked_brokerage_settings_id")
+      .in("id", [selfFirst.participant.id, brokerFirst.participant.id]);
+    const selfLive = internalRows?.find((row) => row.id === selfFirst.participant.id);
+    const brokerLive = internalRows?.find((row) => row.id === brokerFirst.participant.id);
+    if (
+      selfLive?.full_name !== "Ann Agent-Smith" ||
+      selfLive.email !== agent.email ||
+      selfLive.linked_user_id !== agent.userId ||
+      brokerLive?.full_name !== "Roberta Broker" ||
+      brokerLive.email !== `roberta-${stamp}@example.com` ||
+      brokerLive.linked_brokerage_settings_id !== brokerProfile.id
+    ) {
+      fail(`Include me / Include broker must follow their profiles: ${JSON.stringify(internalRows)}`);
+    }
+    for (const [label, participantId] of [
+      ["Include me", selfFirst.participant.id],
+      ["Include broker", brokerFirst.participant.id],
+    ] as const) {
+      await expectSigningError(`a manual name override on ${label}`, ["INVALID_INPUT"], () =>
+        updateDraftSigningParticipantWithActor(
+          agent,
+          { signingId, participantId, fullName: "Someone Else" },
+          admin,
+        ),
+      );
+    }
+    const pointed = await updateDraftSigningParticipantWithActor(
+      agent,
+      {
+        signingId,
+        participantId: selfFirst.participant.id,
+        roleCode: "OTHER",
+        linkedUserId: outsider.userId,
+        linkedBrokerageSettingsId: 999999,
+      } as Parameters<typeof updateDraftSigningParticipantWithActor>[1],
+      admin,
+    );
+    if (pointed.linked_user_id !== agent.userId || pointed.linked_brokerage_settings_id !== null) {
+      fail("Include me must not be re-pointed at another User or profile");
+    }
+    ok("Include me / Include broker follow profile changes live; cannot be overridden or re-pointed; role stays editable");
+
+    // --- Activation boundary: identity frozen outside Draft ---------------------
+    const frozenSigningId = await createSigning(agent, "Draft prep frozen identity");
+    const frozenParticipant = await addDraftSigningParticipantWithActor(
+      agent,
+      { signingId: frozenSigningId, fullName: "ignored", linkedContactId: packetBParty },
+      admin,
+    );
+    await cancelSigningWithActor(agent, { signingId: frozenSigningId }, admin);
+    await admin.from("contacts").update({ first_name: "Patricia" }).eq("id", packetBParty);
+    await loadSigningDashboardForActor(agent, frozenSigningId, admin);
+    const { data: frozenRow } = await admin
+      .from("signing_participants")
+      .select("full_name")
+      .eq("id", frozenParticipant.id)
+      .single();
+    if (frozenRow?.full_name !== "Pat Seller") {
+      fail("a non-Draft Signing must not follow Contact changes");
+    }
+    const { error: frozenWrite } = await admin
+      .from("signing_participants")
+      .update({ full_name: "Hidden Mutation" })
+      .eq("id", frozenParticipant.id);
+    if (!frozenWrite?.message.includes("SIGNING_PARTICIPANT_IDENTITY_FROZEN")) {
+      fail("the database must reject a name change outside Draft");
+    }
+    await expectSigningError("editing a participant after the Signing left Draft", ["CONFLICT", "FORBIDDEN"], () =>
+      updateDraftSigningParticipantWithActor(
+        agent,
+        { signingId: frozenSigningId, participantId: frozenParticipant.id, roleCode: "BUYER" },
+        admin,
+      ),
+    );
+    const { error: frozenSuppression } = await admin
+      .from("signing_draft_packet_participant_suppressions")
+      .insert({ signing_id: frozenSigningId, linked_contact_id: packetBParty });
+    if (!frozenSuppression?.message.includes("SIGNING_PARTICIPANT_SUPPRESSION_NOT_DRAFT")) {
+      fail("suppressions must be Draft-only");
+    }
+    await admin.from("contacts").update({ first_name: "Pat" }).eq("id", packetBParty);
+    ok("outside Draft: no sync on load, database rejects name changes, edits and suppressions rejected");
 
     // --- Date Signed linked to Initials -----------------------------------------
     const ini = await upsertDraftSigningFieldWithActor(

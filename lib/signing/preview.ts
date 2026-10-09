@@ -9,6 +9,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadSigningAuthorityBundle } from "./authority-context";
 import type { SigningCapacityLabel, SigningCapacityMode } from "./capacity-notices";
+import { syncDraftParticipantIdentities } from "./draft-participant-sync";
 import { renderPreparedPdfFromSelectedDraftSnapshot } from "./draft-source-snapshots";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
@@ -94,7 +95,9 @@ async function requireDraftPreviewAuthority(
 
 /**
  * Load the manager preview model for a Draft Signing.
- * Read-only: does not write Signing rows or evidence.
+ * Does not write evidence. Linked participant names are first brought in line
+ * with their sources (Draft-only identity sync) so labels show the current
+ * authoritative name.
  */
 export async function loadSigningPreviewForActor(
   actor: SigningActor,
@@ -103,6 +106,7 @@ export async function loadSigningPreviewForActor(
 ): Promise<SigningPreviewModel> {
   const bundle = await requireDraftPreviewAuthority(actor, signingIdRaw, admin);
   const signingId = bundle.signing.id;
+  await syncDraftParticipantIdentities(admin, bundle.signing);
 
   const [
     { data: documentRows, error: documentError },

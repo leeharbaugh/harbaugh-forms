@@ -97,6 +97,27 @@ export function clampRectToPage(
 }
 
 /**
+ * Rect for a newly placed field at a click (PDF units). The click marks the
+ * field's left edge, vertically centred, so it starts where the blank line
+ * starts. A Checkmark is a point mark that belongs on the box clicked, so it
+ * stays centred. Then clamped onto the page: near the right edge the field
+ * shifts left at full size rather than shrinking. Placement only; drag,
+ * resize and stored geometry are unaffected.
+ */
+export function newPlacementRect(
+  fieldType: DraftFieldType,
+  point: { x: number; y: number },
+  size: { width: number; height: number },
+  page: { width: number; height: number },
+): PdfRect {
+  const x = fieldType === "CHECKMARK" ? point.x - size.width / 2 : point.x;
+  return clampRectToPage(
+    { x, y: point.y - size.height / 2, width: size.width, height: size.height },
+    page,
+  );
+}
+
+/**
  * Default spot for the paired Date Signed: to the right of the Signature on
  * the same baseline (bottom-aligned), or below it when the right side would
  * run off the page.
@@ -282,6 +303,28 @@ export function dateSourceOptions(
         isDateSignedSourceType(field.fieldType) && field.participantId === participantId,
     )
     .sort((a, b) => a.pageNumber - b.pageNumber || a.y - b.y || a.x - b.x);
+}
+
+/**
+ * The explicit Date Signed source, if it is still a Signature or Initials of
+ * `participantId` on this document. Never falls back to another field, so a
+ * Date is not silently linked to the wrong source.
+ */
+export function resolveDateLinkSource(
+  fields: SigningPreviewField[],
+  participantId: string,
+  sourceId: string,
+): SigningPreviewField | null {
+  if (!sourceId || !participantId) return null;
+  return (
+    dateSourceOptions(fields, participantId).find((field) => field.id === sourceId) ??
+    null
+  );
+}
+
+/** "Initials — Page 1": the armed Date Signed source as shown to the manager. */
+export function dateLinkSourceDisplay(field: Pick<SigningPreviewField, "fieldType" | "pageNumber">): string {
+  return `${draftFieldTypeLabel(field.fieldType)} — Page ${field.pageNumber}`;
 }
 
 /**

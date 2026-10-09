@@ -12,7 +12,77 @@ Each decision should include:
 
 ---
 
+## Draft participant identity is live from its source; activation canonizes it
+
+**Date:** 2026-10-08 (Draft polish tranche)
+
+**Decision:**
+1. While a Signing is Draft, a linked participant's name and email come live from its authoritative source. That source is the Contact for a Contact-linked participant, the agent's profile for **Include me** (profile display name, auth email first), or the originating organization's ACTIVE brokerage profile for **Include broker**. Opening the Draft dashboard, Prepare Documents, or activation re-reads the source and updates the participant row. A Contact is followed only when it is owned by the original sender, the Signing's creator, or the source Packet's owner. A source that is no longer usable (for example an inactive Contact or a blank name) keeps the last good values.
+2. Linked participants' name and email are not editable in the Signing. The server rejects `fullName` / `email` updates for linked rows ("Edit the Contact instead."), and a linked add takes its identity from the source, never from the browser. Role and the optional label stay editable.
+3. Ad hoc participants' name and email are edited directly in Draft (**Edit details**).
+4. Activation (Send or Begin In-Person) is the participant-identity canonization boundary. The live values at that moment are frozen into `signing_package_revision_participants`, Printed Name and labels are baked, and activation re-checks the live row against the frozen identity. A database trigger (`SIGNING_PARTICIPANT_IDENTITY_FROZEN`) rejects any later name or email change on `signing_participants` once the Signing is not Draft or has a package revision.
+5. After activation, participant name and email cannot be corrected through amendment, an in-place edit, or a source resync.
+6. If a participant's identity is wrong after activation, the agent cancels the Signing (**Cancel Signing**, lifecycle Cancelled) and creates a new Signing with the corrected details. This applies even when nobody has opened or signed it yet.
+7. This supersedes "Participant identity is agent-correctable only before the first signing mark" (2026-09-14) and the matching sentences in related entries for post-activation identity. Participant identity is no longer amendable after activation. The pre-first-mark amendment model may still apply to other package/document changes, but not participant name/email.
+8. The broader pre-first-mark package/document amendment architecture (amendment locks, package revisions) is not removed by this decision.
+
+Role remains Signing-specific context: it is editable while Draft and frozen at activation (`frozen_role_code`).
+
+**Reason:**
+Lee's QA: a Contact rename did not reach the Draft, and an editable copy of a linked identity drifted from its source. One authoritative source while Draft, and one immutable snapshot from activation onward, keep the invited identity, the ceremony identity and the document name the same.
+
+**Consequences:**
+* A Contact, profile or brokerage edit after activation never reaches that Signing; the dashboard shows "Participant details are locked…" with the Cancel guidance.
+* Cancelling an In Progress Signing from the dashboard does not yet notify participants; that is a documented gap.
+* Linked identity sync is identity only; it never adds, removes or reorders participants.
+
+**Related:** `lib/signing/draft-participant-sync.ts`, `lib/signing/draft-participants.ts`, `lib/signing/dashboard.ts`, `lib/signing/preview.ts`, `lib/signing/activation.ts`, `components/signings/signing-dashboard-page.tsx`, `supabase/migrations/20261009120000_native_signing_draft_identity_sync.sql`.
+
+---
+
+## Packet participants auto-add during Draft; intentional removal is suppressed per Signing
+
+**Date:** 2026-10-08 (Draft polish tranche)
+
+**Decision:**
+9. While a Signing is Draft (no package revision) and bound to a source Packet the actor owns, eligible Packet parties that are not yet linked are added automatically when the manager opens the Draft dashboard, with no popup and no click. Matching is by Contact id only; ad hoc, agent and broker participants are preserved; nothing is duplicated. Authority is checked before any elevated read. Nothing syncs after activation. A notice names who was added.
+10. Removing a Contact-linked participant records a Signing-scoped suppression keyed by Contact (`signing_draft_packet_participant_suppressions`), so auto-add will not bring them back. **Removed Packet participants** lists them with **Restore**, which clears the suppression and re-adds that Contact once. Suppression never touches the Contact or the Packet. Choosing a different Packet clears that Signing's suppressions. The table is Draft-only (trigger `SIGNING_PARTICIPANT_SUPPRESSION_NOT_DRAFT`), has forced RLS with deny policies, and is written only by trusted server code.
+
+This supersedes "Draft participants refresh additively from the source Packet" (2026-10-08): the explicit **Add from Packet** click and its notice are removed.
+
+**Reason:**
+Lee's QA: requiring a click to bring in a party already on the Packet was friction, and a party the manager had deliberately removed kept being offered again.
+
+**Consequences:**
+* Activation deliberately does not auto-add; it only refreshes identity, so the readiness the manager saw is the readiness that is sent.
+* The same Packet on another Signing imports normally; suppression is per Signing.
+
+**Related:** `lib/signing/source-packet.ts` (`autoAddDraftPacketParticipants`, `restoreDraftPacketParticipantWithActor`), `lib/signing/draft-packet-suppressions.ts`, `components/signings/signing-draft-prep-panel.tsx`, `supabase/migrations/20261009120000_native_signing_draft_identity_sync.sql`.
+
+---
+
+## Copy enters paste mode; Date Signed links by clicking its source; new fields anchor at the click's left edge
+
+**Date:** 2026-10-08 (Draft polish tranche)
+
+**Decision:**
+11. **Copy** (button or Ctrl/⌘+C) immediately enters paste placement mode with a ghost under the pointer; no separate Paste click is needed. The ghost follows the pointer across a scroll without placing or cancelling. One click places the copy once and ends the mode. The clipboard remains, so **Paste** or Ctrl/⌘+V places another copy. Esc cancels.
+* With the Date Signed tool, clicking one of the selected participant's Signature or Initials arms the link ("Linked to: Initials — Page 1"), shows a Date ghost following the pointer, and the next page click places the Date linked to it. Esc, a field type change, a participant change or a document change cancels the link. Clicking another participant's field fails visibly and only selects it. The **Link to** select arms the same state. A Date is never auto-linked to a guessed source.
+* A new field's left edge sits at the click x and its vertical centre at the click y, then it is clamped inside the page by sliding, never shrinking. Checkmark stays centred on the click, because it targets a printed box. Paste keeps its centre-of-group anchor. Coordinates convert from page pixels to PDF points, so the anchor holds at every zoom.
+
+**Reason:**
+Lee's QA: Copy then Paste was two steps for one intent; clicking the Initials to link a Date did nothing and the date landed unlinked; centred placement put fields left of the printed line's start.
+
+**Consequences:**
+* Refines "Prepare Documents removes fixed-coordinate Quick Fields; paste is click-anchored" (2026-10-08) and "Date Signed may link to Signature or Initials; only Signature auto-pairs" (2026-10-08).
+
+**Related:** `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-field-editor-state.ts` (`newPlacementRect`, `resolveDateLinkSource`, `dateLinkSourceDisplay`).
+
+---
+
 ## Draft participants refresh additively from the source Packet
+
+> **Superseded 2026-10-08 (Draft polish tranche):** eligible Packet parties are now added automatically while Draft, with no Add from Packet click, and an intentionally removed party is suppressed per Signing until Restore. See "Packet participants auto-add during Draft; intentional removal is suppressed per Signing". The entry below is kept as history.
 
 **Date:** 2026-10-08
 
@@ -62,6 +132,7 @@ Agents and brokers often sign the same documents as their clients; retyping thei
 **Consequences:**
 * Adding an agent or broker as a participant does not change TC, co-agent, or brokerage-admin authority.
 * During this tranche a pre-existing path that accepted `linkedUserId` from the browser for manual participants was closed (recorded in local `security.md`).
+* *(Refined 2026-10-08, Draft polish tranche:)* the agent and broker rows follow the profile and brokerage profile live while Draft, cannot be overridden in the Signing, and freeze at activation.
 
 **Related:** `lib/signing/draft-participants.ts` (`loadInternalSignerOptionsWithActor`, `includeInternalSignerWithActor`).
 
@@ -116,6 +187,7 @@ Lee's manual QA (finding 2): fixed coordinates were not useful on real packages,
 **Consequences:**
 * Supersedes the **Add default fields** sentence in "Managers visually place Signature, Initials, and Date Signed before activation" (2026-09-23).
 * Pasted Initials + linked Date pairs stay linked.
+* *(Refined 2026-10-08, Draft polish tranche:)* Copy now enters this mode itself; see "Copy enters paste mode; Date Signed links by clicking its source; new fields anchor at the click's left edge".
 
 **Related:** `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-field-editor-state.ts`.
 
@@ -374,7 +446,7 @@ Mixing documents from several Packets made provenance, participant derivation, a
 **Date:** 2026-09-28
 
 **Decision:**
-Selecting a source Packet on a Draft Signing imports that Packet's transaction parties as Draft participants using the same derivation as Packet → Create Signing (`deriveSigningParticipantsFromPacket`): ACTIVE `packet_contacts` with recognized party roles (plus representation agreement clients — see "Packet selection and Packet-party population are one Draft preparation action"), one participant per contact id, PERSONAL capacity, email optional in Draft. Agents, brokers, and TCs are not imported. Participants already linked to the same contact are skipped. Existing and ad hoc participants are never deleted, replaced, or merged by name. The import is a snapshot; later Packet contact edits do not sync. *(Updated 2026-10-08: while Draft, parties added to the Packet later can be added explicitly with Add from Packet; imports carry a participant role — see "Draft participants refresh additively from the source Packet".)*
+Selecting a source Packet on a Draft Signing imports that Packet's transaction parties as Draft participants using the same derivation as Packet → Create Signing (`deriveSigningParticipantsFromPacket`): ACTIVE `packet_contacts` with recognized party roles (plus representation agreement clients — see "Packet selection and Packet-party population are one Draft preparation action"), one participant per contact id, PERSONAL capacity, email optional in Draft. Agents, brokers, and TCs are not imported. Participants already linked to the same contact are skipped. Existing and ad hoc participants are never deleted, replaced, or merged by name. The import is a snapshot; later Packet contact edits do not sync. *(Updated 2026-10-08: while Draft, parties added to the Packet later can be added explicitly with Add from Packet; imports carry a participant role — see "Draft participants refresh additively from the source Packet".)* *(Updated 2026-10-08, Draft polish tranche: new Packet parties are now auto-added while Draft and a removed party is suppressed until Restore. A linked participant's name and email follow its Contact live until activation. See "Packet participants auto-add during Draft; intentional removal is suppressed per Signing" and "Draft participant identity is live from its source; activation canonizes it".)*
 
 **Reason:**
 Managers expected the Packet's buyers/sellers to appear when choosing the Packet, as they do when creating a Signing from the Packet page. Re-entering them by hand invited typos and duplicate people.
@@ -1737,6 +1809,8 @@ Representative signing is a practical workflow feature, not a legal-adjudication
 
 **Date:** 2026-09-14
 
+> **Refined 2026-10-08 (Draft polish tranche):** the name-match rule stands, but the correction window is now Draft only. Participant identity is no longer amendable after activation. The pre-first-mark amendment model may still apply to other package/document changes, but not participant name/email. After activation, a wrong name requires Cancel and a new Signing. See "Draft participant identity is live from its source; activation canonizes it".
+
 **Decision:**
 For a participant signing personally, the name used in the Signing, the name presented for their signing ceremony, and the name appearing on the document for that signer must match. A personal participant cannot choose a fuller, shorter, customary, or otherwise different name as their adopted typed signature. If the intended name is wrong or incomplete, an authorized agent corrects the participant identity and document before the first accepted signature or initials placement under the approved amendment process. Representative signing uses the distinct execution-capacity decision below.
 
@@ -1827,6 +1901,8 @@ The Signing evidence must show both that the participant affirmatively consented
 ## Participant identity is agent-correctable only before the first signing mark
 
 **Date:** 2026-09-14
+
+> **Superseded for participant identity 2026-10-08 (Draft polish tranche):** Participant identity is no longer amendable after activation. The pre-first-mark amendment model may still apply to other package/document changes, but not participant name/email. Name and email change only while Draft (live from the linked source, or edited directly for ad hoc participants). Activation (Send / Begin In-Person) canonizes them; a wrong identity afterwards requires **Cancel Signing** and a new Signing. See "Draft participant identity is live from its source; activation canonizes it". The entry below is kept as history.
 
 **Decision:**
 Participants cannot edit their displayed name, email address, or optional role from the Signing experience. Before any accepted signature or initials placement exists anywhere in the Signing, an authorized primary agent or co-agent may correct those details through the approved amendment lock and a new package revision.
@@ -3209,6 +3285,8 @@ Signing participants are entitled to an accessible completed copy, and agents fr
 
 **Date:** 2026-09-05
 
+> **Refined 2026-10-08 (Draft polish tranche):** Participant identity is no longer amendable after activation. The pre-first-mark amendment model may still apply to other package/document changes, but not participant name/email. Participant identity snapshots are fixed at activation, not at the first accepted mark. See "Draft participant identity is live from its source; activation canonizes it".
+
 **Decision:**
 An In Progress **Signing** remains amendable until its first signature or initial is successfully accepted. Before opening a Signing for amendment, the server must atomically verify that the Signing is still active, no signature or initial event exists, no participant currently has the signing experience open, and no other amendment is active. If those checks pass, the agent receives an exclusive amendment lock.
 
@@ -3251,6 +3329,8 @@ An agent should be able to correct an already-sent Signing when nobody has start
 ## Signing participants may be linked or ad hoc, and all are eligible in parallel
 
 **Date:** 2026-09-05
+
+> **Refined 2026-10-08 (Draft polish tranche):** the editing window for participant names and email addresses is Draft only. Linked participants follow their User/Contact/brokerage source live while Draft and cannot be overridden; ad hoc participants are edited directly. Activation freezes the identity snapshot. Participant identity is no longer amendable after activation. The pre-first-mark amendment model may still apply to other package/document changes, but not participant name/email. See "Draft participant identity is live from its source; activation canonizes it".
 
 **Decision:**
 A **signing participant** is a person participating in one particular Signing. The participant may reference a Harbaugh Forms User, a Contact, both, or neither. A User and Contact may represent the same person, and those references are not mutually exclusive. Creating a Contact is never required to add someone to a Signing.

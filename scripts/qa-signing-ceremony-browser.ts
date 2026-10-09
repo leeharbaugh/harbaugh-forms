@@ -19,6 +19,9 @@
  * Signing B: Resend / Replace / Revoke spot-check (sessions derived from the
  * replaced / revoked links lose document access), then an explicit Decline.
  *
+ * Signing D: a Contact-linked participant follows the Contact while Draft, is
+ * frozen once sent (later Contact edits do not reach it), then Cancel Signing.
+ *
  * Signing C (in person, on the manager's own browser): Begin In-Person, hand
  * the device over, sign on the document, Finish → Return to agent with the
  * device lock intact, then unlock with the agent password.
@@ -116,6 +119,7 @@ async function main() {
   const packetFormIds: number[] = [];
   const generatedPaths: string[] = [];
   const signingIds: string[] = [];
+  const contactIds: number[] = [];
   const secrets: string[] = [];
   const devLogStart = existsSync(DEV_LOG) ? readFileSync(DEV_LOG, "utf8").length : 0;
   mkdirSync(OUT_DIR, { recursive: true });
@@ -1475,6 +1479,64 @@ async function main() {
     await shot(manager, "b03-manager-declined");
     ok("manager sees DECLINED; no completed-package operations for the Declined Signing");
 
+    // ---------- Signing D: identity is live while Draft, frozen once sent; Cancel ----------
+    const { data: contactD, error: contactDError } = await admin
+      .from("contacts")
+      .insert({
+        owner_user_id: userId,
+        contact_type: "INDIVIDUAL",
+        first_name: "Fran",
+        last_name: "Frozen",
+        email: `fran-${stamp}@example.com`,
+        status: "ACTIVE",
+      })
+      .select("id")
+      .single();
+    if (contactDError || !contactD) fail(contactDError?.message ?? "contact D");
+    contactIds.push(contactD.id as number);
+    const formD = await createPacketDocument("Ceremony QA Identity Contract");
+    const d = await createDraft(`Ceremony QA Identity ${stamp}`, formD);
+    const pD = await addDraftSigningParticipantWithActor(
+      actor,
+      { signingId: d.signingId, fullName: "Ignored Browser Name", email: "ignored@example.com", linkedContactId: contactD.id as number },
+      admin,
+    );
+    if (pD.full_name !== "Fran Frozen") fail(`linked participant must take the Contact's name, got ${pD.full_name}`);
+    const pDSig = await addField(d.signingId, d.documentId, pD.id, "SIGNATURE", { x: 72, y: 560, width: 150, height: 28 });
+    await addField(d.signingId, d.documentId, pD.id, "DATE_SIGNED", { x: 230, y: 566, width: 72, height: 18 }, { linkedSignatureDraftFieldId: pDSig.id });
+    await admin.from("contacts").update({ first_name: "Francine" }).eq("id", contactD.id);
+    await manager.goto(`${APP_ORIGIN}/signings/${d.signingId}`, { waitUntil: "networkidle" });
+    const draftRowD = manager.locator('[data-testid="draft-participant-list"] div.rounded-lg', { hasText: "Francine Frozen" }).first();
+    await draftRowD.waitFor({ timeout: 60000 });
+    if (!(await draftRowD.locator('[data-testid="participant-identity-source"]').innerText()).trim().startsWith("From Contact")) {
+      fail("linked Draft participant must show its identity source");
+    }
+    if ((await draftRowD.getByRole("button", { name: /Edit details/ }).count()) !== 0) fail("a Contact-linked row must not offer Edit details");
+    ok("Draft: Contact rename flows to the participant on load; row labelled From Contact; no name/email edit UI");
+    await sendFromDraftPage(d.signingId);
+    await admin.from("contacts").update({ first_name: "Frances", email: `frances-${stamp}@example.com` }).eq("id", contactD.id);
+    await manager.reload({ waitUntil: "networkidle" });
+    await manager.locator('[data-testid="participant-identity-locked"]').waitFor({ timeout: 60000 });
+    const sentText = await manager.locator("body").innerText();
+    if (sentText.includes("Frances Frozen") || !sentText.includes("Francine Frozen")) fail("a Contact change after Send altered the participant shown");
+    if ((await manager.getByRole("button", { name: /Edit details/ }).count()) !== 0) fail("identity edit UI shown after Send");
+    const { data: liveD } = await admin.from("signing_participants").select("full_name, email").eq("signing_id", d.signingId).single();
+    if (liveD?.full_name !== "Francine Frozen" || liveD.email !== `fran-${stamp}@example.com`) fail(`sent identity changed: ${JSON.stringify(liveD)}`);
+    await shot(manager, "d00-identity-locked-after-send");
+    ok("after Send: identity locked (note shown, no edit UI); a later Contact change does not reach the participant");
+    await manager.getByRole("button", { name: "Cancel Signing", exact: true }).click();
+    const cancelDialog = manager.getByRole("alertdialog");
+    await cancelDialog.getByText("Cancel this Signing?").waitFor();
+    await cancelDialog.getByRole("button", { name: "Keep Signing" }).click();
+    await cancelDialog.waitFor({ state: "detached" });
+    if ((await signingRow(d.signingId)).lifecycle_state !== "IN_PROGRESS") fail("Keep Signing must not cancel");
+    await manager.getByRole("button", { name: "Cancel Signing", exact: true }).click();
+    await manager.getByRole("alertdialog").getByRole("button", { name: "Cancel Signing", exact: true }).click();
+    await manager.getByText("Signing cancelled. Create a new Signing to send corrected documents.").waitFor({ timeout: 60000 });
+    if ((await signingRow(d.signingId)).lifecycle_state !== "CANCELLED") fail("Cancel Signing did not cancel");
+    await shot(manager, "d01-cancelled");
+    ok("Cancel Signing: confirmation (Keep Signing keeps it); confirm → CANCELLED with the corrected-documents guidance");
+
     // ---------- Signing C: in-person Finish keeps the device lock ----------
     const formC = await createPacketDocument("Ceremony QA In-Person Contract");
     const titleC = `Ceremony QA In-Person ${stamp}`;
@@ -1553,14 +1615,14 @@ async function main() {
     if (process.env.QA_KEEP_FIXTURES === "1") {
       console.log(`Fixtures kept: signings ${signingIds.join(", ")}`);
     } else {
-      await cleanup(admin, { signingIds, generatedPaths, packetFormIds, packetId, userId, organizationId });
+      await cleanup(admin, { signingIds, contactIds, generatedPaths, packetFormIds, packetId, userId, organizationId });
     }
   }
 }
 
 async function cleanup(
   admin: SupabaseClient,
-  fixture: { signingIds: string[]; generatedPaths: string[]; packetFormIds: number[]; packetId: number; userId: string; organizationId: string },
+  fixture: { signingIds: string[]; contactIds: number[]; generatedPaths: string[]; packetFormIds: number[]; packetId: number; userId: string; organizationId: string },
 ) {
   for (const signingId of fixture.signingIds) {
     const keys: string[] = [];
@@ -1628,6 +1690,7 @@ async function cleanup(
     const { error } = await admin.from("signings").delete().eq("id", signingId);
     if (error) note(`Signing ${signingId} cleanup incomplete: ${error.message}`);
   }
+  if (fixture.contactIds.length) await admin.from("contacts").delete().in("id", fixture.contactIds);
   if (fixture.generatedPaths.length) await admin.storage.from(GENERATED_DOCUMENTS_BUCKET).remove(fixture.generatedPaths);
   for (const id of fixture.packetFormIds) await admin.from("packet_forms").update({ status: "DELETED" }).eq("id", id);
   if (fixture.packetId) await admin.from("packets").update({ status: "DELETED" }).eq("id", fixture.packetId);

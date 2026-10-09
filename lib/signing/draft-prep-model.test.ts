@@ -408,16 +408,29 @@ describe("Draft prep security boundaries (source)", () => {
       );
     }
     for (const name of [
-      "loadDraftPacketParticipantRefreshWithActor",
-      "refreshDraftParticipantsFromPacketWithActor",
+      "loadDraftRemovedPacketParticipantsWithActor",
+      "restoreDraftPacketParticipantWithActor",
     ]) {
-      const body = sourcePacket.slice(sourcePacket.indexOf(`function ${name}`));
-      assert.ok(body.indexOf("requireManageableDraftSigning") < body.indexOf(".from("));
+      const start = sourcePacket.indexOf(`function ${name}`);
+      assert.ok(start > 0, `${name} exists`);
+      const body = sourcePacket.slice(start);
+      const authorizeAt = body.indexOf("requireManageableDraftSigning");
+      assert.ok(authorizeAt > 0 && authorizeAt < body.indexOf("buildPacketParties"));
     }
-    for (const name of ["loadInternalSignerOptionsWithActor", "includeInternalSignerWithActor"]) {
+    for (const name of [
+      "loadInternalSignerOptionsWithActor",
+      "includeInternalSignerWithActor",
+      "updateDraftSigningParticipantWithActor",
+      "removeDraftSigningParticipantWithActor",
+    ]) {
       const body = participants.slice(participants.indexOf(`function ${name}`));
       assert.ok(body.indexOf("requireManageableDraftSigning") < body.indexOf(".from("));
     }
+    const dashboard = read("lib/signing/dashboard.ts");
+    const authorizeAt = dashboard.indexOf("requireManageableDraftSigning(");
+    assert.ok(authorizeAt > 0);
+    assert.ok(authorizeAt < dashboard.indexOf("autoAddDraftPacketParticipants("));
+    assert.ok(authorizeAt < dashboard.indexOf("syncDraftParticipantIdentities("));
   });
 
   it("imports only the actor's own Packet contacts and never by name/email", () => {

@@ -1,8 +1,10 @@
 /**
  * Native Signing Stage 4 Signing dashboard read model.
  *
- * Read-only projection for the agent-facing Signing page. Readiness is derived
- * on demand and never stored. Nothing here exposes credential tokens.
+ * Projection for the agent-facing Signing page. Readiness is derived on demand
+ * and never stored. Nothing here exposes credential tokens. For a Draft the
+ * manager may manage, loading first applies Draft participant sync (Packet
+ * auto-add and live linked identity); nothing is written once activated.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SigningDocumentRow } from "./draft-documents";
@@ -26,6 +28,13 @@ import type {
   SigningCapacityMode,
 } from "./capacity-notices";
 import type { SigningActor, SigningSummary } from "./types";
+import {
+  participantIdentitySourceKind,
+  syncDraftParticipantIdentities,
+  type ParticipantIdentitySourceKind,
+} from "./draft-participant-sync";
+import { requireManageableDraftSigning } from "./manage";
+import { autoAddDraftPacketParticipants } from "./source-packet";
 
 export type SigningDashboardDocument = {
   id: string;
@@ -55,9 +64,13 @@ export type SigningDashboardParticipant = {
   representedPartyName?: string | null;
   capacityLabel?: SigningCapacityLabel | null;
   capacityWording?: string | null;
+  /** Where name/email come from while Draft; AD_HOC is manager-typed. */
+  identitySource: ParticipantIdentitySourceKind;
 };
 
 export type SigningDashboard = {
+  /** Draft only: Packet participants added automatically on this load. */
+  participantSync: { addedFromPacket: string[] };
   signing: SigningSummary & {
     activationMode: string | null;
     activatedAt: string | null;
@@ -80,6 +93,22 @@ export async function loadSigningDashboardForActor(
   const summary = await getSigningForActor(actor, signingIdRaw, admin);
   const packetOwnerUserId =
     summary.originalSenderUserId ?? actor.userId;
+
+  const addedFromPacket: string[] = [];
+  if (summary.lifecycleState === "DRAFT" && summary.canManage) {
+    const { signing } = await requireManageableDraftSigning(
+      actor,
+      summary.id,
+      admin,
+    );
+    const { addedParticipants } = await autoAddDraftPacketParticipants(
+      actor,
+      admin,
+      signing,
+    );
+    addedFromPacket.push(...addedParticipants.map((party) => party.fullName));
+    await syncDraftParticipantIdentities(admin, signing);
+  }
 
   const [
     { data: activation, error: activationError },
@@ -263,9 +292,16 @@ export async function loadSigningDashboardForActor(
       undefined,
     capacityWording:
       (row.capacity_wording as string | null | undefined) ?? undefined,
+    identitySource: participantIdentitySourceKind({
+      linked_contact_id: (row.linked_contact_id as number | null) ?? null,
+      linked_user_id: (row.linked_user_id as string | null) ?? null,
+      linked_brokerage_settings_id:
+        (row.linked_brokerage_settings_id as number | null) ?? null,
+    }),
   }));
 
   return {
+    participantSync: { addedFromPacket },
     signing: {
       ...summary,
       activationMode: (activation?.activation_mode as string | null) ?? null,
