@@ -38,9 +38,10 @@ import { loadSigningAuthorityBundle } from "./authority-context";
 import { canRenameSigning } from "./rename";
 import {
   autoAddDraftPacketParticipants,
-  listDraftPacketAutoAddedParticipantNames,
+  listDraftPacketAutoAddNotice,
   loadDraftRemovedPacketParticipantsWithActor,
   loadDraftSourcePacketStateWithActor,
+  type DraftPacketAutoAddNoticeEntry,
   type DraftRemovedPacketParticipants,
   type DraftSourcePacketState,
 } from "./source-packet";
@@ -94,8 +95,11 @@ export type SigningDashboardParticipant = {
 };
 
 export type SigningDashboard = {
-  /** Draft only: participants the source Packet added automatically that are still present. */
-  participantSync: { addedFromPacket: string[] };
+  /**
+   * Draft only: participants the source Packet added automatically that are
+   * still present and whose notice the manager has not seen yet.
+   */
+  participantSync: { addedFromPacket: DraftPacketAutoAddNoticeEntry[] };
   /** Draft managers only; null otherwise. */
   draftPrep: SigningDraftPrep | null;
   /** May rename (any lifecycle state); never true for read-only viewers. */
@@ -123,7 +127,7 @@ export async function loadSigningDashboardForActor(
   const packetOwnerUserId =
     summary.originalSenderUserId ?? actor.userId;
 
-  let addedFromPacket: string[] = [];
+  let addedFromPacket: DraftPacketAutoAddNoticeEntry[] = [];
   if (summary.lifecycleState === "DRAFT" && summary.canManage) {
     const { signing } = await requireManageableDraftSigning(
       actor,
@@ -132,10 +136,7 @@ export async function loadSigningDashboardForActor(
     );
     await autoAddDraftPacketParticipants(actor, admin, signing);
     await syncDraftParticipantIdentities(admin, signing);
-    addedFromPacket = await listDraftPacketAutoAddedParticipantNames(
-      admin,
-      summary.id,
-    );
+    addedFromPacket = await listDraftPacketAutoAddNotice(admin, summary.id);
   }
 
   const draftPrepLoad: Promise<SigningDraftPrep | null> =

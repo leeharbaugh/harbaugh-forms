@@ -45,6 +45,8 @@ import {
   removeFields,
   replaceFieldId,
   resolveDateLinkSource,
+  resolveDateLinkTarget,
+  type DateLinkTarget,
   type DraftFieldType,
   type PdfRect,
 } from "@/lib/signing/draft-field-editor-state";
@@ -58,6 +60,8 @@ import { participantRoleDisplay } from "@/lib/signing/participant-roles";
 import { CHECKMARK_POINTS, printedNameFontSize } from "@/lib/signing/prepared-content-geometry";
 import { isPreparedContentType } from "@/lib/signing/prepared-content-types";
 import { getSigningPreviewAction } from "@/lib/signing/preview-actions";
+import type { SigningReadinessBlocker } from "@/lib/signing/readiness";
+import { getSigningPreparationReadinessAction } from "@/lib/signing/stage4-actions";
 import type {
   SigningPreviewDocument,
   SigningPreviewField,
@@ -339,6 +343,8 @@ export function SigningPreviewDialog({
   initialDocumentId = null,
   onClose,
   onChanged,
+  readiness = null,
+  onPreparationReadiness,
 }: {
   open: boolean;
   signingId: string;
@@ -346,6 +352,10 @@ export function SigningPreviewDialog({
   initialDocumentId?: string | null;
   onClose: () => void;
   onChanged?: () => Promise<void>;
+  /** Server readiness as the Signing page currently shows it. */
+  readiness?: { ready: boolean; blockers: SigningReadinessBlocker[] } | null;
+  /** Fresh server preparation blockers after saved placement changes. */
+  onPreparationReadiness?: (blockers: SigningReadinessBlocker[]) => void;
 }) {
   const titleId = useId();
   const editable = mode === "prepare";
@@ -371,11 +381,12 @@ export function SigningPreviewDialog({
   const [pasteMode, setPasteMode] = useState(false);
   const [pastePreview, setPastePreview] = useState<PasteAnchor | null>(null);
   /**
-   * Armed Date Signed source (clicked on the page or chosen under Link to).
-   * "" = not armed: a Date Signed never links without an explicit source.
+   * Explicit Date Signed source (chosen under Link to, or by clicking one of
+   * the participant's Signature/Initials). "" = automatic: the Date links to
+   * the nearest eligible field on the page where it is placed.
    */
   const [dateLinkSourceId, setDateLinkSourceId] = useState("");
-  /** Hovered spot for the armed Date Signed ghost. */
+  /** Hovered spot for the Date Signed ghost. */
   const [datePreview, setDatePreview] = useState<PasteAnchor | null>(null);
   const [editorNotice, setEditorNotice] = useState<string | null>(null);
   const pressRef = useRef<{ id: string; toggle: boolean; wasSelected: boolean } | null>(null);
@@ -396,6 +407,10 @@ export function SigningPreviewDialog({
   const idMapRef = useRef(new Map<string, string>());
   const localIdSeqRef = useRef(0);
   const dirtyRef = useRef(false);
+  const pendingRef = useRef(0);
+  const readinessSeqRef = useRef(0);
+  /** Local ids of Dates linked by proximity; the server checks the page on create. */
+  const autoLinkedDateIdsRef = useRef(new Set<string>());
   const pointerStartedOnFieldRef = useRef(false);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   /** The positioned page surfaces (PDF canvas + overlays), by page number. */
@@ -519,14 +534,39 @@ export function SigningPreviewDialog({
     [],
   );
 
-  const enqueue = useCallback((task: () => Promise<void>) => {
-    dirtyRef.current = true;
-    setPendingCount((count) => count + 1);
-    queueRef.current = queueRef.current
-      .then(task)
-      .catch(() => undefined)
-      .finally(() => setPendingCount((count) => count - 1));
-  }, []);
+  /**
+   * Once every queued write has settled, ask the server for readiness so Send
+   * reflects the saved placements in the same interaction. Only the newest
+   * request applies.
+   */
+  const refreshReadiness = useCallback(async () => {
+    if (!onPreparationReadiness) return;
+    readinessSeqRef.current += 1;
+    const seq = readinessSeqRef.current;
+    const result = await getSigningPreparationReadinessAction({ signingId });
+    if (seq !== readinessSeqRef.current || pendingRef.current > 0 || !result.ok) {
+      return;
+    }
+    const data = result.data as { preparationBlockers: SigningReadinessBlocker[] };
+    onPreparationReadiness(data.preparationBlockers);
+  }, [onPreparationReadiness, signingId]);
+
+  const enqueue = useCallback(
+    (task: () => Promise<void>) => {
+      dirtyRef.current = true;
+      pendingRef.current += 1;
+      setPendingCount((count) => count + 1);
+      queueRef.current = queueRef.current
+        .then(task)
+        .catch(() => undefined)
+        .finally(() => {
+          pendingRef.current -= 1;
+          setPendingCount((count) => count - 1);
+          if (pendingRef.current === 0) void refreshReadiness();
+        });
+    },
+    [refreshReadiness],
+  );
 
   /** Trusted server state wins after a failed write; view state is kept. */
   const reconcile = useCallback(async () => {
@@ -585,6 +625,10 @@ export function SigningPreviewDialog({
       linkedSignatureDraftFieldId: field.linkedSignatureFieldId
         ? resolveId(field.linkedSignatureFieldId)
         : undefined,
+      dateLinkMode:
+        existingId === undefined && autoLinkedDateIdsRef.current.has(field.id)
+          ? "AUTO_NEAREST"
+          : undefined,
     });
   }
 
@@ -652,14 +696,35 @@ export function SigningPreviewDialog({
     return { pageNumber, x: point.x, y: point.y };
   }
 
-  /** The armed Date Signed source, when it is still valid for this participant. */
-  function armedDateSource(): SigningPreviewField | null {
-    if (!editable || selectedFieldType !== "DATE_SIGNED" || !currentDocument) return null;
-    return resolveDateLinkSource(
-      currentDocument.fields,
-      selectedParticipantId,
-      dateLinkSourceId,
+  /** Size of a new Date Signed for the selected participant. */
+  function dateSignedSize(): { width: number; height: number } | null {
+    const participant = model?.participants.find(
+      (row) => row.id === selectedParticipantId,
     );
+    return participant ? defaultDraftFieldSize("DATE_SIGNED", participant) : null;
+  }
+
+  /** Where a Date Signed placed at `anchor` would land (PDF units). */
+  function dateRectAt(anchor: PasteAnchor | null): PdfRect | null {
+    if (!anchor || !currentDocument) return null;
+    const metrics = metricsFor(currentDocument.id, anchor.pageNumber);
+    const size = dateSignedSize();
+    if (!metrics || !size) return null;
+    return newPlacementRect("DATE_SIGNED", anchor, size, {
+      width: metrics.originalWidth,
+      height: metrics.originalHeight,
+    });
+  }
+
+  /** The source a Date Signed placed at `anchor` would link to, and how. */
+  function dateLinkTargetAt(anchor: PasteAnchor | null): DateLinkTarget {
+    return resolveDateLinkTarget({
+      fields: currentDocument?.fields ?? [],
+      participantId: selectedParticipantId,
+      explicitSourceId: dateLinkSourceId,
+      pageNumber: anchor?.pageNumber ?? null,
+      dateRect: dateRectAt(anchor),
+    });
   }
 
   function armDateLink(source: SigningPreviewField) {
@@ -667,15 +732,15 @@ export function SigningPreviewDialog({
     setSelectedFieldIds([]);
     setError(null);
     setEditorNotice(
-      `Linked to: ${dateLinkSourceDisplay(source)}. Click the page to place the Date Signed. Press Esc to cancel.`,
+      `Linked to: ${dateLinkSourceDisplay(source)}, chosen explicitly. Click the page to place the Date Signed. Press Esc to return to automatic linking.`,
     );
     const pointer = lastPointerRef.current;
     setDatePreview(pointer ? pointToPageAnchor(pointer.x, pointer.y) : null);
   }
 
+  /** Back to automatic nearest-field linking. */
   function disarmDateLink(notice: string | null = null) {
     setDateLinkSourceId("");
-    setDatePreview(null);
     setEditorNotice(notice);
   }
 
@@ -717,23 +782,11 @@ export function SigningPreviewDialog({
     return null;
   }
 
-  /** Ghost of the armed Date Signed at the hovered spot (left-anchored). */
+  /** Ghost of the Date Signed at the hovered spot (left-anchored). */
   function datePreviewRect(pageNumber: number): PdfRect | null {
-    if (!datePreview || datePreview.pageNumber !== pageNumber || !currentDocument) {
-      return null;
-    }
-    if (!armedDateSource()) return null;
-    const participant = model?.participants.find(
-      (row) => row.id === selectedParticipantId,
-    );
-    const metrics = metricsFor(currentDocument.id, pageNumber);
-    if (!participant || !metrics) return null;
-    return newPlacementRect(
-      "DATE_SIGNED",
-      datePreview,
-      defaultDraftFieldSize("DATE_SIGNED", participant),
-      { width: metrics.originalWidth, height: metrics.originalHeight },
-    );
+    if (!datePreview || datePreview.pageNumber !== pageNumber) return null;
+    if (!editable || selectedFieldType !== "DATE_SIGNED" || pasteMode) return null;
+    return dateRectAt(datePreview);
   }
 
   function placeFieldAt(
@@ -752,7 +805,7 @@ export function SigningPreviewDialog({
     const placingLinkedDate =
       selectedFieldType === "DATE_SIGNED" && dateLinkSourceId !== "";
     // With placements selected, a click on empty page area clears the
-    // selection, unless a Date Signed is armed and waiting for this click.
+    // selection, unless an explicit Date Signed link is waiting for this click.
     if (selectedFieldIds.length > 0) {
       setSelectedFieldIds([]);
       if (!placingLinkedDate) return;
@@ -780,25 +833,36 @@ export function SigningPreviewDialog({
     let linkedSignatureDraftFieldId: string | null = null;
     let linkedSource: SigningPreviewField | null = null;
     if (selectedFieldType === "DATE_SIGNED") {
-      if (!dateLinkSourceId) {
-        setError(
-          "Click the Signature or Initials this Date Signed belongs to (or choose it under Link to), then click where the date goes.",
-        );
+      const target = resolveDateLinkTarget({
+        fields: currentDocument.fields,
+        participantId: selectedParticipantId,
+        explicitSourceId: dateLinkSourceId,
+        pageNumber,
+        dateRect: rect,
+      });
+      if (!target.source) {
+        // Never place an unlinked Date or guess a source on another page.
+        if (target.mode === "EXPLICIT_SOURCE") {
+          disarmDateLink();
+          setError(
+            "That Signature or Initials is no longer available for this participant. Choose another under Link to, or place the date next to one.",
+          );
+        } else {
+          setError(
+            `No Signature or Initials for ${participant?.fullName ?? "this participant"} on this page. Place the date on a page containing their Signature or Initials.`,
+          );
+        }
         return;
       }
-      linkedSource = armedDateSource();
-      if (!linkedSource) {
-        disarmDateLink();
-        setError(
-          "That Signature or Initials is no longer available for this participant. Click another one.",
-        );
-        return;
-      }
+      linkedSource = target.source;
       linkedSignatureDraftFieldId = linkedSource.id;
     }
 
     const documentId = currentDocument.id;
     const fieldId = newLocalId();
+    if (selectedFieldType === "DATE_SIGNED" && !dateLinkSourceId) {
+      autoLinkedDateIdsRef.current.add(fieldId);
+    }
     const field = buildLocalField(
       fieldId,
       selectedFieldType,
@@ -825,6 +889,7 @@ export function SigningPreviewDialog({
     });
     persistNewFields(documentId, pairedDate ? [field, pairedDate] : [field]);
     if (linkedSource) {
+      // An explicit choice applies to one Date; the next one is automatic.
       disarmDateLink(`Date Signed linked to ${dateLinkSourceDisplay(linkedSource)}.`);
     }
   }
@@ -1229,7 +1294,7 @@ export function SigningPreviewDialog({
   // cursor (possibly on another page). Scrolling never places or cancels.
   useEffect(() => {
     if (!open || !workspaceEl) return;
-    const tracking = pasteMode || (selectedFieldType === "DATE_SIGNED" && dateLinkSourceId);
+    const tracking = pasteMode || (editable && selectedFieldType === "DATE_SIGNED");
     if (!tracking) return;
     function onScroll() {
       const pointer = lastPointerRef.current;
@@ -1254,9 +1319,27 @@ export function SigningPreviewDialog({
         )
       : [],
   );
-  const armedSource = dateToolActive ? armedDateSource() : null;
-  const armedSourceId = armedSource?.id ?? null;
-  const dateLinkArmed = armedSource !== null;
+  // The live link target: the explicit choice, or the nearest candidate to
+  // the Date ghost under the pointer. Highlighting it never selects, moves or
+  // creates anything.
+  const dateTarget: DateLinkTarget | null = dateToolActive
+    ? dateLinkTargetAt(datePreview)
+    : null;
+  const dateTargetSourceId = dateTarget?.source?.id ?? null;
+  const explicitDateSourceId =
+    dateTarget?.mode === "EXPLICIT_SOURCE" ? dateTargetSourceId : null;
+  const dateTracking = dateToolActive && selectedParticipantId !== "";
+  const dateLinkStatus = !dateTarget
+    ? null
+    : dateTarget.mode === "EXPLICIT_SOURCE"
+      ? dateTarget.source
+        ? `Linked to: ${dateLinkSourceDisplay(dateTarget.source)} (chosen under Link to). Click the page to place the date.`
+        : "The chosen Signature or Initials is no longer available. Choose another, or return to Automatic."
+      : dateTarget.source
+        ? `Will link to: ${dateLinkSourceDisplay(dateTarget.source)}. Click to place the date.`
+        : datePreview
+          ? "No Signature or Initials for this participant on this page. Place the date on a page containing this participant's Signature or Initials."
+          : "Move over a page: the date links to this participant's nearest Signature or Initials on that page.";
   const fieldsByPage = new Map<number, SigningPreviewField[]>();
   for (const field of currentDocument?.fields ?? []) {
     const list = fieldsByPage.get(field.pageNumber) ?? [];
@@ -1319,6 +1402,26 @@ export function SigningPreviewDialog({
               Next document
             </Button>
           </div>
+        ) : null}
+        {editable && readiness ? (
+          <span
+            className={cn(
+              "max-w-[22rem] truncate text-xs",
+              readiness.ready ? "text-emerald-700" : "text-muted-foreground",
+            )}
+            data-testid="prepare-readiness"
+            data-ready={readiness.ready ? "true" : "false"}
+            title={readiness.blockers.map((blocker) => blocker.message).join("\n")}
+            aria-live="polite"
+          >
+            {readiness.ready
+              ? "Ready to send"
+              : `Not ready: ${readiness.blockers[0]?.message ?? "Resolve the Signing's blockers."}${
+                  readiness.blockers.length > 1
+                    ? ` (+${readiness.blockers.length - 1} more)`
+                    : ""
+                }`}
+          </span>
         ) : null}
         {editable ? (
           <span className="w-16 text-xs text-muted-foreground" aria-live="polite">
@@ -1485,12 +1588,12 @@ export function SigningPreviewDialog({
                               ) != null;
                           }}
                           onMouseMove={
-                            dateLinkArmed
+                            dateTracking
                               ? (event) => setDatePreview(eventPdfPoint(event, pageNumber))
                               : undefined
                           }
                           onMouseLeave={
-                            dateLinkArmed ? () => setDatePreview(null) : undefined
+                            dateTracking ? () => setDatePreview(null) : undefined
                           }
                           onClick={(event) => placeFieldAt(event, pageNumber)}
                         >
@@ -1538,7 +1641,7 @@ export function SigningPreviewDialog({
                                   dateLink={
                                     !dateLinkCandidateIds.has(field.id)
                                       ? null
-                                      : field.id === armedSourceId
+                                      : field.id === dateTargetSourceId
                                         ? "source"
                                         : "candidate"
                                   }
@@ -1675,7 +1778,7 @@ export function SigningPreviewDialog({
                       <select
                         id="prepare-date-link"
                         className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                        value={armedSourceId ?? ""}
+                        value={explicitDateSourceId ?? ""}
                         onChange={(event) => {
                           const source = resolveDateLinkSource(
                             currentDocument.fields,
@@ -1688,7 +1791,7 @@ export function SigningPreviewDialog({
                       >
                         <option value="">
                           {dateLinkCandidateIds.size > 0
-                            ? "Click a Signature or Initials on the page"
+                            ? "Automatic: nearest on the page"
                             : "Place a Signature or Initials first"}
                         </option>
                         {dateSourceOptions(currentDocument.fields, selectedParticipantId).map(
@@ -1699,10 +1802,12 @@ export function SigningPreviewDialog({
                           ),
                         )}
                       </select>
-                      <p className="text-xs text-muted-foreground" data-testid="date-link-status">
-                        {armedSource
-                          ? `Linked to: ${dateLinkSourceDisplay(armedSource)}. Click the page to place the date.`
-                          : "Click the Signature or Initials this date belongs to, then click where the date goes."}{" "}
+                      <p
+                        className="text-xs text-muted-foreground"
+                        data-testid="date-link-status"
+                        data-date-link-mode={dateTarget?.mode}
+                      >
+                        {dateLinkStatus}{" "}
                         The date shows when that Signature or Initials is applied.
                       </p>
                     </div>

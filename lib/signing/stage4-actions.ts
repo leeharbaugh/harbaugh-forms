@@ -17,6 +17,7 @@ import {
   keepCurrentDraftSourceWithActor,
   updateDraftSourceToLatestWithActor,
 } from "@/lib/signing/source-drift";
+import { evaluateSigningPreparationReadiness } from "@/lib/signing/readiness";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type SigningStage4ActionResult =
@@ -60,6 +61,15 @@ export async function getSigningDashboardAction(input: {
 }): Promise<SigningStage4ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
     loadSigningDashboardForActor(actor, input.signingId, admin),
+  );
+}
+
+/** Readiness after a placement change: everything except live document drift. */
+export async function getSigningPreparationReadinessAction(input: {
+  signingId: unknown;
+}): Promise<SigningStage4ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    evaluateSigningPreparationReadiness(admin, input.signingId, actor),
   );
 }
 

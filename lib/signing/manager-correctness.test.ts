@@ -310,7 +310,7 @@ describe("Draft sync completes as part of opening a Signing", () => {
     const syncAt = dashboard.indexOf("syncDraftParticipantIdentities(");
     const loadAt = dashboard.indexOf("const draftPrepLoad");
     assert.ok(authorizeAt > 0 && authorizeAt < addAt && addAt < syncAt && syncAt < loadAt);
-    const noticeAt = dashboard.indexOf("listDraftPacketAutoAddedParticipantNames(");
+    const noticeAt = dashboard.indexOf("listDraftPacketAutoAddNotice(");
     assert.ok(syncAt < noticeAt && noticeAt < loadAt);
   });
 
@@ -318,16 +318,18 @@ describe("Draft sync completes as part of opening a Signing", () => {
     const sourcePacket = read("lib/signing/source-packet.ts");
     const autoAdd = sourcePacket.slice(
       sourcePacket.indexOf("export async function autoAddDraftPacketParticipants"),
-      sourcePacket.indexOf("export async function listDraftPacketAutoAddedParticipantNames"),
+      sourcePacket.indexOf("export type DraftPacketAutoAddNoticeEntry"),
     );
     assert.match(autoAdd, /const autoAdded = options\.onlyContactId === undefined;/);
     assert.match(autoAdd, /auto_added: autoAdded/);
     const notice = sourcePacket.slice(
-      sourcePacket.indexOf("export async function listDraftPacketAutoAddedParticipantNames"),
-      sourcePacket.indexOf("export type DraftRemovedPacketParticipants"),
+      sourcePacket.indexOf("export async function listDraftPacketAutoAddNotice"),
+      sourcePacket.indexOf("export const AUTO_ADD_NOTICE_ACK_MAX_IDS"),
     );
     assert.match(notice, /\.neq\("participant_status", "REMOVED"\)/);
     assert.match(notice, /\.not\("auto_added_from_packet_at", "is", null\)/);
+    assert.match(notice, /\.is\("auto_add_notice_acknowledged_at", null\)/);
+    assert.doesNotMatch(notice, /\.update\(/);
 
     const migration = read(
       "supabase/migrations/20261009130000_native_signing_draft_auto_add_marker.sql",

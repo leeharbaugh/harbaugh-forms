@@ -322,6 +322,107 @@ export function resolveDateLinkSource(
   );
 }
 
+/** Distances closer than this (PDF points) count as equal. */
+export const DATE_LINK_TIE_EPSILON_PT = 0.5;
+
+/** Shortest distance between two rectangles' edges; 0 when they touch or overlap. */
+export function rectGapDistance(a: PdfRect, b: PdfRect): number {
+  const dx = Math.max(0, b.x - (a.x + a.width), a.x - (b.x + b.width));
+  const dy = Math.max(0, b.y - (a.y + a.height), a.y - (b.y + b.height));
+  return Math.hypot(dx, dy);
+}
+
+function rectCenterDistance(a: PdfRect, b: PdfRect): number {
+  return Math.hypot(
+    a.x + a.width / 2 - (b.x + b.width / 2),
+    a.y + a.height / 2 - (b.y + b.height / 2),
+  );
+}
+
+/**
+ * The Signature or Initials a Date Signed at `dateRect` links to by default:
+ * the participant's nearest one on the same page of this document, by the
+ * gap between the two rectangles. Near-equal gaps fall back to centre
+ * distance, then reading order (top, then left), then id, so the choice is
+ * deterministic. Never looks at other participants, documents or pages; null
+ * when the page has no candidate.
+ */
+export function nearestDateLinkSource(
+  fields: SigningPreviewField[],
+  participantId: string,
+  pageNumber: number,
+  dateRect: PdfRect,
+): SigningPreviewField | null {
+  if (!participantId) return null;
+  const candidates = dateSourceOptions(fields, participantId).filter(
+    (field) => field.pageNumber === pageNumber,
+  );
+  let best: SigningPreviewField | null = null;
+  let bestGap = Infinity;
+  let bestCenter = Infinity;
+  for (const field of candidates) {
+    const gap = rectGapDistance(dateRect, field);
+    const center = rectCenterDistance(dateRect, field);
+    const closer =
+      best === null ||
+      gap < bestGap - DATE_LINK_TIE_EPSILON_PT ||
+      (Math.abs(gap - bestGap) <= DATE_LINK_TIE_EPSILON_PT &&
+        (center < bestCenter - DATE_LINK_TIE_EPSILON_PT ||
+          (Math.abs(center - bestCenter) <= DATE_LINK_TIE_EPSILON_PT &&
+            (field.y < best.y ||
+              (field.y === best.y &&
+                (field.x < best.x || (field.x === best.x && field.id < best.id)))))));
+    if (closer) {
+      best = field;
+      bestGap = gap;
+      bestCenter = center;
+    }
+  }
+  return best;
+}
+
+/**
+ * How a Date Signed being placed is linked. AUTO_NEAREST follows the pointer
+ * (`nearestDateLinkSource`); EXPLICIT_SOURCE is the manager's Link to choice
+ * and stays fixed wherever the pointer is. An explicit choice that is no
+ * longer a Signature or Initials of the participant resolves to null, never
+ * to another field.
+ */
+export type DateLinkTarget =
+  | { mode: "AUTO_NEAREST"; source: SigningPreviewField | null }
+  | { mode: "EXPLICIT_SOURCE"; source: SigningPreviewField | null };
+
+export function resolveDateLinkTarget(options: {
+  fields: SigningPreviewField[];
+  participantId: string;
+  explicitSourceId: string;
+  pageNumber: number | null;
+  dateRect: PdfRect | null;
+}): DateLinkTarget {
+  if (options.explicitSourceId) {
+    return {
+      mode: "EXPLICIT_SOURCE",
+      source: resolveDateLinkSource(
+        options.fields,
+        options.participantId,
+        options.explicitSourceId,
+      ),
+    };
+  }
+  return {
+    mode: "AUTO_NEAREST",
+    source:
+      options.pageNumber == null || options.dateRect == null
+        ? null
+        : nearestDateLinkSource(
+            options.fields,
+            options.participantId,
+            options.pageNumber,
+            options.dateRect,
+          ),
+  };
+}
+
 /** "Initials — Page 1": the armed Date Signed source as shown to the manager. */
 export function dateLinkSourceDisplay(field: Pick<SigningPreviewField, "fieldType" | "pageNumber">): string {
   return `${draftFieldTypeLabel(field.fieldType)} — Page ${field.pageNumber}`;

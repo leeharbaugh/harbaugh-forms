@@ -29,7 +29,7 @@ import {
 } from "./packet-signing-eligibility";
 import { deriveSigningParticipantsFromPacket } from "./packet-to-signing";
 import type { SigningParticipantRoleCode } from "./participant-roles";
-import type { SigningActor, SigningRow } from "./types";
+import { isUuid, type SigningActor, type SigningRow } from "./types";
 
 export type DraftSourcePacketState = {
   sourcePacket: { id: number; label: string } | null;
@@ -345,23 +345,73 @@ export async function autoAddDraftPacketParticipants(
   };
 }
 
+export type DraftPacketAutoAddNoticeEntry = {
+  participantId: string;
+  fullName: string;
+};
+
 /**
  * Draft notice: participants Draft auto-add inserted that are still on this
- * Signing (current names), from the marker written with the insert.
+ * Signing (current names) and whose notice no manager has seen yet. Reading
+ * never acknowledges, so a discarded render cannot consume the notice.
  */
-export async function listDraftPacketAutoAddedParticipantNames(
+export async function listDraftPacketAutoAddNotice(
   admin: SupabaseClient,
   signingId: string,
-): Promise<string[]> {
+): Promise<DraftPacketAutoAddNoticeEntry[]> {
   const { data, error } = await admin
     .from("signing_participants")
-    .select("full_name")
+    .select("id, full_name")
     .eq("signing_id", signingId)
     .neq("participant_status", "REMOVED")
     .not("auto_added_from_packet_at", "is", null)
+    .is("auto_add_notice_acknowledged_at", null)
     .order("display_order", { ascending: true });
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => String(row.full_name));
+  return (data ?? []).map((row) => ({
+    participantId: String(row.id),
+    fullName: String(row.full_name),
+  }));
+}
+
+/** Most participant ids one acknowledgement accepts. */
+export const AUTO_ADD_NOTICE_ACK_MAX_IDS = 100;
+
+/**
+ * Mark the auto-add notice seen for these participants, after the manager's
+ * browser displayed it in a committed render. Draft manage authority first;
+ * then only this Signing's auto-added, unacknowledged rows are touched, so
+ * other Signings' or fabricated ids change nothing. Writes nothing else.
+ */
+export async function acknowledgeDraftPacketAutoAddNoticeWithActor(
+  actor: SigningActor,
+  input: { signingId: unknown; participantIds: unknown },
+  admin: SupabaseClient,
+): Promise<{ acknowledgedCount: number }> {
+  const { signing } = await requireManageableDraftSigning(
+    actor,
+    input.signingId,
+    admin,
+  );
+  const ids = input.participantIds;
+  if (
+    !Array.isArray(ids) ||
+    ids.length === 0 ||
+    ids.length > AUTO_ADD_NOTICE_ACK_MAX_IDS ||
+    !ids.every(isUuid)
+  ) {
+    throw new SigningError("INVALID_INPUT", "Invalid participant ids.");
+  }
+  const { data, error } = await admin
+    .from("signing_participants")
+    .update({ auto_add_notice_acknowledged_at: new Date().toISOString() })
+    .eq("signing_id", signing.id)
+    .in("id", [...new Set(ids as string[])])
+    .not("auto_added_from_packet_at", "is", null)
+    .is("auto_add_notice_acknowledged_at", null)
+    .select("id");
+  if (error) throw new Error(error.message);
+  return { acknowledgedCount: (data ?? []).length };
 }
 
 export type DraftRemovedPacketParticipants = {

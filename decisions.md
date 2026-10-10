@@ -12,6 +12,75 @@ Each decision should include:
 
 ---
 
+## The "Added from the source Packet" notice is shown once, acknowledged after the browser displays it
+
+**Date:** 2026-10-10 (polish tranche)
+
+**Decision:**
+1. Auto-add stays durably recorded: `signing_participants.auto_added_from_packet_at` is unchanged. A new column, `auto_add_notice_acknowledged_at`, records when the notice was displayed for that participant. A check constraint allows it only on rows that carry the auto-add marker.
+2. The server lists only auto-added participants who are still present and not yet acknowledged, with their current names. Reading the notice never writes.
+3. The browser acknowledges from a client effect, which runs only after React commits the render that shows the notice. A server render the browser discards (including development's extra renders) cannot consume it. Strict Mode's repeated effect is harmless: acknowledgement is idempotent.
+4. Acknowledgement is per participant and durable, so the notice doesn't return on reload, link navigation or Back/Forward. A later auto-add carries a fresh null acknowledgement and produces a new notice naming only the new participants. A participant removed before display is omitted.
+5. `acknowledgeDraftPacketAutoAddNoticeAction` checks Draft manage authority before the elevated write. It accepts 1–100 UUIDs and updates only rows of that Signing that carry the marker and are unacknowledged. Fabricated, foreign or unmarked ids change nothing. Identity, package revision, signer fields, lifecycle and Signing events are untouched.
+
+This refines point 3 of "Opening a Draft Signing completes its sync in the same request" (2026-10-09): the notice is still derived from data, but now only until it is displayed.
+
+**Reason:**
+Lee's QA: the notice persisted on every visit, because nothing cleared it. Acknowledging during the server render would repeat the earlier bug, where a discarded render consumed the notice before anyone saw it.
+
+**Consequences:**
+* The acknowledgement is notification metadata, never evidence. Package fingerprints and activation don't read it.
+* Rows auto-added before this migration show their notice once more and are then acknowledged.
+
+**Related:** `supabase/migrations/20261010120000_native_signing_auto_add_notice_ack.sql`, `lib/signing/source-packet.ts` (`listDraftPacketAutoAddNotice`, `acknowledgeDraftPacketAutoAddNoticeWithActor`), `lib/signing/stage3-actions.ts`, `lib/signing/dashboard.ts`, `components/signings/signing-draft-prep-panel.tsx`.
+
+---
+
+## Date Signed links automatically to the nearest Signature or Initials on the page
+
+**Date:** 2026-10-10 (polish tranche)
+
+**Decision:**
+1. With the Date Signed tool, the default mode is AUTO_NEAREST. As the pointer moves, the Date ghost's rectangle is compared with the selected participant's Signature and Initials on the same document and page. The nearest is highlighted live, and the panel reads "Will link to: Initials — Page 2". One click places the Date linked to it.
+2. Distance is the gap between rectangles (0 when they touch or overlap). Gaps within 0.5 pt tie, and ties break by centre distance, then the upper field, then the left field, then id. The result never depends on list order.
+3. If the hovered page has no eligible field for that participant, nothing is placed and the panel says "No Signature or Initials for <name> on this page. Place the date on a page containing their Signature or Initials." A Date is never placed unlinked.
+4. **Link to** (or clicking a candidate) is an explicit override, EXPLICIT_SOURCE. It stays fixed while the pointer moves. It ends when the Date is placed, on Esc, when the participant, document or field type changes, or when Automatic is chosen. An explicit choice that is no longer valid places nothing; it never falls back to another field.
+5. The server still requires a link for every Date: same Signing, same participant, Signature or Initials source, and (new) the same document. The browser sends `dateLinkMode`. For AUTO_NEAREST, the server also requires the source to be on the Date's page. The server does not re-derive "nearest": that is a visible placement default, and the link itself is what's enforced.
+6. Unchanged: a Signature still auto-pairs its Date, and Initials don't. Linked-Date fill in the ceremony, removal with its source, reassignment, and reload persistence are unchanged.
+
+This refines "Copy enters paste mode; Date Signed links by clicking its source; new fields anchor at the click's left edge" (2026-10-08). Clicking a source now sets the explicit override instead of being the only way to link.
+
+**Reason:**
+Lee's QA: choosing the source first and then placing was two steps for the common case, where the date sits next to the Initials or Signature it belongs to.
+
+**Consequences:**
+* Cross-document Date links are now rejected on the server. Dev had none.
+* An explicitly chosen source may be on another page of the same document.
+
+**Related:** `lib/signing/draft-field-editor-state.ts` (`nearestDateLinkSource`, `resolveDateLinkTarget`, `rectGapDistance`), `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-fields.ts`, `lib/signing/stage3-actions.ts`.
+
+---
+
+## Displayed Send readiness updates from authoritative server state right after each placement change
+
+**Date:** 2026-10-10 (polish tranche)
+
+**Decision:**
+1. When Prepare Documents' write queue drains, the browser asks the server for preparation readiness (`getSigningPreparationReadinessAction`). The server computes it with the same blocker rules as full readiness: manage authority, Draft state, promotion blockers, participant name, capacity and Signature/Initials requirements. The browser doesn't compute business rules. It merges the server's preparation blockers with the document-source blockers it already holds, which placements cannot change.
+2. The header shows "Ready to send" or "Not ready: <first blocker>". The Signing page adopts the same result immediately, so Send is enabled or disabled as soon as the dialog closes. A newest-request-wins sequence prevents a slower full reload from overwriting a newer result.
+3. No polling, timers or forced reloads. Full readiness now checks documents in parallel.
+4. Send and Begin In-Person still re-run full readiness on the server (`activateSigningWithActor`), including document-source checks. The browser's display can't force activation.
+
+**Reason:**
+Lee's QA: after the last required placement, Send stayed disabled for many seconds. Readiness was shown only on the Signing page, and it refreshed only after closing the dialog. That refresh included a full readiness pass with a live-source fingerprint per document (about 2 s each, run one after another): 12–14 s for 7 documents.
+
+**Consequences:**
+* Measured in development: about 1.2–1.9 s from the placing click to the header changing, both directions, and 85 ms from Close to an enabled Send.
+
+**Related:** `lib/signing/readiness.ts` (`evaluateSigningPreparationReadiness`), `lib/signing/readiness-view.ts`, `lib/signing/stage4-actions.ts`, `components/signings/signing-preview-dialog.tsx`, `components/signings/signing-dashboard-page.tsx`.
+
+---
+
 ## Packets use ACTIVE and DELETED only
 
 **Date:** 2026-10-09 (Packet lifecycle cleanup)
@@ -79,6 +148,8 @@ A hidden control gave no way to tell "not allowed" from "broken" (Packet #21).
 ## Opening a Draft Signing completes its sync in the same request
 
 **Date:** 2026-10-09 (correctness tranche)
+
+**Refined (2026-10-10):** point 3 by "The 'Added from the source Packet' notice is shown once, acknowledged after the browser displays it".
 
 **Decision:**
 1. The Signing page and the Signings list render from server data. `app/signings/[signingId]/page.tsx` runs the same authorized load as the client action before rendering: authorize, then (if Draft) Packet auto-add, then identity sync, then load. The first paint is current, with no loading state, polling, timer or forced reload.
@@ -174,6 +245,8 @@ Lee's QA: requiring a click to bring in a party already on the Packet was fricti
 ## Copy enters paste mode; Date Signed links by clicking its source; new fields anchor at the click's left edge
 
 **Date:** 2026-10-08 (Draft polish tranche)
+
+**Refined (2026-10-10):** Date Signed linking by "Date Signed links automatically to the nearest Signature or Initials on the page". Clicking a source is now the explicit override, not the only way to link.
 
 **Decision:**
 11. **Copy** (button or Ctrl/⌘+C) immediately enters paste placement mode with a ghost under the pointer; no separate Paste click is needed. The ghost follows the pointer across a scroll without placing or cancelling. One click places the copy once and ends the mode. The clipboard remains, so **Paste** or Ctrl/⌘+V places another copy. Esc cancels.

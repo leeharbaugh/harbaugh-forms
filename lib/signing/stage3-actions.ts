@@ -31,6 +31,7 @@ import {
   upsertDraftPreparedContentWithActor,
 } from "@/lib/signing/draft-prepared-content";
 import {
+  acknowledgeDraftPacketAutoAddNoticeWithActor,
   loadDraftRemovedPacketParticipantsWithActor,
   loadDraftSourcePacketStateWithActor,
   restoreDraftPacketParticipantWithActor,
@@ -239,6 +240,7 @@ export async function upsertDraftSigningFieldAction(input: {
   width: unknown;
   height: unknown;
   linkedSignatureDraftFieldId?: unknown;
+  dateLinkMode?: unknown;
 }): Promise<SigningStage3ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
     upsertDraftSigningFieldWithActor(actor, input, admin),
@@ -294,6 +296,16 @@ export async function restoreDraftPacketParticipantAction(input: {
 }): Promise<SigningStage3ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
     restoreDraftPacketParticipantWithActor(actor, input, admin),
+  );
+}
+
+/** The browser displayed the auto-add notice for these participants. */
+export async function acknowledgeDraftPacketAutoAddNoticeAction(input: {
+  signingId: unknown;
+  participantIds: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    acknowledgeDraftPacketAutoAddNoticeWithActor(actor, input, admin),
   );
 }
 

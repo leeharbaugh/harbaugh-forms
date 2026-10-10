@@ -29,6 +29,7 @@ import {
   addRemainingPacketDocumentsAction,
   includeInternalSignerAction,
   removeDraftSigningDocumentAction,
+  acknowledgeDraftPacketAutoAddNoticeAction,
   removeDraftSigningParticipantAction,
   restoreDraftPacketParticipantAction,
   selectDraftSourcePacketAction,
@@ -36,6 +37,7 @@ import {
 } from "@/lib/signing/stage3-actions";
 import type { ParticipantIdentitySourceKind } from "@/lib/signing/draft-participant-sync";
 import type {
+  DraftPacketAutoAddNoticeEntry,
   DraftPacketAutoAddResult,
   SelectDraftSourcePacketResult,
 } from "@/lib/signing/source-packet";
@@ -107,8 +109,8 @@ export function SigningDraftPrepPanel({
   prep: SigningDraftPrep | null;
   documents: DraftDocument[];
   participants: DraftParticipant[];
-  /** Packet participants the latest load added automatically. */
-  autoAddedFromPacket?: string[];
+  /** Auto-added Packet participants whose notice has not been seen yet. */
+  autoAddedFromPacket?: DraftPacketAutoAddNoticeEntry[];
   onChanged: () => Promise<void>;
   onResolveDrift: (
     documentId: string,
@@ -185,6 +187,20 @@ export function SigningDraftPrepPanel({
       setCapacityWordingTouched(false);
     }
   }, [signingCapacityMode]);
+
+  // Effects run only after a committed render, so the notice is acknowledged
+  // only once the manager's browser has displayed it; a discarded server
+  // render never acknowledges. Repeating the call is harmless.
+  const autoAddNoticeKey = canManage
+    ? autoAddedFromPacket.map((entry) => entry.participantId).join(",")
+    : "";
+  useEffect(() => {
+    if (!autoAddNoticeKey) return;
+    void acknowledgeDraftPacketAutoAddNoticeAction({
+      signingId,
+      participantIds: autoAddNoticeKey.split(","),
+    });
+  }, [signingId, autoAddNoticeKey]);
 
   if (!canManage) {
     return null;
@@ -734,7 +750,8 @@ export function SigningDraftPrepPanel({
               data-testid="packet-auto-added"
               role="status"
             >
-              Added from the source Packet: {joinNames(autoAddedFromPacket)}.
+              Added from the source Packet:{" "}
+              {joinNames(autoAddedFromPacket.map((entry) => entry.fullName))}.
             </p>
           ) : null}
           {removedPacketParticipants.length > 0 ? (

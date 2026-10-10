@@ -62,6 +62,7 @@ import {
 import { SigningError } from "../lib/signing/errors.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
 import {
+  acknowledgeDraftPacketAutoAddNoticeWithActor,
   loadDraftRemovedPacketParticipantsWithActor,
   loadDraftSourcePacketStateWithActor,
   restoreDraftPacketParticipantWithActor,
@@ -1042,7 +1043,8 @@ async function main() {
     const autoAddLoad = await loadSigningDashboardForActor(agent, signingId, admin);
     const afterAutoAdd = await participantsOf(signingId);
     if (
-      JSON.stringify(autoAddLoad.participantSync.addedFromPacket) !== JSON.stringify(["Dee Buyer"]) ||
+      JSON.stringify(autoAddLoad.participantSync.addedFromPacket.map((entry) => entry.fullName)) !==
+        JSON.stringify(["Dee Buyer"]) ||
       afterAutoAdd.length !== beforeAutoAdd.length + 1 ||
       afterAutoAdd.some((row) => row.linked_contact_id === foreignForRefresh)
     ) {
@@ -1070,10 +1072,11 @@ async function main() {
     }
     const autoAddAgain = await loadSigningDashboardForActor(agent, signingId, admin);
     if (
-      JSON.stringify(autoAddAgain.participantSync.addedFromPacket) !== JSON.stringify(["Dee Buyer"]) ||
+      JSON.stringify(autoAddAgain.participantSync.addedFromPacket.map((entry) => entry.fullName)) !==
+        JSON.stringify(["Dee Buyer"]) ||
       (await participantsOf(signingId)).length !== afterAutoAdd.length
     ) {
-      fail("a second load must not add or duplicate participants, and must keep the auto-add notice");
+      fail("a second load must not add or duplicate participants, and must keep the unacknowledged notice");
     }
     const { data: markedRows } = await admin
       .from("signing_participants")
@@ -1083,7 +1086,114 @@ async function main() {
     if (markedRows?.length !== 1 || markedRows[0].linked_contact_id !== buyer3) {
       fail(`only the auto-added participant may carry the auto-add marker: ${JSON.stringify(markedRows)}`);
     }
-    ok("auto-add on load: adds Dee Buyer only (foreign contact excluded), keeps ad hoc + edited participants, idempotent, marked, notice persists");
+    ok("auto-add on load: adds Dee Buyer only (foreign contact excluded), keeps ad hoc + edited participants, idempotent, marked, notice persists until acknowledged");
+
+    // --- One-time auto-add notice acknowledgement ------------------------------
+    const deeNotice = autoAddLoad.participantSync.addedFromPacket[0];
+    const noticeColumns =
+      "id, signing_id, full_name, email, role_code, linked_contact_id, auto_added_from_packet_at, participant_status, auto_add_notice_acknowledged_at";
+    const readDeeRow = async () => {
+      const { data, error } = await admin
+        .from("signing_participants")
+        .select(noticeColumns)
+        .eq("id", deeNotice.participantId)
+        .single();
+      if (error || !data) fail(error?.message ?? "Dee participant missing");
+      return data as Record<string, unknown>;
+    };
+    const readSigningIdentity = async (id: string) => {
+      const { data } = await admin
+        .from("signings")
+        .select("lifecycle_state, current_package_revision_id, frozen_package_revision_id, update_date")
+        .eq("id", id)
+        .single();
+      return JSON.stringify(data);
+    };
+    const deeBeforeAck = await readDeeRow();
+    const signingBeforeAck = await readSigningIdentity(signingId);
+    const { count: eventsBeforeAck } = await admin
+      .from("signing_events")
+      .select("id", { count: "exact", head: true })
+      .eq("signing_id", signingId);
+
+    await expectSigningError("another User acknowledging the notice", ["NOT_FOUND", "FORBIDDEN"], () =>
+      acknowledgeDraftPacketAutoAddNoticeWithActor(
+        outsider,
+        { signingId, participantIds: [deeNotice.participantId] },
+        admin,
+      ),
+    );
+    for (const participantIds of [[], ["1 or 1=1"], "x", Array.from({ length: 101 }, () => randomUUID())]) {
+      await expectSigningError("a malformed acknowledgement", ["INVALID_INPUT"], () =>
+        acknowledgeDraftPacketAutoAddNoticeWithActor(agent, { signingId, participantIds }, admin),
+      );
+    }
+    const noticeOtherSigningId = await createSigning(agent, "Draft prep notice other");
+    const crossSigningAck = await acknowledgeDraftPacketAutoAddNoticeWithActor(
+      agent,
+      { signingId: noticeOtherSigningId, participantIds: [deeNotice.participantId] },
+      admin,
+    );
+    const fabricatedAck = await acknowledgeDraftPacketAutoAddNoticeWithActor(
+      agent,
+      { signingId, participantIds: [randomUUID(), buyerParticipant] },
+      admin,
+    );
+    if (
+      crossSigningAck.acknowledgedCount !== 0 ||
+      fabricatedAck.acknowledgedCount !== 0 ||
+      (await readDeeRow()).auto_add_notice_acknowledged_at !== null
+    ) {
+      fail("an acknowledgement must not cross Signings or touch fabricated / unmarked participants");
+    }
+    const { data: buyerAckRow } = await admin
+      .from("signing_participants")
+      .select("auto_add_notice_acknowledged_at")
+      .eq("id", buyerParticipant)
+      .single();
+    if (buyerAckRow?.auto_add_notice_acknowledged_at !== null) {
+      fail("an unmarked participant must never carry an acknowledgement");
+    }
+    const { error: unmarkedAckWrite } = await admin
+      .from("signing_participants")
+      .update({ auto_add_notice_acknowledged_at: new Date().toISOString() })
+      .eq("id", buyerParticipant);
+    if (!unmarkedAckWrite?.message.includes("signing_participants_auto_add_ack_requires_marker")) {
+      fail("the database must reject an acknowledgement without the auto-add marker");
+    }
+
+    const realAck = await acknowledgeDraftPacketAutoAddNoticeWithActor(
+      agent,
+      { signingId, participantIds: [deeNotice.participantId, deeNotice.participantId] },
+      admin,
+    );
+    const repeatAck = await acknowledgeDraftPacketAutoAddNoticeWithActor(
+      agent,
+      { signingId, participantIds: [deeNotice.participantId] },
+      admin,
+    );
+    const deeAfterAck = await readDeeRow();
+    const signingAfterAck = await readSigningIdentity(signingId);
+    const afterAckLoad = await loadSigningDashboardForActor(agent, signingId, admin);
+    const { count: eventsAfterAck } = await admin
+      .from("signing_events")
+      .select("id", { count: "exact", head: true })
+      .eq("signing_id", signingId);
+    const unchanged = (row: Record<string, unknown>) =>
+      JSON.stringify({ ...row, auto_add_notice_acknowledged_at: null });
+    if (
+      realAck.acknowledgedCount !== 1 ||
+      repeatAck.acknowledgedCount !== 0 ||
+      deeAfterAck.auto_add_notice_acknowledged_at === null ||
+      deeAfterAck.auto_added_from_packet_at === null ||
+      unchanged(deeAfterAck) !== unchanged(deeBeforeAck) ||
+      signingAfterAck !== signingBeforeAck ||
+      eventsAfterAck !== eventsBeforeAck ||
+      afterAckLoad.participantSync.addedFromPacket.length !== 0
+    ) {
+      fail("acknowledging must consume the notice once and change nothing but the acknowledgement");
+    }
+    ok("auto-add notice: unacknowledged loads keep it; outsider, malformed, cross-Signing and fabricated acks rejected or ignored; one ack consumes it durably without touching identity, marker, Signing or audit events");
 
     // --- Removal suppression and restore ----------------------------------------
     const dee = afterAutoAdd.find((row) => row.linked_contact_id === buyer3)!;
@@ -1177,6 +1287,28 @@ async function main() {
       fail("Restore must clear the suppression and add the participant back once");
     }
     ok("suppression cannot be spoofed (browser, foreign Contact, other User); Restore re-adds once");
+
+    const afterRestoreLoad = await loadSigningDashboardForActor(agent, signingId, admin);
+    if (afterRestoreLoad.participantSync.addedFromPacket.length !== 0) {
+      fail("a Restore is not an automatic add and must not raise the notice");
+    }
+    const eve = await createContact(agent.userId, "Eve", "Buyer", "eve@example.com");
+    await linkContact(packetA.packetId, eve, "BUYER", 7);
+    const laterAddLoad = await loadSigningDashboardForActor(agent, signingId, admin);
+    const laterNames = laterAddLoad.participantSync.addedFromPacket.map((entry) => entry.fullName);
+    if (JSON.stringify(laterNames) !== JSON.stringify(["Eve Buyer"])) {
+      fail(`a later auto-add must raise a new notice for only that participant: ${JSON.stringify(laterNames)}`);
+    }
+    await removeDraftSigningParticipantWithActor(
+      agent,
+      { signingId, participantId: laterAddLoad.participantSync.addedFromPacket[0].participantId },
+      admin,
+    );
+    const afterEveRemovedLoad = await loadSigningDashboardForActor(agent, signingId, admin);
+    if (afterEveRemovedLoad.participantSync.addedFromPacket.length !== 0) {
+      fail("an unacknowledged notice must omit a participant who was removed");
+    }
+    ok("auto-add notice: Restore raises none; a later auto-add raises a new one; a removed participant is omitted");
 
     // --- Live Draft identity from authoritative sources ------------------------
     const deeRestored = afterRestore.find((row) => row.linked_contact_id === buyer3)!;
@@ -1502,6 +1634,77 @@ async function main() {
         admin,
       ),
     );
+    const twoPage = await PDFDocument.create();
+    twoPage.addPage([612, 792]);
+    twoPage.addPage([612, 792]);
+    const twoPageDoc = await addAdHocDraftSigningDocumentWithActor(
+      agent,
+      { signingId: otherSigningId, filename: "two-page.pdf", pdfBytes: await twoPage.save() },
+      admin,
+    );
+    const otherInitialsGeometry = defaultDraftFieldSize("INITIALS", { fullName: "Otto Other" });
+    const pageTwoInitials = await upsertDraftSigningFieldWithActor(
+      agent,
+      {
+        signingId: otherSigningId,
+        signingDocumentId: twoPageDoc.id,
+        signingParticipantId: otherParticipant.id,
+        fieldType: "INITIALS",
+        x: 300,
+        y: 300,
+        pageNumber: 2,
+        ...otherInitialsGeometry,
+      },
+      admin,
+    );
+    const otherDate = (overrides: Record<string, unknown>) =>
+      upsertDraftSigningFieldWithActor(
+        agent,
+        {
+          signingId: otherSigningId,
+          signingDocumentId: twoPageDoc.id,
+          signingParticipantId: otherParticipant.id,
+          fieldType: "DATE_SIGNED",
+          linkedSignatureDraftFieldId: pageTwoInitials.id,
+          x: 360,
+          y: 300,
+          pageNumber: 2,
+          ...dateGeometry,
+          ...overrides,
+        },
+        admin,
+      );
+    await expectSigningError("an automatic Date on another page", ["INVALID_INPUT"], () =>
+      otherDate({ pageNumber: 1, dateLinkMode: "AUTO_NEAREST" }),
+    );
+    await expectSigningError("a Date on another document", ["INVALID_INPUT"], () =>
+      otherDate({ signingDocumentId: otherDoc.id, pageNumber: 1, dateLinkMode: "EXPLICIT_SOURCE" }),
+    );
+    await expectSigningError("an unknown Date link mode", ["INVALID_INPUT"], () =>
+      otherDate({ dateLinkMode: "NEAREST_ANYWHERE" }),
+    );
+    await expectSigningError("an orphan Date", ["INVALID_INPUT"], () =>
+      otherDate({ linkedSignatureDraftFieldId: undefined, dateLinkMode: "AUTO_NEAREST" }),
+    );
+    const autoDate = await otherDate({ dateLinkMode: "AUTO_NEAREST" });
+    await expectSigningError("a Date linked to a Date", ["INVALID_INPUT"], () =>
+      otherDate({ linkedSignatureDraftFieldId: autoDate.id, dateLinkMode: "EXPLICIT_SOURCE" }),
+    );
+    const explicitDate = await otherDate({ pageNumber: 1, dateLinkMode: "EXPLICIT_SOURCE" });
+    const { data: otherDates } = await admin
+      .from("signing_draft_fields")
+      .select("id, page_number, linked_signature_draft_field_id")
+      .eq("signing_id", otherSigningId)
+      .eq("field_type", "DATE_SIGNED");
+    if (
+      otherDates?.length !== 2 ||
+      !otherDates.every((row) => row.linked_signature_draft_field_id === pageTwoInitials.id) ||
+      !otherDates.some((row) => row.id === explicitDate.id && row.page_number === 1)
+    ) {
+      fail(`only the two valid Dates may exist, both linked: ${JSON.stringify(otherDates)}`);
+    }
+    ok("Date link modes: automatic stays on its source's page, explicit may use another page, neither crosses documents; orphan, Date-to-Date and unknown modes rejected; no orphan rows");
+
     const { error: triggerCrossParticipant } = await admin.from("signing_draft_fields").insert({
       signing_id: signingId,
       signing_document_id: documentId,

@@ -56,6 +56,11 @@ export async function upsertDraftSigningFieldWithActor(
     width: unknown;
     height: unknown;
     linkedSignatureDraftFieldId?: unknown;
+    /**
+     * AUTO_NEAREST: the editor chose the source by proximity, so it must be on
+     * this Date's page. Otherwise the source may be anywhere in the document.
+     */
+    dateLinkMode?: unknown;
   },
   admin: SupabaseClient,
 ): Promise<SigningDraftFieldRow> {
@@ -107,6 +112,13 @@ export async function upsertDraftSigningFieldWithActor(
   if (fieldType !== "DATE_SIGNED") {
     linkedSignatureDraftFieldId = null;
   }
+  if (
+    input.dateLinkMode !== undefined &&
+    input.dateLinkMode !== "AUTO_NEAREST" &&
+    input.dateLinkMode !== "EXPLICIT_SOURCE"
+  ) {
+    throw new SigningError("INVALID_INPUT", "Invalid Date Signed link mode.");
+  }
 
   const { data: document, error: documentError } = await admin
     .from("signing_documents")
@@ -139,7 +151,7 @@ export async function upsertDraftSigningFieldWithActor(
   if (linkedSignatureDraftFieldId) {
     const { data: linked, error: linkedError } = await admin
       .from("signing_draft_fields")
-      .select("id, field_type, signing_participant_id")
+      .select("id, field_type, signing_participant_id, signing_document_id, page_number")
       .eq("id", linkedSignatureDraftFieldId)
       .eq("signing_id", signing.id)
       .maybeSingle();
@@ -157,6 +169,18 @@ export async function upsertDraftSigningFieldWithActor(
       throw new SigningError(
         "INVALID_INPUT",
         "Date Signed must link to a Signature or Initials field for the same participant.",
+      );
+    }
+    if (linked.signing_document_id !== input.signingDocumentId) {
+      throw new SigningError(
+        "INVALID_INPUT",
+        "Date Signed must link to a Signature or Initials on the same document.",
+      );
+    }
+    if (input.dateLinkMode === "AUTO_NEAREST" && linked.page_number !== pageNumber) {
+      throw new SigningError(
+        "INVALID_INPUT",
+        "An automatically linked Date Signed must be on the same page as its Signature or Initials.",
       );
     }
   }

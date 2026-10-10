@@ -13,14 +13,15 @@
  * participant; and prepared content adds no participant requirement.
  *
  * Draft polish tranche: a Packet contact added after Signing creation is
- * auto-added on load (no click); removing it suppresses it until Restore;
+ * auto-added on load (no click) and announced once; removing it suppresses it until Restore;
  * linked rows show their identity source with no name/email edit, ad hoc rows
  * edit in place, and Contact / profile / brokerage changes flow while Draft;
  * new fields anchor at the click's left edge (Checkmark centred) and clamp
  * without shrinking; Copy enters paste mode at once (scroll-safe ghost, Esc,
- * Ctrl+V re-enters); Date Signed links by clicking its Signature/Initials
- * ("Linked to: …", ghost, next click places; Esc / participant change cancel;
- * an ineligible source fails visibly).
+ * Ctrl+V re-enters); Date Signed links automatically to the nearest
+ * Signature/Initials on the hovered page ("Will link to: …"), Link to or a
+ * click on a candidate overrides it until Esc / participant or type change;
+ * an ineligible source fails visibly.
  *
  *   NODE_PATH=_audit_tmp/pw-deps/node_modules npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/qa-signing-prepare-browser.ts
  */
@@ -35,6 +36,7 @@ import {
   defaultDraftFieldSize,
   defaultPreparedContentSize,
 } from "../lib/signing/draft-field-sizing.ts";
+import { nearestDateLinkSource } from "../lib/signing/draft-field-editor-state.ts";
 import { createRuntimeNoiseGuard } from "./qa-runtime-noise.ts";
 
 const EXPECTED_REF = "ewxsxwzezhkeawnjvigx";
@@ -135,7 +137,7 @@ async function main() {
   async function draftFields() {
     const { data, error } = await admin
       .from("signing_draft_fields")
-      .select("id, field_type, x, y, width, height, signing_participant_id, linked_signature_draft_field_id")
+      .select("id, field_type, page_number, x, y, width, height, signing_participant_id, linked_signature_draft_field_id")
       .eq("signing_id", signingId);
     if (error) fail(error.message);
     return data ?? [];
@@ -440,10 +442,23 @@ async function main() {
       fail("auto-add changed the ad hoc participant's role");
     }
     await shot(page, "00b-packet-auto-added");
+    let beaAck: unknown = null;
+    for (let attempt = 0; attempt < 40 && !beaAck; attempt += 1) {
+      const { data } = await admin
+        .from("signing_participants")
+        .select("auto_add_notice_acknowledged_at")
+        .eq("signing_id", signingId)
+        .eq("linked_contact_id", buyer3!.id)
+        .single();
+      beaAck = data?.auto_add_notice_acknowledged_at ?? null;
+      if (!beaAck) await page.waitForTimeout(250);
+    }
+    if (!beaAck) fail("displaying the auto-add notice must acknowledge it");
     await page.reload({ waitUntil: "networkidle" });
     await participantList.getByText("Bea Buyerthree").waitFor({ timeout: 30000 });
     if ((await participantsInDb()).length !== 4) fail("a second load must not duplicate Packet participants");
-    ok("Packet party added after creation was auto-added on load (no click, no popup); a reload adds nothing; ad hoc untouched");
+    if ((await autoNotice.count()) !== 0) fail("an acknowledged auto-add notice must not show again");
+    ok("Packet party added after creation was auto-added on load (no click, no popup) and announced once; a reload adds nothing and shows no notice; ad hoc untouched");
 
     // Identity sources: linked rows have no name/email edit; ad hoc rows do.
     const rowFor = (name: string) => participantList.locator("div.rounded-lg", { hasText: name }).first();
@@ -1258,7 +1273,8 @@ async function main() {
     if ((await page.locator('[data-testid="paste-placement-layer"]').count()) !== 0) fail("one paste click must end paste mode");
     ok("Copy button -> click: copied Initials appears centred on the click (paste keeps its centre anchor); exactly one new field; paste mode ends");
 
-    // Lee's exact flow: Date Signed -> click the Initials -> "Linked to" -> ghost -> click places.
+    // Date Signed links automatically to the nearest Signature/Initials of the
+    // selected participant on the hovered page; Link to is an explicit override.
     const page1Origin = async () => (await page.locator(".react-pdf__Page").first().boundingBox())!;
     const overlayAtRow = async (description: string, row: { x: number; y: number }) => {
       const overlays = page.locator(`.signing-field-overlay:has([aria-label="${description}"])`);
@@ -1279,6 +1295,10 @@ async function main() {
     };
     const linkStatus = page.locator('[data-testid="date-link-status"]');
     const datePreview = page.locator("[data-date-preview]");
+    if (!(await selectionStatus.getByText("No placements selected").isVisible())) {
+      await pagePt({ x: 20, y: 20 });
+      await expectSelected(0);
+    }
     await selectParticipant("#prepare-participant", "Lee Harbaugh");
     await page.locator("#prepare-field-type").selectOption("DATE_SIGNED");
     const linkOptions = await page.locator("#prepare-date-link option").allTextContents();
@@ -1286,32 +1306,85 @@ async function main() {
       fail(`Link to must offer Initials: ${JSON.stringify(linkOptions)}`);
     }
     if ((await page.locator("[data-date-link-candidate]").count()) === 0) fail("Date tool must highlight link candidates");
-    const singleOverlay = await overlayAtRow("Initials for Lee Harbaugh", single);
     const beforeIniDate = await draftFields();
-    await singleOverlay.click();
-    await page.getByText("Linked to: Initials — Page 1. Click the page to place the Date Signed. Press Esc to cancel.").waitFor({ timeout: 5000 });
-    await linkStatus.getByText("Linked to: Initials — Page 1.", { exact: false }).waitFor();
-    await expectSelected(0);
-    if ((await page.locator(`[data-date-link-source]`).count()) !== 1) fail("the armed source must be marked");
-    await page.waitForTimeout(500);
-    const afterArm = await draftFields();
-    const singleAfterArm = afterArm.find((row) => row.id === single.id)!;
-    if (afterArm.length !== beforeIniDate.length || singleAfterArm.x !== single.x || singleAfterArm.y !== single.y) {
-      fail("clicking the source must not place, move or change anything");
-    }
-    const origin1 = await page1Origin();
-    await page.mouse.move(origin1.x + 500 * scale, origin1.y + 330 * scale);
+    const leeCandidates = beforeIniDate.filter(
+      (row) =>
+        row.signing_participant_id === pid("Lee Harbaugh") &&
+        row.page_number === 1 &&
+        (row.field_type === "SIGNATURE" || row.field_type === "INITIALS"),
+    );
+    const besideRow = (row: { x: number; y: number; width: number; height: number }) => ({
+      x: row.x + row.width + 4,
+      y: row.y + row.height / 2,
+    });
+    const hoverPt = async (pt: { x: number; y: number }) => {
+      let origin = await page1Origin();
+      const viewY = origin.y + pt.y * scale;
+      if (viewY < 160 || viewY > 820) {
+        await workspace.evaluate((element, delta) => element.scrollBy(0, delta), viewY - 450);
+        await page.waitForTimeout(300);
+        origin = await page1Origin();
+      }
+      await page.mouse.move(origin.x + pt.x * scale, origin.y + pt.y * scale, { steps: 3 });
+      await page.waitForTimeout(150);
+    };
+    const markedSourceId = async () => {
+      const marked = page.locator("[data-date-link-source]");
+      if ((await marked.count()) !== 1) return null;
+      const box = (await marked.boundingBox())!;
+      const origin = await page1Origin();
+      const at = { x: (box.x - origin.x) / scale, y: (box.y - origin.y) / scale };
+      const match = leeCandidates.find((row) => Math.abs(row.x - at.x) < 3 && Math.abs(row.y - at.y) < 3);
+      return match?.id ?? "unknown";
+    };
+    const asPreviewFields = leeCandidates.map((row) => ({
+      id: row.id,
+      fieldType: row.field_type,
+      participantId: row.signing_participant_id,
+      pageNumber: row.page_number,
+      x: Number(row.x),
+      y: Number(row.y),
+      width: Number(row.width),
+      height: Number(row.height),
+    })) as unknown as Parameters<typeof nearestDateLinkSource>[0];
+    const expectedAt = (pt: { x: number; y: number }) =>
+      nearestDateLinkSource(asPreviewFields, pid("Lee Harbaugh"), 1, {
+        x: pt.x,
+        y: pt.y - DATE_SIGNED_DEFAULT_SIZE.height / 2,
+        ...DATE_SIGNED_DEFAULT_SIZE,
+      })?.id ?? null;
+    const singlePt = { x: single.x + single.width + 40, y: single.y + single.height / 2 };
+    if (expectedAt(singlePt) !== single.id) fail("fixture: the spot right of the Initials must be nearest to it");
+    await hoverPt(singlePt);
     await datePreview.waitFor({ timeout: 5000 });
+    await linkStatus.getByText("Will link to: Initials — Page 1.", { exact: false }).waitFor({ timeout: 5000 });
+    if ((await linkStatus.getAttribute("data-date-link-mode")) !== "AUTO_NEAREST") fail("the default Date mode must be automatic");
+    if ((await markedSourceId()) !== single.id) fail("hovering beside the Initials must highlight it as the target");
     const ghostA = (await datePreview.boundingBox())!;
-    await page.mouse.move(origin1.x + 520 * scale, origin1.y + 350 * scale, { steps: 4 });
-    await page.waitForTimeout(200);
+    await hoverPt({ x: singlePt.x + 20, y: singlePt.y + 20 });
     const ghostB = (await datePreview.boundingBox())!;
     if (Math.abs(ghostB.x - ghostA.x - 20 * scale) > 2 || Math.abs(ghostB.y - ghostA.y - 20 * scale) > 2) {
       fail(`the Date ghost must follow the cursor: ${JSON.stringify(ghostA)} -> ${JSON.stringify(ghostB)}`);
     }
-    if (Math.abs(ghostA.x - (origin1.x + 500 * scale)) > 2) fail("the Date ghost must start at the cursor (left-anchored)");
-    await shot(page, "12a-date-linked-ghost");
-    await pagePt({ x: 500, y: 330 });
+    const otherCandidate = leeCandidates.find(
+      (row) =>
+        row.id !== single.id &&
+        Math.hypot(row.x - single.x, row.y - single.y) > 120 &&
+        expectedAt(besideRow(row)) === row.id,
+    );
+    if (otherCandidate) {
+      await hoverPt(besideRow(otherCandidate));
+      const marked = await markedSourceId();
+      if (marked !== otherCandidate.id) {
+        fail(`the highlighted target must follow the pointer: marked ${marked}, expected ${otherCandidate.id}`);
+      }
+      await hoverPt(singlePt);
+      if ((await markedSourceId()) !== single.id) fail("the highlighted target must return with the pointer");
+    }
+    await shot(page, "12a-date-auto-target");
+    const afterHover = await draftFields();
+    if (afterHover.length !== beforeIniDate.length) fail("hovering must not place, move or change anything");
+    await pagePt(singlePt);
     await waitSaved();
     await page.waitForTimeout(500);
     await page.getByText("Date Signed linked to Initials — Page 1.").waitFor({ timeout: 5000 });
@@ -1323,12 +1396,11 @@ async function main() {
       iniDateRows.length !== 1 ||
       iniDate.linked_signature_draft_field_id !== single.id ||
       iniDate.signing_participant_id !== pid("Lee Harbaugh") ||
-      Math.abs(iniDate.x - 500) > 1
+      Math.abs(iniDate.x - singlePt.x) > 1
     ) {
-      fail(`Date Signed was not linked to the clicked Initials at the click: ${JSON.stringify(iniDateRows)}`);
+      fail(`Date Signed was not linked to the nearest Initials at the click: ${JSON.stringify(iniDateRows)}`);
     }
-    if ((await datePreview.count()) !== 0) fail("the ghost must disappear after placing");
-    ok("Lee's flow: Date Signed -> click Initials -> \"Linked to: Initials — Page 1\" -> ghost follows the cursor -> next click places one Date linked to that Initials");
+    ok(`automatic Date: hover highlights the nearest Lee Signature/Initials ("Will link to: Initials — Page 1")${otherCandidate ? ", the target follows the pointer" : ""}, the ghost follows the cursor, one click places one Date linked to it`);
     await page
       .locator('.signing-field-overlay:has([aria-label="Date Signed for Lee Harbaugh"])')
       .first()
@@ -1340,21 +1412,30 @@ async function main() {
     await shot(page, "12-initials-linked-date");
     ok("the placed Date's Linked to shows the Initials");
 
-    const isArmed = async () => (await linkStatus.innerText()).startsWith("Linked to:");
+    const isArmed = async () => (await linkStatus.getAttribute("data-date-link-mode")) === "EXPLICIT_SOURCE";
     const fieldsNow = async () => (await draftFields()).length;
     const baseline = await fieldsNow();
-    // Esc cancels the armed link; the next page click explains instead of placing.
+    // Clicking a candidate (or choosing it under Link to) is an explicit
+    // override that stays fixed while the pointer moves; Esc returns to automatic.
     await (await overlayAtRow("Initials for Lee Harbaugh", single)).click();
-    if (!(await isArmed())) fail("clicking the Initials must arm the link");
+    if (!(await isArmed())) fail("clicking the Initials must choose it explicitly");
+    await expectSelected(0);
+    await linkStatus.getByText("Linked to: Initials — Page 1 (chosen under Link to).", { exact: false }).waitFor({ timeout: 5000 });
+    if ((await page.locator("#prepare-date-link").inputValue()) !== single.id) fail("Link to must show the explicit choice");
+    if (otherCandidate) {
+      await hoverPt(besideRow(otherCandidate));
+      if ((await markedSourceId()) !== single.id || !(await isArmed())) {
+        fail("an explicit choice must stay fixed while the pointer moves");
+      }
+    }
     await page.keyboard.press("Escape");
     await page.waitForTimeout(200);
-    if (await isArmed()) fail("Esc must cancel the armed Date link");
+    if (await isArmed()) fail("Esc must return to automatic linking");
+    if ((await page.locator("#prepare-date-link").inputValue()) !== "") fail("Esc must reset Link to to Automatic");
     if ((await page.getByRole("heading", { name: "Prepare Documents" }).count()) !== 1) fail("Esc while armed must not close the workspace");
-    await pagePt({ x: 500, y: 380 });
-    await page.getByText("Click the Signature or Initials this Date Signed belongs to", { exact: false }).waitFor({ timeout: 5000 });
-    await page.waitForTimeout(500);
-    if ((await fieldsNow()) !== baseline) fail("a page click after Esc placed a Date");
-    ok("Esc cancels the armed link (workspace stays open); the next page click explains instead of placing");
+    await page.waitForTimeout(300);
+    if ((await fieldsNow()) !== baseline) fail("choosing and cancelling an explicit link placed a field");
+    ok("explicit override: clicking the Initials fixes Link to on it while the pointer moves; Esc returns to Automatic (workspace stays open); nothing placed");
 
     // Another participant's Signature is not a valid source: visible error, normal select.
     const calSigNow = byParticipant(await draftFields(), "SIGNATURE", "Cal Cobuyer")[0];
@@ -1366,25 +1447,24 @@ async function main() {
     await expectSelected(0);
     ok("clicking another participant's Signature fails visibly and only selects it");
 
-    // Changing participant or field type cancels an armed link.
-    await (await overlayAtRow("Initials for Lee Harbaugh", single)).click();
-    if (!(await isArmed())) fail("re-arm failed");
+    // Changing participant or field type, or choosing Automatic, clears an explicit choice.
+    await page.locator("#prepare-date-link").selectOption(single.id);
+    if (!(await isArmed())) fail("Link to must set the explicit choice");
     await selectParticipant("#prepare-participant", "Cal Cobuyer");
     await page.waitForTimeout(200);
-    if ((await linkStatus.innerText()).includes("Initials — Page 1")) fail("participant change must cancel the armed link");
+    if (await isArmed()) fail("participant change must clear the explicit choice");
     await selectParticipant("#prepare-participant", "Lee Harbaugh");
-    await (await overlayAtRow("Initials for Lee Harbaugh", single)).click();
+    await page.locator("#prepare-date-link").selectOption(single.id);
     if (!(await isArmed())) fail("re-arm failed");
     await page.locator("#prepare-field-type").selectOption("INITIALS");
     await page.locator("#prepare-field-type").selectOption("DATE_SIGNED");
-    if (await isArmed()) fail("a field type change must cancel the armed link");
-    if ((await datePreview.count()) !== 0) fail("a cancelled link left its ghost");
-    // The Link to select arms the same state as clicking.
+    if (await isArmed()) fail("a field type change must clear the explicit choice");
     await page.locator("#prepare-date-link").selectOption(single.id);
-    await linkStatus.getByText("Linked to: Initials — Page 1.", { exact: false }).waitFor({ timeout: 5000 });
-    await page.keyboard.press("Escape");
-    if ((await fieldsNow()) !== baseline) fail("cancelled links placed fields");
-    ok("participant change and field type change cancel the armed link; the Link to select arms the same state; nothing placed");
+    await linkStatus.getByText("Linked to: Initials — Page 1 (chosen under Link to).", { exact: false }).waitFor({ timeout: 5000 });
+    await page.locator("#prepare-date-link").selectOption("");
+    if (await isArmed()) fail("choosing Automatic must clear the explicit choice");
+    if ((await fieldsNow()) !== baseline) fail("explicit choices placed fields");
+    ok("participant change, field type change and choosing Automatic clear the explicit choice; nothing placed");
 
     // Printed Name for Bea Buyerthree on the printed-name line.
     await page.locator("#prepare-field-type").selectOption("PRINTED_NAME");

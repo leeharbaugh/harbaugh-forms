@@ -35,8 +35,12 @@ import {
   updateDraftSourceToLatestAction,
 } from "@/lib/signing/stage4-actions";
 import { useHistoryRestoreRefresh } from "@/components/signings/use-history-restore-refresh";
+import {
+  applyPreparationReadiness as mergePreparationReadiness,
+  participantMissingSignerField,
+} from "@/lib/signing/readiness-view";
 import dynamic from "next/dynamic";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 /** pdf.js needs browser APIs (DOMMatrix, canvas, workers): never load it on the server. */
 const SigningPreviewDialog = dynamic(
@@ -48,6 +52,30 @@ const SigningPreviewDialog = dynamic(
 );
 
 type ActivationMode = "REMOTE_SEND" | "IN_PERSON";
+
+/** Adopt server preparation readiness; document-source blockers are kept. */
+function withPreparationReadiness(
+  dashboard: SigningDashboard,
+  preparationBlockers: SigningDashboard["blockers"],
+): SigningDashboard {
+  if (dashboard.signing.lifecycleState !== "DRAFT") return dashboard;
+  const { ready, blockers } = mergePreparationReadiness(
+    dashboard.blockers,
+    preparationBlockers,
+  );
+  return {
+    ...dashboard,
+    ready,
+    blockers,
+    participants: dashboard.participants.map((participant) => ({
+      ...participant,
+      hasSignatureOrInitialsField: !participantMissingSignerField(
+        blockers,
+        participant.id,
+      ),
+    })),
+  };
+}
 
 function newClientRequestId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -133,14 +161,40 @@ export function SigningDashboardPage({
     null,
   );
 
+  /** Latest preparation readiness from Prepare Documents, newest last. */
+  const preparationRef = useRef<{
+    seq: number;
+    blockers: SigningDashboard["blockers"];
+  }>({ seq: 0, blockers: [] });
+
   const reload = useCallback(async () => {
+    const seqAtStart = preparationRef.current.seq;
     const result = await getSigningDashboardAction({ signingId });
     if (!result.ok) {
       setError(result.error);
       return;
     }
-    setDashboard(result.data as SigningDashboard);
+    const loaded = result.data as SigningDashboard;
+    // A placement saved while this load ran is newer than its readiness.
+    setDashboard(
+      preparationRef.current.seq > seqAtStart
+        ? withPreparationReadiness(loaded, preparationRef.current.blockers)
+        : loaded,
+    );
   }, [signingId]);
+
+  const applyPreparationReadiness = useCallback(
+    (blockers: SigningDashboard["blockers"]) => {
+      preparationRef.current = {
+        seq: preparationRef.current.seq + 1,
+        blockers,
+      };
+      setDashboard((previous) =>
+        previous ? withPreparationReadiness(previous, blockers) : previous,
+      );
+    },
+    [],
+  );
 
   // A push navigation back to this preserved route re-renders the page on the
   // server; adopt that payload instead of the state kept from the last visit.
@@ -931,6 +985,8 @@ export function SigningDashboardPage({
             setWorkspaceDocumentId(null);
           }}
           onChanged={reload}
+          readiness={{ ready: dashboard.ready, blockers: dashboard.blockers }}
+          onPreparationReadiness={applyPreparationReadiness}
         />
       ) : null}
 
