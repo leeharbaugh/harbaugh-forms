@@ -12,6 +12,67 @@ Each decision should include:
 
 ---
 
+## The auto-add notice shows participant names and stays one-time
+
+**Date:** 2026-10-10 (toolbar tranche)
+
+**Decision:**
+1. The notice reads "Added from the source Packet: Jane Smith." or "…: Jane Smith and John Smith.", using each participant's current Draft name.
+2. The text comes from one client-safe formatter, `formatAutoAddNotice`. It accepts a notice entry (`{ participantId, fullName }`) or a bare name and drops anything without a usable name. An object is never stringified into the text, and with no names the notice doesn't render.
+3. The one-time acknowledgement is unchanged: a committed-render effect only, durable per participant, and a removed participant is omitted (see the next decision below).
+
+**Reason:**
+Lee's QA saw "Added from the source Packet: [object Object]". The polish tranche changed the server payload from name strings to `{ participantId, fullName }` entries. A browser still running the earlier compiled panel, which joined the entries directly, rendered each object as `[object Object]`. That was version skew between a stale development bundle and the new server payload. The current source already rendered `fullName`; the formatter makes the rendering independent of payload shape.
+
+**Related:** `lib/signing/auto-add-notice-format.ts`, `components/signings/signing-draft-prep-panel.tsx`, `lib/signing/prepare-polish.test.ts`.
+
+---
+
+## Prepare Documents places with explicit one-shot tools; choosing a participant arms nothing
+
+**Date:** 2026-10-10 (toolbar tranche)
+
+**Decision:**
+1. The Field type dropdown is replaced by a labelled toolbar of five toggle buttons: Signature, Initials, Date, Printed Name, Checkmark (`role="toolbar"`, `aria-pressed`, keyboard-operable, visible focus).
+2. No tool is armed by default. Choosing a participant never arms a tool or shows a ghost. Flow: choose participant, click a tool, see the ghost, click the page once.
+3. Every tool is one-shot: a successful placement disarms it and removes the ghost, and placing another needs another tool click. This applies to all five tools, not only Date, because no workflow depended on repeated placement. Copy/Paste remains the way to repeat placements.
+4. Signature, Initials, Date and Printed Name are disabled until a participant is chosen, and their accessible name says so. Checkmark has no participant and is always available.
+5. Clicking a tool clears the current field selection and arms directly, so the first page click places. Clicking the active tool again disarms it. With no tool armed, a click on empty page area still only clears the selection.
+6. The armed tool is cancelled by a placement, Esc (before clearing a selection or closing), selecting an existing field (on the page or in the list), changing participant, document or tool, starting paste, and closing Prepare Documents. A Date click with no eligible source places nothing and leaves the tool armed.
+
+**Reason:**
+Lee's QA: Date stayed armed after placing; the dropdown hid the tools; and a participant choice combined with a remembered field type behaved like an armed tool.
+
+**Consequences:**
+* No new data paths: the toolbar calls the existing Draft field and prepared-content actions.
+* A Date's participant can no longer be changed from the selected-field panel, since that silently relinked it. A Signature or Initials can still be reassigned, and its linked Dates follow.
+
+**Related:** `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-field-editor-state.ts` (`PLACEMENT_TOOLS`, `placementToolEnabled`).
+
+---
+
+## Date links are set by nearest placement only; a selected Date highlights its source
+
+**Date:** 2026-10-10 (toolbar tranche)
+
+**Decision:**
+1. The visible **Link to** dropdown, the explicit-source override (including clicking a candidate to arm it) and the selected Date's "Linked to" relink select are removed. There is no hidden reassign menu.
+2. Linkage stays explicit in the data: each Date stores exactly one Signature or Initials link, chosen at placement as the selected participant's nearest eligible field on the same document and page. Geometry, deterministic ties, the live candidate highlight, and "no candidate, no placement" are unchanged. New Dates are sent as AUTO_NEAREST. The server still enforces the same Signing, participant and document, the Signature/Initials source type, and the same page for AUTO_NEAREST. It rejects forged, deleted, cross-Signing and wrong-type sources, and the ceremony never infers a link.
+3. Selecting a single Date gives its linked source a secondary, read-only cue: a dashed amber outline and a "Linked" tag. The source isn't selected, and moving, resizing or deleting the Date never touches it. Clearing the selection removes the cue.
+4. The cues are distinct. Selection is a solid sky ring. With the Date tool armed, eligible candidates get a faint solid amber ring and the nearest target a strong solid amber ring. The linked source of a selected Date gets the dashed outline.
+5. Reassociation is delete-and-replace: remove the Date, click Date, place it next to the intended Signature or Initials.
+
+**Reason:**
+Lee's QA: the override UI added choices that nearest placement already answers, while there was no way to see which field an existing Date belongs to.
+
+**Consequences:**
+* The cue shows only fields already in the manager's own Draft model; it exposes nothing new.
+* The server still accepts EXPLICIT_SOURCE with its existing checks, but the UI no longer sends it.
+
+**Related:** `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-fields.ts`, `lib/signing/prepare-polish.test.ts`, `scripts/qa-signing-prepare-browser.ts`.
+
+---
+
 ## The "Added from the source Packet" notice is shown once, acknowledged after the browser displays it
 
 **Date:** 2026-10-10 (polish tranche)
@@ -49,6 +110,8 @@ Lee's QA: the notice persisted on every visit, because nothing cleared it. Ackno
 6. Unchanged: a Signature still auto-pairs its Date, and Initials don't. Linked-Date fill in the ceremony, removal with its source, reassignment, and reload persistence are unchanged.
 
 This refines "Copy enters paste mode; Date Signed links by clicking its source; new fields anchor at the click's left edge" (2026-10-08). Clicking a source now sets the explicit override instead of being the only way to link.
+
+**Superseded in part (2026-10-10, toolbar tranche):** point 4 by "Date links are set by nearest placement only; a selected Date highlights its source". Link to and the explicit override are removed; reassociation is delete-and-replace.
 
 **Reason:**
 Lee's QA: choosing the source first and then placing was two steps for the common case, where the date sits next to the Initials or Signature it belongs to.
@@ -247,6 +310,8 @@ Lee's QA: requiring a click to bring in a party already on the Packet was fricti
 **Date:** 2026-10-08 (Draft polish tranche)
 
 **Refined (2026-10-10):** Date Signed linking by "Date Signed links automatically to the nearest Signature or Initials on the page". Clicking a source is now the explicit override, not the only way to link.
+
+**Superseded in part (2026-10-10, toolbar tranche):** click-to-link and the Link to select by "Date links are set by nearest placement only; a selected Date highlights its source". Clicking a field now cancels the armed tool and selects it.
 
 **Decision:**
 11. **Copy** (button or Ctrl/⌘+C) immediately enters paste placement mode with a ghost under the pointer; no separate Paste click is needed. The ghost follows the pointer across a scroll without placing or cancelling. One click places the copy once and ends the mode. The clipboard remains, so **Paste** or Ctrl/⌘+V places another copy. Esc cancels.

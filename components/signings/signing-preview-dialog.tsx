@@ -27,7 +27,9 @@ import {
   isSelectionToggle,
   isTypingTarget,
   moveGroup,
+  PLACEMENT_TOOLS,
   placementHasParticipant,
+  placementToolEnabled,
   planPaste,
   toggleSelection,
   type PasteAnchor,
@@ -40,11 +42,9 @@ import {
   moveField,
   newPlacementRect,
   pairedDatePlacement,
-  preferredSignatureForDate,
   reassignField,
   removeFields,
   replaceFieldId,
-  resolveDateLinkSource,
   resolveDateLinkTarget,
   type DateLinkTarget,
   type DraftFieldType,
@@ -110,10 +110,6 @@ function participantOptionLabel(participant: SigningPreviewParticipant): string 
   return `${participant.fullName}${role ? ` — ${role}` : ""}${representing}`;
 }
 
-function dateSourceLabel(field: SigningPreviewField): string {
-  return `${draftFieldTypeLabel(field.fieldType)} · page ${field.pageNumber}`;
-}
-
 /**
  * The renderer puts the baseline 1pt + font size below the box top; a
  * line-height:1 CSS box puts it about 0.84em down, so pad the difference.
@@ -175,7 +171,7 @@ function SigningFieldOverlay({
   onDragEnd,
   onResizeCommit,
   onRemove,
-  dateLink = null,
+  highlight = null,
 }: {
   field: SigningPreviewField;
   metrics: PageMetrics;
@@ -183,10 +179,11 @@ function SigningFieldOverlay({
   selected: boolean;
   showRemove: boolean;
   /**
-   * Date Signed tool active: "candidate" marks a Signature/Initials the Date
-   * may link to, "source" the armed one. Either is clicked, not dragged.
+   * Read-only Date Signed link cues. Date tool armed: "candidate" marks a
+   * Signature/Initials the Date may link to, "target" the nearest one.
+   * Existing Date selected: "linked" marks its source (not a selection).
    */
-  dateLink?: "candidate" | "source" | null;
+  highlight?: "candidate" | "target" | "linked" | null;
   /** Live group-drag offset (render px) for selected followers. */
   offset: { dx: number; dy: number } | null;
   onPress: (fieldId: string, toggle: boolean) => void;
@@ -267,19 +264,21 @@ function SigningFieldOverlay({
       minWidth={field.fieldType === "CHECKMARK" ? 6 : 12}
       minHeight={field.fieldType === "CHECKMARK" ? 6 : 8}
       cancel=".signing-field-remove"
-      disableDragging={dateLink !== null}
-      enableResizing={dateLink === null}
       className={cn(
         "signing-field-overlay absolute box-border rounded-sm border bg-background/85",
         FIELD_BORDER[field.fieldType],
         selected && "z-10 bg-sky-50/90 ring-2 ring-sky-500 ring-offset-1",
-        dateLink === "candidate" &&
-          "cursor-pointer ring-2 ring-amber-400 ring-offset-1 hover:bg-amber-50/90",
-        dateLink === "source" && "z-10 bg-amber-50/90 ring-2 ring-amber-600 ring-offset-1",
+        highlight === "candidate" && "ring-2 ring-amber-300 ring-offset-1",
+        highlight === "target" && "z-10 bg-amber-50/90 ring-2 ring-amber-600 ring-offset-1",
+        highlight === "linked" &&
+          "outline-dashed outline-2 outline-offset-2 outline-amber-600",
       )}
       data-selected={selected ? "true" : undefined}
-      data-date-link-candidate={dateLink ? "true" : undefined}
-      data-date-link-source={dateLink === "source" ? "true" : undefined}
+      data-date-link-candidate={
+        highlight === "candidate" || highlight === "target" ? "true" : undefined
+      }
+      data-date-link-source={highlight === "target" ? "true" : undefined}
+      data-date-linked-source={highlight === "linked" ? "true" : undefined}
       onMouseDown={(event: MouseEvent) => {
         event.stopPropagation();
         onPress(field.id, isSelectionToggle(event));
@@ -318,6 +317,14 @@ function SigningFieldOverlay({
       title={description}
     >
       {label}
+      {highlight === "linked" ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -top-5 left-0 whitespace-nowrap rounded border border-amber-600 bg-amber-50 px-1 text-[10px] leading-4 text-amber-800"
+        >
+          Linked
+        </span>
+      ) : null}
       {showRemove ? (
         <button
           type="button"
@@ -364,8 +371,11 @@ export function SigningPreviewDialog({
   const [error, setError] = useState<string | null>(null);
   const [currentDocumentId, setCurrentDocumentId] = useState<string | null>(null);
   const [selectedParticipantId, setSelectedParticipantId] = useState("");
-  const [selectedFieldType, setSelectedFieldType] =
-    useState<DraftFieldType>("SIGNATURE");
+  /**
+   * Armed placement tool. Null = no tool: page clicks select and clear. A
+   * tool places once and disarms; choosing a participant never arms one.
+   */
+  const [activeTool, setActiveTool] = useState<DraftFieldType | null>(null);
   const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
   const selectedFieldId = selectedFieldIds.length === 1 ? selectedFieldIds[0] : null;
   const [groupDrag, setGroupDrag] = useState<{
@@ -380,14 +390,8 @@ export function SigningPreviewDialog({
    */
   const [pasteMode, setPasteMode] = useState(false);
   const [pastePreview, setPastePreview] = useState<PasteAnchor | null>(null);
-  /**
-   * Explicit Date Signed source (chosen under Link to, or by clicking one of
-   * the participant's Signature/Initials). "" = automatic: the Date links to
-   * the nearest eligible field on the page where it is placed.
-   */
-  const [dateLinkSourceId, setDateLinkSourceId] = useState("");
-  /** Hovered spot for the Date Signed ghost. */
-  const [datePreview, setDatePreview] = useState<PasteAnchor | null>(null);
+  /** Hovered spot for the armed tool's ghost. */
+  const [toolPreview, setToolPreview] = useState<PasteAnchor | null>(null);
   const [editorNotice, setEditorNotice] = useState<string | null>(null);
   const pressRef = useRef<{ id: string; toggle: boolean; wasSelected: boolean } | null>(null);
   const [pageSizes, setPageSizes] = useState<
@@ -441,8 +445,8 @@ export function SigningPreviewDialog({
     setClipboard(null);
     setPasteMode(false);
     setPastePreview(null);
-    setDateLinkSourceId("");
-    setDatePreview(null);
+    setActiveTool(null);
+    setToolPreview(null);
     setEditorNotice(null);
     idMapRef.current = new Map();
     dirtyRef.current = false;
@@ -696,52 +700,60 @@ export function SigningPreviewDialog({
     return { pageNumber, x: point.x, y: point.y };
   }
 
-  /** Size of a new Date Signed for the selected participant. */
-  function dateSignedSize(): { width: number; height: number } | null {
+  /** Size of a new placement of `tool` for the selected participant. */
+  function toolSize(tool: DraftFieldType): { width: number; height: number } | null {
     const participant = model?.participants.find(
       (row) => row.id === selectedParticipantId,
     );
-    return participant ? defaultDraftFieldSize("DATE_SIGNED", participant) : null;
+    if (isPreparedContentType(tool)) {
+      if (placementHasParticipant(tool) && !participant) return null;
+      return defaultPreparedContentSize(tool, participant?.fullName ?? "");
+    }
+    return participant ? defaultDraftFieldSize(tool, participant) : null;
   }
 
-  /** Where a Date Signed placed at `anchor` would land (PDF units). */
-  function dateRectAt(anchor: PasteAnchor | null): PdfRect | null {
+  /** Where a placement of `tool` at `anchor` would land (PDF units). */
+  function toolRectAt(tool: DraftFieldType, anchor: PasteAnchor | null): PdfRect | null {
     if (!anchor || !currentDocument) return null;
     const metrics = metricsFor(currentDocument.id, anchor.pageNumber);
-    const size = dateSignedSize();
+    const size = toolSize(tool);
     if (!metrics || !size) return null;
-    return newPlacementRect("DATE_SIGNED", anchor, size, {
+    return newPlacementRect(tool, anchor, size, {
       width: metrics.originalWidth,
       height: metrics.originalHeight,
     });
   }
 
-  /** The source a Date Signed placed at `anchor` would link to, and how. */
+  /** The Signature/Initials a Date Signed placed at `anchor` would link to. */
   function dateLinkTargetAt(anchor: PasteAnchor | null): DateLinkTarget {
     return resolveDateLinkTarget({
       fields: currentDocument?.fields ?? [],
       participantId: selectedParticipantId,
-      explicitSourceId: dateLinkSourceId,
+      explicitSourceId: "",
       pageNumber: anchor?.pageNumber ?? null,
-      dateRect: dateRectAt(anchor),
+      dateRect: toolRectAt("DATE_SIGNED", anchor),
     });
   }
 
-  function armDateLink(source: SigningPreviewField) {
-    setDateLinkSourceId(source.id);
+  /** Arm one placement: clears the selection so the next page click places. */
+  function armTool(tool: DraftFieldType) {
+    if (!editable) return;
+    cancelPasteMode();
+    if (placementHasParticipant(tool) && !selectedParticipantId) {
+      setError("Choose a participant before placing this field.");
+      return;
+    }
     setSelectedFieldIds([]);
     setError(null);
-    setEditorNotice(
-      `Linked to: ${dateLinkSourceDisplay(source)}, chosen explicitly. Click the page to place the Date Signed. Press Esc to return to automatic linking.`,
-    );
+    setEditorNotice(null);
+    setActiveTool(tool);
     const pointer = lastPointerRef.current;
-    setDatePreview(pointer ? pointToPageAnchor(pointer.x, pointer.y) : null);
+    setToolPreview(pointer ? pointToPageAnchor(pointer.x, pointer.y) : null);
   }
 
-  /** Back to automatic nearest-field linking. */
-  function disarmDateLink(notice: string | null = null) {
-    setDateLinkSourceId("");
-    setEditorNotice(notice);
+  function disarmTool() {
+    setActiveTool(null);
+    setToolPreview(null);
   }
 
   /** Page anchor (PDF units) under a viewport point, or null off-page. */
@@ -782,11 +794,11 @@ export function SigningPreviewDialog({
     return null;
   }
 
-  /** Ghost of the Date Signed at the hovered spot (left-anchored). */
-  function datePreviewRect(pageNumber: number): PdfRect | null {
-    if (!datePreview || datePreview.pageNumber !== pageNumber) return null;
-    if (!editable || selectedFieldType !== "DATE_SIGNED" || pasteMode) return null;
-    return dateRectAt(datePreview);
+  /** Ghost of the armed tool's placement at the hovered spot. */
+  function toolPreviewRect(pageNumber: number): PdfRect | null {
+    if (!toolPreview || toolPreview.pageNumber !== pageNumber) return null;
+    if (!editable || !activeTool || pasteMode) return null;
+    return toolRectAt(activeTool, toolPreview);
   }
 
   function placeFieldAt(
@@ -802,17 +814,16 @@ export function SigningPreviewDialog({
       return;
     }
     if ((event.target as HTMLElement).closest(".signing-field-overlay")) return;
-    const placingLinkedDate =
-      selectedFieldType === "DATE_SIGNED" && dateLinkSourceId !== "";
-    // With placements selected, a click on empty page area clears the
-    // selection, unless an explicit Date Signed link is waiting for this click.
-    if (selectedFieldIds.length > 0) {
-      setSelectedFieldIds([]);
-      if (!placingLinkedDate) return;
+    // No armed tool: a click on empty page area only clears the selection.
+    const tool = activeTool;
+    if (!tool) {
+      if (selectedFieldIds.length > 0) setSelectedFieldIds([]);
+      return;
     }
-    const needsParticipant = placementHasParticipant(selectedFieldType);
+    if (selectedFieldIds.length > 0) setSelectedFieldIds([]);
+    const needsParticipant = placementHasParticipant(tool);
     if (needsParticipant && !selectedParticipantId) {
-      setError("Add a participant before placing fields.");
+      setError("Choose a participant before placing this field.");
       return;
     }
     const metrics = metricsFor(currentDocument.id, pageNumber);
@@ -825,47 +836,32 @@ export function SigningPreviewDialog({
       (row) => row.id === selectedParticipantId,
     );
     if (needsParticipant && !participant) return;
-    const size = isPreparedContentType(selectedFieldType)
-      ? defaultPreparedContentSize(selectedFieldType, participant?.fullName ?? "")
-      : defaultDraftFieldSize(selectedFieldType, participant!);
-    const rect = newPlacementRect(selectedFieldType, point, size, page);
+    const size = isPreparedContentType(tool)
+      ? defaultPreparedContentSize(tool, participant?.fullName ?? "")
+      : defaultDraftFieldSize(tool, participant!);
+    const rect = newPlacementRect(tool, point, size, page);
 
     let linkedSignatureDraftFieldId: string | null = null;
     let linkedSource: SigningPreviewField | null = null;
-    if (selectedFieldType === "DATE_SIGNED") {
-      const target = resolveDateLinkTarget({
-        fields: currentDocument.fields,
-        participantId: selectedParticipantId,
-        explicitSourceId: dateLinkSourceId,
-        pageNumber,
-        dateRect: rect,
-      });
-      if (!target.source) {
+    if (tool === "DATE_SIGNED") {
+      linkedSource = dateLinkTargetAt(point).source;
+      if (!linkedSource) {
         // Never place an unlinked Date or guess a source on another page.
-        if (target.mode === "EXPLICIT_SOURCE") {
-          disarmDateLink();
-          setError(
-            "That Signature or Initials is no longer available for this participant. Choose another under Link to, or place the date next to one.",
-          );
-        } else {
-          setError(
-            `No Signature or Initials for ${participant?.fullName ?? "this participant"} on this page. Place the date on a page containing their Signature or Initials.`,
-          );
-        }
+        // The tool stays armed so the date can be placed elsewhere.
+        setError(
+          `No Signature or Initials for ${participant?.fullName ?? "this participant"} on this page. Place the date on a page containing their Signature or Initials.`,
+        );
         return;
       }
-      linkedSource = target.source;
       linkedSignatureDraftFieldId = linkedSource.id;
     }
 
     const documentId = currentDocument.id;
     const fieldId = newLocalId();
-    if (selectedFieldType === "DATE_SIGNED" && !dateLinkSourceId) {
-      autoLinkedDateIdsRef.current.add(fieldId);
-    }
+    if (tool === "DATE_SIGNED") autoLinkedDateIdsRef.current.add(fieldId);
     const field = buildLocalField(
       fieldId,
-      selectedFieldType,
+      tool,
       pageNumber,
       rect,
       linkedSignatureDraftFieldId,
@@ -873,7 +869,7 @@ export function SigningPreviewDialog({
     if (!field) return;
 
     const pairedDate =
-      selectedFieldType === "SIGNATURE"
+      tool === "SIGNATURE"
         ? buildLocalField(
             newLocalId(),
             "DATE_SIGNED",
@@ -888,9 +884,9 @@ export function SigningPreviewDialog({
       return pairedDate ? addField(withField, documentId, pairedDate) : withField;
     });
     persistNewFields(documentId, pairedDate ? [field, pairedDate] : [field]);
+    disarmTool();
     if (linkedSource) {
-      // An explicit choice applies to one Date; the next one is automatic.
-      disarmDateLink(`Date Signed linked to ${dateLinkSourceDisplay(linkedSource)}.`);
+      setEditorNotice(`Date Signed linked to ${dateLinkSourceDisplay(linkedSource)}.`);
     }
   }
 
@@ -928,33 +924,8 @@ export function SigningPreviewDialog({
   }
 
   function pressField(fieldId: string, toggle: boolean) {
-    // Date Signed tool: clicking a Signature/Initials picks the Date's source.
-    if (
-      editable &&
-      selectedFieldType === "DATE_SIGNED" &&
-      !pasteMode &&
-      !toggle &&
-      currentDocument
-    ) {
-      pressRef.current = null;
-      const source = resolveDateLinkSource(
-        currentDocument.fields,
-        selectedParticipantId,
-        fieldId,
-      );
-      if (source) {
-        armDateLink(source);
-        return;
-      }
-      const participant = model?.participants.find(
-        (row) => row.id === selectedParticipantId,
-      );
-      setError(
-        participant
-          ? `Date Signed links only to a Signature or Initials for ${participant.fullName}.`
-          : "Choose a participant before linking a Date Signed.",
-      );
-    }
+    // Selecting an existing field cancels the armed tool; it never places.
+    if (activeTool) disarmTool();
     const wasSelected = selectedFieldIds.includes(fieldId);
     pressRef.current = { id: fieldId, toggle, wasSelected };
     if (toggle) {
@@ -1104,8 +1075,7 @@ export function SigningPreviewDialog({
     if (!model || !currentDocument || !items || items.length === 0) return;
     setSelectedFieldIds([]);
     setError(null);
-    setDateLinkSourceId("");
-    setDatePreview(null);
+    disarmTool();
     setPasteMode(true);
     const pointer = lastPointerRef.current;
     setPastePreview(pointer ? pointToPageAnchor(pointer.x, pointer.y) : null);
@@ -1117,12 +1087,6 @@ export function SigningPreviewDialog({
     setPasteMode(false);
     setPastePreview(null);
     setEditorNotice(null);
-  }
-
-  function changeFieldType(next: DraftFieldType) {
-    cancelPasteMode();
-    if (dateLinkSourceId) disarmDateLink();
-    setSelectedFieldType(next);
   }
 
   function pasteAt(anchor: PasteAnchor) {
@@ -1171,56 +1135,22 @@ export function SigningPreviewDialog({
     if (!located || located.field.participantId === participantId) return;
     setError(null);
 
-    if (!placementHasParticipant(located.field.fieldType)) return;
-
-    let linkedSignatureDraftFieldId: string | null = null;
-    if (located.field.fieldType === "DATE_SIGNED") {
-      const document = model.documents.find((row) => row.id === located.documentId);
-      const source = document
-        ? (preferredSignatureForDate(
-            document.fields,
-            participantId,
-            located.field.pageNumber,
-          ) ?? dateSourceOptions(document.fields, participantId)[0] ?? null)
-        : null;
-      if (!source) {
-        setError(
-          "Reassign Date Signed only to a participant who already has a Signature or Initials on this document.",
-        );
-        return;
-      }
-      linkedSignatureDraftFieldId = source.id;
+    // A Date Signed follows its linked Signature/Initials; it is relinked
+    // only by deleting it and placing a new one.
+    if (
+      !placementHasParticipant(located.field.fieldType) ||
+      located.field.fieldType === "DATE_SIGNED"
+    ) {
+      return;
     }
 
     const fieldId = selectedFieldId;
-    updateModel((current) =>
-      reassignField(current, fieldId, participantId, linkedSignatureDraftFieldId),
-    );
-    persistField(fieldId);
-  }
-
-  /** Link the selected Date Signed to another Signature/Initials of its participant. */
-  function relinkSelectedDate(sourceId: string) {
-    if (!model || !selectedFieldId) return;
-    const located = findField(model, selectedFieldId);
-    if (!located || located.field.fieldType !== "DATE_SIGNED") return;
-    if (located.field.linkedSignatureFieldId === sourceId) return;
-    const document = model.documents.find((row) => row.id === located.documentId);
-    const source = document
-      ? dateSourceOptions(document.fields, located.field.participantId).find(
-          (field) => field.id === sourceId,
-        )
-      : null;
-    if (!source) return;
-    setError(null);
-    const fieldId = selectedFieldId;
-    updateModel((current) =>
-      reassignField(current, fieldId, located.field.participantId, source.id),
-    );
+    updateModel((current) => reassignField(current, fieldId, participantId, null));
     persistField(fieldId);
   }
 
   function selectField(fieldId: string, scroll = false) {
+    disarmTool();
     setSelectedFieldIds([fieldId]);
     if (!scroll || !model || !workspaceEl) return;
     const located = findField(model, fieldId);
@@ -1230,7 +1160,7 @@ export function SigningPreviewDialog({
 
   function goToDocument(documentId: string) {
     cancelPasteMode();
-    if (dateLinkSourceId) disarmDateLink();
+    disarmTool();
     setCurrentDocumentId(documentId);
     setSelectedFieldIds([]);
     pageRefs.current = {};
@@ -1239,6 +1169,8 @@ export function SigningPreviewDialog({
   }
 
   const handleClose = useCallback(() => {
+    setActiveTool(null);
+    setToolPreview(null);
     if (dirtyRef.current && onChanged) {
       dirtyRef.current = false;
       void queueRef.current.then(() => onChanged());
@@ -1252,8 +1184,8 @@ export function SigningPreviewDialog({
       if (event.key === "Escape") {
         if (pasteMode) {
           cancelPasteMode();
-        } else if (selectedFieldType === "DATE_SIGNED" && dateLinkSourceId) {
-          disarmDateLink();
+        } else if (activeTool) {
+          disarmTool();
         } else if (selectedFieldIds.length > 0) {
           setSelectedFieldIds([]);
         } else {
@@ -1294,13 +1226,13 @@ export function SigningPreviewDialog({
   // cursor (possibly on another page). Scrolling never places or cancels.
   useEffect(() => {
     if (!open || !workspaceEl) return;
-    const tracking = pasteMode || (editable && selectedFieldType === "DATE_SIGNED");
+    const tracking = pasteMode || (editable && activeTool !== null);
     if (!tracking) return;
     function onScroll() {
       const pointer = lastPointerRef.current;
       const anchor = pointer ? pointToPageAnchor(pointer.x, pointer.y) : null;
       if (pasteMode) setPastePreview(anchor);
-      else setDatePreview(anchor);
+      else setToolPreview(anchor);
     }
     workspaceEl.addEventListener("scroll", onScroll, { passive: true });
     return () => workspaceEl.removeEventListener("scroll", onScroll);
@@ -1310,8 +1242,9 @@ export function SigningPreviewDialog({
   const zoomLabel = basePage
     ? `${displayZoomPercent(pageWidth, basePage.width)}%`
     : "—";
+  const toolTracking = editable && activeTool !== null && !pasteMode;
   const dateToolActive =
-    editable && selectedFieldType === "DATE_SIGNED" && !pasteMode && currentDocument != null;
+    toolTracking && activeTool === "DATE_SIGNED" && currentDocument != null;
   const dateLinkCandidateIds = new Set(
     dateToolActive
       ? dateSourceOptions(currentDocument!.fields, selectedParticipantId).map(
@@ -1319,27 +1252,37 @@ export function SigningPreviewDialog({
         )
       : [],
   );
-  // The live link target: the explicit choice, or the nearest candidate to
-  // the Date ghost under the pointer. Highlighting it never selects, moves or
-  // creates anything.
+  // The live link target: the nearest candidate to the Date ghost under the
+  // pointer. Highlighting it never selects, moves or creates anything.
   const dateTarget: DateLinkTarget | null = dateToolActive
-    ? dateLinkTargetAt(datePreview)
+    ? dateLinkTargetAt(toolPreview)
     : null;
   const dateTargetSourceId = dateTarget?.source?.id ?? null;
-  const explicitDateSourceId =
-    dateTarget?.mode === "EXPLICIT_SOURCE" ? dateTargetSourceId : null;
-  const dateTracking = dateToolActive && selectedParticipantId !== "";
-  const dateLinkStatus = !dateTarget
+  // A single selected Date Signed shows its linked source (read-only; the
+  // source is not selected and never moves with the Date).
+  const linkedSourceId =
+    editable && selectedField?.fieldType === "DATE_SIGNED"
+      ? (selectedField.linkedSignatureFieldId ?? null)
+      : null;
+  const linkedSource =
+    linkedSourceId && currentDocument
+      ? (currentDocument.fields.find((field) => field.id === linkedSourceId) ?? null)
+      : null;
+  const activeParticipant =
+    model?.participants.find((row) => row.id === selectedParticipantId) ?? null;
+  const toolStatus = !activeTool
     ? null
-    : dateTarget.mode === "EXPLICIT_SOURCE"
-      ? dateTarget.source
-        ? `Linked to: ${dateLinkSourceDisplay(dateTarget.source)} (chosen under Link to). Click the page to place the date.`
-        : "The chosen Signature or Initials is no longer available. Choose another, or return to Automatic."
-      : dateTarget.source
+    : activeTool === "DATE_SIGNED"
+      ? dateTarget?.source
         ? `Will link to: ${dateLinkSourceDisplay(dateTarget.source)}. Click to place the date.`
-        : datePreview
+        : toolPreview
           ? "No Signature or Initials for this participant on this page. Place the date on a page containing this participant's Signature or Initials."
-          : "Move over a page: the date links to this participant's nearest Signature or Initials on that page.";
+          : "Move over a page: the date links to this participant's nearest Signature or Initials on that page."
+      : `Click the page to place one ${PLACEMENT_TOOLS.find((row) => row.type === activeTool)?.label ?? "field"}${
+          placementHasParticipant(activeTool) && activeParticipant
+            ? ` for ${activeParticipant.fullName}`
+            : ""
+        }.`;
   const fieldsByPage = new Map<number, SigningPreviewField[]>();
   for (const field of currentDocument?.fields ?? []) {
     const list = fieldsByPage.get(field.pageNumber) ?? [];
@@ -1576,10 +1519,7 @@ export function SigningPreviewDialog({
                           data-page-surface={pageNumber}
                           className={cn(
                             "relative w-fit border bg-white shadow-md",
-                            editable &&
-                              (selectedParticipantId ||
-                                !placementHasParticipant(selectedFieldType)) &&
-                              "cursor-crosshair",
+                            toolTracking && "cursor-crosshair",
                           )}
                           onMouseDownCapture={(event) => {
                             pointerStartedOnFieldRef.current =
@@ -1588,12 +1528,12 @@ export function SigningPreviewDialog({
                               ) != null;
                           }}
                           onMouseMove={
-                            dateTracking
-                              ? (event) => setDatePreview(eventPdfPoint(event, pageNumber))
+                            toolTracking
+                              ? (event) => setToolPreview(eventPdfPoint(event, pageNumber))
                               : undefined
                           }
                           onMouseLeave={
-                            dateTracking ? () => setDatePreview(null) : undefined
+                            toolTracking ? () => setToolPreview(null) : undefined
                           }
                           onClick={(event) => placeFieldAt(event, pageNumber)}
                         >
@@ -1638,25 +1578,30 @@ export function SigningPreviewDialog({
                                   onDragEnd={dragFieldEnd}
                                   onResizeCommit={commitGeometry}
                                   onRemove={removeField}
-                                  dateLink={
-                                    !dateLinkCandidateIds.has(field.id)
-                                      ? null
-                                      : field.id === dateTargetSourceId
-                                        ? "source"
-                                        : "candidate"
+                                  highlight={
+                                    field.id === linkedSourceId
+                                      ? "linked"
+                                      : !dateLinkCandidateIds.has(field.id)
+                                        ? null
+                                        : field.id === dateTargetSourceId
+                                          ? "target"
+                                          : "candidate"
                                   }
                                 />
                               ))
                             : null}
                           {metrics
                             ? (() => {
-                                const ghost = datePreviewRect(pageNumber);
+                                const ghost = toolPreviewRect(pageNumber);
                                 if (!ghost) return null;
                                 const rect = toRenderRect(ghost, metrics);
                                 return (
                                   <div
                                     aria-hidden
-                                    data-date-preview
+                                    data-tool-preview={activeTool ?? undefined}
+                                    data-date-preview={
+                                      activeTool === "DATE_SIGNED" ? true : undefined
+                                    }
                                     className="pointer-events-none absolute z-20 rounded-sm border-2 border-dashed border-amber-500 bg-amber-100/40"
                                     style={{
                                       left: rect.x,
@@ -1727,13 +1672,10 @@ export function SigningPreviewDialog({
                       value={selectedParticipantId}
                       onChange={(event) => {
                         cancelPasteMode();
-                        if (dateLinkSourceId) disarmDateLink();
+                        disarmTool();
                         setSelectedParticipantId(event.target.value);
                       }}
-                      disabled={
-                        model.participants.length === 0 ||
-                        !placementHasParticipant(selectedFieldType)
-                      }
+                      disabled={model.participants.length === 0}
                     >
                       {model.participants.length === 0 ? (
                         <option value="">Add a participant first</option>
@@ -1745,82 +1687,70 @@ export function SigningPreviewDialog({
                         ))
                       )}
                     </select>
-                    {!placementHasParticipant(selectedFieldType) ? (
-                      <p className="text-xs text-muted-foreground">
-                        A Checkmark is prepared content and belongs to no participant.
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium" id={`${titleId}-tools`}>
+                      Place a field
+                    </p>
+                    <div
+                      role="toolbar"
+                      aria-labelledby={`${titleId}-tools`}
+                      className="flex flex-wrap gap-1.5"
+                      data-testid="placement-toolbar"
+                    >
+                      {PLACEMENT_TOOLS.map((tool) => {
+                        const enabled = placementToolEnabled(
+                          tool.type,
+                          selectedParticipantId,
+                        );
+                        const active = activeTool === tool.type;
+                        return (
+                          <Button
+                            key={tool.type}
+                            type="button"
+                            size="sm"
+                            variant={active ? "default" : "outline"}
+                            aria-pressed={active}
+                            aria-label={
+                              enabled
+                                ? `Place ${tool.label}`
+                                : `Place ${tool.label} (choose a participant first)`
+                            }
+                            data-testid={`placement-tool-${tool.type}`}
+                            data-active={active ? "true" : undefined}
+                            disabled={!enabled}
+                            onClick={() => (active ? disarmTool() : armTool(tool.type))}
+                          >
+                            {tool.label}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    {toolStatus ? (
+                      <p
+                        className="text-xs text-muted-foreground"
+                        role="status"
+                        data-testid={
+                          activeTool === "DATE_SIGNED" ? "date-link-status" : "tool-status"
+                        }
+                      >
+                        {toolStatus} Press Esc to cancel.
                       </p>
                     ) : null}
                   </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="prepare-field-type">Field type</Label>
-                    <select
-                      id="prepare-field-type"
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                      value={selectedFieldType}
-                      onChange={(event) =>
-                        changeFieldType(event.target.value as DraftFieldType)
-                      }
-                    >
-                      <optgroup label="Signing fields">
-                        <option value="SIGNATURE">Signature</option>
-                        <option value="INITIALS">Initials</option>
-                        <option value="DATE_SIGNED">Date Signed</option>
-                      </optgroup>
-                      <optgroup label="Prepared content">
-                        <option value="PRINTED_NAME">Printed Name</option>
-                        <option value="CHECKMARK">Checkmark</option>
-                      </optgroup>
-                    </select>
-                  </div>
-                  {selectedFieldType === "DATE_SIGNED" && currentDocument ? (
-                    <div className="space-y-1">
-                      <Label htmlFor="prepare-date-link">Link to</Label>
-                      <select
-                        id="prepare-date-link"
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                        value={explicitDateSourceId ?? ""}
-                        onChange={(event) => {
-                          const source = resolveDateLinkSource(
-                            currentDocument.fields,
-                            selectedParticipantId,
-                            event.target.value,
-                          );
-                          if (source) armDateLink(source);
-                          else disarmDateLink();
-                        }}
-                      >
-                        <option value="">
-                          {dateLinkCandidateIds.size > 0
-                            ? "Automatic: nearest on the page"
-                            : "Place a Signature or Initials first"}
-                        </option>
-                        {dateSourceOptions(currentDocument.fields, selectedParticipantId).map(
-                          (field) => (
-                            <option key={field.id} value={field.id}>
-                              {dateSourceLabel(field)}
-                            </option>
-                          ),
-                        )}
-                      </select>
-                      <p
-                        className="text-xs text-muted-foreground"
-                        data-testid="date-link-status"
-                        data-date-link-mode={dateTarget?.mode}
-                      >
-                        {dateLinkStatus}{" "}
-                        The date shows when that Signature or Initials is applied.
-                      </p>
-                    </div>
-                  ) : null}
                   <p className="text-xs text-muted-foreground">
-                    Click the page to place. Drag or resize to adjust. A
-                    Signature also places its Date Signed; Initials do not.
-                    Printed Name and Checkmark are prepared content: they are
-                    printed into the document when it is sent and are not
-                    signing actions. Ctrl-click (⌘-click on Mac) selects
-                    several; Copy (Ctrl/⌘+C) then click the page to place the
-                    copy; Paste (Ctrl/⌘+V) places it again; Delete removes the
-                    selection.
+                    Choose a participant, then a field, then click the page
+                    once to place it. Signature, Initials, Date and Printed
+                    Name belong to the chosen participant; a Checkmark belongs
+                    to no one. A Signature also places its Date Signed. A Date
+                    links to the participant&apos;s nearest Signature or
+                    Initials on that page; to link it elsewhere, delete it and
+                    place it again. Printed Name and Checkmark are prepared
+                    content: they are printed into the document when it is sent
+                    and are not signing actions. Drag or resize to adjust.
+                    Ctrl-click (⌘-click on Mac) selects several; Copy
+                    (Ctrl/⌘+C) then click the page to place the copy; Paste
+                    (Ctrl/⌘+V) places it again; Delete removes the selection.
                   </p>
                 </div>
               ) : null}
@@ -1892,7 +1822,8 @@ export function SigningPreviewDialog({
                   <p className="font-medium">
                     Selected: {fieldTypeLabel(selectedField.fieldType)}
                   </p>
-                  {placementHasParticipant(selectedField.fieldType) ? (
+                  {placementHasParticipant(selectedField.fieldType) &&
+                  selectedField.fieldType !== "DATE_SIGNED" ? (
                     <div className="space-y-1">
                       <Label htmlFor="reassign-participant">Participant</Label>
                       <select
@@ -1909,25 +1840,17 @@ export function SigningPreviewDialog({
                       </select>
                     </div>
                   ) : null}
-                  {selectedField.fieldType === "DATE_SIGNED" && currentDocument ? (
-                    <div className="space-y-1">
-                      <Label htmlFor="relink-date">Linked to</Label>
-                      <select
-                        id="relink-date"
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-                        value={selectedField.linkedSignatureFieldId ?? ""}
-                        onChange={(event) => relinkSelectedDate(event.target.value)}
-                      >
-                        {dateSourceOptions(
-                          currentDocument.fields,
-                          selectedField.participantId,
-                        ).map((field) => (
-                          <option key={field.id} value={field.id}>
-                            {dateSourceLabel(field)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  {selectedField.fieldType === "DATE_SIGNED" ? (
+                    <p
+                      className="text-xs text-muted-foreground"
+                      data-testid="date-linked-source"
+                    >
+                      {linkedSource
+                        ? `Linked to: ${dateLinkSourceDisplay(linkedSource)} (outlined on the page).`
+                        : "Linked to a Signature or Initials."}{" "}
+                      To link it elsewhere, remove it and place a new Date next
+                      to the right Signature or Initials.
+                    </p>
                   ) : null}
                   {selectedField.fieldType === "SIGNATURE" ||
                   selectedField.fieldType === "INITIALS" ? (
@@ -1961,7 +1884,7 @@ export function SigningPreviewDialog({
             {sortedFields.length === 0 ? (
               <p className="text-muted-foreground">
                 {editable
-                  ? "No Signing fields yet. Choose a participant and field type, then click the page."
+                  ? "No Signing fields yet. Choose a participant and a field, then click the page."
                   : "No Signing fields are placed on this document yet."}
               </p>
             ) : (

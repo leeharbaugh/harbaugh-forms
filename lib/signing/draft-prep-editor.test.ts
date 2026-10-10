@@ -361,8 +361,8 @@ describe("Prepare Documents compact field labels", () => {
     assert.doesNotMatch(dialog, /Math\.max\(\s*\(field\.width/);
     assert.doesNotMatch(dialog, /Math\.max\(\s*\(field\.height/);
     assert.match(dialog, /onResizeStop/);
-    assert.match(dialog, /defaultDraftFieldSize\(selectedFieldType, participant!\)/);
-    assert.match(dialog, /defaultPreparedContentSize\(selectedFieldType/);
+    assert.match(dialog, /defaultDraftFieldSize\(tool, participant!\)/);
+    assert.match(dialog, /defaultPreparedContentSize\(tool/);
     assert.match(dialog, /draftMarkFontSize\(field\.fieldType, text, field\)/);
   });
 });
@@ -444,12 +444,11 @@ describe("Prepare Documents dead-control removal", () => {
     assert.doesNotMatch(dialog, /Previous page|Next page/);
   });
 
-  it("keeps the Participant and Field type controls", () => {
+  it("keeps the Participant control and the placement toolbar (no Field type dropdown)", () => {
     assert.match(dialog, /id="prepare-participant"/);
-    assert.match(dialog, /id="prepare-field-type"/);
-    assert.match(dialog, /<option value="SIGNATURE">Signature<\/option>/);
-    assert.match(dialog, /<option value="INITIALS">Initials<\/option>/);
-    assert.match(dialog, /<option value="DATE_SIGNED">Date Signed<\/option>/);
+    assert.doesNotMatch(dialog, /id="prepare-field-type"/);
+    assert.match(dialog, /role="toolbar"/);
+    assert.match(dialog, /PLACEMENT_TOOLS\.map\(/);
   });
 });
 

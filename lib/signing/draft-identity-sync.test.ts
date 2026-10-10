@@ -317,36 +317,33 @@ describe("Prepare Documents editor UX (source)", () => {
     dialog.indexOf("async function createField("),
   );
 
-  it("clicking an eligible source arms the Date (not a selection) and the next click places", () => {
+  it("pressing an existing field cancels the armed tool and selects; it never arms a Date link", () => {
     const press = dialog.slice(dialog.indexOf("function pressField("), dialog.indexOf("function dragGroup("));
-    assert.match(press, /selectedFieldType === "DATE_SIGNED"/);
-    assert.match(press, /armDateLink\(source\);\s+return;/);
-    assert.match(press, /Date Signed links only to a Signature or Initials for/);
-    assert.match(dialog, /Linked to: \$\{dateLinkSourceDisplay\(source\)\}/);
-    assert.match(place, /if \(!placingLinkedDate\) return;/);
-    assert.match(place, /disarmDateLink\(`Date Signed linked to/);
+    assert.match(press, /if \(activeTool\) disarmTool\(\);/);
+    assert.doesNotMatch(press, /armDateLink|resolveDateLinkSource/);
+    assert.doesNotMatch(dialog, /function armDateLink|dateLinkSourceId/);
   });
 
   it("never silently links a Date to a default Signature", () => {
     assert.doesNotMatch(place, /preferredSignatureForDate/);
-    assert.match(place, /That Signature or Initials is no longer available/);
+    assert.doesNotMatch(dialog, /preferredSignatureForDate/);
     assert.doesNotMatch(dialog, /Signature on the clicked page \(default\)/);
   });
 
-  it("source overlays are clicked, not dragged, while linking; the ghost follows the cursor", () => {
-    assert.match(dialog, /disableDragging=\{dateLink !== null\}/);
+  it("source overlays stay draggable; the armed tool's ghost follows the cursor", () => {
+    assert.doesNotMatch(dialog, /disableDragging=\{/);
     assert.match(dialog, /data-date-link-candidate/);
     assert.match(dialog, /data-date-preview/);
-    assert.match(dialog, /newPlacementRect\(\s*"DATE_SIGNED"/);
+    assert.match(dialog, /data-tool-preview=\{activeTool \?\? undefined\}/);
+    assert.match(dialog, /toolRectAt\("DATE_SIGNED", anchor\)/);
   });
 
-  it("Esc, field type, participant and document changes cancel the armed Date", () => {
+  it("Esc, participant and document changes cancel the armed tool", () => {
     const escape = dialog.slice(dialog.indexOf('event.key === "Escape"'));
-    assert.ok(escape.indexOf("cancelPasteMode()") < escape.indexOf("disarmDateLink()"));
-    assert.ok(escape.indexOf("disarmDateLink()") < escape.indexOf("setSelectedFieldIds([])"));
-    assert.match(dialog, /function changeFieldType[\s\S]*?disarmDateLink\(\)/);
-    assert.match(dialog, /function goToDocument[\s\S]*?disarmDateLink\(\)/);
-    assert.match(dialog, /cancelPasteMode\(\);\s+if \(dateLinkSourceId\) disarmDateLink\(\);\s+setSelectedParticipantId/);
+    assert.ok(escape.indexOf("cancelPasteMode()") < escape.indexOf("disarmTool()"));
+    assert.ok(escape.indexOf("disarmTool()") < escape.indexOf("setSelectedFieldIds([])"));
+    assert.match(dialog, /function goToDocument[\s\S]*?disarmTool\(\)/);
+    assert.match(dialog, /cancelPasteMode\(\);\s+disarmTool\(\);\s+setSelectedParticipantId/);
   });
 
   it("Copy enters paste mode immediately; the clipboard survives a placement", () => {
@@ -361,11 +358,11 @@ describe("Prepare Documents editor UX (source)", () => {
   it("scrolling re-aims the ghost and never places or cancels", () => {
     const scroll = dialog.slice(dialog.indexOf("function onScroll()"), dialog.indexOf('removeEventListener("scroll"'));
     assert.match(scroll, /pointToPageAnchor\(pointer\.x, pointer\.y\)/);
-    assert.doesNotMatch(scroll, /pasteAt|placeFieldAt|cancelPasteMode|disarmDateLink/);
+    assert.doesNotMatch(scroll, /pasteAt|placeFieldAt|cancelPasteMode|disarmTool/);
   });
 
   it("uses the left-edge anchor for new placements", () => {
-    assert.match(place, /newPlacementRect\(selectedFieldType, point, size, page\)/);
+    assert.match(place, /newPlacementRect\(tool, point, size, page\)/);
     assert.doesNotMatch(place, /point\.x - size\.width \/ 2/);
   });
 });

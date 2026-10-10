@@ -3,7 +3,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
+  autoAddNoticeEntryName,
+  formatAutoAddNotice,
+  joinDisplayNames,
+} from "./auto-add-notice-format";
+import {
   nearestDateLinkSource,
+  PLACEMENT_TOOLS,
+  placementToolEnabled,
   rectGapDistance,
   resolveDateLinkTarget,
 } from "./draft-field-editor-state";
@@ -161,29 +168,207 @@ describe("Prepare Documents Date placement (source)", () => {
   const dialog = read("components/signings/signing-preview-dialog.tsx");
   const place = slice(dialog, "function placeFieldAt(", "async function createField(");
 
-  it("places a Date only with a resolved source and never an unlinked one", () => {
-    assert.match(place, /resolveDateLinkTarget\(\{/);
-    assert.match(place, /if \(!target\.source\) \{[\s\S]*?return;\s+\}/);
+  it("places a Date only with a resolved nearest source and never an unlinked one", () => {
+    const targetAt = slice(dialog, "function dateLinkTargetAt(", "/** Arm one placement");
+    assert.match(targetAt, /resolveDateLinkTarget\(\{/);
+    assert.match(targetAt, /explicitSourceId: ""/);
+    assert.match(place, /linkedSource = dateLinkTargetAt\(point\)\.source;\s+if \(!linkedSource\) \{[\s\S]*?return;\s+\}/);
     assert.match(place, /No Signature or Initials for \$\{participant\?\.fullName \?\? "this participant"\} on this page/);
     assert.doesNotMatch(place, /preferredSignatureForDate|dateSourceOptions\(/);
   });
 
   it("highlights the live target without selecting or moving it", () => {
-    assert.match(dialog, /field\.id === dateTargetSourceId\s+\? "source"/);
+    assert.match(dialog, /field\.id === dateTargetSourceId\s+\? "target"\s+: "candidate"/);
     assert.match(dialog, /Will link to: \$\{dateLinkSourceDisplay\(dateTarget\.source\)\}/);
-    assert.match(dialog, /disableDragging=\{dateLink !== null\}/);
-    assert.match(dialog, /onMouseMove=\{\s+dateTracking/);
+    assert.match(dialog, /onMouseMove=\{\s+toolTracking/);
   });
 
-  it("keeps Link to as an explicit override with Automatic as the reset", () => {
-    assert.match(dialog, /value=\{explicitDateSourceId \?\? ""\}/);
-    assert.match(dialog, /"Automatic: nearest on the page"/);
-    assert.match(dialog, /\(chosen under Link to\)/);
-  });
-
-  it("tells the server which Dates were linked by proximity", () => {
-    assert.match(place, /if \(selectedFieldType === "DATE_SIGNED" && !dateLinkSourceId\) \{\s+autoLinkedDateIdsRef\.current\.add\(fieldId\);/);
+  it("tells the server every placed Date was linked by proximity", () => {
+    assert.match(place, /if \(tool === "DATE_SIGNED"\) autoLinkedDateIdsRef\.current\.add\(fieldId\);/);
     assert.match(dialog, /existingId === undefined && autoLinkedDateIdsRef\.current\.has\(field\.id\)\s+\? "AUTO_NEAREST"/);
+  });
+});
+
+describe("One-shot placement tools (source)", () => {
+  const dialog = read("components/signings/signing-preview-dialog.tsx");
+  const place = slice(dialog, "function placeFieldAt(", "async function createField(");
+  const arm = slice(dialog, "function armTool(", "function disarmTool(");
+  const escape = slice(dialog, 'if (event.key === "Escape") {', "if (!editable || isTypingTarget(event.target)) return;");
+
+  it("a successful placement disarms the tool, so a second Date needs re-arming", () => {
+    assert.match(place, /persistNewFields\(documentId, pairedDate \? \[field, pairedDate\] : \[field\]\);\s+disarmTool\(\);/);
+    const disarm = slice(dialog, "function disarmTool(", "/** Page anchor");
+    assert.match(disarm, /setActiveTool\(null\);\s+setToolPreview\(null\);/);
+  });
+
+  it("no armed tool means a page click only clears the selection and places nothing", () => {
+    assert.match(place, /const tool = activeTool;\s+if \(!tool\) \{\s+if \(selectedFieldIds\.length > 0\) setSelectedFieldIds\(\[\]\);\s+return;\s+\}/);
+  });
+
+  it("a Date with no candidate stays armed and places nothing", () => {
+    const noSource = slice(place, "if (!linkedSource) {", "linkedSignatureDraftFieldId = linkedSource.id;");
+    assert.doesNotMatch(noSource, /disarmTool|buildLocalField/);
+  });
+
+  it("Esc cancels the armed tool before clearing a selection or closing", () => {
+    assert.ok(escape.indexOf("cancelPasteMode()") < escape.indexOf("disarmTool()"));
+    assert.ok(escape.indexOf("disarmTool()") < escape.indexOf("setSelectedFieldIds([])"));
+    assert.ok(escape.indexOf("disarmTool()") < escape.indexOf("handleClose()"));
+  });
+
+  it("selecting an existing field (page or list) cancels the ghost", () => {
+    assert.match(slice(dialog, "function pressField(", "const wasSelected"), /if \(activeTool\) disarmTool\(\);/);
+    assert.match(slice(dialog, "function selectField(", "setSelectedFieldIds([fieldId]);"), /disarmTool\(\);/);
+  });
+
+  it("participant, document, paste and close transitions leave no stale ghost", () => {
+    assert.match(dialog, /cancelPasteMode\(\);\s+disarmTool\(\);\s+setSelectedParticipantId/);
+    assert.match(slice(dialog, "function goToDocument(", "const handleClose"), /disarmTool\(\);/);
+    assert.match(slice(dialog, "function startPasteMode(", "function cancelPasteMode("), /disarmTool\(\);/);
+    assert.match(slice(dialog, "const handleClose = useCallback(", "onClose();"), /setActiveTool\(null\);\s+setToolPreview\(null\);/);
+    assert.match(dialog, /setPastePreview\(null\);\s+setActiveTool\(null\);\s+setToolPreview\(null\);/);
+  });
+
+  it("arming clears the field selection and shows the ghost at once", () => {
+    assert.match(arm, /cancelPasteMode\(\);/);
+    assert.match(arm, /setSelectedFieldIds\(\[\]\);/);
+    assert.match(arm, /setActiveTool\(tool\);/);
+    assert.match(arm, /setToolPreview\(pointer \? pointToPageAnchor\(pointer\.x, pointer\.y\) : null\);/);
+  });
+
+  it("a participant-owned tool never arms without a participant", () => {
+    assert.match(arm, /if \(placementHasParticipant\(tool\) && !selectedParticipantId\) \{[\s\S]*?return;\s+\}/);
+  });
+});
+
+describe("Placement toolbar", () => {
+  const dialog = read("components/signings/signing-preview-dialog.tsx");
+  const participantSelect = slice(dialog, 'id="prepare-participant"', "</select>");
+
+  it("lists the five tools in order with the Date tool labelled Date", () => {
+    assert.deepEqual(
+      PLACEMENT_TOOLS.map((tool) => [tool.type, tool.label]),
+      [
+        ["SIGNATURE", "Signature"],
+        ["INITIALS", "Initials"],
+        ["DATE_SIGNED", "Date"],
+        ["PRINTED_NAME", "Printed Name"],
+        ["CHECKMARK", "Checkmark"],
+      ],
+    );
+  });
+
+  it("requires a participant for every tool except Checkmark", () => {
+    for (const tool of ["SIGNATURE", "INITIALS", "DATE_SIGNED", "PRINTED_NAME"] as const) {
+      assert.equal(placementToolEnabled(tool, ""), false, tool);
+      assert.equal(placementToolEnabled(tool, "p1"), true, tool);
+    }
+    assert.equal(placementToolEnabled("CHECKMARK", ""), true);
+  });
+
+  it("renders accessible toggle buttons with an active state; the dropdown is gone", () => {
+    assert.match(dialog, /role="toolbar"/);
+    assert.match(dialog, /aria-pressed=\{active\}/);
+    assert.match(dialog, /data-testid=\{`placement-tool-\$\{tool\.type\}`\}/);
+    assert.match(dialog, /disabled=\{!enabled\}/);
+    assert.match(dialog, /onClick=\{\(\) => \(active \? disarmTool\(\) : armTool\(tool\.type\)\)\}/);
+    assert.doesNotMatch(dialog, /id="prepare-field-type"|<optgroup|function changeFieldType|selectedFieldType/);
+  });
+
+  it("choosing a participant never arms a tool", () => {
+    assert.doesNotMatch(participantSelect, /\barmTool\(|setActiveTool\(/);
+    assert.match(participantSelect, /disarmTool\(\);/);
+    assert.match(dialog, /useState<DraftFieldType \| null>\(null\)/);
+  });
+});
+
+describe("Linked-source highlight; no Link to override (source)", () => {
+  const dialog = read("components/signings/signing-preview-dialog.tsx");
+
+  it("removes the Link to dropdown, the override card and every manual relink path", () => {
+    for (const pattern of [
+      /id="prepare-date-link"/,
+      /id="relink-date"/,
+      /Link to<\/Label>/,
+      /Automatic: nearest on the page/,
+      /chosen under Link to/,
+      /function relinkSelectedDate/,
+      /function armDateLink/,
+      /EXPLICIT_SOURCE/,
+    ]) {
+      assert.doesNotMatch(dialog, pattern);
+    }
+  });
+
+  it("a selected Date's participant cannot be reassigned (that would relink it)", () => {
+    const reassign = slice(dialog, "function reassignSelectedField(", "function selectField(");
+    assert.match(reassign, /located\.field\.fieldType === "DATE_SIGNED"\s+\) \{\s+return;/);
+    assert.match(dialog, /placementHasParticipant\(selectedField\.fieldType\) &&\s+selectedField\.fieldType !== "DATE_SIGNED"/);
+  });
+
+  it("highlights only the selected Date's linked source, read-only", () => {
+    assert.match(dialog, /editable && selectedField\?\.fieldType === "DATE_SIGNED"\s+\? \(selectedField\.linkedSignatureFieldId \?\? null\)\s+: null/);
+    assert.match(dialog, /field\.id === linkedSourceId\s+\? "linked"/);
+    assert.match(dialog, /selected=\{selectedFieldIds\.includes\(field\.id\)\}/);
+    assert.match(dialog, /data-date-linked-source=\{highlight === "linked" \? "true" : undefined\}/);
+  });
+
+  it("styles candidate, target, linked and selected differently", () => {
+    const candidate = /highlight === "candidate" && "ring-2 ring-amber-300 ring-offset-1"/;
+    const target = /highlight === "target" && "z-10 bg-amber-50\/90 ring-2 ring-amber-600 ring-offset-1"/;
+    const linked = /highlight === "linked" &&\s+"outline-dashed outline-2 outline-offset-2 outline-amber-600"/;
+    const selected = /selected && "z-10 bg-sky-50\/90 ring-2 ring-sky-500 ring-offset-1"/;
+    for (const pattern of [candidate, target, linked, selected]) assert.match(dialog, pattern);
+  });
+
+  it("delete and re-place relinks: a new Date near B links to B", () => {
+    const initialsA = field("ia", "INITIALS", { x: 50, y: 100 });
+    const initialsB = field("ib", "INITIALS", { x: 50, y: 500 });
+    const nearB = { x: 160, y: 502, width: 60, height: 16 };
+    assert.equal(
+      nearestDateLinkSource([initialsA, initialsB], "p1", 1, nearB)?.id,
+      "ib",
+    );
+  });
+
+  it("a Date drag moves only the selected placements, never its linked source", () => {
+    assert.match(dialog, /ids: groupMoveIds\(model, selectedFieldIds, anchorId\)/);
+  });
+});
+
+describe("Auto-add notice text", () => {
+  it("names the participant, never [object Object]", () => {
+    assert.equal(
+      formatAutoAddNotice([{ participantId: "a", fullName: "Jane Smith" }]),
+      "Added from the source Packet: Jane Smith.",
+    );
+  });
+
+  it("reads several names", () => {
+    assert.equal(
+      formatAutoAddNotice([
+        { participantId: "a", fullName: "Jane Smith" },
+        { participantId: "b", fullName: "John Smith" },
+      ]),
+      "Added from the source Packet: Jane Smith and John Smith.",
+    );
+    assert.equal(joinDisplayNames(["A", "B", "C"]), "A, B and C");
+  });
+
+  it("tolerates older payload shapes and drops anything without a name", () => {
+    assert.equal(formatAutoAddNotice(["Jane Smith"]), "Added from the source Packet: Jane Smith.");
+    const text = formatAutoAddNotice([{ participantId: "a" }, { fullName: { first: "x" } }, null, 7, " Pat "]);
+    assert.equal(text, "Added from the source Packet: Pat.");
+    assert.equal(formatAutoAddNotice([{}, null, "  "]), null);
+    assert.equal(formatAutoAddNotice([]), null);
+    assert.equal(autoAddNoticeEntryName({ fullName: "  Jane  " }), "Jane");
+  });
+
+  it("the panel renders the formatted text only", () => {
+    const panel = read("components/signings/signing-draft-prep-panel.tsx");
+    assert.match(panel, /const autoAddNotice = formatAutoAddNotice\(autoAddedFromPacket\);/);
+    assert.match(panel, /\{autoAddNotice\}/);
+    assert.doesNotMatch(panel, /joinNames\(autoAddedFromPacket|Added from the source Packet:\{" "\}/);
   });
 });
 

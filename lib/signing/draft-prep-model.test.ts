@@ -465,7 +465,6 @@ describe("Draft prep security boundaries (source)", () => {
     assert.match(dialog, /if \(pasteMode\) return;/);
     assert.match(dialog, /data-testid="paste-placement-layer"/);
     assert.match(dialog, /startPasteMode\(\);/);
-    assert.match(dialog, /<optgroup label="Signing fields">/);
-    assert.match(dialog, /<optgroup label="Prepared content">/);
+    assert.match(dialog, /data-testid=\{`placement-tool-\$\{tool\.type\}`\}/);
   });
 });

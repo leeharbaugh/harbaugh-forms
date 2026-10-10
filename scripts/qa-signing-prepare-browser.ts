@@ -19,9 +19,13 @@
  * new fields anchor at the click's left edge (Checkmark centred) and clamp
  * without shrinking; Copy enters paste mode at once (scroll-safe ghost, Esc,
  * Ctrl+V re-enters); Date Signed links automatically to the nearest
- * Signature/Initials on the hovered page ("Will link to: …"), Link to or a
- * click on a candidate overrides it until Esc / participant or type change;
- * an ineligible source fails visibly.
+ * Signature/Initials on the hovered page ("Will link to: …").
+ *
+ * Toolbar tranche: explicit one-shot placement tools replace the Field type
+ * dropdown (choosing a participant arms nothing; a tool click clears the
+ * selection and arms; placement, Esc, selecting a field, participant or tool
+ * change disarm with no stale ghost). No Link to override: selecting a Date
+ * outlines its linked source; relinking is delete-and-replace.
  *
  *   NODE_PATH=_audit_tmp/pw-deps/node_modules npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/qa-signing-prepare-browser.ts
  */
@@ -174,6 +178,21 @@ async function main() {
     if (!value) fail(`${selectId} has no option for ${name}`);
     await select.selectOption(value);
     return value;
+  }
+
+  type PlacementTool = "SIGNATURE" | "INITIALS" | "DATE_SIGNED" | "PRINTED_NAME" | "CHECKMARK";
+  const toolButton = (type: PlacementTool) => page.locator(`[data-testid="placement-tool-${type}"]`);
+  /** Arm one placement; the tool disarms itself after the next placement. */
+  async function armTool(type: PlacementTool) {
+    const button = toolButton(type);
+    if ((await button.getAttribute("aria-pressed")) !== "true") await button.click();
+    if ((await button.getAttribute("aria-pressed")) !== "true") fail(`${type} tool did not arm`);
+  }
+  async function expectNoArmedTool(context: string) {
+    if ((await page.locator('[data-testid^="placement-tool-"][aria-pressed="true"]').count()) !== 0) {
+      fail(`${context}: a placement tool is still armed`);
+    }
+    if ((await page.locator("[data-tool-preview]").count()) !== 0) fail(`${context}: a stale ghost remains`);
   }
 
   async function waitSaved() {
@@ -427,6 +446,10 @@ async function main() {
     await page.reload({ waitUntil: "networkidle" });
     const autoNotice = page.locator('[data-testid="packet-auto-added"]');
     await autoNotice.getByText(/Added from the source Packet: Bea Buyerthree/).waitFor({ timeout: 30000 });
+    if ((await autoNotice.innerText()).trim() !== "Added from the source Packet: Bea Buyerthree.") {
+      fail(`auto-add notice text: ${await autoNotice.innerText()}`);
+    }
+    if ((await page.getByText("[object Object]").count()) !== 0) fail("the page shows [object Object]");
     await participantList.getByText("Bea Buyerthree").waitFor({ timeout: 30000 });
     if ((await page.getByRole("button", { name: "Add from Packet" }).count()) !== 0) fail("no Add from Packet click may remain");
     if ((await page.getByRole("dialog").count()) !== 0) fail("auto-add must not open a popup");
@@ -584,13 +607,25 @@ async function main() {
     const pageBox = await page.locator(".react-pdf__Page").first().boundingBox();
     if (!pageBox || pageBox.width < 600) fail(`PDF page too small: ${pageBox?.width}`);
     ok(`workspace ${dialogBox.width}x${dialogBox.height}; PDF page width ${Math.round(pageBox.width)}px`);
-    if ((await page.getByRole("button", { name: "Signature", exact: true }).count()) > 0) {
-      fail("dead Signature toolbar control is still present");
+    if ((await page.locator("#prepare-field-type").count()) !== 0) fail("the Field type dropdown must be gone");
+    for (const [type, label] of [
+      ["SIGNATURE", "Signature"],
+      ["INITIALS", "Initials"],
+      ["DATE_SIGNED", "Date"],
+      ["PRINTED_NAME", "Printed Name"],
+      ["CHECKMARK", "Checkmark"],
+    ] as const) {
+      const button = toolButton(type);
+      if (!(await button.isVisible()) || (await button.innerText()).trim() !== label) {
+        fail(`placement toolbar button ${type} missing or mislabelled`);
+      }
+      if ((await button.getAttribute("aria-pressed")) !== "false") fail(`${type} must start unarmed`);
     }
+    await expectNoArmedTool("on open");
     await page
       .getByText("Place signing fields for each participant. Participants adopt their signatures and initials when they sign.")
       .waitFor();
-    ok("dead toolbar controls absent; concise adoption copy shown");
+    ok("placement toolbar shows Signature, Initials, Date, Printed Name, Checkmark, none armed; Field type dropdown gone; adoption copy shown");
     await shot(page, "02-prepare-workspace");
 
     await page.evaluate(() => {
@@ -609,11 +644,17 @@ async function main() {
 
     // Place a Signature on page 2 (auto Date Signed).
     await selectParticipant("#prepare-participant", "Lee Harbaugh");
-    await page.locator("#prepare-field-type").selectOption("SIGNATURE");
+    await expectNoArmedTool("after choosing a participant");
     const page2 = page.locator(".react-pdf__Page").nth(1);
+    await page2.hover({ position: { x: 200, y: 300 } });
+    await armTool("SIGNATURE");
+    await page2.hover({ position: { x: 205, y: 300 } });
+    await page2.hover({ position: { x: 200, y: 300 } });
+    await page.locator('[data-tool-preview="SIGNATURE"]').waitFor({ timeout: 5000 });
     await page2.click({ position: { x: 200, y: 300 } });
     await page.locator(".signing-field-overlay").nth(1).waitFor({ timeout: 10000 });
     await waitSaved();
+    await expectNoArmedTool("after placing a Signature");
     let rows = await draftFields();
     const signature = rows.find((row) => row.field_type === "SIGNATURE");
     const pairedDate = rows.find((row) => row.field_type === "DATE_SIGNED");
@@ -719,18 +760,26 @@ async function main() {
     await assertStable("reassign");
     ok("reassign moved the Signature and its Date Signed to Cal Cobuyer");
 
-    // Initials: place and remove independently. With a placement selected, the
-    // first click on empty page area only clears the selection.
+    // Initials: place and remove independently. With no tool armed, a click on
+    // empty page area only clears the selection; arming a tool clears the
+    // selection itself, so the first page click places.
     await selectParticipant("#prepare-participant", "Lee Harbaugh");
-    await page.locator("#prepare-field-type").selectOption("INITIALS");
     const selectionStatus = page.locator('[data-testid="prepare-selection"]');
+    await sigOverlay.click();
+    await selectionStatus.getByText("1 placement selected").waitFor({ timeout: 5000 });
     await page2.click({ position: { x: 450, y: 650 } });
     await selectionStatus.getByText("No placements selected").waitFor({ timeout: 5000 });
     await page.waitForTimeout(500);
     if ((await draftFields()).length !== 2) fail("a clearing click must not place a field");
-    ok("clicking empty canvas with a selection clears it without placing");
+    ok("with no tool armed, clicking empty canvas with a selection clears it without placing");
+    await sigOverlay.click();
+    await selectionStatus.getByText("1 placement selected").waitFor({ timeout: 5000 });
+    await armTool("INITIALS");
+    await selectionStatus.getByText("No placements selected").waitFor({ timeout: 5000 });
     await page2.click({ position: { x: 450, y: 650 } });
     await waitSaved();
+    await expectNoArmedTool("after placing Initials");
+    ok("clicking a tool clears the selection and arms it; the first page click places");
     const withInitials = await draftFields();
     if (withInitials.length !== 3) fail("Initials were not placed");
     const initialsRow = withInitials.find((row) => row.field_type === "INITIALS")!;
@@ -786,7 +835,7 @@ async function main() {
       size: { width: number; height: number },
     ) => {
       await selectParticipant("#prepare-participant", participant);
-      await page.locator("#prepare-field-type").selectOption(type);
+      await armTool(type);
       await firstPage.click({
         position: {
           x: line.x * scale,
@@ -838,10 +887,11 @@ async function main() {
     const zoomScale = (await firstPage.boundingBox())!.width / 612;
     if (zoomScale <= scale * 1.05) fail(`Zoom in did not enlarge the page (${scale} -> ${zoomScale})`);
     await selectParticipant("#prepare-participant", "Lee Harbaugh");
-    await page.locator("#prepare-field-type").selectOption("INITIALS");
+    await armTool("INITIALS");
     const beforeZoomed = await draftFields();
     await firstPage.click({ position: { x: 300 * zoomScale, y: 450 * zoomScale } });
     await waitSaved();
+    await armTool("INITIALS");
     await firstPage.click({ position: { x: 605 * zoomScale, y: 480 * zoomScale } });
     await waitSaved();
     await page.waitForTimeout(500);
@@ -1041,9 +1091,10 @@ async function main() {
     await pasteLayer.waitFor({ state: "detached", timeout: 5000 });
     await page.getByRole("button", { name: "Paste", exact: true }).click();
     await pasteLayer.waitFor({ timeout: 5000 });
-    await page.locator("#prepare-field-type").selectOption("SIGNATURE");
+    await armTool("SIGNATURE");
     await pasteLayer.waitFor({ state: "detached", timeout: 5000 });
-    await page.locator("#prepare-field-type").selectOption("INITIALS");
+    await page.keyboard.press("Escape");
+    await expectNoArmedTool("after Esc");
     if ((await draftFields()).length !== before.length) fail("cancelled paste created fields");
     ok("Escape, Paste button parity, and a tool change: paste mode arms and cancels with nothing created");
 
@@ -1227,12 +1278,9 @@ async function main() {
       const reopenedPage = page.locator(".react-pdf__Page").first();
       await reopenedPage.click({ position: { x: pt.x * scale, y: pt.y * scale } });
     };
-    /** A click with a selection only clears it; place with a second click. */
+    /** Place with the armed tool (arming already cleared any selection). */
     const placeAtPt = async (pt: { x: number; y: number }) => {
-      if (!(await selectionStatus.getByText("No placements selected").isVisible())) {
-        await pagePt({ x: 20, y: 20 });
-        await expectSelected(0);
-      }
+      await expectSelected(0);
       await pagePt(pt);
       await waitSaved();
       await page.waitForTimeout(500);
@@ -1300,11 +1348,9 @@ async function main() {
       await expectSelected(0);
     }
     await selectParticipant("#prepare-participant", "Lee Harbaugh");
-    await page.locator("#prepare-field-type").selectOption("DATE_SIGNED");
-    const linkOptions = await page.locator("#prepare-date-link option").allTextContents();
-    if (!linkOptions.some((text) => text.startsWith("Initials"))) {
-      fail(`Link to must offer Initials: ${JSON.stringify(linkOptions)}`);
-    }
+    await expectNoArmedTool("participant change");
+    await armTool("DATE_SIGNED");
+    if ((await page.locator("#prepare-date-link, #relink-date").count()) !== 0) fail("Link to override UI must be gone");
     if ((await page.locator("[data-date-link-candidate]").count()) === 0) fail("Date tool must highlight link candidates");
     const beforeIniDate = await draftFields();
     const leeCandidates = beforeIniDate.filter(
@@ -1358,7 +1404,6 @@ async function main() {
     await hoverPt(singlePt);
     await datePreview.waitFor({ timeout: 5000 });
     await linkStatus.getByText("Will link to: Initials — Page 1.", { exact: false }).waitFor({ timeout: 5000 });
-    if ((await linkStatus.getAttribute("data-date-link-mode")) !== "AUTO_NEAREST") fail("the default Date mode must be automatic");
     if ((await markedSourceId()) !== single.id) fail("hovering beside the Initials must highlight it as the target");
     const ghostA = (await datePreview.boundingBox())!;
     await hoverPt({ x: singlePt.x + 20, y: singlePt.y + 20 });
@@ -1401,74 +1446,126 @@ async function main() {
       fail(`Date Signed was not linked to the nearest Initials at the click: ${JSON.stringify(iniDateRows)}`);
     }
     ok(`automatic Date: hover highlights the nearest Lee Signature/Initials ("Will link to: Initials — Page 1")${otherCandidate ? ", the target follows the pointer" : ""}, the ghost follows the cursor, one click places one Date linked to it`);
-    await page
-      .locator('.signing-field-overlay:has([aria-label="Date Signed for Lee Harbaugh"])')
-      .first()
-      .click({ position: { x: 6, y: 6 } });
-    await expectSelected(1);
-    if ((await page.locator("#relink-date").inputValue()) !== single.id) {
-      fail("the selected Date must show its Initials link");
-    }
-    await shot(page, "12-initials-linked-date");
-    ok("the placed Date's Linked to shows the Initials");
 
-    const isArmed = async () => (await linkStatus.getAttribute("data-date-link-mode")) === "EXPLICIT_SOURCE";
+    // One-shot: the Date tool disarms after the placement; another click places nothing.
+    await expectNoArmedTool("after placing a Date");
     const fieldsNow = async () => (await draftFields()).length;
     const baseline = await fieldsNow();
-    // Clicking a candidate (or choosing it under Link to) is an explicit
-    // override that stays fixed while the pointer moves; Esc returns to automatic.
-    await (await overlayAtRow("Initials for Lee Harbaugh", single)).click();
-    if (!(await isArmed())) fail("clicking the Initials must choose it explicitly");
-    await expectSelected(0);
-    await linkStatus.getByText("Linked to: Initials — Page 1 (chosen under Link to).", { exact: false }).waitFor({ timeout: 5000 });
-    if ((await page.locator("#prepare-date-link").inputValue()) !== single.id) fail("Link to must show the explicit choice");
-    if (otherCandidate) {
-      await hoverPt(besideRow(otherCandidate));
-      if ((await markedSourceId()) !== single.id || !(await isArmed())) {
-        fail("an explicit choice must stay fixed while the pointer moves");
-      }
-    }
-    await page.keyboard.press("Escape");
-    await page.waitForTimeout(200);
-    if (await isArmed()) fail("Esc must return to automatic linking");
-    if ((await page.locator("#prepare-date-link").inputValue()) !== "") fail("Esc must reset Link to to Automatic");
-    if ((await page.getByRole("heading", { name: "Prepare Documents" }).count()) !== 1) fail("Esc while armed must not close the workspace");
-    await page.waitForTimeout(300);
-    if ((await fieldsNow()) !== baseline) fail("choosing and cancelling an explicit link placed a field");
-    ok("explicit override: clicking the Initials fixes Link to on it while the pointer moves; Esc returns to Automatic (workspace stays open); nothing placed");
+    await hoverPt({ x: singlePt.x, y: singlePt.y + 40 });
+    if ((await datePreview.count()) !== 0) fail("the Date ghost must disappear after placing");
+    await pagePt({ x: singlePt.x, y: singlePt.y + 40 });
+    await page.waitForTimeout(500);
+    if ((await fieldsNow()) !== baseline) fail("a second click without re-arming placed a Date");
+    ok("Date is one-shot: the tool disarms, the ghost disappears, and a second click places nothing");
 
-    // Another participant's Signature is not a valid source: visible error, normal select.
-    const calSigNow = byParticipant(await draftFields(), "SIGNATURE", "Cal Cobuyer")[0];
-    await (await overlayAtRow("Signature for Cal Cobuyer", calSigNow)).click({ position: { x: 6, y: 6 } });
-    await page.getByText("Date Signed links only to a Signature or Initials for Lee Harbaugh.").waitFor({ timeout: 5000 });
-    if (await isArmed()) fail("an ineligible source must not arm");
+    // Selecting the Date: it stays selected; its Initials gets the secondary
+    // "Linked" outline (not a selection); clearing removes it.
+    const linkedMarker = page.locator("[data-date-linked-source]");
+    const iniDateOverlay = page.locator('.signing-field-overlay:has([aria-label="Date Signed for Lee Harbaugh"])');
+    const dateOverlayFor = async (row: { x: number; y: number }) => overlayAtRow("Date Signed for Lee Harbaugh", row);
+    const linkedSourceIdNow = async () => {
+      if ((await linkedMarker.count()) !== 1) return null;
+      const box = (await linkedMarker.boundingBox())!;
+      const origin = await page1Origin();
+      const at = { x: (box.x - origin.x) / scale, y: (box.y - origin.y) / scale };
+      const rowsNow = await draftFields();
+      return rowsNow.find((row) => Math.abs(row.x - at.x) < 3 && Math.abs(row.y - at.y) < 3 && row.field_type !== "DATE_SIGNED")?.id ?? "unknown";
+    };
+    if ((await iniDateOverlay.count()) === 0) fail("no Lee Date overlay");
+    await (await dateOverlayFor(iniDate)).click({ position: { x: 6, y: 6 } });
     await expectSelected(1);
+    if ((await linkedSourceIdNow()) !== single.id) fail("selecting the Date must outline its linked Initials");
+    if ((await linkedMarker.getAttribute("data-selected")) === "true") fail("the linked source must not be selected");
+    await page.getByTestId("date-linked-source").getByText("Linked to: Initials — Page 1", { exact: false }).waitFor({ timeout: 5000 });
+    await shot(page, "12-initials-linked-date");
     await pagePt({ x: 20, y: 20 });
     await expectSelected(0);
-    ok("clicking another participant's Signature fails visibly and only selects it");
+    if ((await linkedMarker.count()) !== 0) fail("clearing the selection must remove the linked outline");
+    ok("selecting the Date keeps it selected and outlines only its linked Initials (not selected); clearing removes the outline");
 
-    // Changing participant or field type, or choosing Automatic, clears an explicit choice.
-    await page.locator("#prepare-date-link").selectOption(single.id);
-    if (!(await isArmed())) fail("Link to must set the explicit choice");
+    // Moving the selected Date never moves its source.
+    const singleBefore = (await draftFields()).find((row) => row.id === single.id)!;
+    const iniDateBox = (await (await dateOverlayFor(iniDate)).boundingBox())!;
+    await page.mouse.move(iniDateBox.x + 6, iniDateBox.y + iniDateBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(iniDateBox.x + 36, iniDateBox.y + iniDateBox.height / 2 + 10, { steps: 8 });
+    await page.mouse.up();
+    await waitSaved();
+    await page.waitForTimeout(500);
+    const afterDateDrag = await draftFields();
+    const draggedDate = afterDateDrag.find((row) => row.id === iniDate.id)!;
+    const singleAfter = afterDateDrag.find((row) => row.id === single.id)!;
+    if (Math.abs(draggedDate.x - iniDate.x) < 5) fail("the Date drag did not persist");
+    if (singleAfter.x !== singleBefore.x || singleAfter.y !== singleBefore.y) fail("dragging a Date moved its linked source");
+    if (draggedDate.linked_signature_draft_field_id !== single.id) fail("a Date drag must keep its link");
+    ok("dragging the selected Date moves only the Date; its link is unchanged");
+    await pagePt({ x: 20, y: 20 });
+    await expectSelected(0);
+
+    // Arming then selecting an existing field, changing participant, or Esc
+    // all cancel the ghost; Esc does not close the workspace.
+    await armTool("DATE_SIGNED");
+    await hoverPt(singlePt);
+    await datePreview.waitFor({ timeout: 5000 });
+    await (await overlayAtRow("Initials for Lee Harbaugh", single)).click({ position: { x: 3, y: 3 } });
+    await expectSelected(1);
+    await expectNoArmedTool("selecting an existing field");
+    await pagePt({ x: 20, y: 20 });
+    await expectSelected(0);
+    await armTool("DATE_SIGNED");
     await selectParticipant("#prepare-participant", "Cal Cobuyer");
-    await page.waitForTimeout(200);
-    if (await isArmed()) fail("participant change must clear the explicit choice");
+    await expectNoArmedTool("participant change");
     await selectParticipant("#prepare-participant", "Lee Harbaugh");
-    await page.locator("#prepare-date-link").selectOption(single.id);
-    if (!(await isArmed())) fail("re-arm failed");
-    await page.locator("#prepare-field-type").selectOption("INITIALS");
-    await page.locator("#prepare-field-type").selectOption("DATE_SIGNED");
-    if (await isArmed()) fail("a field type change must clear the explicit choice");
-    await page.locator("#prepare-date-link").selectOption(single.id);
-    await linkStatus.getByText("Linked to: Initials — Page 1 (chosen under Link to).", { exact: false }).waitFor({ timeout: 5000 });
-    await page.locator("#prepare-date-link").selectOption("");
-    if (await isArmed()) fail("choosing Automatic must clear the explicit choice");
-    if ((await fieldsNow()) !== baseline) fail("explicit choices placed fields");
-    ok("participant change, field type change and choosing Automatic clear the explicit choice; nothing placed");
+    await armTool("DATE_SIGNED");
+    await armTool("INITIALS");
+    if ((await toolButton("DATE_SIGNED").getAttribute("aria-pressed")) !== "false") fail("switching tools must disarm Date");
+    await toolButton("INITIALS").click();
+    await expectNoArmedTool("clicking the active tool again");
+    await armTool("DATE_SIGNED");
+    await hoverPt(singlePt);
+    await datePreview.waitFor({ timeout: 5000 });
+    await page.keyboard.press("Escape");
+    await expectNoArmedTool("Esc");
+    if ((await page.getByRole("heading", { name: "Prepare Documents" }).count()) !== 1) fail("Esc with an armed tool must not close the workspace");
+    if ((await fieldsNow()) !== baseline) fail("cancelled tools placed fields");
+    ok("selecting a field, changing participant, switching tools, re-clicking the tool and Esc each cancel the armed tool with no stale ghost; nothing placed");
+
+    // Reassociation is delete-and-replace: remove the Date, place a new one by
+    // another Lee Signature/Initials; the outline follows the new link.
+    if (otherCandidate) {
+      await (await dateOverlayFor(draggedDate)).click({ position: { x: 6, y: 6 } });
+      await expectSelected(1);
+      await page.keyboard.press("Delete");
+      await waitSaved();
+      await page.waitForTimeout(500);
+      if ((await draftFields()).some((row) => row.id === iniDate.id)) fail("Date delete did not persist");
+      await armTool("DATE_SIGNED");
+      const otherPt = besideRow(otherCandidate);
+      await hoverPt(otherPt);
+      if ((await markedSourceId()) !== otherCandidate.id) fail("the new Date must target the other source");
+      await pagePt(otherPt);
+      await waitSaved();
+      await page.waitForTimeout(500);
+      const recreated = (await draftFields()).find(
+        (row) => row.field_type === "DATE_SIGNED" && !beforeIniDate.some((prior) => prior.id === row.id),
+      );
+      if (!recreated || recreated.linked_signature_draft_field_id !== otherCandidate.id) {
+        fail(`re-placed Date must link to the other source: ${JSON.stringify(recreated)}`);
+      }
+      await (await dateOverlayFor(recreated)).click({ position: { x: 6, y: 6 } });
+      await expectSelected(1);
+      if ((await linkedSourceIdNow()) !== otherCandidate.id) fail("the outline must follow the new link");
+      await shot(page, "12b-date-relinked-by-replace");
+      await pagePt({ x: 20, y: 20 });
+      await expectSelected(0);
+      ok("delete-and-replace relinks: the new Date links to and outlines the other source; no reassignment UI");
+    } else {
+      ok("delete-and-replace skipped: fixture has no second distant Lee source");
+    }
 
     // Printed Name for Bea Buyerthree on the printed-name line.
-    await page.locator("#prepare-field-type").selectOption("PRINTED_NAME");
     await selectParticipant("#prepare-participant", "Bea Buyerthree");
+    await armTool("PRINTED_NAME");
     const printedSize = defaultPreparedContentSize("PRINTED_NAME", "Bea Buyerthree");
     await placeAtPt({
       x: PRINTED.printedName.x,
@@ -1491,11 +1588,10 @@ async function main() {
     }
     ok("Printed Name placed on the line; renders Bea Buyerthree; stored as prepared content");
 
+    await expectNoArmedTool("after placing a Printed Name");
+
     // Checkmark over the printed box: no participant.
-    await page.locator("#prepare-field-type").selectOption("CHECKMARK");
-    if (!(await page.locator("#prepare-participant").isDisabled())) {
-      fail("participant choice must be disabled for a Checkmark");
-    }
+    await armTool("CHECKMARK");
     await placeAtPt({
       x: PRINTED.checkbox.x + PRINTED.checkbox.size / 2,
       y: PRINTED.checkbox.top + PRINTED.checkbox.size / 2,

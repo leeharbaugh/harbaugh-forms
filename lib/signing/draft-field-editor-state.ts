@@ -32,6 +32,20 @@ export function placementHasParticipant(type: DraftFieldType): boolean {
   return type !== "CHECKMARK";
 }
 
+/** Placement toolbar, in display order. Each tool places once, then disarms. */
+export const PLACEMENT_TOOLS: ReadonlyArray<{ type: DraftFieldType; label: string }> = [
+  { type: "SIGNATURE", label: "Signature" },
+  { type: "INITIALS", label: "Initials" },
+  { type: "DATE_SIGNED", label: "Date" },
+  { type: "PRINTED_NAME", label: "Printed Name" },
+  { type: "CHECKMARK", label: "Checkmark" },
+];
+
+/** Participant-owned tools need a chosen participant; Checkmark never does. */
+export function placementToolEnabled(type: DraftFieldType, participantId: string): boolean {
+  return !placementHasParticipant(type) || participantId !== "";
+}
+
 type LabelledField = Pick<
   SigningPreviewField,
   "fieldType" | "participantFullName" | "capacityMode" | "representedPartyName"

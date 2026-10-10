@@ -35,6 +35,10 @@ import {
   selectDraftSourcePacketAction,
   updateDraftSigningParticipantAction,
 } from "@/lib/signing/stage3-actions";
+import {
+  formatAutoAddNotice,
+  joinDisplayNames,
+} from "@/lib/signing/auto-add-notice-format";
 import type { ParticipantIdentitySourceKind } from "@/lib/signing/draft-participant-sync";
 import type {
   DraftPacketAutoAddNoticeEntry,
@@ -83,11 +87,6 @@ const IDENTITY_SOURCE_HELP: Record<ParticipantIdentitySourceKind, string> = {
   AD_HOC:
     "Name and email can be edited here until this Signing is sent or started.",
 };
-
-function joinNames(names: string[]): string {
-  if (names.length <= 1) return names.join("");
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
 
 export function SigningDraftPrepPanel({
   signingId,
@@ -191,9 +190,14 @@ export function SigningDraftPrepPanel({
   // Effects run only after a committed render, so the notice is acknowledged
   // only once the manager's browser has displayed it; a discarded server
   // render never acknowledges. Repeating the call is harmless.
-  const autoAddNoticeKey = canManage
-    ? autoAddedFromPacket.map((entry) => entry.participantId).join(",")
-    : "";
+  const autoAddNotice = formatAutoAddNotice(autoAddedFromPacket);
+  const autoAddNoticeKey =
+    canManage && autoAddNotice
+      ? autoAddedFromPacket
+          .map((entry) => entry.participantId)
+          .filter((id) => typeof id === "string" && id !== "")
+          .join(",")
+      : "";
   useEffect(() => {
     if (!autoAddNoticeKey) return;
     void acknowledgeDraftPacketAutoAddNoticeAction({
@@ -344,7 +348,7 @@ export function SigningDraftPrepPanel({
       const added = (result.data as DraftPacketAutoAddResult).addedParticipants;
       setNotice(
         added.length > 0
-          ? `${joinNames(added.map((party) => party.fullName))} restored from the Packet.`
+          ? `${joinDisplayNames(added.map((party) => party.fullName))} restored from the Packet.`
           : "This Packet participant is already on the Signing.",
       );
       await onChanged();
@@ -744,14 +748,13 @@ export function SigningDraftPrepPanel({
           <p id="draft-participants-heading" className="text-sm font-medium">
             Participants
           </p>
-          {autoAddedFromPacket.length > 0 ? (
+          {autoAddNotice ? (
             <p
               className="rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm dark:border-sky-800 dark:bg-sky-950/40"
               data-testid="packet-auto-added"
               role="status"
             >
-              Added from the source Packet:{" "}
-              {joinNames(autoAddedFromPacket.map((entry) => entry.fullName))}.
+              {autoAddNotice}
             </p>
           ) : null}
           {removedPacketParticipants.length > 0 ? (
