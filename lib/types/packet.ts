@@ -41,6 +41,10 @@ export {
 
 export type DocumentState = "DRAFT" | "FINAL" | "SIGNED" | "VOID";
 
+/** Packets are ACTIVE or soft-deleted; there is no Packet Inactive state. */
+export const PACKET_STATUSES = ["ACTIVE", "DELETED"] as const;
+export type PacketStatus = (typeof PACKET_STATUSES)[number];
+
 export type Packet = {
   owner_user_id: string | null;
   id: number;
@@ -53,7 +57,7 @@ export type Packet = {
   notes: string | null;
   create_date: string;
   update_date: string;
-  status: string;
+  status: PacketStatus;
 };
 
 export type PacketFormAvailabilityState = "AVAILABLE" | "PENDING_PUBLICATION";
@@ -139,9 +143,7 @@ export function formatPacketReference(id: number): string {
 }
 
 export function formatPacketStatus(status: string): string {
-  if (status === "DELETED") return "Deleted";
-  if (status === "INACTIVE") return "Inactive";
-  return "Active";
+  return status === "DELETED" ? "Deleted" : "Active";
 }
 
 export function isPacketDeleted(
@@ -275,9 +277,9 @@ export type UpdatePacketInput = {
   collectionId: number | null;
   propertyId: number | null;
   notes: string | null;
-  status: string;
 };
 
+/** Edits Packet details only; status changes go through delete / restore. */
 export async function updatePacket(
   supabase: SupabaseClient,
   packetId: number,
@@ -320,7 +322,6 @@ export async function updatePacket(
       input.propertyId,
     ),
     notes: input.notes?.trim() || null,
-    status: input.status,
   };
 
   if (!hasLegacyAgreement) {

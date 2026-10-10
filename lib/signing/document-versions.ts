@@ -3,7 +3,9 @@ import {
   loadDraftSourceSnapshotById,
   renderPreparedPdfFromDraftSnapshot,
 } from "./draft-source-snapshots";
+import { loadPreparedContentRenderItems } from "./draft-prepared-content";
 import { SigningError } from "./errors";
+import { bakePreparedContentIntoPdf } from "./prepared-content-pdf";
 import {
   assertTrustedIntegrity,
   verifyPreparedDocumentVersionIntegrity,
@@ -12,6 +14,7 @@ import {
   buildPreparedVersionObjectKey,
   newOpaqueId,
   requireSelectedDraftSourceSnapshotId,
+  sha256Hex,
   uploadPreparedPdfObject,
 } from "./prepare-pdf";
 import type { SigningActor } from "./types";
@@ -67,12 +70,6 @@ export async function ensurePreparedDocumentVersion(options: {
   if (!document) {
     throw new SigningError("NOT_FOUND", "Signing document not found.");
   }
-  if (!document.source_packet_form_id) {
-    throw new SigningError(
-      "VALIDATION_FAILED",
-      "Signing document is missing a source Packet Form.",
-    );
-  }
 
   const snapshotId = requireSelectedDraftSourceSnapshotId(document);
   const snapshot = await loadDraftSourceSnapshotById(
@@ -87,10 +84,28 @@ export async function ensurePreparedDocumentVersion(options: {
     );
   }
 
-  const prepared = await renderPreparedPdfFromDraftSnapshot({
+  const rendered = await renderPreparedPdfFromDraftSnapshot({
     admin: options.admin,
     snapshot,
   });
+  const preparedContent = await loadPreparedContentRenderItems(
+    options.admin,
+    options.signingId,
+    options.signingDocumentId,
+  );
+  const preparedBytes = await bakePreparedContentIntoPdf(
+    rendered.bytes,
+    preparedContent,
+  );
+  const prepared =
+    preparedBytes === rendered.bytes
+      ? rendered
+      : {
+          ...rendered,
+          bytes: preparedBytes,
+          contentSha256: sha256Hex(preparedBytes),
+          byteSize: preparedBytes.byteLength,
+        };
 
   const { data: existingVersions, error: existingError } = await options.admin
     .from("signing_document_versions")

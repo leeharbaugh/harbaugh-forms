@@ -10,7 +10,7 @@ export type PreparedPdfResult = {
   contentSha256: string;
   byteSize: number;
   pageCount: number;
-  sourcePacketFormId: number;
+  sourcePacketFormId: number | null;
   sourceDocumentName: string;
   sourceUpdatedAt: string;
 };

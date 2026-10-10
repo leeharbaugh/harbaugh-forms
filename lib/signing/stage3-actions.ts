@@ -5,12 +5,20 @@ import "server-only";
 import { requireSigningActor } from "@/lib/signing/actor";
 import {
   addDraftSigningDocumentWithActor,
+  addRemainingPacketDocumentsWithActor,
+  listPacketFormsForDraftWithActor,
   removeDraftSigningDocumentWithActor,
   reorderDraftSigningDocumentsWithActor,
   updateDraftSigningDocumentMetadataWithActor,
 } from "@/lib/signing/draft-documents";
 import {
+  addAdHocDraftSigningDocumentWithActor,
+  readPdfBytesFromUnknown,
+} from "@/lib/signing/ad-hoc-documents";
+import {
   addDraftSigningParticipantWithActor,
+  includeInternalSignerWithActor,
+  loadInternalSignerOptionsWithActor,
   removeDraftSigningParticipantWithActor,
   updateDraftSigningParticipantWithActor,
 } from "@/lib/signing/draft-participants";
@@ -18,7 +26,17 @@ import {
   removeDraftSigningFieldWithActor,
   upsertDraftSigningFieldWithActor,
 } from "@/lib/signing/draft-fields";
-import { requireManageableDraftSigning } from "@/lib/signing/manage";
+import {
+  removeDraftPreparedContentWithActor,
+  upsertDraftPreparedContentWithActor,
+} from "@/lib/signing/draft-prepared-content";
+import {
+  acknowledgeDraftPacketAutoAddNoticeWithActor,
+  loadDraftRemovedPacketParticipantsWithActor,
+  loadDraftSourcePacketStateWithActor,
+  restoreDraftPacketParticipantWithActor,
+  selectDraftSourcePacketWithActor,
+} from "@/lib/signing/source-packet";
 import { SigningError } from "@/lib/signing/errors";
 import { NativeSigningDisabledError } from "@/lib/signing/feature-gate";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -80,6 +98,36 @@ export async function removeDraftSigningDocumentAction(input: {
   });
 }
 
+export async function addRemainingPacketDocumentsAction(input: {
+  signingId: unknown;
+  packetId?: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    addRemainingPacketDocumentsWithActor(actor, input, admin),
+  );
+}
+
+export async function addAdHocDraftSigningDocumentAction(input: {
+  signingId: unknown;
+  filename?: unknown;
+  displayName?: unknown;
+  pdfFile: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin(async (actor, admin) => {
+    const pdfBytes = await readPdfBytesFromUnknown(input.pdfFile);
+    return addAdHocDraftSigningDocumentWithActor(
+      actor,
+      {
+        signingId: input.signingId,
+        filename: input.filename,
+        displayName: input.displayName,
+        pdfBytes,
+      },
+      admin,
+    );
+  });
+}
+
 export async function reorderDraftSigningDocumentsAction(input: {
   signingId: unknown;
   orderedDocumentIds: unknown;
@@ -104,14 +152,51 @@ export async function updateDraftSigningDocumentMetadataAction(input: {
 export async function addDraftSigningParticipantAction(input: {
   signingId: unknown;
   fullName: unknown;
-  email: unknown;
+  email?: unknown;
   optionalRole?: unknown;
-  linkedUserId?: unknown;
+  roleCode?: unknown;
   linkedContactId?: unknown;
   displayOrder?: unknown;
+  signingCapacityMode?: unknown;
+  representedPartyName?: unknown;
+  capacityLabel?: unknown;
+  capacityWording?: unknown;
 }): Promise<SigningStage3ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
-    addDraftSigningParticipantWithActor(actor, input, admin),
+    addDraftSigningParticipantWithActor(
+      actor,
+      {
+        signingId: input.signingId,
+        fullName: input.fullName,
+        email: input.email,
+        optionalRole: input.optionalRole,
+        roleCode: input.roleCode,
+        linkedContactId: input.linkedContactId,
+        displayOrder: input.displayOrder,
+        signingCapacityMode: input.signingCapacityMode,
+        representedPartyName: input.representedPartyName,
+        capacityLabel: input.capacityLabel,
+        capacityWording: input.capacityWording,
+      },
+      admin,
+    ),
+  );
+}
+
+export async function getInternalSignerOptionsAction(input: {
+  signingId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    loadInternalSignerOptionsWithActor(actor, input, admin),
+  );
+}
+
+export async function includeInternalSignerAction(input: {
+  signingId: unknown;
+  kind: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    includeInternalSignerWithActor(actor, input, admin),
   );
 }
 
@@ -121,6 +206,11 @@ export async function updateDraftSigningParticipantAction(input: {
   fullName?: unknown;
   email?: unknown;
   optionalRole?: unknown;
+  roleCode?: unknown;
+  signingCapacityMode?: unknown;
+  representedPartyName?: unknown;
+  capacityLabel?: unknown;
+  capacityWording?: unknown;
 }): Promise<SigningStage3ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
     updateDraftSigningParticipantWithActor(actor, input, admin),
@@ -150,6 +240,7 @@ export async function upsertDraftSigningFieldAction(input: {
   width: unknown;
   height: unknown;
   linkedSignatureDraftFieldId?: unknown;
+  dateLinkMode?: unknown;
 }): Promise<SigningStage3ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
     upsertDraftSigningFieldWithActor(actor, input, admin),
@@ -160,10 +251,79 @@ export async function removeDraftSigningFieldAction(input: {
   signingId: unknown;
   fieldId: unknown;
 }): Promise<SigningStage3ActionResult> {
-  return withAuthorizedAdmin(async (actor, admin) => {
-    await removeDraftSigningFieldWithActor(actor, input, admin);
-    return null;
-  });
+  return withAuthorizedAdmin((actor, admin) =>
+    removeDraftSigningFieldWithActor(actor, input, admin),
+  );
+}
+
+export async function upsertDraftPreparedContentAction(input: {
+  signingId: unknown;
+  contentId?: unknown;
+  signingDocumentId: unknown;
+  signingParticipantId?: unknown;
+  contentType: unknown;
+  pageNumber: unknown;
+  x: unknown;
+  y: unknown;
+  width: unknown;
+  height: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    upsertDraftPreparedContentWithActor(actor, input, admin),
+  );
+}
+
+export async function removeDraftPreparedContentAction(input: {
+  signingId: unknown;
+  contentId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    removeDraftPreparedContentWithActor(actor, input, admin),
+  );
+}
+
+export async function getDraftRemovedPacketParticipantsAction(input: {
+  signingId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    loadDraftRemovedPacketParticipantsWithActor(actor, input, admin),
+  );
+}
+
+export async function restoreDraftPacketParticipantAction(input: {
+  signingId: unknown;
+  contactId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    restoreDraftPacketParticipantWithActor(actor, input, admin),
+  );
+}
+
+/** The browser displayed the auto-add notice for these participants. */
+export async function acknowledgeDraftPacketAutoAddNoticeAction(input: {
+  signingId: unknown;
+  participantIds: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    acknowledgeDraftPacketAutoAddNoticeWithActor(actor, input, admin),
+  );
+}
+
+export async function getDraftSourcePacketStateAction(input: {
+  signingId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    loadDraftSourcePacketStateWithActor(actor, input, admin),
+  );
+}
+
+export async function selectDraftSourcePacketAction(input: {
+  signingId: unknown;
+  packetId: unknown;
+}): Promise<SigningStage3ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    selectDraftSourcePacketWithActor(actor, input, admin),
+  );
 }
 
 /**
@@ -173,50 +333,14 @@ export async function removeDraftSigningFieldAction(input: {
  */
 
 /**
- * List AVAILABLE Packet Forms on Packets owned by the actor that may be added
- * to this Draft Signing. Used by the manager Draft preparation UI.
+ * List AVAILABLE Packet Forms from this Draft Signing's source Packet that may
+ * still be added. Empty until a source Packet is selected (one source Packet
+ * per Signing). Used by the manager Draft preparation UI.
  */
 export async function listPacketFormsForDraftAction(input: {
   signingId: unknown;
 }): Promise<SigningStage3ActionResult> {
-  return withAuthorizedAdmin(async (actor, admin) => {
-    await requireManageableDraftSigning(actor, input.signingId, admin);
-
-    const { data: packets, error: packetError } = await admin
-      .from("packets")
-      .select("id, label, status")
-      .eq("owner_user_id", actor.userId)
-      .neq("status", "DELETED")
-      .order("id", { ascending: false })
-      .limit(50);
-    if (packetError) throw new Error(packetError.message);
-
-    const packetIds = (packets ?? []).map((row) => row.id as number);
-    if (packetIds.length === 0) {
-      return [];
-    }
-
-    const packetLabelById = new Map(
-      (packets ?? []).map((row) => [
-        row.id as number,
-        (row.label as string | null) ?? null,
-      ]),
-    );
-
-    const { data: forms, error: formError } = await admin
-      .from("packet_forms")
-      .select("id, packet_id, document_name, status")
-      .in("packet_id", packetIds)
-      .eq("status", "AVAILABLE")
-      .order("id", { ascending: false })
-      .limit(100);
-    if (formError) throw new Error(formError.message);
-
-    return (forms ?? []).map((form) => ({
-      id: form.id as number,
-      packetId: form.packet_id as number,
-      documentName: String(form.document_name ?? "Document"),
-      packetLabel: packetLabelById.get(form.packet_id as number) ?? null,
-    }));
-  });
+  return withAuthorizedAdmin((actor, admin) =>
+    listPacketFormsForDraftWithActor(actor, input, admin),
+  );
 }

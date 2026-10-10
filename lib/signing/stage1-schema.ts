@@ -24,9 +24,11 @@ export const NATIVE_SIGNING_STAGE1_TABLES = [
   "signing_events",
 ] as const;
 
-/** Stage 3 additive Draft-preparation table (mutable; not revision evidence). */
+/** Stage 3 additive Draft-preparation tables (mutable; not revision evidence). */
 export const NATIVE_SIGNING_STAGE3_DRAFT_TABLES = [
   "signing_draft_fields",
+  "signing_draft_prepared_content",
+  "signing_draft_packet_participant_suppressions",
 ] as const;
 
 export const NATIVE_SIGNING_STAGE3_MIGRATIONS = [
@@ -146,10 +148,12 @@ export type NativeSigningCeremonyTable =
  * Two different kinds of immutable bytes live in the same private bucket and
  * must never be confused:
  *
- * - `.../draft-snapshots/{snapshotId}/source.pdf` — a **Draft source snapshot**.
- *   The bytes are immutable once written, but the row is *preparation history*,
- *   not evidence. Superseded snapshots stay for audit/debug of how a package was
- *   prepared, and an evidence-free document's snapshots are deleted with it.
+ * - `.../draft-snapshots/{snapshotId}/source.pdf` — a **Packet-derived Draft
+ *   source snapshot**. Preparation history, not evidence.
+ * - `.../draft-ad-hoc/{snapshotId}/source.pdf` — a **Signing-owned ad hoc Draft
+ *   PDF**. Also preparation history, not evidence. Distinct namespace so cleanup
+ *   and integrity code cannot mistake ad hoc input for Packet snapshots or
+ *   prepared versions.
  * - `.../versions/{versionId}.pdf` — a **prepared `signing_document_version`**.
  *   This is evidentiary: it is what a package revision freezes and what
  *   participants sign against. It is never deleted as preparation history.
@@ -161,6 +165,9 @@ export type NativeSigningCeremonyTable =
  */
 export const DRAFT_SOURCE_OBJECT_KEY_RE =
   /^signings\/[0-9a-fA-F-]{36}\/documents\/[0-9a-fA-F-]{36}\/draft-snapshots\/[0-9a-fA-F-]{36}\/source\.pdf$/;
+
+export const AD_HOC_DRAFT_SOURCE_OBJECT_KEY_RE =
+  /^signings\/[0-9a-fA-F-]{36}\/documents\/[0-9a-fA-F-]{36}\/draft-ad-hoc\/[0-9a-fA-F-]{36}\/source\.pdf$/;
 
 export const PREPARED_VERSION_OBJECT_KEY_RE =
   /^signings\/[0-9a-fA-F-]{36}\/documents\/[0-9a-fA-F-]{36}\/versions\/[0-9a-fA-F-]{36}\.pdf$/;
@@ -174,9 +181,21 @@ export const CERTIFICATE_ARTIFACT_OBJECT_KEY_RE =
 export const COMBINED_ARTIFACT_OBJECT_KEY_RE =
   /^signings\/[0-9a-fA-F-]{36}\/artifacts\/combined\/[0-9a-fA-F-]{36}\.pdf$/;
 
-/** True for Draft source snapshot bytes (preparation history, not evidence). */
-export function isDraftSourceObjectKey(key: unknown): key is string {
+/** True for Packet-derived Draft source snapshot bytes. */
+export function isPacketDraftSourceObjectKey(key: unknown): key is string {
   return typeof key === "string" && DRAFT_SOURCE_OBJECT_KEY_RE.test(key);
+}
+
+/** True for Signing-owned ad hoc Draft PDF bytes. */
+export function isAdHocDraftSourceObjectKey(key: unknown): key is string {
+  return typeof key === "string" && AD_HOC_DRAFT_SOURCE_OBJECT_KEY_RE.test(key);
+}
+
+/** True for any Draft source snapshot bytes (preparation history, not evidence). */
+export function isDraftSourceObjectKey(key: unknown): key is string {
+  return (
+    isPacketDraftSourceObjectKey(key) || isAdHocDraftSourceObjectKey(key)
+  );
 }
 
 /** True for prepared document-version bytes (evidentiary, never pruned). */

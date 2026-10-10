@@ -12,6 +12,455 @@ Each decision should include:
 
 ---
 
+## The auto-add notice shows participant names and stays one-time
+
+**Date:** 2026-10-10 (toolbar tranche)
+
+**Decision:**
+1. The notice reads "Added from the source Packet: Jane Smith." or "…: Jane Smith and John Smith.", using each participant's current Draft name.
+2. The text comes from one client-safe formatter, `formatAutoAddNotice`. It accepts a notice entry (`{ participantId, fullName }`) or a bare name and drops anything without a usable name. An object is never stringified into the text, and with no names the notice doesn't render.
+3. The one-time acknowledgement is unchanged: a committed-render effect only, durable per participant, and a removed participant is omitted (see the next decision below).
+
+**Reason:**
+Lee's QA saw "Added from the source Packet: [object Object]". The polish tranche changed the server payload from name strings to `{ participantId, fullName }` entries. A browser still running the earlier compiled panel, which joined the entries directly, rendered each object as `[object Object]`. That was version skew between a stale development bundle and the new server payload. The current source already rendered `fullName`; the formatter makes the rendering independent of payload shape.
+
+**Related:** `lib/signing/auto-add-notice-format.ts`, `components/signings/signing-draft-prep-panel.tsx`, `lib/signing/prepare-polish.test.ts`.
+
+---
+
+## Prepare Documents places with explicit one-shot tools; choosing a participant arms nothing
+
+**Date:** 2026-10-10 (toolbar tranche)
+
+**Decision:**
+1. The Field type dropdown is replaced by a labelled toolbar of five toggle buttons: Signature, Initials, Date, Printed Name, Checkmark (`role="toolbar"`, `aria-pressed`, keyboard-operable, visible focus).
+2. No tool is armed by default. Choosing a participant never arms a tool or shows a ghost. Flow: choose participant, click a tool, see the ghost, click the page once.
+3. Every tool is one-shot: a successful placement disarms it and removes the ghost, and placing another needs another tool click. This applies to all five tools, not only Date, because no workflow depended on repeated placement. Copy/Paste remains the way to repeat placements.
+4. Signature, Initials, Date and Printed Name are disabled until a participant is chosen, and their accessible name says so. Checkmark has no participant and is always available.
+5. Clicking a tool clears the current field selection and arms directly, so the first page click places. Clicking the active tool again disarms it. With no tool armed, a click on empty page area still only clears the selection.
+6. The armed tool is cancelled by a placement, Esc (before clearing a selection or closing), selecting an existing field (on the page or in the list), changing participant, document or tool, starting paste, and closing Prepare Documents. A Date click with no eligible source places nothing and leaves the tool armed.
+
+**Reason:**
+Lee's QA: Date stayed armed after placing; the dropdown hid the tools; and a participant choice combined with a remembered field type behaved like an armed tool.
+
+**Consequences:**
+* No new data paths: the toolbar calls the existing Draft field and prepared-content actions.
+* A Date's participant can no longer be changed from the selected-field panel, since that silently relinked it. A Signature or Initials can still be reassigned, and its linked Dates follow.
+
+**Related:** `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-field-editor-state.ts` (`PLACEMENT_TOOLS`, `placementToolEnabled`).
+
+---
+
+## Date links are set by nearest placement only; a selected Date highlights its source
+
+**Date:** 2026-10-10 (toolbar tranche)
+
+**Decision:**
+1. The visible **Link to** dropdown, the explicit-source override (including clicking a candidate to arm it) and the selected Date's "Linked to" relink select are removed. There is no hidden reassign menu.
+2. Linkage stays explicit in the data: each Date stores exactly one Signature or Initials link, chosen at placement as the selected participant's nearest eligible field on the same document and page. Geometry, deterministic ties, the live candidate highlight, and "no candidate, no placement" are unchanged. New Dates are sent as AUTO_NEAREST. The server still enforces the same Signing, participant and document, the Signature/Initials source type, and the same page for AUTO_NEAREST. It rejects forged, deleted, cross-Signing and wrong-type sources, and the ceremony never infers a link.
+3. Selecting a single Date gives its linked source a secondary, read-only cue: a dashed amber outline and a "Linked" tag. The source isn't selected, and moving, resizing or deleting the Date never touches it. Clearing the selection removes the cue.
+4. The cues are distinct. Selection is a solid sky ring. With the Date tool armed, eligible candidates get a faint solid amber ring and the nearest target a strong solid amber ring. The linked source of a selected Date gets the dashed outline.
+5. Reassociation is delete-and-replace: remove the Date, click Date, place it next to the intended Signature or Initials.
+
+**Reason:**
+Lee's QA: the override UI added choices that nearest placement already answers, while there was no way to see which field an existing Date belongs to.
+
+**Consequences:**
+* The cue shows only fields already in the manager's own Draft model; it exposes nothing new.
+* The server still accepts EXPLICIT_SOURCE with its existing checks, but the UI no longer sends it.
+
+**Related:** `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-fields.ts`, `lib/signing/prepare-polish.test.ts`, `scripts/qa-signing-prepare-browser.ts`.
+
+---
+
+## The "Added from the source Packet" notice is shown once, acknowledged after the browser displays it
+
+**Date:** 2026-10-10 (polish tranche)
+
+**Decision:**
+1. Auto-add stays durably recorded: `signing_participants.auto_added_from_packet_at` is unchanged. A new column, `auto_add_notice_acknowledged_at`, records when the notice was displayed for that participant. A check constraint allows it only on rows that carry the auto-add marker.
+2. The server lists only auto-added participants who are still present and not yet acknowledged, with their current names. Reading the notice never writes.
+3. The browser acknowledges from a client effect, which runs only after React commits the render that shows the notice. A server render the browser discards (including development's extra renders) cannot consume it. Strict Mode's repeated effect is harmless: acknowledgement is idempotent.
+4. Acknowledgement is per participant and durable, so the notice doesn't return on reload, link navigation or Back/Forward. A later auto-add carries a fresh null acknowledgement and produces a new notice naming only the new participants. A participant removed before display is omitted.
+5. `acknowledgeDraftPacketAutoAddNoticeAction` checks Draft manage authority before the elevated write. It accepts 1–100 UUIDs and updates only rows of that Signing that carry the marker and are unacknowledged. Fabricated, foreign or unmarked ids change nothing. Identity, package revision, signer fields, lifecycle and Signing events are untouched.
+
+This refines point 3 of "Opening a Draft Signing completes its sync in the same request" (2026-10-09): the notice is still derived from data, but now only until it is displayed.
+
+**Reason:**
+Lee's QA: the notice persisted on every visit, because nothing cleared it. Acknowledging during the server render would repeat the earlier bug, where a discarded render consumed the notice before anyone saw it.
+
+**Consequences:**
+* The acknowledgement is notification metadata, never evidence. Package fingerprints and activation don't read it.
+* Rows auto-added before this migration show their notice once more and are then acknowledged.
+
+**Related:** `supabase/migrations/20261010120000_native_signing_auto_add_notice_ack.sql`, `lib/signing/source-packet.ts` (`listDraftPacketAutoAddNotice`, `acknowledgeDraftPacketAutoAddNoticeWithActor`), `lib/signing/stage3-actions.ts`, `lib/signing/dashboard.ts`, `components/signings/signing-draft-prep-panel.tsx`.
+
+---
+
+## Date Signed links automatically to the nearest Signature or Initials on the page
+
+**Date:** 2026-10-10 (polish tranche)
+
+**Decision:**
+1. With the Date Signed tool, the default mode is AUTO_NEAREST. As the pointer moves, the Date ghost's rectangle is compared with the selected participant's Signature and Initials on the same document and page. The nearest is highlighted live, and the panel reads "Will link to: Initials — Page 2". One click places the Date linked to it.
+2. Distance is the gap between rectangles (0 when they touch or overlap). Gaps within 0.5 pt tie, and ties break by centre distance, then the upper field, then the left field, then id. The result never depends on list order.
+3. If the hovered page has no eligible field for that participant, nothing is placed and the panel says "No Signature or Initials for <name> on this page. Place the date on a page containing their Signature or Initials." A Date is never placed unlinked.
+4. **Link to** (or clicking a candidate) is an explicit override, EXPLICIT_SOURCE. It stays fixed while the pointer moves. It ends when the Date is placed, on Esc, when the participant, document or field type changes, or when Automatic is chosen. An explicit choice that is no longer valid places nothing; it never falls back to another field.
+5. The server still requires a link for every Date: same Signing, same participant, Signature or Initials source, and (new) the same document. The browser sends `dateLinkMode`. For AUTO_NEAREST, the server also requires the source to be on the Date's page. The server does not re-derive "nearest": that is a visible placement default, and the link itself is what's enforced.
+6. Unchanged: a Signature still auto-pairs its Date, and Initials don't. Linked-Date fill in the ceremony, removal with its source, reassignment, and reload persistence are unchanged.
+
+This refines "Copy enters paste mode; Date Signed links by clicking its source; new fields anchor at the click's left edge" (2026-10-08). Clicking a source now sets the explicit override instead of being the only way to link.
+
+**Superseded in part (2026-10-10, toolbar tranche):** point 4 by "Date links are set by nearest placement only; a selected Date highlights its source". Link to and the explicit override are removed; reassociation is delete-and-replace.
+
+**Reason:**
+Lee's QA: choosing the source first and then placing was two steps for the common case, where the date sits next to the Initials or Signature it belongs to.
+
+**Consequences:**
+* Cross-document Date links are now rejected on the server. Dev had none.
+* An explicitly chosen source may be on another page of the same document.
+
+**Related:** `lib/signing/draft-field-editor-state.ts` (`nearestDateLinkSource`, `resolveDateLinkTarget`, `rectGapDistance`), `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-fields.ts`, `lib/signing/stage3-actions.ts`.
+
+---
+
+## Displayed Send readiness updates from authoritative server state right after each placement change
+
+**Date:** 2026-10-10 (polish tranche)
+
+**Decision:**
+1. When Prepare Documents' write queue drains, the browser asks the server for preparation readiness (`getSigningPreparationReadinessAction`). The server computes it with the same blocker rules as full readiness: manage authority, Draft state, promotion blockers, participant name, capacity and Signature/Initials requirements. The browser doesn't compute business rules. It merges the server's preparation blockers with the document-source blockers it already holds, which placements cannot change.
+2. The header shows "Ready to send" or "Not ready: <first blocker>". The Signing page adopts the same result immediately, so Send is enabled or disabled as soon as the dialog closes. A newest-request-wins sequence prevents a slower full reload from overwriting a newer result.
+3. No polling, timers or forced reloads. Full readiness now checks documents in parallel.
+4. Send and Begin In-Person still re-run full readiness on the server (`activateSigningWithActor`), including document-source checks. The browser's display can't force activation.
+
+**Reason:**
+Lee's QA: after the last required placement, Send stayed disabled for many seconds. Readiness was shown only on the Signing page, and it refreshed only after closing the dialog. That refresh included a full readiness pass with a live-source fingerprint per document (about 2 s each, run one after another): 12–14 s for 7 documents.
+
+**Consequences:**
+* Measured in development: about 1.2–1.9 s from the placing click to the header changing, both directions, and 85 ms from Close to an enabled Send.
+
+**Related:** `lib/signing/readiness.ts` (`evaluateSigningPreparationReadiness`), `lib/signing/readiness-view.ts`, `lib/signing/stage4-actions.ts`, `components/signings/signing-preview-dialog.tsx`, `components/signings/signing-dashboard-page.tsx`.
+
+---
+
+## Packets use ACTIVE and DELETED only
+
+**Date:** 2026-10-09 (Packet lifecycle cleanup)
+
+**Decision:**
+1. A Packet is ACTIVE or DELETED. DELETED is the soft-delete state. There is no Packet INACTIVE state. `packets_status_check` allows only `ACTIVE` and `DELETED`, and `PacketStatus` is `"ACTIVE" | "DELETED"`.
+2. Transitions: a new Packet is ACTIVE (column default). Soft delete moves ACTIVE to DELETED. Restore moves DELETED back to ACTIVE. Editing Packet details never changes status; `updatePacket` takes no status and the edit form has no Status control.
+3. The Packets list shows ACTIVE. **Show deleted** shows ACTIVE and DELETED. There is no Inactive badge, filter or label.
+4. Create Signing: an ACTIVE Packet is eligible, subject to the existing owner and originating-brokerage rules. A DELETED Packet is not, and the Packet page shows the control disabled with "This Packet is deleted. Restore it to create a Signing." The source-Packet selector offers the actor's own ACTIVE Packets only. Multiple Signings per Packet remain allowed.
+5. Age alone does not make a Packet inactive. Old Packets stay ACTIVE until deleted.
+
+**Reason:**
+INACTIVE had no business meaning. It came from the initial schema's generic ACTIVE / INACTIVE / DELETED template. Its only writer was an unexplained Status select on the Packet edit form, and `updatePacket` passed the browser's value through. The code disagreed about it: the list hid it, Fill Form resolution and soft delete only handled ACTIVE, yet Create Signing accepted it. Dev Packet #12 was the only INACTIVE Packet. Its owner set it through that select on 2026-07-15 02:49 UTC (the evening of 2026-07-14, Central). It had ACTIVE Draft forms and ACTIVE contacts, and nothing indicated an intent to delete. The 2026-10-09 correctness tranche listed Inactive Packets with a badge. That was temporary exposure of legacy data, not an approved state.
+
+**Consequences:**
+* Migration `20261009140000_packets_active_deleted_only.sql` sets every INACTIVE Packet to ACTIVE and then narrows the constraint. Deletion is a separate, explicit action, so INACTIVE is not evidence of intent to delete. Ownership and all other columns are unchanged; only `update_date` moves. Production must inspect its INACTIVE Packets before applying it, and it runs after PR #46's earlier dev-only migrations.
+* The database rejects INACTIVE and any other value from every client, including the owner's browser client. Owners can still only delete or restore their own Packets under RLS.
+* INACTIVE stays legitimate on other entities (for example Forms, profiles, organizations and memberships). This decision is Packet-only.
+* This supersedes, in part, the next decision ("Packet visibility and Create Signing eligibility are one server-authoritative rule"): its Inactive references in points 1 and 4 and in Consequences no longer apply. The single server-authoritative eligibility helper it introduced still applies.
+
+**Related:** `supabase/migrations/20261009140000_packets_active_deleted_only.sql`, `lib/types/packet.ts`, `lib/types/packet-lifecycle.test.ts`, `components/packets/packet-edit-form.tsx`, `components/packets/packets-page.tsx`, `components/packets/packet-detail.tsx`, `lib/signing/packet-signing-eligibility.ts`, `lib/signing/source-packet.ts`.
+
+---
+
+## Packet visibility and Create Signing eligibility are one server-authoritative rule
+
+**Date:** 2026-10-09 (correctness tranche)
+
+**Superseded in part (2026-10-09):** by "Packets use ACTIVE and DELETED only". Packet INACTIVE was removed, so the Inactive references below are historical.
+
+**Decision:**
+1. `lib/signing/packet-signing-eligibility.ts` is the only definition of "may this Packet start a Signing". It returns `{ eligible, reasonCode, message }`. The rules are the existing ones, consolidated and not extended: the Packet exists and is not Deleted (Active and Inactive both qualify), and the Signing's responsible User owns the Packet. Creating a Signing also needs the actor's originating brokerage (an active membership, plus a primary organization when there is more than one). An administrator who can view another agent's Packet still cannot start a Signing from it.
+2. The Packet page control (`getPacketSigningEligibilityAction`), the Draft source-Packet selector, Create Signing, source-Packet binding, Packet document listing and Draft auto-add all call this helper. The server re-checks on every write, and the UI only explains the result.
+3. Multiple Signings per Packet remain allowed (Create Signing still asks for confirmation). A Packet without documents may still start a Signing.
+4. The Packets list shows Active and Inactive Packets, with a status badge for Inactive. Only Deleted Packets wait for **Show deleted**. The selector lists the actor's own non-Deleted Packets (newest 50), so every selectable Packet is also visible in the list.
+
+**Reason:**
+Lee's QA. Packet #21 showed no Create Signing control. The page hid it client-side whenever the viewer was not the owner; #21 is owned by another account Lee can see as an administrator. Packet #12 was selectable in a Signing but missing from the Packets list. #12 is Inactive: the list queried only Active (or Active + Deleted), while the selector excluded only Deleted.
+
+**Consequences:**
+* Soft-delete behavior. Before: the list showed Active only, **Show deleted** added Deleted, Inactive was never listed, and the selector offered Active + Inactive. After: the list shows Active + Inactive, **Show deleted** adds Deleted, and the selector offers Active + Inactive. Create Signing and source binding reject Deleted Packets on the server.
+* The selector's 50-Packet cap is unchanged; an older owned Packet can still start a Signing from its Packet page.
+
+**Related:** `lib/signing/packet-signing-eligibility.ts`, `lib/signing/actions.ts` (`getPacketSigningEligibilityAction`), `lib/signing/packet-to-signing.ts`, `lib/signing/source-packet.ts`, `lib/signing/draft-documents.ts`, `components/packets/packet-detail.tsx`, `components/packets/packets-page.tsx`.
+
+---
+
+## An ineligible Create Signing is shown disabled with its reason
+
+**Date:** 2026-10-09 (correctness tranche)
+
+**Decision:**
+When Native Signing is enabled, the Packet page always shows **Create Signing**. If the server's eligibility result is not eligible, the button is disabled and the page reads "Create Signing unavailable: <reason>", using the helper's message (for example "Only the Packet's owner can create a Signing from it."). The control is hidden only when Native Signing is off.
+
+**Reason:**
+A hidden control gave no way to tell "not allowed" from "broken" (Packet #21).
+
+**Consequences:**
+* The reason text comes from the server, so the page cannot drift from what the server enforces.
+
+**Related:** `components/packets/packet-detail.tsx`, `lib/signing/packet-signing-eligibility.ts`.
+
+---
+
+## Opening a Draft Signing completes its sync in the same request
+
+**Date:** 2026-10-09 (correctness tranche)
+
+**Refined (2026-10-10):** point 3 by "The 'Added from the source Packet' notice is shown once, acknowledged after the browser displays it".
+
+**Decision:**
+1. The Signing page and the Signings list render from server data. `app/signings/[signingId]/page.tsx` runs the same authorized load as the client action before rendering: authorize, then (if Draft) Packet auto-add, then identity sync, then load. The first paint is current, with no loading state, polling, timer or forced reload.
+2. A push navigation back to a preserved route adopts the fresh server payload. Back/Forward reuses the cached payload, so `useHistoryRestoreRefresh` refreshes once on a real history traversal (Navigation API `traverse` event, unchanged `bfcacheId`).
+3. The "Added from the source Packet" notice is derived from data. Draft auto-add marks its inserted rows `signing_participants.auto_added_from_packet_at` in the same transaction as the insert, under the Signing row lock. The notice lists marked participants who are still present, with their current names. Restore and the initial Packet import leave the marker null.
+
+This supersedes the per-Signing client accumulation of the notice recorded in the Draft polish tranche.
+
+**Reason:**
+Before this change, the dashboard rendered an empty shell and loaded in a client `useEffect`. Server actions run one at a time, so that load queued behind the prep panel's own mount actions. Next 16 `cacheComponents` also keeps a visited route mounted, so returning did not re-run the effect, and new participants or Contact name/email changes appeared only after a manual reload. Moving the load into the render fixed that. However, a page render can run more than once (in development an extra render may be discarded), so a notice taken from "what this render added" was lost when another render performed the add. Writes stay idempotent: the RPC dedupes by Contact id under the row lock, and identity sync converges.
+
+**Consequences:**
+* The notice persists while the participant stays on the Draft, instead of appearing only on the load that added them.
+* The marker is Draft preparation state, never evidence. Package fingerprints use explicit fields, so it does not affect hashes.
+
+**Related:** `app/signings/[signingId]/page.tsx`, `app/signings/page.tsx`, `components/signings/signing-dashboard-page.tsx`, `components/signings/signings-list-page.tsx`, `components/signings/use-history-restore-refresh.ts`, `lib/signing/dashboard.ts`, `lib/signing/source-packet.ts`, `supabase/migrations/20261009130000_native_signing_draft_auto_add_marker.sql`.
+
+---
+
+## A Signing's name is operational metadata, renamable in any lifecycle state
+
+**Date:** 2026-10-09 (correctness tranche)
+
+**Decision:**
+1. Managers may rename a Signing in Draft, In Progress, Complete, Cancelled or Expired. Only `signings.title` changes. Documents, participants, package revisions, hashes, participant links and adopted marks are untouched, and none of them read the name again.
+2. Authority is existing manage authority only:
+   * while Draft / In Progress, `canManage`;
+   * once finished, the same people, provided they remain eligible in the originating brokerage: brokerage administrator, active primary or co-agent, or active TC.
+   * Historical readers, former agents, revoked TCs, other brokerages and participants cannot rename. There is no Global Admin bypass.
+   * Authorization runs before any elevated write.
+3. Each change appends one BUSINESS `SIGNING_TITLE_UPDATED` event with the actor, old and new name, lifecycle state and timestamp. It never contains links, tokens or secrets. An unchanged name records nothing.
+4. The name is trimmed, required, and at most 200 characters. The dashboard header has **Rename**, which opens an inline form with Save and Cancel and doesn't navigate. The participant ceremony has no rename control.
+
+**Reason:**
+Lee asked to correct Signing names after creation, including after completion.
+
+**Consequences:**
+* The dashboard and list show the new name immediately, and it persists across reloads.
+
+**Related:** `lib/signing/rename.ts`, `lib/signing/actions.ts` (`renameSigningAction`), `lib/signing/types.ts` (`SIGNING_TITLE_MAX_LENGTH`), `components/signings/signing-dashboard-page.tsx`.
+
+---
+
+## Draft participant identity is live from its source; activation canonizes it
+
+**Date:** 2026-10-08 (Draft polish tranche)
+
+**Decision:**
+1. While a Signing is Draft, a linked participant's name and email come live from its authoritative source. That source is the Contact for a Contact-linked participant, the agent's profile for **Include me** (profile display name, auth email first), or the originating organization's ACTIVE brokerage profile for **Include broker**. Opening the Draft dashboard, Prepare Documents, or activation re-reads the source and updates the participant row. A Contact is followed only when it is owned by the original sender, the Signing's creator, or the source Packet's owner. A source that is no longer usable (for example an inactive Contact or a blank name) keeps the last good values.
+2. Linked participants' name and email are not editable in the Signing. The server rejects `fullName` / `email` updates for linked rows ("Edit the Contact instead."), and a linked add takes its identity from the source, never from the browser. Role and the optional label stay editable.
+3. Ad hoc participants' name and email are edited directly in Draft (**Edit details**).
+4. Activation (Send or Begin In-Person) is the participant-identity canonization boundary. The live values at that moment are frozen into `signing_package_revision_participants`, Printed Name and labels are baked, and activation re-checks the live row against the frozen identity. A database trigger (`SIGNING_PARTICIPANT_IDENTITY_FROZEN`) rejects any later name or email change on `signing_participants` once the Signing is not Draft or has a package revision.
+5. After activation, participant name and email cannot be corrected through amendment, an in-place edit, or a source resync.
+6. If a participant's identity is wrong after activation, the agent cancels the Signing (**Cancel Signing**, lifecycle Cancelled) and creates a new Signing with the corrected details. This applies even when nobody has opened or signed it yet.
+7. This supersedes "Participant identity is agent-correctable only before the first signing mark" (2026-09-14) and the matching sentences in related entries for post-activation identity. Participant identity is no longer amendable after activation. The pre-first-mark amendment model may still apply to other package/document changes, but not participant name/email.
+8. The broader pre-first-mark package/document amendment architecture (amendment locks, package revisions) is not removed by this decision.
+
+Role remains Signing-specific context: it is editable while Draft and frozen at activation (`frozen_role_code`).
+
+**Reason:**
+Lee's QA: a Contact rename did not reach the Draft, and an editable copy of a linked identity drifted from its source. One authoritative source while Draft, and one immutable snapshot from activation onward, keep the invited identity, the ceremony identity and the document name the same.
+
+**Consequences:**
+* A Contact, profile or brokerage edit after activation never reaches that Signing; the dashboard shows "Participant details are locked…" with the Cancel guidance.
+* Cancelling an In Progress Signing from the dashboard does not yet notify participants; that is a documented gap.
+* Linked identity sync is identity only; it never adds, removes or reorders participants.
+
+**Related:** `lib/signing/draft-participant-sync.ts`, `lib/signing/draft-participants.ts`, `lib/signing/dashboard.ts`, `lib/signing/preview.ts`, `lib/signing/activation.ts`, `components/signings/signing-dashboard-page.tsx`, `supabase/migrations/20261009120000_native_signing_draft_identity_sync.sql`.
+
+---
+
+## Packet participants auto-add during Draft; intentional removal is suppressed per Signing
+
+**Date:** 2026-10-08 (Draft polish tranche)
+
+**Decision:**
+9. While a Signing is Draft (no package revision) and bound to a source Packet the actor owns, eligible Packet parties that are not yet linked are added automatically when the manager opens the Draft dashboard, with no popup and no click. Matching is by Contact id only; ad hoc, agent and broker participants are preserved; nothing is duplicated. Authority is checked before any elevated read. Nothing syncs after activation. A notice names who was added.
+10. Removing a Contact-linked participant records a Signing-scoped suppression keyed by Contact (`signing_draft_packet_participant_suppressions`), so auto-add will not bring them back. **Removed Packet participants** lists them with **Restore**, which clears the suppression and re-adds that Contact once. Suppression never touches the Contact or the Packet. Choosing a different Packet clears that Signing's suppressions. The table is Draft-only (trigger `SIGNING_PARTICIPANT_SUPPRESSION_NOT_DRAFT`), has forced RLS with deny policies, and is written only by trusted server code.
+
+This supersedes "Draft participants refresh additively from the source Packet" (2026-10-08): the explicit **Add from Packet** click and its notice are removed.
+
+**Reason:**
+Lee's QA: requiring a click to bring in a party already on the Packet was friction, and a party the manager had deliberately removed kept being offered again.
+
+**Consequences:**
+* Activation deliberately does not auto-add; it only refreshes identity, so the readiness the manager saw is the readiness that is sent.
+* The same Packet on another Signing imports normally; suppression is per Signing.
+
+**Related:** `lib/signing/source-packet.ts` (`autoAddDraftPacketParticipants`, `restoreDraftPacketParticipantWithActor`), `lib/signing/draft-packet-suppressions.ts`, `components/signings/signing-draft-prep-panel.tsx`, `supabase/migrations/20261009120000_native_signing_draft_identity_sync.sql`.
+
+---
+
+## Copy enters paste mode; Date Signed links by clicking its source; new fields anchor at the click's left edge
+
+**Date:** 2026-10-08 (Draft polish tranche)
+
+**Refined (2026-10-10):** Date Signed linking by "Date Signed links automatically to the nearest Signature or Initials on the page". Clicking a source is now the explicit override, not the only way to link.
+
+**Superseded in part (2026-10-10, toolbar tranche):** click-to-link and the Link to select by "Date links are set by nearest placement only; a selected Date highlights its source". Clicking a field now cancels the armed tool and selects it.
+
+**Decision:**
+11. **Copy** (button or Ctrl/⌘+C) immediately enters paste placement mode with a ghost under the pointer; no separate Paste click is needed. The ghost follows the pointer across a scroll without placing or cancelling. One click places the copy once and ends the mode. The clipboard remains, so **Paste** or Ctrl/⌘+V places another copy. Esc cancels.
+* With the Date Signed tool, clicking one of the selected participant's Signature or Initials arms the link ("Linked to: Initials — Page 1"), shows a Date ghost following the pointer, and the next page click places the Date linked to it. Esc, a field type change, a participant change or a document change cancels the link. Clicking another participant's field fails visibly and only selects it. The **Link to** select arms the same state. A Date is never auto-linked to a guessed source.
+* A new field's left edge sits at the click x and its vertical centre at the click y, then it is clamped inside the page by sliding, never shrinking. Checkmark stays centred on the click, because it targets a printed box. Paste keeps its centre-of-group anchor. Coordinates convert from page pixels to PDF points, so the anchor holds at every zoom.
+
+**Reason:**
+Lee's QA: Copy then Paste was two steps for one intent; clicking the Initials to link a Date did nothing and the date landed unlinked; centred placement put fields left of the printed line's start.
+
+**Consequences:**
+* Refines "Prepare Documents removes fixed-coordinate Quick Fields; paste is click-anchored" (2026-10-08) and "Date Signed may link to Signature or Initials; only Signature auto-pairs" (2026-10-08).
+
+**Related:** `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-field-editor-state.ts` (`newPlacementRect`, `resolveDateLinkSource`, `dateLinkSourceDisplay`).
+
+---
+
+## Draft participants refresh additively from the source Packet
+
+> **Superseded 2026-10-08 (Draft polish tranche):** eligible Packet parties are now added automatically while Draft, with no Add from Packet click, and an intentionally removed party is suppressed per Signing until Restore. See "Packet participants auto-add during Draft; intentional removal is suppressed per Signing". The entry below is kept as history.
+
+**Date:** 2026-10-08
+
+**Decision:**
+While a Signing is Draft, eligible parties added to its bound source Packet after selection (ACTIVE `packet_contacts` with recognized party roles plus representation agreement clients, owned by the actor) are surfaced by a notice ("The source Packet has N new participant(s)") and added only when the manager clicks **Add from Packet**. Matching is by linked Contact only, never by name or email. The refresh is additive: it never deletes, merges, or overwrites existing participants, so manual names, roles, representative capacity, and execution wording stay as edited, and ad hoc participants are untouched. Once the Signing is activated, participants are frozen and Packet changes never sync. This supersedes the "later Packet contact edits do not sync" sentence of "Packet selection populates Signing participants" (2026-09-28) for newly added parties during Draft; edits to an already imported contact still do not sync.
+
+**Reason:**
+Lee's manual QA (finding 1): a contact added to the Packet after the Signing was created never appeared. Silent sync would overwrite deliberate Draft edits; an explicit, additive action keeps the manager in control.
+
+**Consequences:**
+* The notice and the action are Draft-only and require Draft manage authority; another owner's contact is never imported.
+* A Packet-linked participant the manager removed is offered again by the notice (matching skips REMOVED rows); re-adding still needs the explicit click. Follow-up: consider suppressing removed contacts from the notice.
+* Representative capacity is still never inferred from Packet roles.
+
+**Related:** `lib/signing/source-packet.ts` (`loadDraftPacketParticipantRefreshWithActor`, `refreshDraftParticipantsFromPacketWithActor`); `supabase/migrations/20261008120000_native_signing_draft_prep_roles_prepared_content.sql`.
+
+---
+
+## Participant role is a stable preparation label, frozen at activation
+
+**Date:** 2026-10-08
+
+**Decision:**
+Every Draft participant carries a `role_code` from a fixed vocabulary — Buyer, Seller, Tenant, Landlord, Agent, Broker, Other — plus the optional free-form label (`optional_role`, e.g. "Co-buyer"). Adding a participant requires a role; Packet import maps transaction roles to codes (unmapped Packet roles such as `CO_CLIENT` become Other). Activation freezes the code into `signing_package_revision_participants.frozen_role_code`. Role is a preparation and display label only: it is never identity proof, never grants or implies legal or representative authority, and never changes ceremony or authorization behavior.
+
+**Reason:**
+Managers need to tell participants apart while placing fields ("Name — Role"), and a stable code avoids free-text drift. Treating it as anything more would invent authority the product does not verify.
+
+**Consequences:**
+* Database check constraints enforce the vocabulary on both columns; unknown codes are rejected server-side.
+* Existing participants may have a null code; new ones always have one.
+
+**Related:** `lib/signing/participant-roles.ts`, `lib/signing/draft-participants.ts`, `lib/signing/package-promotion.ts`.
+
+---
+
+## "Include me" and "Include broker" add real participants without inferred authority
+
+**Date:** 2026-10-08
+
+**Decision:**
+Draft preparation offers **Include me as a signer** (role Agent) and **Include broker as a signer** (role Broker). The identity is server-derived: the signed-in User's profile name and email, or the broker name and email of the Signing's originating organization's active brokerage profile. Browser input never supplies `linked_user_id` or the brokerage profile id. Each creates an ordinary participant who signs in their own ceremony; the same User or broker profile cannot be added twice (partial unique indexes on non-REMOVED rows). The broker option is hidden when the organization's brokerage profile has no broker name and email, and another organization's broker is never offered. No representative capacity or authority is inferred.
+
+**Reason:**
+Agents and brokers often sign the same documents as their clients; retyping their own details was error-prone.
+
+**Consequences:**
+* Adding an agent or broker as a participant does not change TC, co-agent, or brokerage-admin authority.
+* During this tranche a pre-existing path that accepted `linkedUserId` from the browser for manual participants was closed (recorded in local `security.md`).
+* *(Refined 2026-10-08, Draft polish tranche:)* the agent and broker rows follow the profile and brokerage profile live while Draft, cannot be overridden in the Signing, and freeze at activation.
+
+**Related:** `lib/signing/draft-participants.ts` (`loadInternalSignerOptionsWithActor`, `includeInternalSignerWithActor`).
+
+---
+
+## Date Signed may link to Signature or Initials; only Signature auto-pairs
+
+**Date:** 2026-10-08
+
+**Decision:**
+A Draft Date Signed links to exactly one Signature **or Initials** field of the same participant, and the server fills it from that field's accepted placement time, in the sender's local date. Placing a Signature still auto-pairs a Date Signed; placing Initials never does — the manager adds a Date Signed deliberately and links it to the Initials. Removing, replacing, or reassigning the source field carries its linked date exactly as for a Signature (removal takes the date out of effect, reapply gives a fresh date). An unlinked or cross-participant Date Signed blocks readiness (`DATE_SIGNED_NOT_LINKED`, `DATE_SIGNED_PARTICIPANT_MISMATCH`). Database triggers (`SIGNING_DATE_LINK_INVALID`) enforce same-Signing, same-participant, Signature/Initials-only links in both `signing_draft_fields` and `signing_fields`; the column names keep their historical "signature" wording.
+
+**Reason:**
+Some forms require a date beside initials (for example acknowledgment lines). Pairing every Initials with a date would clutter documents; a deliberate link matches how forms are actually laid out.
+
+**Consequences:**
+* Extends "Signature fields create optional paired dates; initials do not" (2026-09-06) and "Paired Date Signed tracks its Signature placement through remove and replace": the same tracking now applies to an Initials-linked date.
+* A field that is the source of a linked date cannot change to a type other than Signature or Initials.
+
+**Related:** `lib/signing/date-signed-link.ts`, `lib/signing/draft-fields.ts`, `lib/signing/placements.ts`, `lib/signing/package-promotion.ts`, the 2026-10-08 migration.
+
+---
+
+## Manager-prepared Printed Name and Checkmark are document content, not signing evidence
+
+**Date:** 2026-10-08
+
+**Decision:**
+Prepare Documents can place two kinds of manager-prepared content: **Printed Name** (one participant's current Signing name, Helvetica) and **Checkmark** (a drawn check over a box, no participant). They live in their own Draft table, `signing_draft_prepared_content`, and are baked into the immutable prepared document version when the Signing activates; the completed PDF derives from those prepared bytes. They are never signer fields, adopted marks, placements, or progress items, never appear in `signing_fields` or `signing_adopted_marks`, and participants cannot interact with them. Writes are Draft-only, enforced by the server action and a database trigger (`SIGNING_PREPARED_CONTENT_NOT_DRAFT`); an activated Signing is never silently mutated. The table has forced RLS with deny policies for `authenticated` and `anon`; only trusted server actions write it. Printed Name requires a participant of the same Signing; Checkmark forbids one (database check). Prepared content adds no readiness requirement; it blocks readiness only when it references an excluded document or an unknown participant.
+
+**Reason:**
+Lee's manual QA (finding 3): forms such as the Wire Fraud Warning need an agent-made Buyer / Seller choice beside the signature lines. The 2026-09-06 participant-scope decision already requires agent-prepared content to be rendered into the immutable version before participant access.
+
+**Consequences:**
+* Printed Name shows the participant's name at activation; later Draft renames are reflected until then, and nothing changes afterwards.
+* Deleting prepared rows is not blocked by the trigger (fixture cleanup); the server action still requires Draft for removal, and baked bytes remain in immutable versions.
+
+**Related:** `lib/signing/draft-prepared-content.ts`, `lib/signing/prepared-content-pdf.ts`, `lib/signing/prepared-content-geometry.ts`, `lib/signing/document-versions.ts`, the 2026-10-08 migration.
+
+---
+
+## Prepare Documents removes fixed-coordinate Quick Fields; paste is click-anchored
+
+**Date:** 2026-10-08
+
+**Decision:**
+The Quick Fields / **Add default fields** control is removed from Prepare Documents; all placements are made visually. Paste no longer drops placements at their copied coordinates: Paste (button or Ctrl/⌘+V) enters a paste placement mode that shows a ghost preview following the pointer, and the next click on the page anchors the pasted group there (group geometry kept, clamped to the page). Esc, a tool change, or a participant change cancels the mode; a rejected paste keeps it active; a click creates exactly the pasted placements and no extra field.
+
+**Reason:**
+Lee's manual QA (finding 2): fixed coordinates were not useful on real packages, and pasting at the source coordinates hid pasted fields under the originals.
+
+**Consequences:**
+* Supersedes the **Add default fields** sentence in "Managers visually place Signature, Initials, and Date Signed before activation" (2026-09-23).
+* Pasted Initials + linked Date pairs stay linked.
+* *(Refined 2026-10-08, Draft polish tranche:)* Copy now enters this mode itself; see "Copy enters paste mode; Date Signed links by clicking its source; new fields anchor at the click's left edge".
+
+**Related:** `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-field-editor-state.ts`.
+
+---
+
+## `E:\dev\harbaugh-forms` is the canonical workspace and home of project history
+
+**Date:** 2026-10-01
+
+**Decision:**
+Temporary Git worktrees (for example `E:\dev\harbaugh-forms-next-patch`, `E:\dev\harbaugh-forms-next-prod`) are acceptable for isolated branches, security patches, hotfixes, QA, and deployment preparation, but `E:\dev\harbaugh-forms` remains the canonical project workspace. Its `project_status.md`, `decisions.md`, and private gitignored `security.md` are the canonical, complete human-readable project history.
+
+**Reason:**
+Parallel work (the Native Signing PR #46 branch, the duplicate packet forms hotfix, the Next.js 16.3.6 security patch) ran in separate worktrees at the same time, so documentation written in one worktree could otherwise be lost or diverge.
+
+**Consequences:**
+* Before work done in a temporary worktree is called complete, reconcile its documentation semantically into the canonical files: keep newer canonical entries, add the worktree's entries, avoid duplicate sections, keep history in chronological order. Never blindly overwrite canonical files with a branch's copy.
+* After a PR merges, compare canonical docs with `main` and keep the union of all valid history.
+* `security.md` is never committed, deployed, or kept as a primary copy in another worktree.
+* Canonical doc edits that belong to `main` are not committed into an unrelated open feature PR (for example PR #46).
+
+**Related files:** `project_status.md`, `decisions.md`, `security.md`
+
+---
+
 ## SSR-visible UI renders deterministic text on server and first client render
 
 **Date:** 2026-10-02
@@ -24,10 +473,10 @@ Production admin pages raised React #418 because the Vercel server formats in UT
 
 **Consequences:**
 * Admin timestamps display in Central time with a `CST`/`CDT` label regardless of the viewer's browser zone.
-* Packet Created/Updated timestamps (Packets list, Packet detail, Contact detail associated packets) follow the same rule: `formatDateTime()` in `lib/types/packet.ts` delegates to `formatTimestamp()`, so date and time both come from the same instant in `America/Chicago` with a `CDT`/`CST` label. Never pair a UTC calendar date with a local time, and do not use the viewer's zone (2026-10-02, Lee).
+* Packet Created/Updated timestamps (Packets list, Packet detail, Contact detail associated packets) follow the same rule: `formatDateTime()` in `lib/types/packet.ts` delegates to `formatTimestamp()`, so date and time both come from the same instant in `America/Chicago` with a `CDT`/`CST` label. Never pair a UTC calendar date with a local time, and do not use the viewer's zone (2026-10-02, Lee; PR #52; live in production via hotfix `3e5eaa3`).
 * `lib/format-timestamp.test.ts` bans `toLocale*String(` in `components/admin`; extend it when other surfaces adopt the formatter.
 * Local production-mode QA must serve with the same env (e.g. `NATIVE_SIGNING_ENABLED`) used at build time; build-time-prerendered shells otherwise disagree with request-time renders.
-* Rolled out 2026-10-02 from `hotfix/admin-hydration-prod` (`c25e4c3` = production `2a92d82` + the fix) as `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, via skip-domain deploy, unique-URL validation, and manual promotion; rollback target `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`.
+* Rolled out 2026-10-02 from `hotfix/admin-hydration-prod` (`c25e4c3` = production `2a92d82` + the fix) as `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, via skip-domain deploy, unique-URL validation, and manual promotion; rollback target `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`. PR #50 squash-merged the same fix to `main` as `c2a490a` (2026-10-02 16:42 UTC) with no production action.
 
 **Related files:** `lib/format-timestamp.ts`, `lib/format-timestamp.test.ts`, `components/admin/*`, `scripts/qa-admin-hydration-browser.ts`
 
@@ -67,13 +516,299 @@ Each added copy is a new `packet_forms` row created through the normal creation 
 Agents need several separate documents of the same form in one transaction (e.g. a second Amendment to Contract). The Add Forms search disabled any form already in the packet ("In packet"), and a partial unique index on `(packet_id, form_id) WHERE status = 'ACTIVE'` rejected the insert at the database.
 
 **Consequences:**
-* Migration `20260930120000_packet_forms_allow_duplicate_forms.sql` drops only `packet_forms_packet_form_internal_active_uidx`. Forward-only; no data change. Do not recreate the index once duplicates exist. Applied to production on 2026-09-30 ahead of the older, still-pending Native Signing migrations (`20260914200000`–`20260920190000`), so the Native Signing production rollout must use `supabase db push --include-all`.
-* The production app was deployed from `hotfix/duplicate-packet-forms-prod` (live commit `348d309` plus only this change), not from `main`, so no unreleased Native Signing code went live. The next `main` production deploy already includes this change.
+* Migration `20260930120000_packet_forms_allow_duplicate_forms.sql` drops only `packet_forms_packet_form_internal_active_uidx`. Forward-only; no data change. Do not recreate the index once duplicates exist. It was applied to production on 2026-09-30 ahead of the 20 still-pending Native Signing migrations (`20260914200000`–`20260920190000`); their future production rollout must use `supabase db push --include-all` after a dry run.
+* The production app was deployed from `hotfix/duplicate-packet-forms-prod` at `a87b1aa` (prior live `348d309` plus only this fix), not from `main`. No unreleased Native Signing code went live. The next `main` production release already contains the duplicate-forms fix; Native Signing development/QA resumes without merging the hotfix branch back.
+* Vercel CLI `redeploy --target production` assigned both production domains when Ready despite automatic assignment being disabled for Git-triggered builds. For future CLI production builds, skip domain assignment, validate the unique deployment URL, and promote the domains explicitly. The live deployment is `dpl_4eXrZwG8hJC3UgmPKgRVGDHMpMWX`; rollback target is `dpl_2CMdac6EViudwyp6TgoQbHf8htiM`.
 * Add Forms (packet page and packet-creation draft editor) shows "In packet" (or "In packet (N)" for two or more copies) while keeping the form selectable, and confirms with "This form is already in the packet. Add another copy?" (Cancel / Add Another) only when the selected form is already present. Non-duplicates add with no extra step.
 * `addInternalFormToPacket` no longer pre-checks for an existing row (its `.maybeSingle()` lookup would also error once two rows exist); packet creation no longer rejects repeated or collection-overlapping additional forms.
-* Field instances (`packet_form_id, field_id`), storage paths (`{packetFormId}-…`), annotations, and Signing documents were already keyed by `packet_form.id` and needed no change. Collections still may not list the same form twice; that is a collection rule, not a packet rule.
+* Field instances (`packet_form_id, field_id`), storage paths (`{packetFormId}-…`), annotations, and Signing documents (`signing_id, source_packet_form_id`) were already keyed by `packet_form.id` and needed no change. Collections still may not list the same form twice; that is a collection rule, not a packet rule.
 
 **Related:** `lib/types/packet-form.ts`; `lib/types/packet.ts`; `components/packets/packet-forms-live-editor.tsx`; `components/packets/packet-forms-draft-editor.tsx`; `lib/types/packet-form.test.ts`; `scripts/validate-duplicate-packet-forms-dev.ts`; `supabase/migrations/20260930120000_packet_forms_allow_duplicate_forms.sql`.
+
+---
+
+## Development may hand managers the current participant link for QA; production never does
+
+**Date:** 2026-10-01
+
+**Decision:**
+Development may expose an authorized manager-only helper (**Copy signing link** / **Open signing link**) that returns the current participant invitation URL for QA. Production must never expose participant bearer links through the manager UI. The trusted server action denies itself unless Signing email is sandboxed, `VERCEL_ENV` is not `production`, and the app does not target the production Supabase project; hiding the buttons is not the control. It reuses the Resend/Replace/Revoke manager checks and returns only the current, unrevoked credential's URL as built for the invitation email. The URL is fetched on click, never rendered into page markup, logged, persisted, or recorded in events.
+
+**Reason:**
+Signing email is sandboxed in development, so no invitation arrives; Lee needs the real link to QA the participant ceremony.
+
+**Consequences:**
+* Narrows "Credential ids, tokens, links, and provider references are never sent to the browser" (2026-09-28) and "Raw bearer URLs/secrets are never shown" to production; in development they reach the browser only on this explicit manager request.
+
+**Related:** `lib/signing/feature-gate.ts` (`isParticipantLinkQaHelperEnabled`); `lib/signing/participant-credential-recovery.ts`; `components/signings/signing-dashboard-page.tsx`.
+
+---
+
+## Browser PDF viewing stays out of the server module graph
+
+**Date:** 2026-09-30
+
+**Decision:**
+Browser-only document-viewer code (`react-pdf`, `pdfjs-dist`, `lib/pdfjs-setup`) must remain outside the server module graph. Server PDF generation and manipulation (pdf-lib, fontkit, snapshots, completed PDFs, hashing) and client PDF viewing are separate responsibilities. Client Components that show a PDF viewer load it with `next/dynamic(..., { ssr: false })`; the viewer is never made to run on the server with browser-API polyfills.
+
+**Reason:**
+pdf.js needs DOMMatrix, canvas, and workers at module load. A static import from a server-rendered Client Component made every Signing dashboard request fail server rendering and rely on client recovery.
+
+**Consequences:**
+* The Signing dashboard loads Prepare Documents only when it is first opened.
+* `lib/signing/client-boundary.test.ts` fails if any `app/**` page, layout, or route statically reaches a viewer module.
+
+**Related:** `components/signings/signing-dashboard-page.tsx`; `lib/signing/client-boundary.test.ts`; `components/packets/packet-form-editor-page.tsx`; `components/forms/pdf-field-editor-page.tsx`.
+
+---
+
+## Prepare Documents multi-select and copy/paste are Draft editing conveniences
+
+**Date:** 2026-09-28
+
+**Decision:**
+Multi-select, group move, multi-delete, and copy/paste in Prepare Documents only produce ordinary Draft placements through the existing trusted draft-field server actions. They do not create evidence, package revisions, or any path to Revision 1, and they never bypass participant, document, or Signature/Date linkage validation. The editor clipboard is in memory only (never the OS clipboard). A group move is limited to the dragged placement's page and never moves placements across pages. A pasted Date Signed links only to a Signature for the same participant; otherwise it is rejected. *(Updated 2026-10-08: a pasted Date Signed may link to a same-participant Signature or Initials, and paste is anchored where the manager clicks — see "Prepare Documents removes fixed-coordinate Quick Fields; paste is click-anchored".)*
+
+**Reason:**
+Managers repeat identical placements across participants and pages; the convenience must not widen the Draft/evidence boundary.
+
+**Consequences:**
+* Selection state is local UI state; persistence is per placement through `upsertDraftSigningFieldAction` / `removeDraftSigningFieldAction`.
+* Delete/Backspace and copy/paste shortcuts are ignored while typing in form controls.
+
+**Related:** `lib/signing/draft-field-editor-state.ts`; `components/signings/signing-preview-dialog.tsx`.
+
+---
+
+## Replace signing link checks first, then revokes the old link; delivery status is never overstated
+
+**Date:** 2026-09-28
+
+**Decision:**
+Replace signing link runs the same In Progress, remote-mode, active-participant, and email checks as Resend and Revoke before changing any credential. It then supersedes and revokes the current credential (and its entry sessions), issues a new credential, and queues its invitation. Resend reuses the current credential; Revoke issues none. Replace and Revoke require confirmation; results show inline for the participant. Participant access status shows link state and times from credential rows and invitation state from delivery rows, labelled honestly: provider acceptance is not delivery, and the development sandbox says "not sent". Credential ids, tokens, links, and provider references are never sent to the browser.
+
+**Reason:**
+Lee could not tell whether Replace had worked, and a participant without email could lose their link before the replacement failed to send.
+
+**Related:** `lib/signing/participant-credential-recovery.ts`; `lib/signing/participant-access-status.ts`; `lib/signing/dashboard.ts`; `components/signings/signing-dashboard-page.tsx`.
+
+---
+
+## Signing Placement Templates are the approved next Prepare Documents feature
+
+**Date:** 2026-09-28
+
+**Decision:**
+Reusable placement templates are approved as the next feature, in their own PR, with this direction: keyed to an exact Form version row (the family only suggests), Organization and Personal scope with Personal taking precedence, stored as participant slots (derived from Packet roles and order) rather than Contact/User ids, and applied only by an explicit manager action that maps every slot to a participant, shows unresolved slots, and creates ordinary editable Draft placements. Ad hoc PDFs are out of scope initially. Table names, columns, and the exact slot vocabulary are intentionally not locked by this decision.
+
+**Reason:**
+Managers place the same fields on the same Form versions repeatedly; tying templates to people or auto-applying them would silently misassign signers.
+
+**Related:** `project_status.md` (pass 8 template design); `lib/signing/packet-to-signing.ts`; `supabase/migrations/20260715180000_field_defaults_scoped.sql`.
+
+---
+
+## Prepare Documents is the canonical pre-send visual review
+
+**Date:** 2026-09-28
+
+**Decision:**
+The manager's editable Prepare Documents workspace is also the primary visual verification surface before activation. A separate standalone Draft Preview action is unnecessary.
+
+Prepare Documents renders each included document from its selected Draft source snapshot, the same source activation consumes, with the current `signing_draft_fields` overlaid. Readiness stays derived from Draft state; there is no required preview step and no "previewed" acknowledgment. The read-only preview renderer, route, and dialog mode remain available internally; only the standalone Draft-page action is removed.
+
+**Reason:**
+Managers already see the exact documents and placements while preparing them; a second read-only pass added a step without adding verification.
+
+**Consequences:**
+* The Draft page offers Prepare Documents, Send, and Begin In-Person; no Preview Signing button.
+* The Send confirmation is unchanged ("Send this Signing?" — "This freezes all the documents and emails each participant a signing link.").
+* Supersedes the Draft-page Preview Signing action in "Managers preview Draft Signing documents with field placements before activation" (2026-09-23).
+
+**Related:** `components/signings/signing-dashboard-page.tsx`; `components/signings/signing-preview-dialog.tsx`; `lib/signing/preview.ts`.
+
+---
+
+## Draft field defaults are sized from their expected rendered content
+
+**Date:** 2026-09-28
+
+**Decision:**
+A newly placed Draft Signature, Initials, or Date Signed box approximates the footprint of the mark the completed-PDF renderer will draw, not a generic fixed size. Its width is measured with the renderer's own font metrics for the expected text — the participant's signing name (personal), the frozen representative execution wording (representative), the shared suggested initials, or the finalization date format — at a comfortable target font size, plus modest padding, clamped to per-type minimum and maximum widths. Long representative wording is capped and shrinks to fit, exactly as the renderer does. Canvas labels show that expected text in the renderer's font at the renderer's fitted size; participant and type details live in the tooltip, accessible label, and sidebar. Managers can still resize any field.
+
+**Reason:**
+Fixed defaults were visibly larger than the printed signature and initials lines on real forms.
+
+**Consequences:**
+* Browser metrics are a generated table (`scripts/generate-signing-mark-metrics.ts`) verified against the embedded font in tests.
+* The linked Date Signed uses the content-sized Date box, to the right of its Signature on the same bottom edge when it fits, otherwise below.
+
+**Related:** `lib/signing/draft-field-sizing.ts`; `lib/signing/mark-metrics-data.ts`; `lib/signing/completed-pdf.ts`; `lib/pdf-text-layout.ts`.
+
+---
+## Packet selection and Packet-party population are one Draft preparation action
+
+**Date:** 2026-09-28
+
+**Decision:**
+From the user's perspective, choosing a source Packet and populating that Packet's parties is a single action. The server derives and validates the parties first, then binds `signings.source_packet_id` and inserts the missing participants in one database transaction (`signing_select_source_packet`, service role only) that holds the Signing row lock and compare-and-sets the source against the value the server read. A Packet's parties are its ACTIVE `packet_contacts` plus the ACTIVE clients of its representation agreement. The population is a one-time Draft snapshot, never a live sync. Included Packet-form documents in a Draft must belong to the Signing's source Packet, enforced by a database trigger.
+
+**Reason:**
+Binding and importing as separate steps let a Signing end up bound with no parties (Packets whose parties live on a representation agreement derived nothing), and let competing selections interleave.
+
+**Consequences:**
+* No "Packet selected, participants missing" state for Packets that have parties; a Packet with no usable parties says so.
+* Competing selections produce exactly one winner; participants always come from the bound Packet.
+* Party contacts not owned by the actor are skipped with a visible note.
+
+**Related:**
+* `supabase/migrations/20260928120000_native_signing_source_packet_selection.sql`
+* `lib/signing/source-packet.ts`, `lib/signing/packet-to-signing.ts`
+
+---
+
+## One source Packet per Signing
+
+**Date:** 2026-09-28
+
+**Decision:**
+A Signing has at most one source Packet (`signings.source_packet_id`). Selecting a Packet in Draft preparation binds it; the first Packet document added to an unbound Signing also binds it. Packet document picking and **Add all remaining packet documents** are scoped to that Packet, and the server rejects Packet Forms from any other Packet. The source Packet may change only while the Signing holds no included Packet documents and no Packet-linked participants; it is never silently remapped. Signing-owned ad hoc PDFs remain allowed alongside source-Packet documents. The UI shows the source Packet prominently and offers a Packet chooser only when the server would accept the change.
+
+**Reason:**
+Mixing documents from several Packets made provenance, participant derivation, and later drift handling ambiguous. The server enforced source-Packet scoping only after a source was set, so an unbound Draft could accumulate documents from different Packets.
+
+**Consequences:**
+* Binding uses a compare-and-set update (`source_packet_id is null`) so concurrent adds from different Packets cannot both win.
+* Legacy Drafts with Packet documents from a different Packet cannot bind to a new Packet.
+* Switching Packets after Packet-derived state exists requires a new Signing.
+
+**Related:**
+* `lib/signing/source-packet.ts`, `lib/signing/draft-documents.ts` (`bindSigningSourcePacketIfUnset`)
+* `lib/signing/stage3-actions.ts`, `components/signings/signing-draft-prep-panel.tsx`
+* `scripts/validate-native-signing-draft-prep-dev.ts`
+
+---
+
+## Packet selection populates Signing participants
+
+**Date:** 2026-09-28
+
+**Decision:**
+Selecting a source Packet on a Draft Signing imports that Packet's transaction parties as Draft participants using the same derivation as Packet → Create Signing (`deriveSigningParticipantsFromPacket`): ACTIVE `packet_contacts` with recognized party roles (plus representation agreement clients — see "Packet selection and Packet-party population are one Draft preparation action"), one participant per contact id, PERSONAL capacity, email optional in Draft. Agents, brokers, and TCs are not imported. Participants already linked to the same contact are skipped. Existing and ad hoc participants are never deleted, replaced, or merged by name. The import is a snapshot; later Packet contact edits do not sync. *(Updated 2026-10-08: while Draft, parties added to the Packet later can be added explicitly with Add from Packet; imports carry a participant role — see "Draft participants refresh additively from the source Packet".)* *(Updated 2026-10-08, Draft polish tranche: new Packet parties are now auto-added while Draft and a removed party is suppressed until Restore. A linked participant's name and email follow its Contact live until activation. See "Packet participants auto-add during Draft; intentional removal is suppressed per Signing" and "Draft participant identity is live from its source; activation canonizes it".)*
+
+**Reason:**
+Managers expected the Packet's buyers/sellers to appear when choosing the Packet, as they do when creating a Signing from the Packet page. Re-entering them by hand invited typos and duplicate people.
+
+**Consequences:**
+* Representative capacity is never inferred from Packet roles; set it during preparation.
+* Re-selecting the same Packet adds only parties not yet linked.
+* Packet-linked participants count as Packet-derived state and lock the source Packet.
+
+**Related:**
+* `lib/signing/source-packet.ts`, `lib/signing/packet-to-signing.ts`
+
+---
+
+## Signature adoption boundary
+
+**Date:** 2026-09-28
+
+**Decision:**
+Signature and initials adoption happens only in the participant signing ceremony. Manager Draft preparation places signing fields for each participant and never adopts, draws, types, or previews a participant's signature. Prepare Documents shows at most: "Place signing fields for each participant. Participants adopt their signatures and initials when they sign." Agents who sign adopt in their own ceremony like any other participant.
+
+**Reason:**
+Adoption is a participant act with its own consent and attribution. Offering adoption in the manager workspace would blur who performed it and duplicate ceremony behavior.
+
+**Consequences:**
+* No "Adopt Signature" control in Prepare Documents or the Draft prep panel.
+* Ceremony adoption instructions are unchanged.
+
+**Related:**
+* `components/signings/signing-preview-dialog.tsx`
+* Ceremony: `lib/signing/ceremony-*`
+
+---
+
+## Prepare Documents edits are local-first with trusted server persistence
+
+**Date:** 2026-09-28
+
+**Decision:**
+The Prepare Documents workspace applies place / move / resize / reassign / remove to local state immediately and persists each change through the existing trusted `signing_draft_fields` server actions in an ordered queue. The server response reconciles local ids; on failure the workspace reloads the trusted model without remounting the PDF or resetting document, page, or scroll. Removing a Signature removes its paired Date Signed; reassigning a Signature moves its paired Date Signed to the same participant. Initials and Date Signed remove independently. *(Updated 2026-10-08: an Initials that is the source of a deliberately linked Date Signed carries that date on remove and reassign, like a Signature.)*
+
+**Reason:**
+Reloading the whole preview model after every edit unmounted the PDF and reset the view, which looked like a page refresh and swallowed Remove clicks.
+
+**Consequences:**
+* Browsers still never write `signing_draft_fields` directly.
+* Dashboard readiness refreshes once when the workspace closes after edits.
+* Unlinked Date Signed rows are no longer produced by Signature removal.
+
+**Related:**
+* `components/signings/signing-preview-dialog.tsx`, `lib/signing/draft-field-editor-state.ts`, `lib/signing/draft-fields.ts`
+
+---
+
+## Signing-owned ad hoc PDFs are first-class Draft documents
+
+**Date:** 2026-09-23
+
+**Decision:**
+Managers may upload a PDF directly onto a Draft Signing as a Signing-owned document (`source_kind = AD_HOC_PDF`). Ad hoc PDFs do **not** create Packet Forms, Forms, Form Templates, or generated Packet documents. Uploaded bytes become a Signing-owned Draft source snapshot under the private `signing-artifacts` namespace `.../draft-ad-hoc/{snapshotId}/source.pdf`, fingerprinted and verified on every render/activation. They remain preparation state until activation promotes immutable `signing_document_version` evidence. Opening or uploading never creates Revision 1, credentials, email, or completed evidence.
+
+**Reason:**
+Agents often need one-off PDFs (addenda, disclosures, third-party docs) that do not belong in the Packet Form library. Forcing Packet/Form rows merely to reuse document-add code would pollute Forms inventory and blur ownership.
+
+**Consequences:**
+* `signing_documents.source_kind` distinguishes `PACKET_FORM` vs `AD_HOC_PDF`.
+* Packet provenance columns stay nullable for ad hoc documents; same-Signing FK integrity remains.
+* Evidence-free Draft removal may delete ad hoc snapshot storage; historical evidence follows soft-exclusion.
+
+**Related:**
+* `supabase/migrations/20260923200000_native_signing_ad_hoc_documents.sql`
+* `lib/signing/ad-hoc-documents.ts`, `lib/signing/draft-source-snapshots.ts`
+
+---
+
+## Managers visually place Signature, Initials, and Date Signed before activation
+
+**Date:** 2026-09-23
+
+**Decision:**
+Draft Signing preparation uses a visual Prepare Documents workspace (built on the same Draft-source Preview surface) where managers choose a participant and field type, click to place Signature / Initials / Date Signed, then move, resize, remove, or reassign. Placements persist only through trusted `signing_draft_fields` server actions. A read-only preview mode of the same Draft state remains internally; Prepare Documents is the canonical pre-send visual review (2026-09-28). **Add default fields** may remain as an optional fixture but is not the primary preparation path. Date Signed remains linked to a same-participant Signature. *(Updated 2026-10-08: Add default fields is removed; Date Signed may link to a same-participant Signature or Initials.)*
+
+**Reason:**
+Fixed-coordinate “Add default fields” is insufficient for real packages. Agents must see what Send will freeze.
+
+**Consequences:**
+* Prepare and Preview share one rendering model (selected Draft snapshots + current draft fields).
+* Browser never writes evidence tables.
+* In Progress material field editing remains unavailable until a proper amendment revision workflow ships.
+
+**Related:**
+* `components/signings/signing-preview-dialog.tsx`
+* `lib/signing/draft-fields.ts`, `lib/signing/preview.ts`
+
+---
+
+## Copy recipients may be configured before Complete; delivery remains post-Complete only
+
+**Date:** 2026-09-23
+
+**Decision:**
+Authorized managers may add or soft-remove ACTIVE **Copy recipients** while a Signing is Draft, In Progress, or Complete. Copy recipients never sign, never receive ceremony credentials, never affect Readiness or participant completion, and never access In Progress documents. Completed-package credentials and delivery are created only after the Signing is Complete (including completion fan-out for preconfigured ACTIVE recipients, and late add after Complete). Removing a recipient before Complete means no package is sent and no revocation email is required for an unsent recipient.
+
+**Reason:**
+Agents know who needs a completed copy during preparation, but issuing completed-package credentials before there is a completed package would create dangling access.
+
+**Consequences:**
+* Application lifecycle gating allows Draft/In Progress configuration; credential issuance stays Complete-gated.
+* Completion fan-out enqueues ACTIVE copy recipients after participant fan-out; email failure never rolls back Complete.
+* Copy-recipient changes never alter package revision, amendment lock, or frozen evidence.
+
+**Related:**
+* `lib/signing/copy-recipients.ts`, `lib/signing/completed-package-delivery.ts`
+* `components/signings/signing-copy-recipients-panel.tsx`
 
 ---
 
@@ -1322,6 +2057,8 @@ Representative signing is a practical workflow feature, not a legal-adjudication
 
 **Date:** 2026-09-14
 
+> **Refined 2026-10-08 (Draft polish tranche):** the name-match rule stands, but the correction window is now Draft only. Participant identity is no longer amendable after activation. The pre-first-mark amendment model may still apply to other package/document changes, but not participant name/email. After activation, a wrong name requires Cancel and a new Signing. See "Draft participant identity is live from its source; activation canonizes it".
+
 **Decision:**
 For a participant signing personally, the name used in the Signing, the name presented for their signing ceremony, and the name appearing on the document for that signer must match. A personal participant cannot choose a fuller, shorter, customary, or otherwise different name as their adopted typed signature. If the intended name is wrong or incomplete, an authorized agent corrects the participant identity and document before the first accepted signature or initials placement under the approved amendment process. Representative signing uses the distinct execution-capacity decision below.
 
@@ -1412,6 +2149,8 @@ The Signing evidence must show both that the participant affirmatively consented
 ## Participant identity is agent-correctable only before the first signing mark
 
 **Date:** 2026-09-14
+
+> **Superseded for participant identity 2026-10-08 (Draft polish tranche):** Participant identity is no longer amendable after activation. The pre-first-mark amendment model may still apply to other package/document changes, but not participant name/email. Name and email change only while Draft (live from the linked source, or edited directly for ad hoc participants). Activation (Send / Begin In-Person) canonizes them; a wrong identity afterwards requires **Cancel Signing** and a new Signing. See "Draft participant identity is live from its source; activation canonizes it". The entry below is kept as history.
 
 **Decision:**
 Participants cannot edit their displayed name, email address, or optional role from the Signing experience. Before any accepted signature or initials placement exists anywhere in the Signing, an authorized primary agent or co-agent may correct those details through the approved amendment lock and a new package revision.
@@ -2213,7 +2952,7 @@ The core Signing model uses distinct durable concepts rather than collapsing the
 * A **Signing Document** is one logical document within that Signing, such as a contract or addendum. It remains the same logical document across permitted pre-signature revisions and remains separately deliverable.
 * A **Document Version** is one exact immutable prepared PDF for one Signing Document. One version is current at a time; superseded versions remain retained. The separately stored completed PDF is a final artifact of the exact prepared version that was signed, not an editable revision.
 * A **Signing Participant** is one person acting across the Signing and may sign or initial several documents. Shared email addresses never merge participants. User and Contact references remain optional associations rather than identity keys.
-* A **Signer Field** is an instruction assigned to exactly one participant at one page/location on one exact Document Version. Its type is Signature or Initials and it is required by default unless deliberately made optional. The automatically generated Date Signed is a linked system field associated with a Signature field and is not participant-editable.
+* A **Signer Field** is an instruction assigned to exactly one participant at one page/location on one exact Document Version. Its type is Signature or Initials and it is required by default unless deliberately made optional. The automatically generated Date Signed is a linked system field associated with a Signature field and is not participant-editable. *(2026-10-08: a deliberately added Date Signed may instead link to an Initials field.)*
 * An **Adopted Mark** preserves the exact signature or initials appearance adopted for this Signing. A **Placement** is one server-accepted use of that mark in an assigned Signer Field. A reusable User preset is copied into the Signing as an immutable snapshot and is never referenced as mutable source content.
 
 Participant current status is explicit and limited to Pending, Started, Finished, Declined, or Removed at the product/domain level. Current identity-confirmation, consent, required-field completion, Finish Signing, link, completion, and decline state is stored directly while corresponding meaningful changes remain events. Participant identity and associations freeze at the first accepted signature or initial as already approved.
@@ -2691,7 +3430,7 @@ Participants need room to correct their own work before submission, while the sy
 **Date:** 2026-09-06
 
 **Decision:**
-During Signing preparation, placing a **Signature** field for a participant automatically creates a paired **Date Signed** field beside it. Before the Signing freezes, the agent may move, resize, or delete the paired date without affecting the signature field. Placing an **Initials** field creates only the initials field; it does not automatically create a date. The agent may separately add a Date Signed field where a form requires one near initials.
+During Signing preparation, placing a **Signature** field for a participant automatically creates a paired **Date Signed** field beside it. Before the Signing freezes, the agent may move, resize, or delete the paired date without affecting the signature field. Placing an **Initials** field creates only the initials field; it does not automatically create a date. The agent may separately add a Date Signed field where a form requires one near initials. *(2026-10-08: that separately added date links to the Initials and is filled from the Initials acceptance — see "Date Signed may link to Signature or Initials; only Signature auto-pairs".)*
 
 Participants may adopt typed or drawn signatures and initials. A retained paired date is populated automatically when the participant completes its associated signature field; the participant does not type or choose that date. Each signature, initial, and automatic date placement is associated with its signing activity and recorded individually. The first successfully accepted signature or initial remains the permanent Signing-freeze boundary established by the 2026-09-05 locking decision.
 
@@ -2794,6 +3533,8 @@ Signing participants are entitled to an accessible completed copy, and agents fr
 
 **Date:** 2026-09-05
 
+> **Refined 2026-10-08 (Draft polish tranche):** Participant identity is no longer amendable after activation. The pre-first-mark amendment model may still apply to other package/document changes, but not participant name/email. Participant identity snapshots are fixed at activation, not at the first accepted mark. See "Draft participant identity is live from its source; activation canonizes it".
+
 **Decision:**
 An In Progress **Signing** remains amendable until its first signature or initial is successfully accepted. Before opening a Signing for amendment, the server must atomically verify that the Signing is still active, no signature or initial event exists, no participant currently has the signing experience open, and no other amendment is active. If those checks pass, the agent receives an exclusive amendment lock.
 
@@ -2836,6 +3577,8 @@ An agent should be able to correct an already-sent Signing when nobody has start
 ## Signing participants may be linked or ad hoc, and all are eligible in parallel
 
 **Date:** 2026-09-05
+
+> **Refined 2026-10-08 (Draft polish tranche):** the editing window for participant names and email addresses is Draft only. Linked participants follow their User/Contact/brokerage source live while Draft and cannot be overridden; ad hoc participants are edited directly. Activation freezes the identity snapshot. Participant identity is no longer amendable after activation. The pre-first-mark amendment model may still apply to other package/document changes, but not participant name/email. See "Draft participant identity is live from its source; activation canonizes it".
 
 **Decision:**
 A **signing participant** is a person participating in one particular Signing. The participant may reference a Harbaugh Forms User, a Contact, both, or neither. A User and Contact may represent the same person, and those references are not mutually exclusive. Creating a Contact is never required to add someone to a Signing.
@@ -5383,7 +6126,7 @@ Reliability semantics: request-driven kick + inline invitations remain the prima
 No additional Native Signing **code** stage is required before production migration/configuration. Remaining work is configuration, legal/content, and operational execution under explicit Gates:
 
 * **Gate A** — backup/checkpoint + migration preflight (no DB mutation yet)
-* **Gate B** — apply 20 Native Signing migrations to `eetonalyyyssvkyfdoxh` then **immediate** `work_suspended=true` + access-epoch bump (leaves `access_suspended=true`); verify; feature remains OFF
+* **Gate B** — apply 21 Native Signing migrations to `eetonalyyyssvkyfdoxh` then **immediate** `work_suspended=true` + access-epoch bump (leaves `access_suspended=true`); verify; feature remains OFF
 * **Gate C** — install Production secrets/config; deploy current app to unique Vercel URL; Cron/manual FEATURE_DISABLED or SUSPENDED smokes; production-ready disclosure; Resend/DNS/From verified; readiness PASS except feature deliberately OFF
 * **Gate D** — synthetic Lee-owned production Signing full lifecycle
 * **Gate E** — first real client Signing only after Lee explicit approval
@@ -5406,4 +6149,94 @@ Manager-facing Native Signing requires a discoverable entry when `NATIVE_SIGNING
 **Reason:** Enabling the server feature gate alone left no manager navigation or Draft prep UI; Lee could not visually QA the workflow.
 
 **Related:** `project_status.md` local QA enablement note; local-only `.env.local` (`NATIVE_SIGNING_ENABLED=true`, `SIGNING_EMAIL_SANDBOX=true`).
+
+
+### Native Signing manager QA reconciles representative signing and Packet Create Signing (2026-09-21)
+
+**Date:** 2026-09-21
+
+**Decision:**
+Representative signing remains part of the **initial** Native Signing release per the earlier stated-capacity decisions. Temporary personal-capacity-only rollout notices are withdrawn. Manager UX adds Packet → **Create Signing**, Draft participant removal, corrected Packet Form picking, plain-language Signing Controls, and Create Signing / Prepare Signing wording while retaining internal `DRAFT` lifecycle vocabulary. Native Signing migration count is now **21** (representative capacity additive). Gate A production rollout remains paused until Lee re-QAs development.
+
+**Reason:** Lee's manager visual QA found product/UI gaps that blocked confident progression to production enablement.
+
+**Related:** `project_status.md` manager QA follow-up; migration `20260921200000_native_signing_representative_capacity.sql`; local `security.md` R16/R17.
+
+### Supersession note — representative signing not post-launch (2026-09-21)
+
+Earlier production-readiness scaffolding notes that deferred representative signing or treated personal-capacity-only as the first-rollout acceptance are superseded for product scope. Representative signing is restored for initial release. Production enablement remains gated by migrations/secrets/disclosure/ops — not by postponing representative capacity.
+
+### Product UI uses Signing/Signings; Native Signing is internal architecture terminology (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+“Native Signing” names the built-in Signing architecture (as opposed to an external provider). Normal user-facing UI uses **Signing**, **Signings**, **Create Signing**, **Send**, **Signing In Progress**, and **Signing Complete**. Admin Signing Controls label the feature gate **Signings enabled**. Internal code, env vars (`NATIVE_SIGNING_*`), migrations, and schema keep Native Signing naming.
+
+**Reason:** Lee’s manager QA found “Native” confusing in ordinary product copy.
+
+**Related:** `app/admin/signing-controls/page.tsx`; manager-facing Signings pages.
+
+### Draft document preparation supports whole-Packet and individual-document addition (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+From Draft preparation, managers may **Add entire packet** (all remaining eligible Packet Forms) or **Add individual document**. Eligibility matches Packet → Create Signing (`ACTIVE` + `availability_state='AVAILABLE'` + storage path; owned Packet; source-packet constraint when set). Duplicates are skipped. Every add uses the existing Draft document + source-snapshot path; no Revision 1 before Send / Begin In-Person. Draft **Remove document** uses the existing Stage 3 Draft removal path.
+
+**Reason:** Manager QA needed coherent document intake without a second import pipeline.
+
+**Related:** `lib/signing/draft-documents.ts` (`addRemainingPacketDocumentsWithActor`); `components/signings/signing-draft-prep-panel.tsx`.
+
+### Readiness user-facing wording is direct status language (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+User-facing Readiness copy uses **“This Signing is ready to send.”** / **“This Signing is not ready to send.”** with blocker detail beneath. Ready remains a derived evaluation, not a stored lifecycle state.
+
+**Reason:** Technical “calculated from Draft” framing confused managers.
+
+### In Progress participant-link operations are manager-facing (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+While a remote Signing is In Progress, managers with business manage authority may **Resend**, **Replace**, or **Revoke** a participant’s signing link. Resend reuses the current credential; Replace issues a new credential and invalidates the prior link; Revoke ends access without replacement. Raw bearer URLs/secrets are never shown. In-person Signings continue to use supervised handoff instead of emailed-link ops.
+
+**Reason:** After Send, managers could not recover delivery/access without leaving the product.
+
+**Related:** `lib/signing/participant-credential-recovery.ts`; Signing dashboard In Progress panel.
+
+### Pre-first-mark amendment remains a pre-production product gap (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+Exclusive amendment locks and first-mark freeze enforcement exist in the trusted server layer, but manager UI for In Progress pre-first-mark amendment (add/remove documents or participants, edit participant/capacity, adjust fields without mutating Revision 1 in place) is **not** shipped in the manager QA PR. After first accepted Signature/Initial, material correction requires a new Signing. Do not fake amendment by mutating Revision 1. Ship amendment workflow as a focused follow-up PR before production enablement.
+
+**Reason:** Implementing full amendment safely is substantial and must not balloon the manager QA PR.
+
+### Completed-copy recipients remain Complete-only for now (2026-09-22)
+
+**Date:** 2026-09-22
+
+**Decision:**
+Copy recipients receive the completed package only. Current add path issues completed-package credentials and enqueues delivery, so configuration remains COMPLETE-only. Pre-Complete recipient lists would require a separate store-without-deliver path; deferred as a focused follow-up. Post-Complete add/remove remains available.
+
+**Reason:** Generalizing earlier without weakening evidence/delivery boundaries needs an explicit design, not a UI-only unlock.
+
+### Managers preview Draft Signing documents with field placements before activation (2026-09-23)
+
+**Date:** 2026-09-23
+
+**Decision:**
+*(Superseded 2026-09-28: the standalone Draft-page Preview Signing action was removed; Prepare Documents is the canonical pre-send visual review. The read-only renderer and route below remain.)* Before **Send** or **Begin In-Person Signing**, managers with Draft manage authority can open **Preview Signing**. Preview renders each included document from its **currently selected Draft source snapshot** (the same source activation would consume) and overlays current `signing_draft_fields` (Signature, Initials, Date Signed) with the human participant’s name. Preview is non-evidentiary: it must not create a package revision, `signing_document_version`, credentials, delivery work, or freeze the Signing. Live Packet Form drift must not silently change the preview once a snapshot is selected. Preview is not itself a readiness requirement.
+
+**Consequences:**
+* Document bytes are served through an authorized server route; browsers never gain direct `signing-artifacts` access.
+* Visual place/move/resize of Draft Signing fields remains a product gap if only “Add default fields” exists; preview must not hide that gap.
+* General manager-page banners promoting representative signing or typed adoption are unnecessary; capacity and ceremony instructions belong in participant setup and ceremony.
+
+**Related:** `lib/signing/preview.ts`; `app/signings/[signingId]/preview/document/[documentId]/route.ts`; Signing dashboard Preview Signing.
 

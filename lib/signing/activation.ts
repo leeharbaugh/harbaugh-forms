@@ -29,6 +29,7 @@ import {
   type ParticipantInvitationTarget,
 } from "./delivery";
 import { loadSigningAuthorityBundle } from "./authority-context";
+import { syncDraftParticipantIdentities } from "./draft-participant-sync";
 import {
   buildResponsibleContextMetadata,
   requireSigningEventActorType,
@@ -326,6 +327,12 @@ export async function activateSigningWithActor(
     );
     previousPointer = signing.current_package_revision_id;
 
+    // Canonization boundary: linked identities are brought current one last
+    // time, then promotion freezes them. Packet auto-add is deliberately not
+    // run here so Send never activates with a participant the agent has not
+    // seen.
+    await syncDraftParticipantIdentities(admin, signing);
+
     // Re-run readiness inside the operation: source drift fails closed here.
     const readiness = await evaluateSigningReadiness(admin, signing.id, actor);
     if (!readiness.ready) {
@@ -342,6 +349,25 @@ export async function activateSigningWithActor(
         "NOT_READY",
         first?.message ?? "This Signing is not ready to activate.",
       );
+    }
+
+    if (mode === "REMOTE_SEND") {
+      const { data: emailRows, error: emailError } = await admin
+        .from("signing_participants")
+        .select("id, email")
+        .eq("signing_id", signing.id)
+        .neq("participant_status", "REMOVED");
+      if (emailError) throw new Error(emailError.message);
+      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      for (const row of emailRows ?? []) {
+        const email = String(row.email ?? "").trim();
+        if (!emailRe.test(email)) {
+          throw new SigningError(
+            "NOT_READY",
+            "Every participant needs a valid email address before Send.",
+          );
+        }
+      }
     }
 
     const promoted = await promotePackageRevisionFromDraftWithActor(
@@ -363,6 +389,30 @@ export async function activateSigningWithActor(
         "NOT_READY",
         "At least one participant is required to activate this Signing.",
       );
+    }
+
+    // The revision's frozen identity must equal the participant rows; a
+    // source change that landed during promotion rolls activation back.
+    const { data: frozenRows, error: frozenError } = await admin
+      .from("signing_package_revision_participants")
+      .select("signing_participant_id, frozen_full_name, frozen_email")
+      .eq("package_revision_id", promoted.packageRevisionId);
+    if (frozenError) throw new Error(frozenError.message);
+    const frozenById = new Map(
+      (frozenRows ?? []).map((row) => [row.signing_participant_id as string, row]),
+    );
+    for (const participant of participants) {
+      const frozen = frozenById.get(participant.id as string);
+      if (
+        !frozen ||
+        frozen.frozen_full_name !== participant.full_name ||
+        (frozen.frozen_email ?? "") !== (participant.email ?? "")
+      ) {
+        throw new SigningError(
+          "CONFLICT",
+          "Participant details changed during activation. Try again.",
+        );
+      }
     }
 
     issued = await issueParticipantCredentialsForActivation({

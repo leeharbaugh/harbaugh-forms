@@ -40,7 +40,12 @@ import { formatCollectionType } from "@/lib/types/collection";
 import { formatPropertyAddress } from "@/lib/types/property";
 import { PacketFormsLiveEditor } from "@/components/packets/packet-forms-live-editor";
 import { sortPacketForms } from "@/lib/types/packet-form";
+import {
+  createSigningFromPacketAction,
+  getPacketSigningEligibilityAction,
+} from "@/lib/signing/actions";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type PacketDetailProps = {
@@ -48,6 +53,7 @@ type PacketDetailProps = {
 };
 
 export function PacketDetail({ packetId }: PacketDetailProps) {
+  const router = useRouter();
   const [packet, setPacket] = useState<PacketDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -77,17 +83,38 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isCreatingSigning, setIsCreatingSigning] = useState(false);
+  const [signingEligibility, setSigningEligibility] = useState<{
+    eligible: boolean;
+    reasonCode: string | null;
+    message: string | null;
+  } | null>(null);
+  const [duplicateSigningDialogOpen, setDuplicateSigningDialogOpen] =
+    useState(false);
+  const [duplicateSigningMessage, setDuplicateSigningMessage] = useState("");
 
   const loadPacket = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
 
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from("packets")
-      .select(PACKET_DETAIL_SELECT)
-      .eq("id", packetId)
-      .maybeSingle();
+    const [{ data, error }, eligibility] = await Promise.all([
+      supabase
+        .from("packets")
+        .select(PACKET_DETAIL_SELECT)
+        .eq("id", packetId)
+        .maybeSingle(),
+      getPacketSigningEligibilityAction({ packetId }),
+    ]);
+
+    // Hidden only when Signing is off; otherwise shown, disabled with a reason.
+    setSigningEligibility(
+      eligibility.ok
+        ? eligibility.data
+        : eligibility.code === "NATIVE_SIGNING_DISABLED"
+          ? null
+          : { eligible: false, reasonCode: null, message: eligibility.error },
+    );
 
     if (error) {
       setLoadError(error.message);
@@ -308,6 +335,32 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
     }
   };
 
+  const handleCreateSigning = async (confirmDuplicate = false) => {
+    setIsCreatingSigning(true);
+    setActionError(null);
+
+    const result = await createSigningFromPacketAction({
+      packetId,
+      confirmDuplicate,
+    });
+
+    if (!result.ok) {
+      if (result.code === "CONFIRM_DUPLICATE") {
+        setDuplicateSigningMessage(result.error);
+        setDuplicateSigningDialogOpen(true);
+        setIsCreatingSigning(false);
+        return;
+      }
+      setActionError(result.error);
+      setIsCreatingSigning(false);
+      return;
+    }
+
+    setDuplicateSigningDialogOpen(false);
+    setIsCreatingSigning(false);
+    router.push(`/signings/${result.data.signingId}`);
+  };
+
   if (isLoading) {
     return (
       <p className="text-sm text-muted-foreground">Loading generated packet…</p>
@@ -370,6 +423,21 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
       />
 
       <ConfirmDialog
+        open={duplicateSigningDialogOpen}
+        title="Create another Signing?"
+        message={duplicateSigningMessage}
+        confirmLabel="Create Signing"
+        confirmingLabel="Creating…"
+        isConfirming={isCreatingSigning}
+        onConfirm={() => void handleCreateSigning(true)}
+        onCancel={() => {
+          if (!isCreatingSigning) {
+            setDuplicateSigningDialogOpen(false);
+          }
+        }}
+      />
+
+      <ConfirmDialog
         open={overwritePrompt != null}
         title="Replace existing file?"
         message={
@@ -414,14 +482,34 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
               <Button variant="outline" asChild>
                 <Link href={`/packets/${packetId}/edit`}>Edit packet</Link>
               </Button>
-              <Button
-                variant="destructive"
-                onClick={openDeleteDialog}
-                disabled={isDeleting || isRestoring}
-              >
-                {isDeleting ? "Deleting…" : "Delete"}
-              </Button>
             </>
+          )}
+          {signingEligibility ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={
+                !signingEligibility.eligible ||
+                isCreatingSigning ||
+                isDeleting ||
+                isRestoring
+              }
+              aria-describedby={
+                signingEligibility.eligible ? undefined : "create-signing-unavailable"
+              }
+              onClick={() => void handleCreateSigning(false)}
+            >
+              {isCreatingSigning ? "Creating…" : "Create Signing"}
+            </Button>
+          ) : null}
+          {!isDeleted && (
+            <Button
+              variant="destructive"
+              onClick={openDeleteDialog}
+              disabled={isDeleting || isRestoring}
+            >
+              {isDeleting ? "Deleting…" : "Delete"}
+            </Button>
           )}
           {isDeleted && (
             <Button
@@ -442,6 +530,11 @@ export function PacketDetail({ packetId }: PacketDetailProps) {
           {createWarnings}
         </p>
       )}
+      {signingEligibility && !signingEligibility.eligible ? (
+        <p id="create-signing-unavailable" className="text-sm text-muted-foreground">
+          Create Signing unavailable: {signingEligibility.message}
+        </p>
+      ) : null}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       {isDeleted && (

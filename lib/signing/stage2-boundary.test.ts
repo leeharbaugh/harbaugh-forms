@@ -90,7 +90,7 @@ describe("Native Signing Stage 2 server boundary contracts", () => {
   });
 
   it("rejects cross-owner packets against the session actor", () => {
-    assert.match(operations, /packet\.owner_user_id !== responsibleUserId/);
+    assert.match(operations, /packetSourceEligibility\(packet, responsibleUserId\)/);
   });
 
   it("creates the admin client only after requireSigningActor", () => {

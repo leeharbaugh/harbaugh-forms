@@ -39,16 +39,11 @@ export type SigningReadinessResult = {
   documents: SigningReadinessDocument[];
 };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/**
- * Evaluate readiness for one Signing. Read-only: never writes lifecycle state.
- */
-export async function evaluateSigningReadiness(
+async function loadReadableSigning(
   admin: SupabaseClient,
   signingIdRaw: unknown,
   actor: SigningActor,
-): Promise<SigningReadinessResult> {
+) {
   assertNativeSigningEnabled();
 
   if (!isUuid(signingIdRaw)) {
@@ -63,8 +58,19 @@ export async function evaluateSigningReadiness(
   if (!authorityBundle || !authorityBundle.authority.canRead) {
     throw new SigningError("NOT_FOUND", "Signing not found.");
   }
-  const { signing, authority } = authorityBundle;
+  return authorityBundle;
+}
 
+/**
+ * Blockers that depend on the Signing's authority, participants, placements
+ * and prepared content, but not on live document sources. Cheap: one bundle
+ * read, no Storage access.
+ */
+function preparationBlockers(
+  authorityBundle: NonNullable<Awaited<ReturnType<typeof loadSigningAuthorityBundle>>>,
+  bundle: Awaited<ReturnType<typeof loadDraftBundle>>,
+): SigningReadinessBlocker[] {
+  const { signing, authority } = authorityBundle;
   const blockers: SigningReadinessBlocker[] = [];
 
   if (!authority.canManage) {
@@ -80,30 +86,82 @@ export async function evaluateSigningReadiness(
     });
   }
 
-  const bundle = await loadDraftBundle(admin, signing.id);
   blockers.push(...collectDraftPromotionBlockers(bundle));
 
   for (const participant of bundle.participants) {
     const fullName = String(participant.full_name ?? "").trim();
-    const email = String(participant.email ?? "").trim();
-    if (!fullName || !EMAIL_RE.test(email)) {
+    if (!fullName) {
       blockers.push({
         code: "PARTICIPANT_MISSING_CONTACT_DETAILS",
-        message: "Every participant needs a full name and a valid email address.",
+        message: "Every participant needs a full name.",
         participantId: participant.id as string,
       });
     }
+
+    const capacityMode =
+      (participant.signing_capacity_mode as string | undefined) ?? "PERSONAL";
+    if (capacityMode === "REPRESENTATIVE") {
+      const represented = String(
+        participant.represented_party_name ?? "",
+      ).trim();
+      const wording = String(participant.capacity_wording ?? "").trim();
+      const label = participant.capacity_label;
+      if (!represented || !wording || !label) {
+        blockers.push({
+          code: "REPRESENTATIVE_CAPACITY_INCOMPLETE",
+          message:
+            "Representative participants need representing party, capacity, and exact execution wording.",
+          participantId: participant.id as string,
+        });
+      }
+    }
   }
+  return blockers;
+}
+
+/**
+ * Readiness after a placement or participant change: recomputes every
+ * blocker except live document-source drift, which such a change cannot
+ * affect (`DOCUMENT_SOURCE_BLOCKER_CODES` in `readiness-view.ts`). Read-only. Activation still
+ * runs the full `evaluateSigningReadiness`.
+ */
+export async function evaluateSigningPreparationReadiness(
+  admin: SupabaseClient,
+  signingIdRaw: unknown,
+  actor: SigningActor,
+): Promise<{ preparationBlockers: SigningReadinessBlocker[] }> {
+  const authorityBundle = await loadReadableSigning(admin, signingIdRaw, actor);
+  const bundle = await loadDraftBundle(admin, authorityBundle.signing.id);
+  return { preparationBlockers: preparationBlockers(authorityBundle, bundle) };
+}
+
+/**
+ * Evaluate readiness for one Signing. Read-only: never writes lifecycle state.
+ * Valid participant email is required for remote Send (enforced at activation),
+ * not for general Draft readiness / Begin In-Person.
+ */
+export async function evaluateSigningReadiness(
+  admin: SupabaseClient,
+  signingIdRaw: unknown,
+  actor: SigningActor,
+): Promise<SigningReadinessResult> {
+  const authorityBundle = await loadReadableSigning(admin, signingIdRaw, actor);
+  const { signing } = authorityBundle;
+  const bundle = await loadDraftBundle(admin, signing.id);
+  const blockers = preparationBlockers(authorityBundle, bundle);
 
   const documents: SigningReadinessDocument[] = [];
   const packetOwnerUserId = resolveSigningPacketOwnerUserId(signing);
-  for (const row of bundle.documents) {
-    const document = row as unknown as SigningDocumentRow;
-    const status = await getDocumentSourceStatus(
-      admin,
-      document,
-      packetOwnerUserId,
-    );
+  const documentRows = bundle.documents as unknown as SigningDocumentRow[];
+  // Each live-source check downloads and fingerprints one document; they are
+  // independent reads, so run them together and report in document order.
+  const statuses = await Promise.all(
+    documentRows.map((document) =>
+      getDocumentSourceStatus(admin, document, packetOwnerUserId),
+    ),
+  );
+  for (const [index, document] of documentRows.entries()) {
+    const status = statuses[index];
 
     if (!document.selected_draft_source_snapshot_id) {
       blockers.push({

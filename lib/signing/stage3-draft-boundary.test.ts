@@ -33,6 +33,8 @@ describe("Native Signing Stage 3 draft/evidence boundary contracts", () => {
   it("adds signing_draft_fields instead of mutating revision-scoped signing_fields", () => {
     assert.deepEqual([...NATIVE_SIGNING_STAGE3_DRAFT_TABLES], [
       "signing_draft_fields",
+      "signing_draft_prepared_content",
+      "signing_draft_packet_participant_suppressions",
     ]);
     assert.match(migration, /create table if not exists public\.signing_draft_fields/);
     assert.match(draftFields, /signing_draft_fields/);

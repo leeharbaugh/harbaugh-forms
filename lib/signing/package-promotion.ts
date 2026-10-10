@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadSigningAuthorityBundle } from "./authority-context";
+import { DATE_SIGNED_SOURCE_TYPES } from "./date-signed-link";
 import { ensurePreparedDocumentVersion } from "./document-versions";
 import {
   buildResponsibleContextMetadata,
@@ -27,6 +28,7 @@ export type DraftBundle = {
   documents: Array<Record<string, unknown>>;
   participants: Array<Record<string, unknown>>;
   fields: Array<Record<string, unknown>>;
+  preparedContent?: Array<Record<string, unknown>>;
 };
 
 /** One reason a Draft cannot be promoted (and therefore is not Ready). */
@@ -41,7 +43,7 @@ export async function loadDraftBundle(
   admin: SupabaseClient,
   signingId: string,
 ): Promise<DraftBundle> {
-  const [documents, participants, fields] = await Promise.all([
+  const [documents, participants, fields, preparedContent] = await Promise.all([
     admin
       .from("signing_documents")
       .select("*")
@@ -58,16 +60,22 @@ export async function loadDraftBundle(
       .from("signing_draft_fields")
       .select("*")
       .eq("signing_id", signingId),
+    admin
+      .from("signing_draft_prepared_content")
+      .select("*")
+      .eq("signing_id", signingId),
   ]);
 
   if (documents.error) throw new Error(documents.error.message);
   if (participants.error) throw new Error(participants.error.message);
   if (fields.error) throw new Error(fields.error.message);
+  if (preparedContent.error) throw new Error(preparedContent.error.message);
 
   return {
     documents: documents.data ?? [],
     participants: participants.data ?? [],
     fields: fields.data ?? [],
+    preparedContent: preparedContent.data ?? [],
   };
 }
 
@@ -86,6 +94,7 @@ function draftBundleFingerprint(bundle: DraftBundle): string {
     name: row.full_name,
     email: row.email,
     role: row.optional_role,
+    roleCode: row.role_code ?? null,
     user: row.linked_user_id,
     contact: row.linked_contact_id,
   }));
@@ -104,7 +113,20 @@ function draftBundleFingerprint(bundle: DraftBundle): string {
       linked: row.linked_signature_draft_field_id,
     }))
     .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  return JSON.stringify({ docs, participants, fields });
+  const prepared = [...(bundle.preparedContent ?? [])]
+    .map((row) => ({
+      id: row.id,
+      doc: row.signing_document_id,
+      participant: row.signing_participant_id,
+      type: row.content_type,
+      page: row.page_number,
+      x: row.x,
+      y: row.y,
+      width: row.width,
+      height: row.height,
+    }))
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  return JSON.stringify({ docs, participants, fields, prepared });
 }
 
 /**
@@ -172,13 +194,13 @@ export function collectDraftPromotionBlockers(
       const linked = bundle.fields.find(
         (candidate) =>
           candidate.id === field.linked_signature_draft_field_id &&
-          candidate.field_type === "SIGNATURE",
+          DATE_SIGNED_SOURCE_TYPES.includes(candidate.field_type as string),
       );
       if (!linked) {
         blockers.push({
           code: "DATE_SIGNED_NOT_LINKED",
           message:
-            "DATE_SIGNED fields require a linked Signature field in this Draft.",
+            "Each Date Signed must be linked to a Signature or Initials field in this Draft.",
           documentId: field.signing_document_id as string,
           participantId: field.signing_participant_id as string,
         });
@@ -188,11 +210,32 @@ export function collectDraftPromotionBlockers(
         blockers.push({
           code: "DATE_SIGNED_PARTICIPANT_MISMATCH",
           message:
-            "DATE_SIGNED fields must link to a Signature field for the same participant.",
+            "Each Date Signed must link to a Signature or Initials field for the same participant.",
           documentId: field.signing_document_id as string,
           participantId: field.signing_participant_id as string,
         });
       }
+    }
+  }
+
+  for (const item of bundle.preparedContent ?? []) {
+    if (!documentIds.has(item.signing_document_id as string)) {
+      blockers.push({
+        code: "PREPARED_CONTENT_DOCUMENT_NOT_INCLUDED",
+        message:
+          "Prepared content references a document not included in this Draft.",
+        documentId: item.signing_document_id as string,
+      });
+    }
+    if (
+      item.content_type === "PRINTED_NAME" &&
+      !participantIds.has(item.signing_participant_id as string)
+    ) {
+      blockers.push({
+        code: "PREPARED_CONTENT_PARTICIPANT_UNKNOWN",
+        message: "Printed Name references a participant not in this Signing.",
+        participantId: item.signing_participant_id as string,
+      });
     }
   }
 
@@ -441,10 +484,21 @@ export async function promotePackageRevisionFromDraftWithActor(
           signing_participant_id: participant.id,
           display_order: participant.display_order,
           frozen_full_name: participant.full_name,
-          frozen_email: participant.email,
+          frozen_email: participant.email ?? "",
           frozen_optional_role: participant.optional_role,
+          frozen_role_code: (participant.role_code as string | null) ?? null,
           frozen_linked_user_id: participant.linked_user_id,
           frozen_linked_contact_id: participant.linked_contact_id,
+          frozen_signing_capacity_mode:
+            (participant.signing_capacity_mode as string | undefined) ??
+            "PERSONAL",
+          frozen_represented_party_name:
+            (participant.represented_party_name as string | null | undefined) ??
+            null,
+          frozen_capacity_label:
+            (participant.capacity_label as string | null | undefined) ?? null,
+          frozen_capacity_wording:
+            (participant.capacity_wording as string | null | undefined) ?? null,
         })
         .select("id, signing_participant_id")
         .single();
@@ -461,14 +515,15 @@ export async function promotePackageRevisionFromDraftWithActor(
     }
 
     const evidenceFieldIdByDraftFieldId = new Map<string, string>();
-    const signatureDraftFields = bundle.fields.filter(
-      (field) => field.field_type === "SIGNATURE",
+    // Date Signed sources are frozen first so each date can reference its id.
+    const sourceDraftFields = bundle.fields.filter((field) =>
+      DATE_SIGNED_SOURCE_TYPES.includes(field.field_type as string),
     );
     const otherDraftFields = bundle.fields.filter(
-      (field) => field.field_type !== "SIGNATURE",
+      (field) => !DATE_SIGNED_SOURCE_TYPES.includes(field.field_type as string),
     );
 
-    for (const field of [...signatureDraftFields, ...otherDraftFields]) {
+    for (const field of [...sourceDraftFields, ...otherDraftFields]) {
       const linkedEvidenceId =
         field.field_type === "DATE_SIGNED" &&
         typeof field.linked_signature_draft_field_id === "string"

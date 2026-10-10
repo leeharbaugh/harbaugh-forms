@@ -68,6 +68,18 @@ export function buildCompletedPackageUrl(
   return `${resolveAppBaseUrlForTransport()}/sign/completed/${publicId}#${rawSecret}`;
 }
 
+/**
+ * Participant Signing routes authenticate with Signing credentials and
+ * sessions, never the workspace login. Segment-aware: `/signings` is workspace.
+ */
+export function isParticipantSigningPath(pathname: string): boolean {
+  return (
+    pathname === "/sign" ||
+    pathname.startsWith("/sign/") ||
+    pathname.startsWith("/api/sign/")
+  );
+}
+
 /** Pathname only — suitable for asserting logs never contain the secret. */
 export function participantInvitePathname(publicId: string): string {
   return `/sign/${publicId}`;

@@ -25,6 +25,13 @@ export const NATIVE_SIGNING_ALL_MIGRATIONS = [
   ...NATIVE_SIGNING_STAGE6_MIGRATIONS,
   ...NATIVE_SIGNING_COMPLETION_DELIVERY_MIGRATIONS,
   ...NATIVE_SIGNING_RECOVERY_ACCESS_MIGRATIONS,
+  "20260921200000_native_signing_representative_capacity",
+  "20260923200000_native_signing_ad_hoc_documents",
+  "20260928120000_native_signing_source_packet_selection",
+  "20261008120000_native_signing_draft_prep_roles_prepared_content",
+  "20261009120000_native_signing_draft_identity_sync",
+  "20261009130000_native_signing_draft_auto_add_marker",
+  "20261010120000_native_signing_auto_add_notice_ack",
 ] as const;
 
 export function listNativeSigningMigrationFilesFromDisk(
