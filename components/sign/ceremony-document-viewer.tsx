@@ -9,6 +9,7 @@ import {
   type PdfZoomMode,
 } from "@/lib/pdf-editor-zoom";
 import { acquirePdfWorker, releasePdfWorker } from "@/lib/pdfjs-setup";
+import { appliedMarkLayout } from "@/lib/signing/applied-mark-layout";
 import type {
   CeremonyDocumentView,
   CeremonyFieldView,
@@ -404,6 +405,44 @@ export default function CeremonyDocumentViewer({
   );
 }
 
+/**
+ * The applied mark in the field's own PDF-point coordinates, laid out by the
+ * same rules finalization draws with, so it scales with the page at any zoom.
+ */
+function AppliedMarkText({
+  kind,
+  text,
+  field,
+}: {
+  kind: "SIGNATURE" | "INITIALS" | "DATE_SIGNED";
+  text: string;
+  field: Pick<CeremonyFieldView, "width" | "height">;
+}) {
+  const layout = appliedMarkLayout(kind, text, field);
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0 h-full w-full overflow-visible text-foreground"
+      viewBox={`0 0 ${field.width} ${field.height}`}
+      preserveAspectRatio="none"
+      aria-hidden
+      data-applied-mark={kind}
+    >
+      <text
+        x={layout.x}
+        y={layout.baseline}
+        fontSize={layout.fontSize}
+        fontFamily={kind === "DATE_SIGNED" ? "Helvetica, Arial, sans-serif" : "HarbaughCaveat, cursive"}
+        textLength={layout.textWidth > 0 ? layout.textWidth : undefined}
+        lengthAdjust="spacingAndGlyphs"
+        textRendering="geometricPrecision"
+        fill="currentColor"
+      >
+        {text.trim()}
+      </text>
+    </svg>
+  );
+}
+
 function CeremonyFieldTarget({
   field,
   metrics,
@@ -440,10 +479,22 @@ function CeremonyFieldTarget({
     width: rect.width,
     height: rect.height,
   };
-  const markFontPx = Math.max(10, Math.min(rect.height * 0.75, 40));
-
   if (!isParticipantActionableField(field)) {
     // Date Signed: written by the server with its Signature; never a control.
+    if (field.placementId && field.renderedSenderLocalDate) {
+      return (
+        <div
+          className="pointer-events-none absolute box-border rounded-sm border border-emerald-600/60 bg-white/70"
+          style={position}
+          data-ceremony-date-field={field.fieldId}
+          data-placed="true"
+          aria-label={`Date signed ${field.renderedSenderLocalDate}`}
+          role="note"
+        >
+          <AppliedMarkText kind="DATE_SIGNED" text={field.renderedSenderLocalDate} field={field} />
+        </div>
+      );
+    }
     return (
       <div
         className={cn(
@@ -483,7 +534,7 @@ function CeremonyFieldTarget({
         ref={(element) => setRef(field.fieldId, element)}
         tabIndex={-1}
         className={cn(
-          "absolute box-border flex items-end overflow-hidden rounded-sm border border-emerald-600 bg-emerald-50/30 px-1 outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-1",
+          "absolute box-border rounded-sm border border-emerald-600 bg-emerald-50/30 outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-1",
           highlighted && "ring-4 ring-emerald-500/60 ring-offset-2",
         )}
         style={position}
@@ -493,12 +544,7 @@ function CeremonyFieldTarget({
         aria-label={`${field.fieldType === "SIGNATURE" ? "Signed" : "Initialed"}: page ${field.pageNumber} of ${documentName}`}
         role="note"
       >
-        <span
-          className="truncate leading-none text-foreground"
-          style={{ fontFamily: "HarbaughCaveat, cursive", fontSize: markFontPx }}
-        >
-          {markText ?? "✓"}
-        </span>
+        <AppliedMarkText kind={field.fieldType} text={markText ?? "✓"} field={field} />
       </div>
     );
   }

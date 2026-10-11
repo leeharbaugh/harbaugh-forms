@@ -41,6 +41,11 @@ import {
 } from "@/lib/signing/readiness-view";
 import dynamic from "next/dynamic";
 import { useCallback, useRef, useState } from "react";
+import {
+  shouldWatchSigningState,
+  signingOutcomeMessage,
+  useSigningStateWatcher,
+} from "./use-signing-state-watcher";
 
 /** pdf.js needs browser APIs (DOMMatrix, canvas, workers): never load it on the server. */
 const SigningPreviewDialog = dynamic(
@@ -167,9 +172,14 @@ export function SigningDashboardPage({
     blockers: SigningDashboard["blockers"];
   }>({ seq: 0, blockers: [] });
 
+  /** Only the newest dashboard load may apply; older responses are dropped. */
+  const loadSeqRef = useRef(0);
+
   const reload = useCallback(async () => {
     const seqAtStart = preparationRef.current.seq;
+    const loadSeq = ++loadSeqRef.current;
     const result = await getSigningDashboardAction({ signingId });
+    if (loadSeq !== loadSeqRef.current) return;
     if (!result.ok) {
       setError(result.error);
       return;
@@ -209,6 +219,10 @@ export function SigningDashboardPage({
   }
 
   const restoring = useHistoryRestoreRefresh(reload);
+  useSigningStateWatcher({
+    active: dashboard ? shouldWatchSigningState(dashboard.signing.lifecycleState) : false,
+    refresh: reload,
+  });
 
   async function saveRename() {
     if (renameValue == null) return;
@@ -226,6 +240,8 @@ export function SigningDashboardPage({
       setRenameError(result.error);
       return;
     }
+    // A load that started before the rename would bring back the old title.
+    loadSeqRef.current += 1;
     setDashboard((previous) =>
       previous
         ? { ...previous, signing: { ...previous.signing, title: result.signing.title } }
@@ -430,6 +446,7 @@ export function SigningDashboardPage({
     canManage &&
     isInProgress &&
     dashboard.signing.activationMode === "REMOTE_SEND";
+  const outcome = signingOutcomeMessage(dashboard, notice);
 
   return (
     <div className="flex flex-col gap-6">
@@ -556,6 +573,16 @@ export function SigningDashboardPage({
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {notice ? (
         <p className="text-sm text-muted-foreground">{notice}</p>
+      ) : null}
+      {outcome ? (
+        <div
+          role="status"
+          data-testid="signing-outcome"
+          className="rounded-md border border-amber-600/30 bg-amber-50 p-3 text-sm text-amber-950"
+        >
+          <p className="font-medium">{outcome.title}</p>
+          <p>{outcome.body}</p>
+        </div>
       ) : null}
 
       {isDraft && canManage ? (

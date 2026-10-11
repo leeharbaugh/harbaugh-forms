@@ -12,6 +12,71 @@ Each decision should include:
 
 ---
 
+## Applied marks show their full text inside the stored field box, identically in the ceremony and the completed PDF
+
+**Date:** 2026-10-11 (ceremony-regression tranche)
+
+**Decision:**
+1. A field's stored rectangle (PDF points) is the contract. Applied Signature, Initials and Date Signed text is fitted to that box. The box is never inflated, moved or resized to fit the text, and placement coordinates are unchanged.
+2. Fitting means shrinking the font so the whole advance width fits. There is no ellipsis, no CSS truncation and no abbreviation, and the Date keeps its approved `YYYY-MM-DD` format. Typed marks keep `typedSignatureFontSize` → `fitTypedSignatureFontSize` (left-aligned, baseline at top + size + 1). Date Signed now uses `fitDateSignedFontSize`: the height-based size, shrunk only if the text is wider than the box minus the 2pt padding on each side, centred.
+3. One layout drives both renderers. `appliedMarkLayout` (browser) and `completed-pdf.ts` (final artifact) use the same size functions and the same font metrics. The browser uses the client-safe metric tables generated from the embedded fonts, and the PDF uses pdf-lib. The ceremony draws each applied mark as SVG whose `viewBox` is the field box in PDF points, so zoom only scales it. `textLength` pins the drawn width to the computed advance, so browser font hinting at small zooms can't push text past the box.
+
+**Reason:**
+Lee's QA saw "T…" and "2026-10…". The ceremony overlay sized text from box height only, applied `truncate` (nowrap, overflow hidden, ellipsis), used a fixed 4px padding per side that didn't scale with zoom, and drew the Date in the browser's sans-serif instead of Helvetica. The completed PDF already fitted typed marks to the width but not the Date. Fitting to the existing geometry fixes both without touching manager placement.
+
+**Consequences:**
+* At extreme ratios (very long text in a very small box), `fitTypedSignatureFontSize` keeps its 6pt floor. The overflow would then be identical in the ceremony and the PDF, and Prepare Documents already sizes default boxes to fit the expected mark.
+* Default Prepare Documents sizes are unchanged: the default Date box already fits its text at the height-based size.
+
+**Related:** `lib/signing/applied-mark-layout.ts`, `lib/signing/draft-field-sizing.ts` (`fitDateSignedFontSize`), `lib/signing/completed-pdf.ts`, `components/sign/ceremony-document-viewer.tsx`, `lib/signing/ceremony-regression.test.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
+## Your fields switches from docked to a drawer before it can overflow, from one measured width
+
+**Date:** 2026-10-11 (ceremony-regression tranche)
+
+**Decision:**
+The ceremony shell measures its own width with a ResizeObserver, and `ceremonyFieldsPanelMode` docks Your fields only when the shell is at least 1024px wide (the 20rem panel plus a 704px minimum document column). Below that, Your fields is a drawer behind a visible "Your fields" button. One state value drives the grid columns, the panel and the button, replacing the separate `lg:` media-query classes, so there is no width where the panel is neither docked nor reachable. The drawer moves focus to its Close button when it opens, closes on Escape or Close and returns focus to the button, and closes after a row navigates to a field. The shell clips horizontal overflow (`overflow-x-clip`), so nothing can push the panel off screen or cause a page-level horizontal scroll.
+
+**Reason:**
+Lee saw Your fields fall off the right edge at an intermediate width, with no scrollbar and no drawer. Automated sweeps from 1500px to 360px in 8px steps (emulated viewport, real scrollbars at 125% DPR, and real window resizes, at Fit Width and custom zoom) didn't reproduce it on the old CSS. The likely cause is the viewport media query and the element's actual width disagreeing in some environments (scrollbar width, OS scaling, browser zoom). Deriving the mode from the measured shell width removes that whole class of disagreement.
+
+**Consequences:** The drawer button exists only in drawer mode. The 13-width browser QA (1440 to 390) asserts the mode, that the panel or its button is on screen, focus in and out of the drawer, and zero page-level horizontal overflow.
+
+**Related:** `lib/signing/ceremony-layout.ts`, `components/sign/ceremony-shell.tsx`, `lib/signing/ceremony-regression.test.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
+## Long-open manager Signing pages refresh authoritative state; the refresh transport is not authoritative
+
+**Date:** 2026-10-11 (ceremony-regression tranche)
+
+**Decision:**
+1. While a Signing is IN_PROGRESS, its manager page re-fetches the full dashboard every 20 seconds, and immediately when the tab becomes visible or the window regains focus (at most once every 3 seconds). Polling skips hidden tabs, never overlaps a request still in flight, and stops at any terminal state (COMPLETE, DECLINED, CANCELLED) and on unmount.
+2. Each refresh calls the existing `getSigningDashboardAction`, which is `withAuthorizedAdmin` (authorize, then elevate), scoped to that one Signing. There is no new endpoint, no browser database access and no browser-side state transition. A sequence guard drops any response older than the latest load, so a slow poll can't overwrite newer state, including a rename.
+3. Supabase Realtime was considered and not used. Signing tables force RLS and deny `anon` / `authenticated` (2026-09-14), so Postgres-changes subscriptions would need browser SELECT access to evidence tables. Server-sent broadcast would need new private-channel authorization policies, plus a publish path on every lifecycle write. Polling plus focus/visibility refresh meets "near-live" (median about 10 seconds in QA) with no new trust surface. Realtime can still serve as a wake-up hint later, as long as the page always re-fetches through the authorized action.
+4. When the refreshed state is DECLINED, the page says "This Signing was declined by {name}." (the declining participant), plus "It has ended for every participant. To continue, prepare and send a new Signing." When it is CANCELLED and the page didn't perform the cancel itself, it says "This Signing was cancelled." The existing lifecycle gating removes link, In-Person and Cancel actions, and no Complete controls appear.
+
+**Reason:**
+Lee's manager tab stayed IN_PROGRESS after a participant declined, until a manual reload.
+
+**Consequences:** About three authorized dashboard reads per minute per open, visible, In Progress manager tab. The transport is only a trigger: whatever it delivers, the page shows only what the authorized server read returns.
+
+**Related:** `components/signings/use-signing-state-watcher.ts`, `components/signings/signing-dashboard-page.tsx`, `lib/signing/stage4-actions.ts` (`getSigningDashboardAction`), `lib/signing/ceremony-regression.test.ts`.
+
+---
+
+## Declined semantics are unchanged by live refresh
+
+**Date:** 2026-10-11 (ceremony-regression tranche)
+
+**Decision:** A participant's Decline still ends the whole Signing as DECLINED, never Cancelled. Live refresh only shows that sooner. The manager continues by preparing and sending a new Signing, and the lifecycle model is unchanged.
+
+**Related:** "Long-open manager Signing pages refresh authoritative state" above.
+
+---
+
 ## Ceremony marks come from the Signing name; neither Signature nor Initials is editable
 
 **Date:** 2026-10-11 (ceremony UX tranche)

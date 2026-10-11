@@ -19,6 +19,7 @@ import {
   typedSignatureFontSize,
 } from "@/lib/pdf-text-layout";
 import { loadCaveatSignatureFontBytesServer } from "@/lib/signature-font-server";
+import { fitDateSignedFontSize } from "./draft-field-sizing";
 import {
   assertTrustedIntegrity,
   verifyPreparedDocumentVersionIntegrity,
@@ -112,7 +113,12 @@ function drawDateSigned(options: {
 }) {
   const text = options.text.trim();
   if (!text) return;
-  const size = Math.min(11, Math.max(7, options.height * 0.55));
+  const size = fitDateSignedFontSize({
+    text,
+    boxWidth: options.width,
+    boxHeight: options.height,
+    measureWidth: (value, fontSize) => options.font.widthOfTextAtSize(value, fontSize),
+  });
   const width = options.font.widthOfTextAtSize(text, size);
   const x = options.x + Math.max(0, (options.width - width) / 2);
   const baseline = options.pageHeight - options.yFromTop - size - 1;

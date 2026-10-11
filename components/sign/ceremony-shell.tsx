@@ -34,10 +34,21 @@ import {
   nextIncompleteCeremonyField,
   type CeremonyActionableField,
 } from "@/lib/signing/ceremony-field-view";
+import {
+  ceremonyFieldsPanelMode,
+  type CeremonyFieldsPanelMode,
+} from "@/lib/signing/ceremony-layout";
 import { SIGNING_PRESENCE_HEARTBEAT_SECONDS } from "@/lib/signing/presence";
 import { cn } from "@/lib/utils";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 /** pdf.js is browser-only; keep it out of the server-rendered graph. */
 const CeremonyDocumentViewer = dynamic(
@@ -105,6 +116,10 @@ export function CeremonyShell({
   const [declineOpen, setDeclineOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
   const [fieldsPanelOpen, setFieldsPanelOpen] = useState(false);
+  const [shellElement, setShellElement] = useState<HTMLDivElement | null>(null);
+  const [panelMode, setPanelMode] = useState<CeremonyFieldsPanelMode>("docked");
+  const fieldsToggleRef = useRef<HTMLButtonElement | null>(null);
+  const fieldsCloseRef = useRef<HTMLButtonElement | null>(null);
   const [currentDocumentId, setCurrentDocumentId] = useState(
     () =>
       (
@@ -157,6 +172,39 @@ export function CeremonyShell({
       finishButtonRef.current?.focus();
     }
   }, [overview.canFinish, pending]);
+
+  useLayoutEffect(() => {
+    if (!shellElement) return;
+    const update = () => {
+      const mode = ceremonyFieldsPanelMode(shellElement.getBoundingClientRect().width);
+      setPanelMode(mode);
+      if (mode === "docked") setFieldsPanelOpen(false);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(shellElement);
+    return () => observer.disconnect();
+  }, [shellElement]);
+
+  const docked = panelMode === "docked";
+  const drawerOpen = !docked && fieldsPanelOpen;
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    fieldsCloseRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setFieldsPanelOpen(false);
+      fieldsToggleRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [drawerOpen]);
+
+  function closeFieldsDrawer() {
+    setFieldsPanelOpen(false);
+    fieldsToggleRef.current?.focus();
+  }
 
   function run(
     action: () => Promise<CeremonyActionResult>,
@@ -572,7 +620,11 @@ export function CeremonyShell({
   const allRequiredComplete = overview.canFinish;
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div
+      ref={setShellElement}
+      className="flex h-dvh flex-col overflow-x-clip"
+      data-fields-panel-mode={panelMode}
+    >
       <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold text-foreground">
@@ -605,17 +657,19 @@ export function CeremonyShell({
             </span>
           </div>
         ) : null}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="lg:hidden"
-          aria-expanded={fieldsPanelOpen}
-          aria-controls="ceremony-your-fields"
-          onClick={() => setFieldsPanelOpen((open) => !open)}
-        >
-          Your fields
-        </Button>
+        {docked ? null : (
+          <Button
+            ref={fieldsToggleRef}
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-expanded={drawerOpen}
+            aria-controls="ceremony-your-fields"
+            onClick={() => (drawerOpen ? closeFieldsDrawer() : setFieldsPanelOpen(true))}
+          >
+            Your fields
+          </Button>
+        )}
         <Button
           ref={finishButtonRef}
           type="button"
@@ -641,7 +695,12 @@ export function CeremonyShell({
         </div>
       ) : null}
 
-      <div className="relative grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div
+        className={cn(
+          "relative grid min-h-0 min-w-0 flex-1 overflow-hidden",
+          docked ? "grid-cols-[minmax(0,1fr)_20rem]" : "grid-cols-1",
+        )}
+      >
         <div className="min-h-0 min-w-0">
           <CeremonyDocumentViewer
             documents={overview.documents}
@@ -664,26 +723,30 @@ export function CeremonyShell({
         <aside
           id="ceremony-your-fields"
           aria-label="Your fields"
+          data-mode={docked ? "docked" : drawerOpen ? "drawer-open" : "drawer-closed"}
           className={cn(
-            "min-h-0 flex-col border-l bg-background",
-            fieldsPanelOpen
-              ? "absolute inset-y-0 right-0 z-20 flex w-[min(22rem,100%)] shadow-xl"
-              : "hidden",
-            "lg:static lg:z-auto lg:flex lg:w-auto lg:shadow-none",
+            "min-h-0 min-w-0 flex-col border-l bg-background",
+            docked
+              ? "flex"
+              : drawerOpen
+                ? "absolute inset-y-0 right-0 z-20 flex w-[min(22rem,100%)] shadow-xl"
+                : "hidden",
           )}
         >
           <div className="shrink-0 space-y-1 border-b px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold">Your fields</h2>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="lg:hidden"
-                onClick={() => setFieldsPanelOpen(false)}
-              >
-                Close
-              </Button>
+              {docked ? null : (
+                <Button
+                  ref={fieldsCloseRef}
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={closeFieldsDrawer}
+                >
+                  Close
+                </Button>
+              )}
             </div>
             <p className="text-xs text-muted-foreground" aria-live="polite">
               {overview.requiredRemaining === 0

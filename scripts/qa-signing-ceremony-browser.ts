@@ -56,6 +56,7 @@ import { addDraftSigningDocumentWithActor } from "../lib/signing/draft-documents
 import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
 import { DEVICE_HANDOFF_LOCK_COOKIE_NAME } from "../lib/signing/device-handoff-lock.ts";
 import { upsertDraftSigningFieldWithActor } from "../lib/signing/draft-fields.ts";
+import { DATE_SIGNED_DEFAULT_SIZE, defaultDraftFieldSize } from "../lib/signing/draft-field-sizing.ts";
 import { upsertDraftPreparedContentWithActor } from "../lib/signing/draft-prepared-content.ts";
 import { SIGNING_ENTRY_COOKIE_NAME } from "../lib/signing/entry-sessions.ts";
 import { verifySigningEventChain } from "../lib/signing/event-chain.ts";
@@ -471,6 +472,39 @@ async function main() {
     return drift;
   }
 
+  /** Every applied mark shows its whole text inside its field box (no ellipsis, no overflow). */
+  async function expectAppliedMarksFit(page: Page, expected: string[], label: string) {
+    await page.evaluate(() => document.fonts.ready);
+    const marks = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<SVGSVGElement>("svg[data-applied-mark]")).map((svg) => {
+        const text = svg.querySelector("text") as SVGTextElement;
+        const box = svg.viewBox.baseVal;
+        const glyphs = text.getBBox();
+        const host = svg.parentElement!.getBoundingClientRect();
+        const rendered = text.getBoundingClientRect();
+        return {
+          kind: svg.getAttribute("data-applied-mark"),
+          text: text.textContent ?? "",
+          overflowPt: Math.max(0, glyphs.x + glyphs.width - box.width, -glyphs.x),
+          overflowPx: Math.max(0, rendered.right - host.right, host.left - rendered.left),
+          scale: host.width / box.width,
+          textOverflow: getComputedStyle(svg.parentElement!).textOverflow,
+          font: getComputedStyle(text).fontFamily,
+        };
+      }),
+    );
+    for (const want of expected) {
+      if (!marks.some((mark) => mark.text === want)) fail(`${label}: no applied mark shows the full "${want}" (saw ${marks.map((mark) => JSON.stringify(mark.text)).join(", ")})`);
+    }
+    for (const mark of marks) {
+      if (/…|\.\.\./.test(mark.text) || mark.textOverflow === "ellipsis") fail(`${label}: ${mark.kind} "${mark.text}" is abbreviated`);
+      if (mark.overflowPt > 0.75 || mark.overflowPx > 1.5) fail(`${label}: ${mark.kind} "${mark.text}" overflows its box by ${mark.overflowPt.toFixed(2)}pt / ${mark.overflowPx.toFixed(1)}px`);
+    }
+    const caveatLoaded = await page.evaluate(() => document.fonts.check('12px "HarbaughCaveat"'));
+    if (!caveatLoaded) fail(`${label}: HarbaughCaveat is not loaded in the browser`);
+    return marks;
+  }
+
   async function waitIdle(page: Page) {
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(400);
@@ -552,11 +586,13 @@ async function main() {
     const p1 = await addDraftSigningParticipantWithActor(actor, { signingId: a.signingId, fullName: P1, email: `avery-${stamp}@example.com` }, admin);
     const p2 = await addDraftSigningParticipantWithActor(actor, { signingId: a.signingId, fullName: P2, email: `blake-${stamp}@example.com` }, admin);
     const p1Sig = await addField(a.signingId, a.documentId, p1.id, "SIGNATURE", { x: 72, y: 560, width: 150, height: 28 });
-    await addField(a.signingId, a.documentId, p1.id, "DATE_SIGNED", { x: 230, y: 566, width: 72, height: 18 }, { linkedSignatureDraftFieldId: p1Sig.id });
-    await addField(a.signingId, a.documentId, p1.id, "INITIALS", { x: 72, y: 660, width: 40, height: 20 });
+    // P1's Date Signed and required Initials use the editor's default (tight) sizes and
+    // P2's Date Signed is narrower than its text: applied marks must fit, not clip.
+    await addField(a.signingId, a.documentId, p1.id, "DATE_SIGNED", { x: 230, y: 566, ...DATE_SIGNED_DEFAULT_SIZE }, { linkedSignatureDraftFieldId: p1Sig.id });
+    await addField(a.signingId, a.documentId, p1.id, "INITIALS", { x: 72, y: 660, ...defaultDraftFieldSize("INITIALS", { fullName: P1 }) });
     await addField(a.signingId, a.documentId, p1.id, "INITIALS", { x: 140, y: 300, width: 40, height: 20 }, { isRequired: false, pageNumber: 2 });
     const p2Sig = await addField(a.signingId, a.documentId, p2.id, "SIGNATURE", { x: 330, y: 560, width: 150, height: 28 });
-    await addField(a.signingId, a.documentId, p2.id, "DATE_SIGNED", { x: 488, y: 566, width: 72, height: 18 }, { linkedSignatureDraftFieldId: p2Sig.id });
+    await addField(a.signingId, a.documentId, p2.id, "DATE_SIGNED", { x: 488, y: 566, width: 44, height: 18 }, { linkedSignatureDraftFieldId: p2Sig.id });
     const p2Ini = await addField(a.signingId, a2.id, p2.id, "INITIALS", { x: 330, y: 660, width: 40, height: 20 });
     await addField(a.signingId, a2.id, p2.id, "DATE_SIGNED", { x: 380, y: 662, width: 72, height: 18 }, { linkedSignatureDraftFieldId: p2Ini.id });
     await upsertDraftPreparedContentWithActor(actor, {
@@ -1009,7 +1045,7 @@ async function main() {
     await s1.keyboard.press("Enter");
     await target(s1, f.p1InitReq.id, true).waitFor({ timeout: 30000 });
     await row(s1, "Initials", true).getByText("Completed").waitFor({ timeout: 30000 });
-    if ((await target(s1, f.p1InitReq.id, true).innerText()).trim() !== "AJS") fail("applied Initials do not show the adopted initials on the page");
+    if ((await target(s1, f.p1InitReq.id, true).textContent())?.trim() !== "AJS") fail("applied Initials do not show the adopted initials on the page");
     ok(`auto-advance + keyboard: after Sign here (server accepted), focus and the "Click here to initial" hint moved to the required Initials target (accessible name "${focusedName}", visible focus ring) without applying it; Enter applies it`);
     await s1.waitForFunction(() => document.activeElement?.textContent?.trim() === "Finish Signing", undefined, { timeout: 30000 });
     if ((await guidance(s1).count()) !== 0) fail("a hint remains after the last required field");
@@ -1135,13 +1171,50 @@ async function main() {
     await shot(s1, "p1-04-ready-to-finish");
     ok("Signature Remove: Signature + linked Date leave the page and are no longer effective, Finish disabled (persists after reload); double-clicking Sign here → exactly one ACCEPTED placement per P1 field; reload shows the signed page");
 
-    // ---------- narrow (phone) and tablet viewports ----------
+    // ---------- applied marks: whole text inside the box at every zoom ----------
+    {
+      const p1Expected = [P1, "AJS", today];
+      const zoomNotes: string[] = [];
+      const zoomText = () => s1.getByTestId("ceremony-zoom").innerText();
+      const checkAt = async (label: string) => {
+        await s1.waitForTimeout(500);
+        const marks = await expectAppliedMarksFit(s1, p1Expected, `P1 marks (${label})`);
+        zoomNotes.push(`${label} ${await zoomText()} (${marks.length} marks, scale ${marks[0]?.scale.toFixed(2)})`);
+      };
+      await checkAt("Fit Width");
+      await s1.getByRole("button", { name: "Fit Page", exact: true }).click();
+      await checkAt("Fit Page");
+      for (let i = 0; i < 6 && parseInt(await zoomText(), 10) > 80; i += 1) {
+        await s1.getByRole("button", { name: "Zoom out" }).click();
+        await s1.waitForTimeout(200);
+      }
+      while (parseInt(await zoomText(), 10) < 190) {
+        await s1.getByRole("button", { name: "Zoom in" }).click();
+        await checkAt("custom");
+      }
+      await s1.getByRole("button", { name: "Fit Width", exact: true }).click();
+      await s1.reload({ waitUntil: "networkidle" });
+      await target(s1, f.p1Sig.id, true).waitFor({ timeout: 60000 });
+      await checkAt("after reload");
+      ok(`applied marks (Signature "${P1}", default-size Initials "AJS", default-size Date Signed "${today}"): full text, no ellipsis, inside the stored box at ${zoomNotes.join("; ")}`);
+    }
+
+    // ---------- Your fields at every width ----------
     const viewportNotes: string[] = [];
     for (const [label, viewport] of [
-      ["desktop", { width: 1440, height: 900 }],
-      ["laptop", { width: 1024, height: 768 }],
-      ["tablet", { width: 820, height: 1180 }],
-      ["phone", { width: 390, height: 844 }],
+      ["1440", { width: 1440, height: 900 }],
+      ["1280", { width: 1280, height: 900 }],
+      ["1200", { width: 1200, height: 900 }],
+      ["1100", { width: 1100, height: 850 }],
+      ["1050", { width: 1050, height: 850 }],
+      ["1024", { width: 1024, height: 768 }],
+      ["1000", { width: 1000, height: 768 }],
+      ["960", { width: 960, height: 768 }],
+      ["900", { width: 900, height: 800 }],
+      ["820", { width: 820, height: 1180 }],
+      ["768", { width: 768, height: 1024 }],
+      ["600", { width: 600, height: 900 }],
+      ["390", { width: 390, height: 844 }],
     ] as const) {
       await s1.setViewportSize(viewport);
       await s1.waitForTimeout(800);
@@ -1157,22 +1230,43 @@ async function main() {
       if (!(await s1.getByRole("button", { name: "Leave for now" }).first().isVisible())) fail(`${label}: Leave for now is not visible`);
       await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, true), `P1 Signature (${label})`);
       const sidebarVisible = await fieldsHeading(s1).isVisible();
-      if (viewport.width >= 1024 && !sidebarVisible) fail(`${label}: Your fields should be docked`);
-      if (viewport.width < 1024) {
-        if (sidebarVisible) fail(`${label}: Your fields should be behind its button`);
-        await s1.getByRole("button", { name: "Your fields", exact: true }).click();
+      const toggle = s1.getByRole("button", { name: "Your fields", exact: true });
+      const mode = await s1.locator("[data-fields-panel-mode]").getAttribute("data-fields-panel-mode");
+      const asideInViewport = async () => {
+        const rect = (await s1.locator("#ceremony-your-fields").boundingBox())!;
+        return rect.x >= -1 && rect.x + rect.width <= viewport.width + 1 && rect.width >= 200;
+      };
+      if (viewport.width >= 1024) {
+        if (mode !== "docked" || !sidebarVisible) fail(`${label}: Your fields should be docked`);
+        if ((await toggle.count()) !== 0) fail(`${label}: the drawer button shows while docked`);
+        if (!(await asideInViewport())) fail(`${label}: docked Your fields is outside the viewport`);
+      } else {
+        if (mode !== "drawer" || sidebarVisible) fail(`${label}: Your fields should be behind its button`);
+        if (!(await toggle.isVisible())) fail(`${label}: no visible Your fields button`);
+        const toggleBox = (await toggle.boundingBox())!;
+        if (toggleBox.x < 0 || toggleBox.x + toggleBox.width > viewport.width) fail(`${label}: the Your fields button is off screen`);
+        await toggle.focus();
+        await s1.keyboard.press("Enter");
+        await fieldsHeading(s1).waitFor();
+        if (!(await asideInViewport())) fail(`${label}: the open drawer is outside the viewport`);
+        if ((await s1.evaluate(() => document.activeElement?.textContent?.trim())) !== "Close") fail(`${label}: opening the drawer did not move focus into it`);
+        await s1.keyboard.press("Escape");
+        await fieldsHeading(s1).waitFor({ state: "hidden" });
+        if ((await s1.evaluate(() => document.activeElement?.textContent?.trim())) !== "Your fields") fail(`${label}: Escape did not return focus to the Your fields button`);
+        await toggle.click();
         await fieldsHeading(s1).waitFor();
         await shot(s1, `p1-04-${label}-fields`);
         await row(s1, "Initials", false).getByRole("button", { name: /^Go to Initials/ }).click();
         if (await fieldsHeading(s1).isVisible()) fail(`${label}: Your fields stayed open over the document after navigating`);
         await s1.waitForFunction((id) => document.activeElement?.getAttribute("data-ceremony-target") === id, String(f.p1InitOpt.id), { timeout: 30000 });
       }
-      viewportNotes.push(`${label} ${viewport.width}x${viewport.height}: workspace ${Math.round(workspace.width)}x${Math.round(workspace.height)} (${(share * 100).toFixed(0)}% of screen), page ${Math.round(canvasBox.width)}px at ${await s1.getByTestId("ceremony-zoom").innerText()}`);
+      await expectAppliedMarksFit(s1, [P1, "AJS", today], `P1 marks (${label}px)`);
+      viewportNotes.push(`${label}: ${mode}, page ${Math.round(canvasBox.width)}px at ${await s1.getByTestId("ceremony-zoom").innerText()}, workspace ${(share * 100).toFixed(0)}%, overflow ${Math.max(0, overflow)}px`);
       await shot(s1, `p1-04-${label}`);
     }
     await s1.setViewportSize({ width: 1280, height: 900 });
     await s1.waitForTimeout(400);
-    ok(`viewports (no page-level horizontal scroll, Fit Width fills the workspace, overlays aligned, Finish + Leave visible; Your fields docked at ≥1024px, behind a button below that and closes after navigating): ${viewportNotes.join("; ")}`);
+    ok(`viewports (no page-level horizontal scroll, Fit Width fills the workspace, overlays aligned, marks fit, Finish + Leave visible; Your fields docked and on screen at ≥1024px, otherwise a visible button opens an on-screen drawer that takes focus, closes on Escape back to the button, and closes after navigating): ${viewportNotes.join("; ")}`);
 
     // ---------- Finish P1 ----------
     const p1CookieBeforeFinish = await ceremonyCookieValue(c1);
@@ -1356,6 +1450,7 @@ async function main() {
     await target(s2, f.p2Init.id, false).click();
     await target(s2, f.p2Init.id, true).waitFor({ timeout: 30000 });
     await dateOnPage(s2, f.p2IniDate!.id).getByText(today).waitFor({ timeout: 30000 });
+    await expectAppliedMarksFit(s2, ["BR", today], "P2 addendum marks (short Initials)");
     const iniDateSecond = acceptedFor(await placements(a.signingId), f.p2IniDate!.id as string);
     if (iniDateSecond.length !== 1 || iniDateSecond[0].id === iniDateFirst[0].id) {
       fail("reapplying the Initials did not apply a fresh linked Date");
@@ -1365,10 +1460,13 @@ async function main() {
     await s2.locator(`[data-ceremony-document="${contractDoc.id}"]`).click();
     await target(s2, f.p2Sig.id, true).waitFor({ timeout: 60000 });
     await dateOnPage(s2, f.p2Date.id).getByText(today).waitFor({ timeout: 30000 });
+    await expectAppliedMarksFit(s2, [P2, today], "P2 contract marks (44pt-wide Date Signed)");
     const p1Unchanged = (await placements(a.signingId)).filter((p) => p.signing_participant_id === p1.id);
     if (JSON.stringify(p1Unchanged) !== JSON.stringify(p1Final)) fail("P1 placements changed during P2 ceremony");
     await shot(s2, "p2-01-ready-to-finish");
     ok(`P2: entry, "I am ${P2}", consent, Start signing with read-only "${P2}" / "BR"; Sign here on the contract (Date ${today}) auto-advances to the addendum, where Initial here is applied at its stored position; sees only own 2 fields and none of P1's marks; P1 placements unchanged`);
+    if (!manager.url().endsWith(`/signings/${a.signingId}`)) fail(`manager is not on Signing A before P2 finishes (${manager.url()})`);
+    await manager.evaluate(() => { (window as unknown as { __qaLive?: string }).__qaLive = "a"; });
     await finishButton(s2).click();
     await s2.getByRole("alertdialog").getByRole("button", { name: "Yes, finish signing" }).click();
     await s2.waitForURL(/\/sign\/done\?outcome=finished$/, { timeout: 30000 });
@@ -1403,6 +1501,14 @@ async function main() {
       fail(`finalization did not complete: lifecycle ${complete.lifecycle_state}, condition ${complete.finalization_condition}; work ${JSON.stringify(workAfter)}`);
     }
     ok(`worker (request-driven kick) finalized in ${Math.round((Date.now() - finishedAt) / 1000)}s; conditions observed: ${[...observed].join(" → ")}; lifecycle COMPLETE; work items: ${(workAfter ?? []).map((w) => `${w.work_type}=${w.processing_state}`).join(", ")}`);
+    {
+      const completeAt = Date.now();
+      await manager.getByText("Finalization VERIFIED").waitFor({ timeout: 45000 })
+        .catch(() => fail("the open manager page did not show Complete without a reload"));
+      if ((await manager.evaluate(() => (window as unknown as { __qaLive?: string }).__qaLive)) !== "a") fail("the manager page reloaded");
+      if ((await manager.getByRole("button", { name: "Copy signing link" }).count()) !== 0) fail("the live manager page still offers Copy signing link after Complete");
+      ok(`live refresh (Complete): the manager page left open since before P2 finished showed COMPLETE / Finalization VERIFIED ${((Date.now() - finishedAt) / 1000).toFixed(1)}s after Finish (${((Date.now() - completeAt) / 1000).toFixed(1)}s after the server reached COMPLETE), with no reload`);
+    }
 
     const { data: artifacts } = await admin
       .from("signing_artifacts")
@@ -1435,7 +1541,7 @@ async function main() {
     // ---------- completed PDF content ----------
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const standardFontDataUrl = `${path.join(process.cwd(), "node_modules/pdfjs-dist/standard_fonts").replace(/\\/g, "/")}/`;
-    type TextItem = { str: string; transform: number[] };
+    type TextItem = { str: string; transform: number[]; width: number };
     const pageText = new Map<string, { items: TextItem[]; height: number }>();
     for (const [docKey, fileName, pageCount] of [["contract", "completed_document-contract.pdf", 2], ["addendum", "completed_document-addendum.pdf", 1]] as const) {
       const bytes = readFileSync(path.join(OUT_DIR, fileName));
@@ -1473,9 +1579,9 @@ async function main() {
       const top = pageInfo.height - fb.y;
       const inside = pageInfo.items.some((item) => {
         const [x, y] = [item.transform[4], item.transform[5]];
-        return item.str.trim() === text && x >= fb.x - 1 && x <= fb.x + fb.width && y >= top - fb.height - 1 && y <= top + 1;
+        return item.str.trim() === text && x >= fb.x - 1 && x + item.width <= fb.x + fb.width + 0.75 && y >= top - fb.height - 1 && y <= top + 1;
       });
-      if (!inside) fail(`completed ${docKeyOf(field)} page ${fb.page}: "${text}" not inside the ${label} box`);
+      if (!inside) fail(`completed ${docKeyOf(field)} page ${fb.page}: the whole "${text}" is not inside the ${label} box`);
     }
     const occurrences = (text: string) =>
       [...pageText.values()].reduce((count, info) => count + info.items.filter((item) => item.str.trim() === text).length, 0);
@@ -1701,6 +1807,9 @@ async function main() {
     await s3.getByRole("button", { name: "Decline to sign" }).click();
     await declineDialog.getByText("Decline to sign?").waitFor();
     await s3.locator("#decline-reason").fill("QA decline: terms not acceptable");
+    if (!manager.url().endsWith(`/signings/${b.signingId}`)) fail(`manager is not on Signing B before the Decline (${manager.url()})`);
+    await manager.evaluate(() => { (window as unknown as { __qaLive?: string }).__qaLive = "b"; });
+    const declineClickedAt = Date.now();
     await declineDialog.getByRole("button", { name: "Yes, decline to sign" }).click();
     await s3.waitForURL(/\/sign\/done\?outcome=declined$/, { timeout: 30000 });
     await s3.getByText("You declined to sign").waitFor({ timeout: 30000 });
@@ -1730,6 +1839,21 @@ async function main() {
     if (!chainB.ok) fail("Signing B event chain failed verification");
     ok(`Decline: explicit two-step confirmation; Signing DECLINED, ${P3} DECLINED with reason; no artifacts, no FINALIZE work; event ${declineEvent.event_type} by the participant; event chain verifies`);
     console.log(`INFO: participant page after Confirm decline reads: ${JSON.stringify(declinedText.replace(/\s+/g, " ").slice(0, 300))}`);
+    {
+      await manager.getByTestId("signing-outcome").getByText(`This Signing was declined by ${P3}.`).waitFor({ timeout: 45000 })
+        .catch(() => fail("the open manager page did not show the Decline without a reload"));
+      const delay = Date.now() - declineClickedAt;
+      if ((await manager.evaluate(() => (window as unknown as { __qaLive?: string }).__qaLive)) !== "b") fail("the manager page reloaded");
+      await manager.getByText("DECLINED").first().waitFor({ timeout: 10000 });
+      const liveText = await manager.locator("body").innerText();
+      if (/\bCancell?ed\b/i.test(liveText)) fail("the live manager page calls the Declined Signing Cancelled");
+      if (liveText.includes("Signing operations")) fail("the live manager page shows Complete controls for a Declined Signing");
+      if ((await manager.getByRole("button", { name: /Cancel Signing|Copy signing link|Revoke signing link|Replace signing link|Begin In-Person/ }).count()) !== 0) {
+        fail("the live manager page still offers actions that no longer apply");
+      }
+      await shot(manager, "b03a-manager-live-declined");
+      ok(`live refresh (Decline): the manager page left open on Signing B showed DECLINED and "This Signing was declined by ${P3}." ${(delay / 1000).toFixed(1)}s after the participant confirmed, with no reload; Cancel / link / In-Person actions gone, no Complete controls`);
+    }
     await c3.close();
     await expectRefused(l2, "P3 link after Decline");
     await manager.goto(`${APP_ORIGIN}/signings/${b.signingId}`, { waitUntil: "networkidle" });
@@ -1791,12 +1915,34 @@ async function main() {
     await cancelDialog.getByRole("button", { name: "Keep Signing" }).click();
     await cancelDialog.waitFor({ state: "detached" });
     if ((await signingRow(d.signingId)).lifecycle_state !== "IN_PROGRESS") fail("Keep Signing must not cancel");
+    // A second manager tab on the same Signing, hidden while the first tab cancels.
+    const watcherTab = await managerContext.newPage();
+    await watcherTab.goto(`${APP_ORIGIN}/signings/${d.signingId}`, { waitUntil: "networkidle" });
+    await watcherTab.getByRole("button", { name: "Cancel Signing", exact: true }).waitFor({ timeout: 60000 });
+    const setVisibility = (state: "hidden" | "visible") =>
+      `Object.defineProperty(document, "visibilityState", { configurable: true, get: function () { return "${state}"; } }); document.dispatchEvent(new Event("visibilitychange"));`;
+    await watcherTab.evaluate(`window.__qaLive = "d"; ${setVisibility("hidden")}`);
     await manager.getByRole("button", { name: "Cancel Signing", exact: true }).click();
     await manager.getByRole("alertdialog").getByRole("button", { name: "Cancel Signing", exact: true }).click();
     await manager.getByText("Signing cancelled. Create a new Signing to send corrected documents.").waitFor({ timeout: 60000 });
     if ((await signingRow(d.signingId)).lifecycle_state !== "CANCELLED") fail("Cancel Signing did not cancel");
     await shot(manager, "d01-cancelled");
     ok("Cancel Signing: confirmation (Keep Signing keeps it); confirm → CANCELLED with the corrected-documents guidance");
+    {
+      await watcherTab.waitForTimeout(1500);
+      const staleWhileHidden = (await watcherTab.getByTestId("signing-outcome").count()) === 0;
+      const revealedAt = Date.now();
+      await watcherTab.evaluate(setVisibility("visible"));
+      await watcherTab.getByTestId("signing-outcome").getByText("This Signing was cancelled.").waitFor({ timeout: 10000 })
+        .catch(() => fail("the hidden manager tab did not catch up to CANCELLED when it became visible"));
+      const catchUp = Date.now() - revealedAt;
+      if ((await watcherTab.evaluate(() => (window as unknown as { __qaLive?: string }).__qaLive)) !== "d") fail("the second manager tab reloaded");
+      if ((await watcherTab.getByRole("button", { name: "Cancel Signing", exact: true }).count()) !== 0) fail("the second tab still offers Cancel Signing");
+      if ((await watcherTab.getByRole("button", { name: /Copy signing link|Begin In-Person/ }).count()) !== 0) fail("the second tab still offers participant-link actions");
+      await shot(watcherTab, "d02-second-tab-caught-up");
+      await watcherTab.close();
+      ok(`live refresh (Cancel + visibility): a second manager tab hidden during the Cancel ${staleWhileHidden ? "stayed as it was while hidden and " : ""}showed "This Signing was cancelled." ${(catchUp / 1000).toFixed(1)}s after becoming visible, without a reload; Cancel Signing and link actions gone`);
+    }
 
     // ---------- Signing C: in-person Finish keeps the device lock ----------
     const formC = await createPacketDocument("Ceremony QA In-Person Contract");

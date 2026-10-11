@@ -3,10 +3,11 @@
  *
  * Each default box is sized to the mark the completed-PDF renderer will draw:
  * typed Signature / Initials in Caveat at `typedSignatureFontSize(height)`
- * (shrunk to fit width), Date Signed in Helvetica at `dateSignedFontSize`.
+ * (shrunk to fit width), Date Signed in Helvetica at `fitDateSignedFontSize`.
  * Widths are measured with the renderer's own font metrics.
  */
 import {
+  PDF_TEXT_PADDING_X,
   approximateHelveticaWidth,
   fitTypedSignatureFontSize,
   resolveFieldFontSize,
@@ -67,9 +68,26 @@ export function helveticaDateWidth(text: string, size: number): number {
   return (units / 1000) * size;
 }
 
-/** Same rule as `drawDateSigned` in the completed-PDF renderer. */
+/** Date Signed size from the box height alone, before fitting the width. */
 export function dateSignedFontSize(boxHeight: number): number {
   return Math.min(11, Math.max(7, boxHeight * 0.55));
+}
+
+/**
+ * Same rule as `drawDateSigned` in the completed-PDF renderer: the height size,
+ * shrunk so the whole date fits inside the box's horizontal padding.
+ */
+export function fitDateSignedFontSize(params: {
+  text: string;
+  boxWidth: number;
+  boxHeight: number;
+  measureWidth: (text: string, size: number) => number;
+}): number {
+  const base = dateSignedFontSize(params.boxHeight);
+  const innerWidth = params.boxWidth - 2 * PDF_TEXT_PADDING_X;
+  const measured = params.measureWidth(params.text.trim(), base);
+  if (innerWidth <= 0 || measured <= 0 || measured <= innerWidth) return base;
+  return base * (innerWidth / measured);
 }
 
 /** Smallest whole-point height at which the renderer draws `size` pt. */
@@ -100,7 +118,14 @@ export function draftMarkFontSize(
   text: string,
   box: { width: number; height: number },
 ): number {
-  if (kind === "DATE_SIGNED") return dateSignedFontSize(box.height);
+  if (kind === "DATE_SIGNED") {
+    return fitDateSignedFontSize({
+      text,
+      boxWidth: box.width,
+      boxHeight: box.height,
+      measureWidth: helveticaDateWidth,
+    });
+  }
   const base = typedSignatureFontSize(box.height);
   return fitTypedSignatureFontSize({
     text,
