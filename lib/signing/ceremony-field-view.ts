@@ -99,17 +99,20 @@ export function orderCeremonyFields<T extends CeremonyFieldView>(
 /**
  * The next Signature / Initials field still without an accepted placement,
  * in document and page order after `afterFieldId`, wrapping to the start.
+ * Guidance passes `requiredOnly` so optional fields never hold up Finish.
  */
 export function nextIncompleteCeremonyField(
   fields: readonly CeremonyFieldView[],
   documents: readonly Pick<CeremonyDocumentView, "revisionDocumentId" | "displayOrder">[],
   afterFieldId: string | null = null,
+  options: { requiredOnly?: boolean } = {},
 ): CeremonyActionableField | null {
   const ordered = orderCeremonyFields(
     fields.filter(isParticipantActionableField),
     documents,
   );
-  const incomplete = (field: CeremonyActionableField) => !field.placementId;
+  const incomplete = (field: CeremonyActionableField) =>
+    !field.placementId && (!options.requiredOnly || field.isRequired);
   const start = afterFieldId
     ? ordered.findIndex((field) => field.fieldId === afterFieldId)
     : -1;
@@ -122,6 +125,59 @@ export function nextIncompleteCeremonyField(
 
 export function ceremonyTargetLabel(field: CeremonyActionableField): string {
   return field.fieldType === "SIGNATURE" ? "Sign here" : "Initial here";
+}
+
+/** Non-modal hint beside the guided field. It never applies anything itself. */
+export function ceremonyGuidanceText(field: CeremonyActionableField): string {
+  return field.fieldType === "SIGNATURE" ? "Click here to sign" : "Click here to initial";
+}
+
+export type CeremonyFieldListEntry = {
+  field: CeremonyActionableField;
+  kindLabel: "Signature" | "Initials";
+  documentName: string;
+  pageNumber: number;
+  /** "2 of 3" when the same kind repeats on one page, else null. */
+  positionOnPage: string | null;
+  status: "Completed" | "Remaining";
+};
+
+/**
+ * "Your fields" rows in ceremony order, with repeated kinds on one page told
+ * apart by position (top-to-bottom, then left-to-right) instead of ids.
+ */
+export function ceremonyFieldListEntries(
+  fields: readonly CeremonyFieldView[],
+  documents: readonly Pick<
+    CeremonyDocumentView,
+    "revisionDocumentId" | "displayOrder" | "displayName"
+  >[],
+): CeremonyFieldListEntry[] {
+  const ordered = orderCeremonyFields(fields.filter(isParticipantActionableField), documents);
+  const nameById = new Map(
+    documents.map((document) => [document.revisionDocumentId, document.displayName]),
+  );
+  const groupKey = (field: CeremonyActionableField) =>
+    `${field.revisionDocumentId}:${field.pageNumber}:${field.fieldType}`;
+  const groupSizes = new Map<string, number>();
+  for (const field of ordered) {
+    groupSizes.set(groupKey(field), (groupSizes.get(groupKey(field)) ?? 0) + 1);
+  }
+  const seen = new Map<string, number>();
+  return ordered.map((field) => {
+    const key = groupKey(field);
+    const index = (seen.get(key) ?? 0) + 1;
+    seen.set(key, index);
+    const size = groupSizes.get(key) ?? 1;
+    return {
+      field,
+      kindLabel: field.fieldType === "SIGNATURE" ? "Signature" : "Initials",
+      documentName: nameById.get(field.revisionDocumentId) ?? "Document",
+      pageNumber: field.pageNumber,
+      positionOnPage: size > 1 ? `${index} of ${size}` : null,
+      status: field.placementId ? "Completed" : "Remaining",
+    };
+  });
 }
 
 /** Accessible name for an on-document target: action, kind, location, requirement. */

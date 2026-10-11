@@ -13,16 +13,16 @@ export const SIGNING_CEREMONY_EXIT_COPY: Record<
   { title: string; body: string }
 > = {
   finished: {
-    title: "You finished signing",
-    body: "Your signature and initials were recorded. Nothing else is needed from you. Your agent will send the completed documents when every participant has finished.",
+    title: "You have finished signing.",
+    body: "You may now close this browser.",
   },
   declined: {
     title: "You declined to sign",
     body: "This Signing has ended and your agent has been notified. Nothing else is needed from you.",
   },
   exited: {
-    title: "You left the signing session",
-    body: "Everything you already completed was saved. Reopen your Signing link and confirm your identity again to continue.",
+    title: "You left signing for now",
+    body: "Everything you already completed was saved. You have not declined. To continue, reopen your Signing link and confirm your identity again.",
   },
 };
 

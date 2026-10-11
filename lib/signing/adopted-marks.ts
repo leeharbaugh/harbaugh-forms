@@ -9,14 +9,15 @@
  *
  * Typed personal Signatures are exact-match to the displayed name.
  * Representative Signatures are exact-match to frozen capacity_wording.
- * Typed Initials are suggested from the display name but may be edited until
- * first use; there is no OCR or PDF-name matching. The agent remains
- * responsible for preparing the document with the intended signer name before
- * signing.
+ * Typed Initials are derived deterministically from the displayed name and are
+ * exact-match to that derivation; neither mark is free text. There is no OCR or
+ * PDF-name matching. The agent remains responsible for preparing the document
+ * with the intended signer name before signing.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CeremonyWriteContext } from "./ceremony-context";
 import { appendCeremonyEvent } from "./ceremony-events";
+import { requireConsentSatisfied } from "./consent-disclosure";
 import { SigningError } from "./errors";
 import { suggestTypedInitialsFromDisplayName } from "./initials-suggestion";
 
@@ -175,6 +176,12 @@ export async function adoptCeremonyMark(options: {
   const markKind = parseMarkKind(options.markKind);
   const representationType = parseRepresentationType(options.representationType);
 
+  await requireConsentSatisfied({
+    admin,
+    signingId: context.session.signingId,
+    signingParticipantId: context.session.signingParticipantId,
+  });
+
   let typedText: string | null = null;
 
   if (representationType === "TYPED") {
@@ -191,6 +198,19 @@ export async function adoptCeremonyMark(options: {
       }
     } else {
       typedText = parseTypedInitialsText(options.typedText);
+      const expected = expectedTypedInitialsText(context);
+      if (!expected) {
+        throw new SigningError(
+          "VALIDATION_FAILED",
+          "Initials cannot be formed from your name on this Signing. Please contact the sending agent.",
+        );
+      }
+      if (typedText !== expected) {
+        throw new SigningError(
+          "VALIDATION_FAILED",
+          `Typed initials must match the initials of your name on this Signing exactly: ${expected}`,
+        );
+      }
     }
   } else {
     // Validate payload shape first so malformed DRAWN requests stay INVALID_INPUT,
@@ -277,12 +297,85 @@ export async function adoptCeremonyMark(options: {
     detailsJson: {
       markKind,
       representationType,
+      textSource:
+        markKind === "SIGNATURE"
+          ? context.capacityMode === "REPRESENTATIVE"
+            ? "FROZEN_CAPACITY_WORDING"
+            : "FROZEN_PARTICIPANT_NAME"
+          : "DERIVED_FROM_FROZEN_PARTICIPANT_NAME",
       replacedExistingMark: Boolean(existing),
       browserSessionId: context.session.sessionId,
     },
   });
 
   return { mark: toMarkView(row), updated: Boolean(existing) };
+}
+
+/** The only typed Initials this participant may use: derived from the Signing name. */
+export function expectedTypedInitialsText(
+  context: Pick<CeremonyWriteContext, "displayedName">,
+): string {
+  return suggestTypedInitialsFromDisplayName(context.displayedName);
+}
+
+export type PrepareCeremonyMarksResult = {
+  signature: AdoptedMarkView | null;
+  initials: AdoptedMarkView | null;
+};
+
+/**
+ * "Start signing": record the Signature and Initials this participant's fields
+ * need, from the Signing name only. The browser supplies no mark text.
+ *
+ * Idempotent: a mark that already holds the expected text, or that is locked
+ * by use, is left untouched, so a retry or double-submit records nothing new.
+ */
+export async function prepareCeremonyMarks(options: {
+  admin: SupabaseClient;
+  context: CeremonyWriteContext;
+}): Promise<PrepareCeremonyMarksResult> {
+  const { admin, context } = options;
+  const { data: fieldRows, error } = await admin
+    .from("signing_fields")
+    .select("field_type")
+    .eq("signing_id", context.session.signingId)
+    .eq("package_revision_id", context.packageRevisionId)
+    .eq("package_revision_participant_id", context.revisionParticipantId)
+    .in("field_type", ["SIGNATURE", "INITIALS"]);
+  if (error) throw new Error(error.message);
+  const kinds = new Set((fieldRows ?? []).map((row) => row.field_type as AdoptedMarkKind));
+
+  const result: PrepareCeremonyMarksResult = { signature: null, initials: null };
+  for (const markKind of ["SIGNATURE", "INITIALS"] as const) {
+    if (!kinds.has(markKind)) continue;
+    const expected =
+      markKind === "SIGNATURE"
+        ? context.expectedTypedSignatureText.trim()
+        : expectedTypedInitialsText(context);
+    const existing = await getAdoptedMarkForKind({
+      admin,
+      signingId: context.session.signingId,
+      signingParticipantId: context.session.signingParticipantId,
+      markKind,
+    });
+    const mark =
+      existing &&
+      (existing.lockedAt ||
+        (existing.representationType === "TYPED" && existing.typedText === expected))
+        ? existing
+        : (
+            await adoptCeremonyMark({
+              admin,
+              context,
+              markKind,
+              representationType: "TYPED",
+              typedText: expected,
+            })
+          ).mark;
+    if (markKind === "SIGNATURE") result.signature = mark;
+    else result.initials = mark;
+  }
+  return result;
 }
 
 /**
@@ -317,8 +410,8 @@ export async function requireAdoptedMarkForKind(options: {
     throw new SigningError(
       "VALIDATION_FAILED",
       options.markKind === "SIGNATURE"
-        ? "Adopt your signature before placing it."
-        : "Adopt your initials before placing them.",
+        ? "Choose Start signing before placing your signature."
+        : "Choose Start signing before placing your initials.",
     );
   }
   return mark;

@@ -12,6 +12,87 @@ Each decision should include:
 
 ---
 
+## Ceremony marks come from the Signing name; neither Signature nor Initials is editable
+
+**Date:** 2026-10-11 (ceremony UX tranche)
+
+**Decision:**
+1. **Signature.** The participant's Signature is the canonized Signing name, or the frozen capacity wording for a representative. The participant cannot edit it, and the ceremony shows no text field for it.
+2. **Initials.** Initials are derived deterministically from the same frozen name by `suggestTypedInitialsFromDisplayName`. The participant cannot edit them, and the server accepts only that exact value: `adoptCeremonyMark` rejects anything else with VALIDATION_FAILED. A name that yields no initials fails closed and asks the participant to contact the agent.
+3. **Start signing.** One explicit "Start signing" step shows a read-only preview of both marks and records them. The browser sends no mark text: `startCeremonySigningAction` calls `prepareCeremonyMarks`, which takes both values from the server-side ceremony context. The old endpoint that accepted browser-supplied mark text (`adoptCeremonyMarkAction`) is removed. The UI no longer uses the word "adopt". It says "Your signature and initials" and "These cannot be changed here. If your name is wrong, leave for now and contact your agent before signing."
+4. **Evidence is unchanged or stronger.** Identity affirmation ("I am …") and e-sign consent remain separate recorded steps before Start signing. Each recorded mark still writes `SIGNATURE_ADOPTED` / `INITIALS_ADOPTED`, attributed to the participant actor and display name, timestamped, and bound to the Signing and package revision. Each event now also records `textSource` (`FROZEN_PARTICIPANT_NAME`, `FROZEN_CAPACITY_WORDING` or `DERIVED_FROM_FROZEN_PARTICIPANT_NAME`). The browser session id stays out of event details, as the event-chain sanitizer has always required. Locking is unchanged: a mark type locks globally on its first accepted placement, and Start signing never re-records a locked mark. This is still not identity verification; the product claims nothing beyond the participant's own affirmation.
+
+**Reason:**
+The editable initials step added a choice with no evidentiary value: the name it derived from is already the agent-approved, frozen Signing identity. Free-form initials also let a participant record text unconnected to that identity. No legal or evidence requirement for an edit step was found. The 2026-09-17 rationale was convenience and name diversity, not a legal requirement. Name diversity is now handled where it belongs: the agent corrects the Signing name before the first mark.
+
+**Consequences:**
+* Partly supersedes "Typed initials are a suggested convenience, not a legal validation", "Participant signing names are free-form and support multiple middle names" (the "participant may still edit" clause) and "Personal typed Signature remains exact-match; Initials remain editable suggestions" (all 2026-09-17). Those entries are kept as history with a dated note.
+* A participant whose initials look wrong leaves for now and asks the agent to correct the name. This is possible only before the first mark, per the identity-correction rule.
+
+**Related:** `lib/signing/adopted-marks.ts`, `lib/signing/ceremony-actions.ts`, `lib/signing/initials-suggestion.ts`, `components/sign/ceremony-shell.tsx`, `lib/signing/ceremony-ux.test.ts`, `scripts/validate-native-signing-ceremony-dev.ts`.
+
+---
+
+## E-sign consent is enforced on the server for every ceremony write
+
+**Date:** 2026-10-11 (ceremony UX tranche)
+
+**Decision:**
+Recording a mark, accepting or replacing a placement, and Finish Signing all call `requireConsentSatisfied` and fail with CONSENT_REQUIRED until the participant has accepted the current disclosure. Start signing is covered too, because it records marks through the same check. Hiding controls in the UI before consent is a convenience, not the boundary.
+
+**Reason:**
+In this tranche's review, consent was enforced only by the ceremony UI. A participant holding a valid ceremony session could record marks, and reach Finish, through direct server-action calls without accepting the disclosure.
+
+**Consequences:** The ceremony validator and browser QA both prove the server refuses a mark, a placement and Finish before consent, and that nothing is recorded.
+
+**Related:** `lib/signing/adopted-marks.ts`, `lib/signing/placements.ts`, `lib/signing/ceremony-finish.ts`, `lib/signing/consent-disclosure.ts`.
+
+---
+
+## Ceremony guidance moves to the next required field only after the server accepts a mark
+
+**Date:** 2026-10-11 (ceremony UX tranche)
+
+**Decision:**
+1. Start signing, and every later return to the ceremony, scrolls to and focuses the first incomplete **required** field, switching documents if needed. The order is document, then page, then position. The field is highlighted, with a small dismissible "Click here to sign" / "Click here to initial" hint beside it that does not cover the field.
+2. After the server **accepts** a mark, focus moves to the next incomplete required field, which may be on another page or in another document. When none remain, focus moves to Finish Signing. Navigation never happens before acceptance. A failed save leaves the field incomplete and in place, with "Try again" in the error banner.
+3. Guidance never applies a mark. Only the participant's click or key press on a field places one. The hint has no timer and implies nothing about reading.
+4. Review stays free. The participant can scroll, zoom, switch documents and apply optional fields in any order. Optional fields are listed but never guided.
+
+**Reason:** Participants should be able to finish without hunting for fields, without the product implying it acted for them or that they must read in a fixed order.
+
+**Related:** `lib/signing/ceremony-field-view.ts` (`nextIncompleteCeremonyField`, `ceremonyGuidanceText`), `components/sign/ceremony-shell.tsx`, `components/sign/ceremony-document-viewer.tsx`.
+
+---
+
+## Your fields is a spatial list of the participant's own fields
+
+**Date:** 2026-10-11 (ceremony UX tranche)
+
+**Decision:**
+Each row shows the field's type, "optional" if it is optional, Completed or Remaining, document name, page, and "i of n on page" when the page has more than one of that type. A Signature with a linked date also shows "Dated …". Rows never show ids. Clicking a row switches to that document, scrolls to the field, highlights it and focuses it. A remaining row also shows the hint. Completed rows offer Replace and Remove, and both keep focus on that field. The list is built only from the participant's own fields in the ceremony context. On screens narrower than 1024px it opens from a "Your fields" button and closes after navigating.
+
+**Related:** `lib/signing/ceremony-field-view.ts` (`ceremonyFieldListEntries`), `components/sign/ceremony-shell.tsx`.
+
+---
+
+## Finish wording separates the participant's part from Signing completion; Leave for now and Decline stay distinct
+
+**Date:** 2026-10-11 (ceremony UX tranche)
+
+**Decision:**
+1. When every required field is complete, the ceremony says "All required fields are complete. Click Finish Signing when you are done reviewing." Finish Signing is the primary button only then.
+2. Finish opens a confirmation stating three things: the participant is finishing their part of the Signing; afterward they cannot change their signature, initials or fields; the Signing may still be waiting for other participants or final processing. The buttons are "Yes, finish signing" and "Keep reviewing".
+3. The done page says "You have finished signing. You may now close this browser." It promises no email and says nothing about other participants.
+4. **Leave for now** (Exit) ends only this browser session. It keeps all marks, does not decline, keeps the link usable, and requires "I am …" again when the participant returns, after which they resume where they left off. Its landing page says "You have not declined." Lifecycle semantics are unchanged.
+5. **Decline to sign** sits apart from Leave for now, in the Your fields panel or below the setup card. It opens a destructive confirmation stating that declining refuses to sign, ends the Signing for everyone, notifies the agent, and cannot be undone. The confirmation suggests Leave for now for a break, focuses "Keep signing" first, and confirms with "Yes, decline to sign". Decline records DECLINED, invalidates access, preserves evidence, and is never shown as Cancelled.
+
+**Reason:** A participant finishing their own part is not the Signing being complete, and a break must never be mistaken for a refusal.
+
+**Related:** `components/sign/ceremony-shell.tsx`, `lib/signing/ceremony-exit.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
 ## The auto-add notice shows participant names and stays one-time
 
 **Date:** 2026-10-10 (toolbar tranche)
@@ -1515,6 +1596,8 @@ Later audit and certificate generation must prove exactly which disclosure the p
 
 **Date:** 2026-09-17
 
+> **Superseded in part (2026-10-11):** Initials are no longer editable. They are derived from the frozen Signing name and the server accepts only that exact value. See "Ceremony marks come from the Signing name; neither Signature nor Initials is editable". The UI still makes no identity-verification claim.
+
 **Decision:**
 Suggested typed initials are derived from the participant's full approved display name on this Signing. The participant may freely edit that suggestion before the first successful Initials use. The server must not reject typed initials merely because they differ from the suggestion. Initials lock on first successful Initials use only; Signature adoption and locking remain independent. The UI must not present suggested initials as legally required or server-verified identity.
 
@@ -1538,6 +1621,8 @@ Initials are a practical shorthand; enforcing exact derived initials conflicts w
 
 **Date:** 2026-09-17
 
+> **Superseded in part (2026-10-11):** "the participant may still edit the result" no longer applies. Derived initials are fixed. Names stay free-form. See "Ceremony marks come from the Signing name; neither Signature nor Initials is editable".
+
 **Decision:**
 Signing participant display names are free-form text without a rigid first/middle/last assumption. The product supports zero, one, or many middle names, compounds, hyphens, apostrophes, prefixes/suffixes, and cultural name structures without truncation. Initials suggestion tokenizes the full display name and includes all meaningful name components. For suggestion only, common generational suffixes (Jr, Sr, II, III, IV, and similar) are skipped; the participant may still edit the result. This stage does not implement OCR or PDF-name detection.
 
@@ -1559,6 +1644,8 @@ Real signer names do not fit a single Western three-part schema; initials sugges
 ## Personal typed Signature remains exact-match; Initials remain editable suggestions
 
 **Date:** 2026-09-17
+
+> **Superseded in part (2026-10-11):** The Signature part stands. Initials are now exact-match to the derived value and not editable. See "Ceremony marks come from the Signing name; neither Signature nor Initials is editable".
 
 **Decision:**
 Personal typed Signature text must still exactly match the approved displayed Signing participant name. Typed Initials remain a suggested default that the participant may edit until first successful Initials use; they are not required to match the suggestion.

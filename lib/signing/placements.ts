@@ -7,6 +7,8 @@
  * point takes an already-validated `CeremonyWriteContext`.
  *
  * Rules enforced here:
+ * - The participant must have accepted the current e-sign disclosure; the
+ *   ceremony UI gating consent is not the boundary.
  * - The field must belong to the actionable package revision and to this
  *   participant's revision participant snapshot, and must be SIGNATURE or
  *   INITIALS. DATE_SIGNED is never placed directly.
@@ -31,6 +33,7 @@ import {
 } from "./adopted-marks";
 import type { CeremonyWriteContext } from "./ceremony-context";
 import { appendCeremonyEvent } from "./ceremony-events";
+import { requireConsentSatisfied } from "./consent-disclosure";
 import { SigningError } from "./errors";
 import { isUuid } from "./types";
 
@@ -380,6 +383,11 @@ export async function acceptFieldPlacement(options: {
 }): Promise<PlacementResult> {
   const { admin, context } = options;
   const clientRequestId = parseClientRequestId(options.clientRequestId);
+  await requireConsentSatisfied({
+    admin,
+    signingId: context.session.signingId,
+    signingParticipantId: context.session.signingParticipantId,
+  });
   const field = await requirePlaceableField({
     admin,
     context,
@@ -615,6 +623,11 @@ export async function replaceFieldPlacement(options: {
 }): Promise<PlacementResult> {
   const { admin, context } = options;
   const clientRequestId = parseClientRequestId(options.clientRequestId);
+  await requireConsentSatisfied({
+    admin,
+    signingId: context.session.signingId,
+    signingParticipantId: context.session.signingParticipantId,
+  });
   const field = await requirePlaceableField({
     admin,
     context,

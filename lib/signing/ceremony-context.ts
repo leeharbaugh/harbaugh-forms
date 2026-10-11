@@ -321,8 +321,8 @@ export type CeremonyOverview = {
   requiredRemaining: number;
   canFinish: boolean;
   nextStep: CeremonyStep;
-  /** Suggested typed initials (editable until first Initials use). */
-  suggestedTypedInitials: string;
+  /** Typed initials derived from the Signing name; not editable. */
+  typedInitials: string;
   /** True when this ceremony session began from supervised in-person handoff. */
   inPersonCeremony: boolean;
 };
@@ -524,7 +524,7 @@ export async function loadCeremonyOverview(options: {
     requiredRemaining,
     canFinish: participantStatus !== "FINISHED" && requiredRemaining === 0,
     nextStep,
-    suggestedTypedInitials: suggestTypedInitialsFromDisplayName(displayedName),
+    typedInitials: suggestTypedInitialsFromDisplayName(displayedName),
     inPersonCeremony: session.inPersonHandoffId !== null,
   };
 }

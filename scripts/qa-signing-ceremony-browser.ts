@@ -7,17 +7,22 @@
  *
  * Signing A (two participants + one copy recipient; a two-page contract and a
  * one-page addendum): link entry without workspace login, identity
- * affirmation, consent, read-only typed Signature / editable Initials
- * adoption, the prepared PDFs rendered in the ceremony (every document, free
- * scrolling, zoom, document switching), Sign / Initial here targets drawn at
- * their stored coordinates and clicked on the page, linked Date Signed,
- * Remove / Replace before Finish, package freeze on first accepted mark,
- * Finish, participant isolation, document-route authorization, narrow and
- * tablet viewports, finalization through Complete, artifact + event-chain
- * integrity, completed PDF marks, completed-package access, manager view.
+ * affirmation, consent (enforced on the server too), Start signing with the
+ * read-only Signing name and derived Initials, the prepared PDFs rendered in
+ * the ceremony (every document, free scrolling, Fit Width / Fit Page / zoom,
+ * document switching), guidance to the first required field and to the next
+ * one after each accepted mark (cross-page and cross-document; failed saves
+ * stay put with a retry), Your fields navigation, Sign / Initial here targets
+ * drawn at their stored coordinates and clicked on the page, linked Date
+ * Signed, Remove / Replace before Finish, package freeze on first accepted
+ * mark, Finish confirmation, Leave for now and resume, participant isolation,
+ * document-route authorization, desktop / laptop / tablet / phone viewports,
+ * finalization through Complete, artifact + event-chain integrity, completed
+ * PDF marks, completed-package access, manager view.
  *
  * Signing B: Resend / Replace / Revoke spot-check (sessions derived from the
- * replaced / revoked links lose document access), then an explicit Decline.
+ * replaced / revoked links lose document access), then Decline to sign
+ * (cancelled once, then confirmed).
  *
  * Signing D: a Contact-linked participant follows the Contact while Draft, is
  * frozen once sent (later Contact edits do not reach it), then Cancel Signing.
@@ -133,6 +138,12 @@ async function main() {
   const manager = await managerContext.newPage();
   const noise = createRuntimeNoiseGuard();
   noise.watch(manager, "manager");
+  const managerInflight = new Set<unknown>();
+  manager.on("request", (request) => managerInflight.add(request));
+  manager.on("requestfinished", (request) => managerInflight.delete(request));
+  manager.on("requestfailed", (request) => managerInflight.delete(request));
+  // Chrome logs one console error per request the failed-save probe aborts.
+  let simulatedDisconnects = 0;
   const participantRequestUrls: string[] = [];
 
   let actor: SigningActor;
@@ -229,6 +240,18 @@ async function main() {
     await dialog.getByText("Send this Signing?").waitFor();
     await dialog.getByRole("button", { name: "Send", exact: true }).click();
     await manager.getByText("In Progress — participant access").waitFor({ timeout: 90000 });
+    await managerRequestsSettled();
+  }
+
+  /** Reloading while the post-Send refresh is still streaming aborts it on the dev server ("Error: aborted"). */
+  async function managerRequestsSettled() {
+    const deadline = Date.now() + 30000;
+    let quietSince = Date.now();
+    while (Date.now() < deadline) {
+      if (managerInflight.size > 0) quietSince = Date.now();
+      else if (Date.now() - quietSince >= 750) return;
+      await manager.waitForTimeout(100);
+    }
   }
 
   const panel = (name: string) =>
@@ -359,8 +382,12 @@ async function main() {
 
   const row = (page: Page, type: "Signature" | "Initials", required: boolean) => {
     const base = page.locator("[data-ceremony-field-row]").filter({ hasText: type });
-    return required ? base.filter({ hasText: "required" }) : base.filter({ hasNotText: "required" });
+    return required ? base.filter({ hasNotText: "optional" }) : base.filter({ hasText: "optional" });
   };
+  const finishButton = (page: Page) => page.getByRole("button", { name: "Finish Signing", exact: true });
+  const guidance = (page: Page) => page.getByTestId("ceremony-guidance");
+  const readyBanner = (page: Page) => page.getByTestId("ceremony-ready");
+  const fieldsHeading = (page: Page) => page.getByRole("heading", { name: "Your fields", exact: true });
   const fieldRows = (page: Page) => page.locator("[data-ceremony-field-row]");
   /** On-document Signature / Initials target for one field, in its current state. */
   const target = (page: Page, fieldId: unknown, placed: boolean) =>
@@ -372,22 +399,23 @@ async function main() {
   const pageCanvas = (page: Page, pageNumber: number) =>
     page.locator(`[data-ceremony-page="${pageNumber}"] canvas`).first();
 
-  /** Typed Signature is pre-populated with the exact Signing name and cannot be edited. */
-  async function expectReadOnlySignature(page: Page, name: string, label: string) {
-    const input = page.locator("#typed-signature");
-    await input.waitFor({ timeout: 30000 });
-    if ((await input.inputValue()) !== name) fail(`${label}: typed Signature is not pre-populated with "${name}"`);
-    if ((await input.getAttribute("readonly")) === null || (await input.isEditable())) fail(`${label}: typed Signature is editable`);
-    await input.focus();
-    await page.keyboard.type("x");
-    await page.keyboard.press("Backspace");
-    if ((await input.inputValue()) !== name) fail(`${label}: typing changed the read-only typed Signature`);
+  /** The Signature / Initials preview shows the Signing identity, with nothing editable. */
+  async function expectMarkPreview(page: Page, name: string, initials: string | null, label: string) {
+    await page.getByRole("button", { name: "Start signing" }).waitFor({ timeout: 30000 });
+    if ((await page.getByTestId("signature-preview").innerText()).trim() !== name) fail(`${label}: Signature preview is not exactly "${name}"`);
+    if (initials !== null && (await page.getByTestId("initials-preview").innerText()).trim() !== initials) {
+      fail(`${label}: Initials preview is not "${initials}"`);
+    }
+    if ((await page.locator("input, textarea, [contenteditable=true]").count()) !== 0) fail(`${label}: the mark setup offers an editable control`);
+    const text = await page.locator("body").innerText();
+    if (/\badopt/i.test(text)) fail(`${label}: setup uses "adopt" wording`);
   }
 
-  async function adoptSignature(page: Page, name: string, label: string) {
-    await expectReadOnlySignature(page, name, label);
-    await page.getByRole("button", { name: "Adopt signature" }).click();
-    await page.getByText("Signature adopted.").waitFor({ timeout: 30000 });
+  /** Start signing records the marks and lands on the first required field with a hint. */
+  async function startSigning(page: Page, name: string, initials: string | null, label: string) {
+    await expectMarkPreview(page, name, initials, label);
+    await page.getByRole("button", { name: "Start signing" }).click();
+    await page.getByTestId("ceremony-document-viewer").waitFor({ timeout: 60000 });
   }
 
   /** Request ceremony document bytes in a fresh context carrying only `cookieValue` (or no cookie). */
@@ -662,8 +690,26 @@ async function main() {
     const consentText = await s1.locator("body").innerText();
     if (!consentText.includes((disclosure!.body_text as string).slice(0, 60))) fail("disclosure body not shown");
     if (!disclosure!.is_production_ready && !consentText.includes("Development disclosure copy")) fail("dev disclosure badge missing");
-    if ((await s1.getByRole("button", { name: /Sign here|Initial here|Adopt signature/ }).count()) !== 0) fail("marks offered before consent");
-    if (!(await s1.getByRole("button", { name: "Finish signing" }).isDisabled())) fail("Finish enabled before consent");
+    if ((await s1.getByRole("button", { name: /Sign here|Initial here|Start signing|Finish Signing/ }).count()) !== 0) fail("marks or Finish offered before consent");
+    {
+      const probe = await ceremonyContextFor(c1);
+      if (!probe.ok) fail(`P1 session probe failed: ${probe.code}`);
+      const refusals: string[] = [];
+      for (const attempt of [
+        () => adoptCeremonyMark({ admin, context: probe.write, markKind: "SIGNATURE", representationType: "TYPED", typedText: P1 }),
+        () => acceptFieldPlacement({ admin, context: probe.write, signingFieldId: f.p1Sig.id, clientRequestId: `qa-${randomUUID()}` }),
+      ]) {
+        try {
+          await attempt();
+          refusals.push("ACCEPTED");
+        } catch (error) {
+          refusals.push((error as { code?: string }).code ?? "error");
+        }
+      }
+      if (refusals.some((code) => code !== "CONSENT_REQUIRED")) fail(`server accepted a mark before consent: ${refusals.join(", ")}`);
+      if ((await marks(a.signingId, p1.id)).signature) fail("a mark was recorded before consent");
+      ok("server refuses a mark and a placement before consent (CONSENT_REQUIRED), not only the UI");
+    }
     await s1.reload({ waitUntil: "networkidle" });
     await s1.getByRole("button", { name: "I agree to use electronic records and signatures" }).waitFor();
     if ((await participantRow(a.signingId, P1)).consent_accepted_at) fail("consent recorded without acceptance");
@@ -679,50 +725,76 @@ async function main() {
     if ((await s1.getByRole("button", { name: "I agree to use electronic records and signatures" }).count()) !== 0) fail("consent re-prompted after reload");
     ok(`consent: "${disclosure!.title}" (version ${disclosure!.version_key}, sha256 ${String(disclosure!.content_sha256).slice(0, 12)}…, dev copy badge) shown; no marks/Finish before acceptance; reload keeps it unaccepted; acceptance records version id + fingerprint; reload does not re-prompt`);
 
-    // ---------- Signature adoption ----------
-    await expectReadOnlySignature(s1, P1, "P1");
+    // ---------- Signature and Initials from the Signing identity ----------
+    await expectMarkPreview(s1, P1, "AJS", "P1");
     {
       const probe = await ceremonyContextFor(c1);
       if (!probe.ok) fail(`P1 session probe failed: ${probe.code}`);
-      for (const wrong of [P2, P1.toLowerCase(), `${P1} `.repeat(2).trim()]) {
+      const attempts: Array<["SIGNATURE" | "INITIALS", string]> = [
+        ["SIGNATURE", P2],
+        ["SIGNATURE", P1.toLowerCase()],
+        ["SIGNATURE", `${P1} `.repeat(2).trim()],
+        ["INITIALS", "AJX"],
+        ["INITIALS", "ajs"],
+        ["INITIALS", "AS"],
+      ];
+      for (const [markKind, wrong] of attempts) {
         let code = "";
         try {
-          await adoptCeremonyMark({ admin, context: probe.write, markKind: "SIGNATURE", representationType: "TYPED", typedText: wrong });
+          await adoptCeremonyMark({ admin, context: probe.write, markKind, representationType: "TYPED", typedText: wrong });
         } catch (error) {
           code = (error as { code?: string }).code ?? "";
         }
-        if (code !== "VALIDATION_FAILED") fail(`server accepted typed Signature "${wrong}" (${code || "no error"})`);
+        if (code !== "VALIDATION_FAILED") fail(`server accepted typed ${markKind} "${wrong}" (${code || "no error"})`);
       }
     }
-    if ((await marks(a.signingId, p1.id)).signature) fail("a mismatched signature was adopted");
-    await shot(s1, "p1-02b-read-only-signature");
-    await s1.getByRole("button", { name: "Adopt signature" }).click();
-    await s1.getByText("Signature adopted.").waitFor({ timeout: 30000 });
-    let m1 = await marks(a.signingId, p1.id);
-    if (m1.signature?.typed_text !== P1 || m1.signature.locked_at) fail("signature adoption state wrong");
-    ok(`Typed Signature: pre-populated with "${P1}", read-only (typing does not change it); server still rejects "${P2}", the lowercase name and a doubled name with VALIDATION_FAILED; Adopt signature records typed_text exactly "${P1}" (not yet locked)`);
-
-    // ---------- Initials adoption ----------
-    const initialsInput = s1.locator("#typed-initials");
-    const suggested = await initialsInput.inputValue();
-    if (suggested !== "AJS") fail(`suggested initials "${suggested}", expected "AJS"`);
-    await initialsInput.fill("AJX");
-    await s1.getByRole("button", { name: "Adopt initials" }).click();
-    await s1.getByText("Initials adopted.").waitFor({ timeout: 30000 });
-    m1 = await marks(a.signingId, p1.id);
-    if (m1.initials?.typed_text !== "AJX" || m1.initials.locked_at) fail("edited initials not adopted as typed");
     {
-      const probe = await ceremonyContextFor(c1);
-      if (!probe.ok) fail(`P1 session probe failed: ${probe.code}`);
-      await adoptCeremonyMark({ admin, context: probe.write, markKind: "INITIALS", representationType: "TYPED", typedText: "AJS" });
+      const m0 = await marks(a.signingId, p1.id);
+      if (m0.signature || m0.initials) fail("a mismatched mark was recorded");
     }
-    m1 = await marks(a.signingId, p1.id);
-    if (m1.initials?.typed_text !== "AJS" || m1.initials.locked_at) fail("server did not allow re-adopting initials before first use");
+    await shot(s1, "p1-02b-signature-and-initials");
+    await s1.getByRole("button", { name: "Start signing" }).click();
+    await fieldsHeading(s1).waitFor({ timeout: 60000 });
+    let m1 = await marks(a.signingId, p1.id);
+    if (m1.signature?.typed_text !== P1 || m1.signature.locked_at) fail("Start signing did not record the exact Signing name");
+    if (m1.initials?.typed_text !== "AJS" || m1.initials.locked_at) fail("Start signing did not record the derived initials");
+    {
+      const { data: markEvents } = await admin
+        .from("signing_events")
+        .select("event_type, actor_type, actor_display_name, create_date, details_json, package_revision_id")
+        .eq("signing_id", a.signingId)
+        .eq("actor_participant_id", p1.id)
+        .in("event_type", ["SIGNATURE_ADOPTED", "INITIALS_ADOPTED"]);
+      const events = markEvents ?? [];
+      const sources = events.map((event) => (event.details_json as { textSource?: string } | null)?.textSource).sort();
+      if (
+        events.length !== 2 ||
+        events.some((event) => event.actor_type !== "PARTICIPANT" || event.actor_display_name !== P1 || !event.package_revision_id || !event.create_date) ||
+        JSON.stringify(sources) !== JSON.stringify(["DERIVED_FROM_FROZEN_PARTICIPANT_NAME", "FROZEN_PARTICIPANT_NAME"])
+      ) {
+        fail(`mark evidence missing: ${JSON.stringify(events.map((event) => ({ type: event.event_type, actor: event.actor_type, revision: Boolean(event.package_revision_id), source: (event.details_json as { textSource?: string } | null)?.textSource })))}`);
+      }
+      if (events.some((event) => JSON.stringify(event.details_json ?? {}).includes("browserSessionId"))) fail("event details carry a session id (blocked by the event-chain sanitizer)");
+      ok("Start signing evidence: SIGNATURE_ADOPTED + INITIALS_ADOPTED events by the PARTICIPANT actor (participant id + displayed name), timestamped, bound to the package revision, textSource FROZEN_PARTICIPANT_NAME / DERIVED_FROM_FROZEN_PARTICIPANT_NAME; session ids stay out of event details by design");
+    }
     await s1.reload({ waitUntil: "networkidle" });
-    await s1.getByText("Your fields", { exact: true }).waitFor({ timeout: 60000 });
-    const uiReEdit = (await s1.locator("#typed-initials").count()) > 0;
-    await shot(s1, "p1-03-adopted");
-    ok(`Initials: suggestion "AJS" prefilled; edited to "AJX" and adopted; server accepted a re-adoption to "AJS" before first use (UI re-edit control after adoption: ${uiReEdit ? "present" : "absent"})`);
+    await fieldsHeading(s1).waitFor({ timeout: 60000 });
+    if ((await s1.getByRole("button", { name: "Start signing" }).count()) !== 0) fail("Start signing offered again after reload");
+    await guidance(s1).waitFor({ timeout: 60000 });
+    if ((await guidance(s1).getAttribute("data-field-id")) !== f.p1Sig.id || (await guidance(s1).innerText()).trim() !== "Click here to sign") {
+      fail("first-field guidance is not on P1's first required Signature");
+    }
+    await s1.waitForFunction((id) => document.activeElement?.getAttribute("data-ceremony-target") === id, String(f.p1Sig.id), { timeout: 30000 });
+    if ((await target(s1, f.p1Sig.id, false).getAttribute("data-highlighted")) !== "true") fail("guided field is not emphasized");
+    {
+      const hint = (await guidance(s1).boundingBox())!;
+      const field = (await target(s1, f.p1Sig.id, false).boundingBox())!;
+      const overlaps = hint.x < field.x + field.width && hint.x + hint.width > field.x && hint.y < field.y + field.height && hint.y + hint.height > field.y;
+      if (overlaps) fail("the guidance hint covers the field it points at");
+    }
+    if ((await placements(a.signingId)).length !== 0) fail("guidance applied a mark");
+    await shot(s1, "p1-03-started");
+    ok(`Signature preview "${P1}" and Initials preview "AJS" are read-only (no input on the page, no "adopt" wording); server rejects "${P2}", the lowercase / doubled name, and initials "AJX" / "ajs" / "AS" (VALIDATION_FAILED); one Start signing click records both exactly (unlocked) with session + package revision evidence; reload does not ask again`);
 
     // ---------- the actual documents are visible while signing ----------
     const docsA = await revisionDocuments(a.signingId);
@@ -770,17 +842,43 @@ async function main() {
     ok("free scrolling: wheel to page 2 (optional Initials target visible there) and back to page 1; no forced order or timers");
 
     // zoom keeps targets aligned
-    const fitDrift = await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, false), "P1 Signature (fit)");
+    const zoomLabel = () => s1.getByTestId("ceremony-zoom").innerText();
+    const fitWidthZoom = await zoomLabel();
+    {
+      const workspace = (await s1.getByTestId("ceremony-workspace").boundingBox())!;
+      const canvas = (await pageCanvas(s1, 1).boundingBox())!;
+      if (workspace.width < 900 || workspace.height < 650) fail(`document workspace is only ${workspace.width}x${workspace.height} at 1280x900`);
+      if (canvas.width < workspace.width - 80) fail(`Fit Width page is ${canvas.width}px in a ${workspace.width}px workspace`);
+      console.log(`INFO: 1280x900 workspace ${Math.round(workspace.width)}x${Math.round(workspace.height)}, Fit Width page ${Math.round(canvas.width)}px (${fitWidthZoom})`);
+    }
+    const fitDrift = await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, false), "P1 Signature (Fit Width)");
     await s1.getByRole("button", { name: "Zoom in" }).click();
-    await s1.getByText("125%").waitFor();
+    await s1.waitForFunction((previous) => document.querySelector('[data-testid="ceremony-zoom"]')?.textContent !== previous, fitWidthZoom);
     await s1.waitForTimeout(500);
-    const zoomDrift = await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, false), "P1 Signature (125%)");
-    await expectTargetAligned(s1, f.p1InitReq, target(s1, f.p1InitReq.id, false), "P1 required Initials (125%)");
-    await expectTargetAligned(s1, f.p1InitOpt, target(s1, f.p1InitOpt.id, false), "P1 optional Initials page 2 (125%)");
+    const zoomedIn = await zoomLabel();
+    if (parseInt(zoomedIn, 10) <= parseInt(fitWidthZoom, 10)) fail(`Zoom in went from ${fitWidthZoom} to ${zoomedIn}`);
+    const zoomDrift = await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, false), `P1 Signature (${zoomedIn})`);
+    await expectTargetAligned(s1, f.p1InitReq, target(s1, f.p1InitReq.id, false), `P1 required Initials (${zoomedIn})`);
+    await expectTargetAligned(s1, f.p1InitOpt, target(s1, f.p1InitOpt.id, false), `P1 optional Initials page 2 (${zoomedIn})`);
     await s1.getByRole("button", { name: "Zoom out" }).click();
-    await s1.getByText("Fit", { exact: true }).waitFor();
+    await s1.getByRole("button", { name: "Zoom out" }).click();
     await s1.waitForTimeout(500);
-    ok(`coordinate fidelity: Signature / Initials overlays match stored PDF-point geometry on the rendered page within ${Math.max(fitDrift, zoomDrift).toFixed(2)}px at Fit and 125% (page 1 and page 2)`);
+    const zoomedOut = await zoomLabel();
+    if (parseInt(zoomedOut, 10) >= parseInt(zoomedIn, 10)) fail(`Zoom out went from ${zoomedIn} to ${zoomedOut}`);
+    await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, false), `P1 Signature (${zoomedOut})`);
+    await s1.getByRole("button", { name: "Fit Page", exact: true }).click();
+    await s1.waitForTimeout(500);
+    {
+      const workspace = (await s1.getByTestId("ceremony-workspace").boundingBox())!;
+      const canvas = (await pageCanvas(s1, 1).boundingBox())!;
+      if (canvas.height > workspace.height) fail(`Fit Page page is ${canvas.height}px tall in a ${workspace.height}px workspace`);
+    }
+    await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, false), "P1 Signature (Fit Page)");
+    const fitPageZoom = await zoomLabel();
+    await s1.getByRole("button", { name: "Fit Width", exact: true }).click();
+    await s1.waitForTimeout(500);
+    if ((await zoomLabel()) !== fitWidthZoom) fail(`Fit Width returned ${await zoomLabel()}, expected ${fitWidthZoom}`);
+    ok(`viewer: Fit Width ${fitWidthZoom} (default), Zoom in ${zoomedIn}, Zoom out ${zoomedOut}, Fit Page ${fitPageZoom} (whole page fits the workspace), Fit Width again ${fitWidthZoom}; overlays match stored PDF-point geometry within ${Math.max(fitDrift, zoomDrift).toFixed(2)}px (page 1 and page 2)`);
 
     // switch documents: the addendum has no P1 fields but is fully readable
     await s1.locator(`[data-ceremony-document="${addendumDoc.id}"]`).click();
@@ -827,10 +925,36 @@ async function main() {
     await s1.getByText("2 required fields still need you.").waitFor();
     if ((await dateOnPage(s1, f.p1Date.id).count()) !== 0) fail("Date Signed shown as filled before signing");
     if ((await s1.locator(`[data-ceremony-date-field="${f.p1Date.id}"] button, button[data-ceremony-date-field]`).count()) !== 0) fail("Date Signed offered as a control");
-    await target(s1, f.p1Sig.id, false).click();
+    {
+      // A failed save: drop exactly this placement request before it reaches the server.
+      let dropped = 0;
+      const sigId = String(f.p1Sig.id);
+      await s1.route("**/sign/ceremony", (route) => {
+        const request = route.request();
+        if (!dropped && request.method() === "POST" && request.headers()["next-action"] && (request.postData() ?? "").includes(sigId)) {
+          dropped += 1;
+          simulatedDisconnects += 1;
+          return route.abort("internetdisconnected");
+        }
+        return route.continue();
+      });
+      await target(s1, f.p1Sig.id, false).click();
+      const banner = s1.getByRole("alert").filter({ hasText: "was not saved" });
+      await banner.waitFor({ timeout: 30000 });
+      await s1.unroute("**/sign/ceremony");
+      if (dropped !== 1) fail("the failed-save probe did not intercept the placement");
+      await waitIdle(s1);
+      if ((await target(s1, f.p1Sig.id, false).count()) !== 1) fail("a failed save shows the field as completed");
+      if ((await placements(a.signingId)).length !== 0) fail("a dropped request produced a placement");
+      const activeTarget = await s1.evaluate(() => document.activeElement?.getAttribute("data-ceremony-target") ?? null);
+      if (activeTarget === String(f.p1InitReq.id)) fail("navigation advanced after a failed save");
+      await shot(s1, "p1-03d-failed-save");
+      await banner.getByRole("button", { name: "Try again" }).click();
+      ok("failed save: the dropped placement shows an error with Try again, the field stays open, nothing is recorded and guidance does not advance; Try again applies it");
+    }
     await target(s1, f.p1Sig.id, true).waitFor({ timeout: 30000 });
     await dateOnPage(s1, f.p1Date.id).getByText(today).waitFor({ timeout: 30000 });
-    await row(s1, "Signature", true).getByText(`Applied · dated ${today}`).waitFor({ timeout: 30000 });
+    await row(s1, "Signature", true).getByText(`Dated ${today}`).waitFor({ timeout: 30000 });
     if ((await target(s1, f.p1Sig.id, true).innerText()).trim() !== P1) fail("applied Signature does not show the adopted name on the page");
     let pl = await placements(a.signingId);
     const sig1 = acceptedFor(pl, f.p1Sig.id as string);
@@ -841,9 +965,11 @@ async function main() {
     m1 = await marks(a.signingId, p1.id);
     if (!m1.signature?.locked_at || m1.initials?.locked_at) fail("mark locking not per mark type");
     ok(`Sign here: Signature ACCEPTED + linked Date Signed ACCEPTED (${today}, sender timezone ${frozen.sender_timezone}); package revision frozen; Signature locked, Initials still unlocked`);
-    if (!(await s1.getByRole("button", { name: "Finish signing" }).isDisabled())) fail("Finish enabled with a required Initials outstanding");
+    if (!(await finishButton(s1).isDisabled())) fail("Finish enabled with a required Initials outstanding");
+    if ((await readyBanner(s1).count()) !== 0) fail("ready wording shown with a required field outstanding");
     await s1.getByText("One required field still needs you.").waitFor();
-    ok("Finish disabled while a required Initials field is outstanding");
+    await s1.getByTestId("ceremony-progress").getByText("1 of 2 required").waitFor();
+    ok("Finish disabled (no ready wording) while a required Initials field is outstanding; progress reads 1 of 2 required");
 
     // ---------- first-mark freeze: manager cannot mutate ----------
     for (const [label, attempt] of [
@@ -876,18 +1002,45 @@ async function main() {
     if (!/^Initial here: Initials, page 1 of Ceremony QA Contract, required$/.test(focusedName)) fail(`focused target has accessible name "${focusedName}"`);
     const focusRing = await s1.evaluate(() => getComputedStyle(document.activeElement!).boxShadow);
     if (!focusRing || focusRing === "none") fail("focused target has no visible focus ring");
+    if ((await guidance(s1).getAttribute("data-field-id")) !== f.p1InitReq.id || (await guidance(s1).innerText()).trim() !== "Click here to initial") {
+      fail("auto-advance did not move the hint to the required Initials");
+    }
+    if (acceptedFor(await placements(a.signingId), f.p1InitReq.id as string).length !== 0) fail("auto-advance applied the Initials");
     await s1.keyboard.press("Enter");
     await target(s1, f.p1InitReq.id, true).waitFor({ timeout: 30000 });
-    await row(s1, "Initials", true).getByText("Applied").waitFor({ timeout: 30000 });
+    await row(s1, "Initials", true).getByText("Completed").waitFor({ timeout: 30000 });
     if ((await target(s1, f.p1InitReq.id, true).innerText()).trim() !== "AJS") fail("applied Initials do not show the adopted initials on the page");
-    ok(`auto-advance + keyboard: after Sign here, focus moved to the required Initials target (accessible name "${focusedName}", visible focus ring); Enter applies it`);
+    ok(`auto-advance + keyboard: after Sign here (server accepted), focus and the "Click here to initial" hint moved to the required Initials target (accessible name "${focusedName}", visible focus ring) without applying it; Enter applies it`);
+    await s1.waitForFunction(() => document.activeElement?.textContent?.trim() === "Finish Signing", undefined, { timeout: 30000 });
+    if ((await guidance(s1).count()) !== 0) fail("a hint remains after the last required field");
+    await readyBanner(s1).waitFor();
+    if ((await readyBanner(s1).innerText()).replace(/\s+/g, " ").trim() !== "All required fields are complete. Click Finish Signing when you are done reviewing.") {
+      fail(`ready wording: ${await readyBanner(s1).innerText()}`);
+    }
+    if (/Signing is complete|Signing complete/i.test(await s1.locator("body").innerText())) fail("ready state implies the Signing is complete");
+    ok("last required field accepted → focus moves to Finish Signing (optional field skipped by guidance); banner: \"All required fields are complete. Click Finish Signing when you are done reviewing.\"");
     await s1.mouse.move(400, 500);
     await s1.mouse.wheel(0, -20000);
     await s1.waitForTimeout(300);
-    await s1.getByRole("button", { name: "Go to next field" }).click();
+    {
+      const optRow = row(s1, "Initials", false);
+      const label = (await optRow.getByRole("button", { name: /^Go to Initials/ }).getAttribute("aria-label")) ?? "";
+      if (label !== "Go to Initials, Ceremony QA Contract · Page 2, remaining") fail(`Your fields row label: "${label}"`);
+      const rowText = (await optRow.innerText()).replace(/\s+/g, " ");
+      if (!/Initials · optional\s*Remaining\s*Ceremony QA Contract · Page 2/.test(rowText) || /[0-9a-f]{8}-[0-9a-f]{4}/.test(rowText)) fail(`Your fields row text: "${rowText}"`);
+      await optRow.getByRole("button", { name: /^Go to Initials/ }).click();
+    }
     await s1.waitForFunction((id) => document.activeElement?.getAttribute("data-ceremony-target") === id, String(f.p1InitOpt.id), { timeout: 30000 });
-    if ((await pageCanvas(s1, 2).boundingBox())!.y > 900) fail("Go to next field did not scroll page 2 into view");
-    ok("Go to next field scrolls to and focuses the optional Initials target on page 2");
+    if ((await pageCanvas(s1, 2).boundingBox())!.y > 900) fail("Your fields did not scroll page 2 into view");
+    if ((await target(s1, f.p1InitOpt.id, false).getAttribute("data-highlighted")) !== "true") fail("Your fields did not highlight the field");
+    await guidance(s1).filter({ hasText: "Click here to initial" }).waitFor();
+    await guidance(s1).getByRole("button", { name: "Dismiss hint" }).click();
+    if ((await guidance(s1).count()) !== 0) fail("Dismiss hint did not hide the hint");
+    ok("Your fields: the optional Initials row reads \"Initials · optional / Remaining / Ceremony QA Contract · Page 2\" (no ids); clicking it scrolls to page 2, focuses and highlights the field and shows the hint; Dismiss hint hides it");
+    await row(s1, "Signature", true).getByRole("button", { name: /^Go to Signature/ }).click();
+    await s1.waitForFunction((id) => document.activeElement?.getAttribute("data-ceremony-target") === id, String(f.p1Sig.id), { timeout: 30000 });
+    if ((await guidance(s1).count()) !== 0) fail("a completed field shows a hint");
+    ok("Your fields: a completed row returns to its applied field (focused, highlighted, no hint)");
     m1 = await marks(a.signingId, p1.id);
     if (!m1.initials?.locked_at) fail("initials not locked after first use");
     {
@@ -895,21 +1048,21 @@ async function main() {
       if (!probe.ok) fail(`P1 session probe failed: ${probe.code}`);
       let code = "";
       try {
-        await adoptCeremonyMark({ admin, context: probe.write, markKind: "INITIALS", representationType: "TYPED", typedText: "ZZ" });
+        await adoptCeremonyMark({ admin, context: probe.write, markKind: "INITIALS", representationType: "TYPED", typedText: "AJS" });
       } catch (error) {
         code = (error as { code?: string }).code ?? "";
       }
-      if (code !== "MARK_LOCKED") fail(`re-adopting used initials returned "${code}", expected MARK_LOCKED`);
+      if (code !== "MARK_LOCKED") fail(`re-recording used initials returned "${code}", expected MARK_LOCKED`);
     }
-    await s1.getByText("Every required field is complete.").waitFor();
-    if (await s1.getByRole("button", { name: "Finish signing" }).isDisabled()) fail("Finish disabled with all required fields complete");
-    ok("Initial here: Initials ACCEPTED and locked on first use; re-adoption now MARK_LOCKED; required complete → Finish enabled (optional Initials still empty)");
+    await readyBanner(s1).waitFor();
+    if (await finishButton(s1).isDisabled()) fail("Finish disabled with all required fields complete");
+    ok("Initial here: Initials ACCEPTED and locked on first use; re-recording now MARK_LOCKED; required complete → Finish enabled (optional Initials still empty)");
 
     // ---------- remove / replace before Finish ----------
-    await row(s1, "Initials", false).getByRole("button", { name: /Show initials field on page 2/ }).click();
+    await row(s1, "Initials", false).getByRole("button", { name: /^Go to Initials/ }).click();
     await target(s1, f.p1InitOpt.id, false).click();
     await target(s1, f.p1InitOpt.id, true).waitFor({ timeout: 30000 });
-    await row(s1, "Initials", false).getByText("Applied").waitFor({ timeout: 30000 });
+    await row(s1, "Initials", false).getByText("Completed").waitFor({ timeout: 30000 });
     const optFirst = acceptedFor(await placements(a.signingId), f.p1InitOpt.id as string)[0];
     await row(s1, "Initials", false).getByRole("button", { name: "Remove" }).click();
     await target(s1, f.p1InitOpt.id, false).waitFor({ timeout: 30000 });
@@ -922,7 +1075,7 @@ async function main() {
     if (acceptedFor(pl, f.p1InitOpt.id as string).length !== 0 || pl.find((p) => p.id === optFirst.id)?.disposition !== "REMOVED") fail("Initials Remove did not persist");
     await target(s1, f.p1InitOpt.id, false).click();
     await target(s1, f.p1InitOpt.id, true).waitFor({ timeout: 30000 });
-    ok("optional Initials (page 2): Show on page → click the target → Remove from the list (REMOVED; after reload the page shows the open target again while page-1 marks stay applied) → reapply on the page (new ACCEPTED placement)");
+    ok("optional Initials (page 2): Your fields row → click the target → Remove from the list (REMOVED; after reload the page shows the open target again while page-1 marks stay applied) → reapply on the page (new ACCEPTED placement)");
 
     const sigBefore = acceptedFor(await placements(a.signingId), f.p1Sig.id as string)[0];
     const dateBefore = acceptedFor(await placements(a.signingId), f.p1Date.id as string)[0];
@@ -933,7 +1086,7 @@ async function main() {
       await s1.waitForTimeout(500);
     }
     await waitIdle(s1);
-    await row(s1, "Signature", true).getByText(`Applied · dated ${today}`).waitFor({ timeout: 30000 });
+    await row(s1, "Signature", true).getByText(`Dated ${today}`).waitFor({ timeout: 30000 });
     pl = await placements(a.signingId);
     const sigAfter = acceptedFor(pl, f.p1Sig.id as string);
     const dateAfter = acceptedFor(pl, f.p1Date.id as string);
@@ -944,15 +1097,24 @@ async function main() {
     if (!(new Date(dateAfter[0].accepted_at!) > new Date(dateBefore.accepted_at!))) fail("replacement date not fresh");
     ok(`Signature Replace: old REPLACED → new ACCEPTED; old Date Signed ${oldDate.disposition}, new Date Signed ACCEPTED with fresh acceptance time`);
 
+    await s1
+      .waitForFunction((id) => document.activeElement?.getAttribute("data-ceremony-target") === id, String(f.p1Sig.id), { timeout: 30000 })
+      .catch(() => fail("Replace did not keep the participant on the replaced Signature"));
     await row(s1, "Signature", true).getByRole("button", { name: "Remove" }).click();
     await target(s1, f.p1Sig.id, false).waitFor({ timeout: 30000 });
+    await s1.waitForFunction((id) => document.activeElement?.getAttribute("data-ceremony-target") === id, String(f.p1Sig.id), { timeout: 30000 });
+    if ((await guidance(s1).count()) !== 0) fail("Remove showed a hint (it should only return to the field)");
+    if (!(await finishButton(s1).isDisabled()) || (await readyBanner(s1).count()) !== 0) fail("Finish / ready wording still shown after removing the required Signature");
+    ok("Replace keeps focus on the replaced Signature; Remove returns focus to the now-open field (no auto-advance, no hint) and Finish / ready wording go away");
     pl = await placements(a.signingId);
     if (acceptedFor(pl, f.p1Sig.id as string).length || acceptedFor(pl, f.p1Date.id as string).length) fail("Remove left an effective Signature/Date");
     await s1.reload({ waitUntil: "networkidle" });
     await s1.getByText("One required field still needs you.").waitFor();
     await target(s1, f.p1Sig.id, false).waitFor({ timeout: 60000 });
     if ((await dateOnPage(s1, f.p1Date.id).count()) !== 0) fail("Date Signed still shown after the Signature was removed");
-    if (!(await s1.getByRole("button", { name: "Finish signing" }).isDisabled())) fail("Finish enabled after removing the required Signature");
+    if (!(await finishButton(s1).isDisabled())) fail("Finish enabled after removing the required Signature");
+    await guidance(s1).filter({ hasText: "Click here to sign" }).waitFor({ timeout: 60000 });
+    if ((await guidance(s1).getAttribute("data-field-id")) !== f.p1Sig.id) fail("on resume the hint is not on the one remaining required field");
     {
       // Double-click: the placement action is idempotent per field, so one ACCEPTED placement results.
       const button = target(s1, f.p1Sig.id, false);
@@ -960,39 +1122,87 @@ async function main() {
     }
     await target(s1, f.p1Sig.id, true).waitFor({ timeout: 30000 });
     await dateOnPage(s1, f.p1Date.id).getByText(today).waitFor({ timeout: 30000 });
-    await row(s1, "Signature", true).getByText(`Applied · dated ${today}`).waitFor({ timeout: 30000 });
+    await row(s1, "Signature", true).getByText(`Dated ${today}`).waitFor({ timeout: 30000 });
     await waitIdle(s1);
     pl = await placements(a.signingId);
     for (const fieldId of [f.p1Sig.id, f.p1Date.id, f.p1InitReq.id, f.p1InitOpt.id] as string[]) {
       if (acceptedFor(pl, fieldId).length !== 1) fail("a P1 field does not have exactly one ACCEPTED placement");
     }
     await s1.reload({ waitUntil: "networkidle" });
-    await s1.getByText("Every required field is complete.").waitFor();
+    await readyBanner(s1).waitFor();
     await target(s1, f.p1Sig.id, true).waitFor({ timeout: 60000 });
     await dateOnPage(s1, f.p1Date.id).getByText(today).waitFor();
     await shot(s1, "p1-04-ready-to-finish");
     ok("Signature Remove: Signature + linked Date leave the page and are no longer effective, Finish disabled (persists after reload); double-clicking Sign here → exactly one ACCEPTED placement per P1 field; reload shows the signed page");
 
     // ---------- narrow (phone) and tablet viewports ----------
-    for (const [label, viewport] of [["phone", { width: 390, height: 844 }], ["tablet", { width: 820, height: 1180 }]] as const) {
+    const viewportNotes: string[] = [];
+    for (const [label, viewport] of [
+      ["desktop", { width: 1440, height: 900 }],
+      ["laptop", { width: 1024, height: 768 }],
+      ["tablet", { width: 820, height: 1180 }],
+      ["phone", { width: 390, height: 844 }],
+    ] as const) {
       await s1.setViewportSize(viewport);
-      await s1.waitForTimeout(600);
+      await s1.waitForTimeout(800);
       const overflow = await s1.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       if (overflow > 1) fail(`${label}: page scrolls horizontally by ${overflow}px`);
+      const workspace = (await s1.getByTestId("ceremony-workspace").boundingBox())!;
       const canvasBox = await pageCanvas(s1, 1).boundingBox();
       if (!canvasBox || canvasBox.width < 250 || canvasBox.width > viewport.width) fail(`${label}: page 1 renders ${canvasBox?.width}px wide`);
+      if (canvasBox.width < workspace.width - 80) fail(`${label}: Fit Width page ${canvasBox.width}px in a ${workspace.width}px workspace`);
+      const share = (workspace.width * workspace.height) / (viewport.width * viewport.height);
+      if (share < 0.55) fail(`${label}: the document workspace is only ${(share * 100).toFixed(0)}% of the screen`);
+      if (!(await finishButton(s1).isVisible())) fail(`${label}: Finish Signing is not visible`);
+      if (!(await s1.getByRole("button", { name: "Leave for now" }).first().isVisible())) fail(`${label}: Leave for now is not visible`);
       await expectTargetAligned(s1, f.p1Sig, target(s1, f.p1Sig.id, true), `P1 Signature (${label})`);
+      const sidebarVisible = await fieldsHeading(s1).isVisible();
+      if (viewport.width >= 1024 && !sidebarVisible) fail(`${label}: Your fields should be docked`);
+      if (viewport.width < 1024) {
+        if (sidebarVisible) fail(`${label}: Your fields should be behind its button`);
+        await s1.getByRole("button", { name: "Your fields", exact: true }).click();
+        await fieldsHeading(s1).waitFor();
+        await shot(s1, `p1-04-${label}-fields`);
+        await row(s1, "Initials", false).getByRole("button", { name: /^Go to Initials/ }).click();
+        if (await fieldsHeading(s1).isVisible()) fail(`${label}: Your fields stayed open over the document after navigating`);
+        await s1.waitForFunction((id) => document.activeElement?.getAttribute("data-ceremony-target") === id, String(f.p1InitOpt.id), { timeout: 30000 });
+      }
+      viewportNotes.push(`${label} ${viewport.width}x${viewport.height}: workspace ${Math.round(workspace.width)}x${Math.round(workspace.height)} (${(share * 100).toFixed(0)}% of screen), page ${Math.round(canvasBox.width)}px at ${await s1.getByTestId("ceremony-zoom").innerText()}`);
       await shot(s1, `p1-04-${label}`);
     }
     await s1.setViewportSize({ width: 1280, height: 900 });
     await s1.waitForTimeout(400);
-    ok("phone 390px and tablet 820px: the page fits the viewport without page-level horizontal scroll and overlays stay aligned");
+    ok(`viewports (no page-level horizontal scroll, Fit Width fills the workspace, overlays aligned, Finish + Leave visible; Your fields docked at ≥1024px, behind a button below that and closes after navigating): ${viewportNotes.join("; ")}`);
 
     // ---------- Finish P1 ----------
     const p1CookieBeforeFinish = await ceremonyCookieValue(c1);
-    await s1.getByRole("button", { name: "Finish signing" }).click();
+    await finishButton(s1).click();
+    {
+      const dialog = s1.getByRole("alertdialog");
+      await dialog.getByText("Finish signing?").waitFor();
+      const text = (await dialog.innerText()).replace(/\s+/g, " ");
+      for (const phrase of [
+        "You are finishing your part of this Signing.",
+        "After you finish, you cannot change your signature, initials, or any of your fields.",
+        "The Signing may still be waiting for other participants or final processing.",
+      ]) {
+        if (!text.includes(phrase)) fail(`Finish confirmation is missing "${phrase}"`);
+      }
+      await shot(s1, "p1-05a-finish-confirm");
+      await dialog.getByRole("button", { name: "Keep reviewing" }).click();
+      await dialog.waitFor({ state: "detached" });
+      if ((await participantRow(a.signingId, P1)).participant_status === "FINISHED") fail("cancelling the Finish confirmation finished P1");
+      await finishButton(s1).click();
+      await s1.getByRole("alertdialog").getByRole("button", { name: "Yes, finish signing" }).click();
+    }
     await s1.waitForURL(/\/sign\/done\?outcome=finished$/, { timeout: 30000 });
-    await s1.getByText("You finished signing").waitFor({ timeout: 30000 });
+    await s1.getByText("You have finished signing.").waitFor({ timeout: 30000 });
+    {
+      const doneText = (await s1.locator("body").innerText()).replace(/\s+/g, " ");
+      if (!doneText.includes("You may now close this browser.")) fail("done page lacks the close-browser line");
+      if (/email|every participant|completed documents|Signing is complete/i.test(doneText)) fail(`done page over-claims: ${doneText}`);
+    }
+    ok("Finish: confirmation states finishing your part / cannot change afterward / Signing may still await others or processing; Keep reviewing cancels (still not finished); Yes, finish signing → \"You have finished signing.\" + \"You may now close this browser.\" (no email or all-finished claim)");
     if ((await c1.cookies()).some((cookie) => cookie.name === SIGNING_CEREMONY_COOKIE_NAME)) fail("ceremony cookie survived Finish");
     if ((await documentStatusWith(p1CookieBeforeFinish, contractDoc.id)) !== 404) fail("P1's pre-Finish ceremony cookie still reads document bytes");
     ok("after Finish, replaying P1's old ceremony cookie against the document route returns 404");
@@ -1041,11 +1251,10 @@ async function main() {
     await affirm(s2, P2);
     await s2.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
     await s2.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
-    await adoptSignature(s2, P2, "P2");
-    if ((await s2.locator("#typed-initials").inputValue()) !== "BR") fail("P2 suggested initials not BR");
-    await s2.getByRole("button", { name: "Adopt initials" }).click();
-    await s2.getByText("Initials adopted.").waitFor({ timeout: 30000 });
+    await startSigning(s2, P2, "BR", "P2");
     await pageCanvas(s2, 1).waitFor({ timeout: 60000 });
+    await guidance(s2).filter({ hasText: "Click here to sign" }).waitFor({ timeout: 60000 });
+    if ((await guidance(s2).getAttribute("data-field-id")) !== f.p2Sig.id) fail("P2 Start signing did not guide to P2's Signature");
     if ((await fieldRows(s2).count()) !== 2) fail("P2 does not see exactly its 2 actionable fields");
     if ((await s2.locator("[data-ceremony-document]").count()) !== 2) fail("P2 does not see both documents");
     const p2Html = await s2.content();
@@ -1074,40 +1283,66 @@ async function main() {
       }
     }
 
-    // ---------- Exit and resume (P2) ----------
+    await target(s2, f.p2Sig.id, false).click();
+    await row(s2, "Signature", true).getByText(`Dated ${today}`).waitFor({ timeout: 30000 });
+    // Auto-advance after an accepted placement switches to the addendum and its Initials target.
+    await s2.getByText("Document 2 of 2 · 1 page").waitFor({ timeout: 60000 });
+    await target(s2, f.p2Init.id, false).waitFor({ timeout: 60000 });
+    await guidance(s2).filter({ hasText: "Click here to initial" }).waitFor({ timeout: 60000 });
+    await s2.waitForFunction((id) => document.activeElement?.getAttribute("data-ceremony-target") === id, String(f.p2Init.id), { timeout: 30000 });
+    if (acceptedFor(await placements(a.signingId), f.p2Init.id as string).length !== 0) fail("cross-document auto-advance applied the Initials");
+    ok("cross-document auto-advance: after P2's contract Signature is accepted, the addendum opens with focus and the hint on P2's Initials (not applied)");
+
+    // ---------- Leave for now (Exit) and resume (P2) ----------
+    const p2SigBeforeExit = acceptedFor(await placements(a.signingId), f.p2Sig.id as string);
+    const lastSequenceBeforeExit = Number(
+      ((await admin.from("signing_events").select("sequence_number").eq("signing_id", a.signingId).order("sequence_number", { ascending: false }).limit(1)).data ?? [])[0]?.sequence_number ?? 0,
+    );
     const p2CookieBeforeExit = await ceremonyCookieValue(c2);
-    await s2.getByRole("button", { name: "Exit signing" }).click();
+    await s2.getByRole("button", { name: "Leave for now" }).click();
     await s2.waitForURL(/\/sign\/done\?outcome=exited$/, { timeout: 30000 });
-    await s2.getByText("You left the signing session").waitFor({ timeout: 30000 });
+    await s2.getByText("You left signing for now").waitFor({ timeout: 30000 });
+    await s2.getByText(/You have not declined\./).waitFor();
     if ((await c2.cookies()).some((cookie) => cookie.name === SIGNING_CEREMONY_COOKIE_NAME)) fail("ceremony cookie survived Exit");
     if ((await documentStatusWith(p2CookieBeforeExit, addendumDoc.id)) !== 404) fail("P2's pre-Exit ceremony cookie still reads document bytes");
     {
       const { data: p2Sessions } = await admin
         .from("signing_browser_sessions")
-        .select("status")
+        .select("status, ended_reason")
         .eq("signing_id", a.signingId)
         .eq("signing_participant_id", p2.id);
       if ((p2Sessions ?? []).some((session) => session.status === "ACTIVE")) fail("P2 session still ACTIVE after Exit");
-      if ((await participantRow(a.signingId, P2)).participant_status === "FINISHED") fail("Exit finished P2");
+      const p2AfterExit = await participantRow(a.signingId, P2);
+      if (p2AfterExit.participant_status === "FINISHED" || p2AfterExit.participant_status === "DECLINED" || p2AfterExit.declined_at) fail(`Exit changed P2 to ${p2AfterExit.participant_status}`);
+      if ((await signingRow(a.signingId)).lifecycle_state !== "IN_PROGRESS") fail("Exit changed the Signing lifecycle");
+      const p2SigAfterExit = acceptedFor(await placements(a.signingId), f.p2Sig.id as string);
+      if (p2SigAfterExit.length !== 1 || p2SigAfterExit[0].id !== p2SigBeforeExit[0]?.id) fail("Exit removed or changed P2's Signature");
+      const newEvents = (await admin.from("signing_events").select("event_type").eq("signing_id", a.signingId).gt("sequence_number", lastSequenceBeforeExit).order("sequence_number")).data ?? [];
+      if (newEvents.some((event) => /DECLIN|CANCEL|REMOVED/.test(event.event_type as string))) fail(`Exit recorded ${JSON.stringify(newEvents)}`);
+      console.log(`INFO: P2 browser sessions after Exit: ${JSON.stringify(p2Sessions)}; new P2 events: ${JSON.stringify(newEvents)}`);
     }
     await shot(s2, "p2-00-exited");
+    await manager.goto(`${APP_ORIGIN}/signings/${a.signingId}`, { waitUntil: "networkidle" });
+    {
+      const managerText = await panel(P2).innerText();
+      if (/DECLINED|Cancelled/i.test(managerText)) fail(`manager shows P2 as declined / cancelled after Exit: ${managerText.slice(0, 200)}`);
+    }
     await c2.close();
     ({ context: c2, page: s2 } = await enter(linkP2, P2, "p2-resume"));
+    if ((await s2.getByRole("button", { name: `I am ${P2}` }).count()) !== 1) fail("resume did not ask P2 to confirm identity again");
     await affirm(s2, P2);
-    await s2.getByText("Your fields", { exact: true }).waitFor({ timeout: 60000 });
+    await fieldsHeading(s2).waitFor({ timeout: 60000 });
     if ((await s2.getByRole("button", { name: "I agree to use electronic records and signatures" }).count()) !== 0) fail("P2 re-prompted for consent after Exit");
-    if ((await s2.locator("#typed-signature").count()) !== 0) fail("P2 adopted signature lost after Exit");
-    ok(`P2 Exit: lands on "You left the signing session" (/sign/done?outcome=exited), ceremony cookie cleared, session no longer ACTIVE, participant not finished; reopening the same link + "I am ${P2}" resumes with consent and marks kept`);
-
-    await target(s2, f.p2Sig.id, false).click();
-    await row(s2, "Signature", true).getByText(`Applied · dated ${today}`).waitFor({ timeout: 30000 });
-    // Auto-advance after a placement switches to the addendum and its Initials target.
+    if ((await s2.getByRole("button", { name: "Start signing" }).count()) !== 0) fail("P2 marks lost after Exit");
+    await row(s2, "Signature", true).getByText(`Dated ${today}`).waitFor({ timeout: 30000 });
     await s2.getByText("Document 2 of 2 · 1 page").waitFor({ timeout: 60000 });
-    await target(s2, f.p2Init.id, false).waitFor({ timeout: 60000 });
+    await guidance(s2).filter({ hasText: "Click here to initial" }).waitFor({ timeout: 60000 });
+    if ((await guidance(s2).getAttribute("data-field-id")) !== f.p2Init.id) fail("resume did not guide to P2's remaining Initials");
+    ok(`P2 Leave for now: "You left signing for now … You have not declined." (/sign/done?outcome=exited); ceremony cookie cleared and old cookie gets 404; session no longer ACTIVE; P2 not finished or declined, Signing still IN_PROGRESS, Signature placement unchanged, no decline/cancel event; manager panel not declined; the same link asks "I am ${P2}" again and resumes with consent, marks and the Signature kept, guiding to the remaining Initials on the addendum`);
     await expectTargetAligned(s2, f.p2Init, target(s2, f.p2Init.id, false), "P2 addendum Initials");
     await target(s2, f.p2Init.id, false).click();
     await target(s2, f.p2Init.id, true).waitFor({ timeout: 30000 });
-    await row(s2, "Initials", true).getByText(`Applied · dated ${today}`).waitFor({ timeout: 30000 });
+    await row(s2, "Initials", true).getByText(`Dated ${today}`).waitFor({ timeout: 30000 });
     await dateOnPage(s2, f.p2IniDate!.id).getByText(today).waitFor({ timeout: 30000 });
     const iniDateFirst = acceptedFor(await placements(a.signingId), f.p2IniDate!.id as string);
     if (iniDateFirst.length !== 1) fail("Initials-linked Date was not applied with the Initials");
@@ -1126,17 +1361,18 @@ async function main() {
       fail("reapplying the Initials did not apply a fresh linked Date");
     }
     ok(`P2 addendum: Initials apply their linked Date (${today}); Remove takes the Date off the page and out of effect; reapply gives a fresh Date placement`);
-    await s2.getByText("Every required field is complete.").waitFor();
+    await readyBanner(s2).waitFor();
     await s2.locator(`[data-ceremony-document="${contractDoc.id}"]`).click();
     await target(s2, f.p2Sig.id, true).waitFor({ timeout: 60000 });
     await dateOnPage(s2, f.p2Date.id).getByText(today).waitFor({ timeout: 30000 });
     const p1Unchanged = (await placements(a.signingId)).filter((p) => p.signing_participant_id === p1.id);
     if (JSON.stringify(p1Unchanged) !== JSON.stringify(p1Final)) fail("P1 placements changed during P2 ceremony");
     await shot(s2, "p2-01-ready-to-finish");
-    ok(`P2: entry, "I am ${P2}", consent, read-only "${P2}" adopted, initials "BR"; Sign here on the contract (Date ${today}) auto-advances to the addendum, where Initial here is applied at its stored position; sees only own 2 fields and none of P1's marks; P1 placements unchanged`);
-    await s2.getByRole("button", { name: "Finish signing" }).click();
+    ok(`P2: entry, "I am ${P2}", consent, Start signing with read-only "${P2}" / "BR"; Sign here on the contract (Date ${today}) auto-advances to the addendum, where Initial here is applied at its stored position; sees only own 2 fields and none of P1's marks; P1 placements unchanged`);
+    await finishButton(s2).click();
+    await s2.getByRole("alertdialog").getByRole("button", { name: "Yes, finish signing" }).click();
     await s2.waitForURL(/\/sign\/done\?outcome=finished$/, { timeout: 30000 });
-    await s2.getByText("You finished signing").waitFor({ timeout: 30000 });
+    await s2.getByText("You have finished signing.").waitFor({ timeout: 30000 });
     const finishedAt = Date.now();
     const afterP2 = await signingRow(a.signingId);
     if ((await participantRow(a.signingId, P2)).participant_status !== "FINISHED") fail("P2 not FINISHED");
@@ -1428,20 +1664,44 @@ async function main() {
     }
     await s3.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
     await s3.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
-    await adoptSignature(s3, P3, "P3");
+    await startSigning(s3, P3, null, "P3");
     await pageCanvas(s3, 1).waitFor({ timeout: 60000 });
     const p3SigField = (await revisionFields(b.signingId)).find((field) => field.signing_participant_id === p3.id && field.field_type === "SIGNATURE")!;
     await expectTargetAligned(s3, p3SigField, target(s3, p3SigField.id, false), "P3 Signature");
     await firstOpenTarget(s3, "SIGNATURE").click();
     await target(s3, p3SigField.id, true).waitFor({ timeout: 30000 });
-    await row(s3, "Signature", true).getByText("Applied").waitFor({ timeout: 30000 });
+    await row(s3, "Signature", true).getByText("Completed").waitFor({ timeout: 30000 });
     const p3CookieBeforeDecline = await ceremonyCookieValue(c3);
+    {
+      const leave = await s3.getByRole("button", { name: "Leave for now" }).first().boundingBox();
+      const decline = await s3.getByRole("button", { name: "Decline to sign" }).boundingBox();
+      if (!leave || !decline) fail("Leave for now / Decline to sign not both visible");
+      if (Math.abs(leave.x - decline.x) < 60 && Math.abs(leave.y - decline.y) < 60) fail("Leave for now and Decline to sign sit next to each other");
+    }
+    const declineDialog = s3.getByRole("alertdialog");
     await s3.getByRole("button", { name: "Decline to sign" }).click();
-    await s3.getByText("Declining ends this Signing for everyone. Your agent will be notified.").waitFor();
+    await declineDialog.getByText("Decline to sign?").waitFor();
+    {
+      const text = (await declineDialog.innerText()).replace(/\s+/g, " ");
+      for (const phrase of ["you refuse to sign", "ends this Signing for everyone", "cannot be undone", "choose Leave for now instead"]) {
+        if (!text.includes(phrase)) fail(`Decline confirmation is missing "${phrase}"`);
+      }
+      const focused = await s3.evaluate(() => document.activeElement?.textContent?.trim() ?? "");
+      if (focused !== "Keep signing") fail(`Decline confirmation initial focus is "${focused}", not Keep signing`);
+    }
     await shot(s3, "b01-decline-confirm");
     if ((await signingRow(b.signingId)).lifecycle_state !== "IN_PROGRESS") fail("opening Decline changed state");
+    await declineDialog.getByRole("button", { name: "Keep signing" }).click();
+    await declineDialog.waitFor({ state: "detached" });
+    if ((await signingRow(b.signingId)).lifecycle_state !== "IN_PROGRESS" || (await participantRow(b.signingId, P3)).participant_status === "DECLINED") {
+      fail("Keep signing declined");
+    }
+    await target(s3, p3SigField.id, true).waitFor();
+    ok("Decline is separate from Leave for now; its confirmation says refuse / ends for everyone / cannot be undone / use Leave for now for a break, focuses Keep signing first, and Keep signing returns to the document with nothing declined");
+    await s3.getByRole("button", { name: "Decline to sign" }).click();
+    await declineDialog.getByText("Decline to sign?").waitFor();
     await s3.locator("#decline-reason").fill("QA decline: terms not acceptable");
-    await s3.getByRole("button", { name: "Confirm decline" }).click();
+    await declineDialog.getByRole("button", { name: "Yes, decline to sign" }).click();
     await s3.waitForURL(/\/sign\/done\?outcome=declined$/, { timeout: 30000 });
     await s3.getByText("You declined to sign").waitFor({ timeout: 30000 });
     if ((await documentStatusWith(p3CookieBeforeDecline, docB.id)) !== 404) fail("P3's pre-Decline ceremony cookie still reads document bytes");
@@ -1476,6 +1736,7 @@ async function main() {
     await manager.getByText("DECLINED").first().waitFor({ timeout: 60000 });
     const managerDeclined = await manager.locator("body").innerText();
     if (managerDeclined.includes("Signing operations")) fail("completed-ops panel shown for a Declined Signing");
+    if (/\bCancell?ed\b/i.test(managerDeclined)) fail("manager presents the Declined Signing as Cancelled");
     await shot(manager, "b03-manager-declined");
     ok("manager sees DECLINED; no completed-package operations for the Declined Signing");
 
@@ -1544,24 +1805,48 @@ async function main() {
     const p5 = await addDraftSigningParticipantWithActor(actor, { signingId: c.signingId, fullName: P5, email: `erin-${stamp}@example.com` }, admin);
     const p5Sig = await addField(c.signingId, c.documentId, p5.id, "SIGNATURE", { x: 72, y: 560, width: 150, height: 28 });
     await addField(c.signingId, c.documentId, p5.id, "DATE_SIGNED", { x: 230, y: 566, width: 72, height: 18 }, { linkedSignatureDraftFieldId: p5Sig.id });
+    await addField(c.signingId, c.documentId, p5.id, "INITIALS", { x: 72, y: 200, width: 40, height: 20 }, { isRequired: false });
+    await addField(c.signingId, c.documentId, p5.id, "INITIALS", { x: 72, y: 400, width: 40, height: 20 }, { isRequired: false });
     await manager.goto(`${APP_ORIGIN}/signings/${c.signingId}`, { waitUntil: "networkidle" });
     await manager.getByRole("button", { name: "Begin In-Person Signing" }).click();
     await manager.getByRole("alertdialog").getByRole("button", { name: "Begin In-Person Signing" }).click();
     const handoffButton = panel(P5).getByRole("button", { name: "Hand device to this participant" });
     await handoffButton.waitFor({ timeout: 90000 });
+    const streamClosedLines = () => (existsSync(DEV_LOG) ? readFileSync(DEV_LOG, "utf8").split(/\r?\n/).filter((line) => line.includes("destination stream closed early")).length : 0);
+    const streamClosedBeforeHandoff = streamClosedLines();
     await handoffButton.click();
     await manager.waitForURL(/\/sign\/continue/, { timeout: 60000 });
+    await manager.waitForLoadState("networkidle");
+    console.log(`INFO: dev-server "destination stream closed early" lines logged during the in-person handoff navigation: ${streamClosedLines() - streamClosedBeforeHandoff}`);
     if (!(await managerContext.cookies()).some((cookie) => cookie.name === DEVICE_HANDOFF_LOCK_COOKIE_NAME)) fail("device-handoff lock not set at handoff");
     await affirm(manager, P5);
     await manager.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
     await manager.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
-    await adoptSignature(manager, P5, "P5 in person");
+    await startSigning(manager, P5, "EI", "P5 in person");
     await pageCanvas(manager, 1).waitFor({ timeout: 60000 });
+    {
+      const labels = await manager.locator("li[data-ceremony-field-row] button[aria-label^='Go to Initials']").evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute("aria-label") ?? ""),
+      );
+      if (labels.length !== 2 || !labels[0].includes("1 of 2 on page") || !labels[1].includes("2 of 2 on page") || labels[0] === labels[1]) {
+        fail(`repeated Initials on one page are not disambiguated: ${JSON.stringify(labels)}`);
+      }
+      await manager.locator("li[data-ceremony-field-row] button[aria-label*='2 of 2 on page']").click();
+      await guidance(manager).filter({ hasText: "Click here to initial" }).waitFor({ timeout: 30000 });
+      const hinted = await guidance(manager).getAttribute("data-field-id");
+      const secondInitials = (await revisionFields(c.signingId))
+        .filter((field) => field.signing_participant_id === p5.id && field.field_type === "INITIALS")
+        .sort((x, y) => Number(x.y) - Number(y.y));
+      if (hinted !== secondInitials[1]?.id && hinted !== secondInitials[0]?.id) fail("Your fields row hinted a field that is not P5's Initials");
+      if ((await manager.locator(`[data-ceremony-target="${hinted}"][data-highlighted="true"]`).count()) !== 1) fail("the selected Initials is not highlighted");
+      ok(`repeated Initials on one page are listed distinctly (${labels.join(" | ")}) and the row navigates to its own field`);
+    }
     await firstOpenTarget(manager, "SIGNATURE").click();
-    await row(manager, "Signature", true).getByText("Applied").waitFor({ timeout: 30000 });
+    await row(manager, "Signature", true).getByText("Completed").waitFor({ timeout: 30000 });
     await manager.locator('[data-ceremony-date-field][data-placed="true"]').first().waitFor({ timeout: 30000 });
     await shot(manager, "c00-in-person-document");
-    await manager.getByRole("button", { name: "Finish signing" }).click();
+    await finishButton(manager).click();
+    await manager.getByRole("alertdialog").getByRole("button", { name: "Yes, finish signing" }).click();
     await manager.waitForURL(/\/sign\/return-to-agent$/, { timeout: 30000 });
     await manager.getByText("Return to agent workspace", { exact: true }).waitFor({ timeout: 30000 });
     const inPersonCookies = await managerContext.cookies();
@@ -1595,7 +1880,14 @@ async function main() {
       const documentRequests = participantRequestUrls.filter((requestUrl) => requestUrl.includes("/sign/ceremony/document/")).length;
       ok(`participant browsers made 0 requests to Supabase / Storage; all ${documentRequests} document byte requests went through /sign/ceremony/document/{id}`);
     }
-    const issues = noise.issues();
+    let expectedDisconnects = simulatedDisconnects;
+    const issues = noise.issues().filter((issue) => {
+      if (expectedDisconnects > 0 && issue === "[p1] console.error: Failed to load resource: net::ERR_INTERNET_DISCONNECTED") {
+        expectedDisconnects -= 1;
+        return false;
+      }
+      return true;
+    });
     if (issues.length > 0) fail(`unexpected runtime errors/warnings:\n${issues.join("\n")}`);
     ok("no unexpected browser console errors/warnings, page errors, or dev server ERROR/WARN lines");
     console.log("\nParticipant ceremony browser QA: all checks passed.");

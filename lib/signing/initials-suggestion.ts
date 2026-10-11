@@ -1,6 +1,7 @@
 /**
- * Suggested typed initials from a displayed Signing name. Pure (no server
- * dependencies) so the ceremony and Prepare Documents share one algorithm.
+ * Typed initials derived from a displayed Signing name. Pure (no server
+ * dependencies) so the ceremony, its server validation, and Prepare Documents
+ * share one algorithm.
  */
 
 const NAME_PREFIX_TOKENS = new Set([
@@ -43,8 +44,8 @@ function firstUnicodeLetter(segment: string): string | null {
 }
 
 /**
- * Suggested typed initials from the displayed Signing name (editable by the
- * participant; not validated for equality on adoption).
+ * The participant's typed initials for a Signing: deterministic from the
+ * displayed Signing name, not editable, and exact-match on the server.
  */
 export function suggestTypedInitialsFromDisplayName(displayName: string): string {
   try {

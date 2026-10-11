@@ -4,10 +4,11 @@
  * Proves, against the linked development project only, that:
  * - "I am [Name]" is what creates authority: the ceremony browser session
  *   replaces the Stage 4 entry session, which stops working immediately.
- * - Consent is required before any mark, is recorded as version + fingerprint,
- *   and re-accepting is idempotent.
- * - Typed Signatures must equal the displayed name; Initials may override the
- *   suggestion. Signature and Initials adopt independently; marks lock on use.
+ * - Consent is enforced on the server before any mark, placement or Finish,
+ *   is recorded as version + fingerprint, and re-accepting is idempotent.
+ * - Typed Signatures must equal the displayed name and Initials must equal the
+ *   initials derived from it; Start signing records both from the server
+ *   context, idempotently. Marks lock on use.
  * - The first accepted mark freezes the package revision, a linked Date Signed
  *   follows its Signature in the sender's timezone, and accept/remove/replace
  *   are idempotent on their client request id.
@@ -27,6 +28,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { activateSigningWithActor } from "../lib/signing/activation.ts";
 import {
   adoptCeremonyMark,
+  prepareCeremonyMarks,
   suggestTypedInitialsFromDisplayName,
 } from "../lib/signing/adopted-marks.ts";
 import {
@@ -643,28 +645,45 @@ async function main() {
     );
     const janeFields = await loadFields(signingA.signingId, janeId);
 
-    // 3. No mark before consent.
+    // 3. No mark, placement, or Finish before consent (server-enforced).
     await expectSigningError(
       "placing a signature before consent",
       "CONSENT_REQUIRED",
-      async () => {
-        const context = await writeContext(janeSession);
-        const consent = await checkConsentSatisfied({
+      async () =>
+        acceptFieldPlacement({
           admin,
-          signingId: context.session.signingId,
-          signingParticipantId: context.session.signingParticipantId,
-        });
-        if (!consent.satisfied) {
-          throw new SigningError("CONSENT_REQUIRED", "consent required");
-        }
-        return acceptFieldPlacement({
-          admin,
-          context,
+          context: await writeContext(janeSession),
           signingFieldId: janeFields.signatureFieldId,
           clientRequestId: randomUUID(),
-        });
-      },
+        }),
     );
+    await expectSigningError(
+      "recording a signature before consent",
+      "CONSENT_REQUIRED",
+      async () =>
+        adoptCeremonyMark({
+          admin,
+          context: await writeContext(janeSession),
+          markKind: "SIGNATURE",
+          representationType: "TYPED",
+          typedText: "Jane Q Public",
+        }),
+    );
+    await expectSigningError(
+      "Start signing before consent",
+      "CONSENT_REQUIRED",
+      async () =>
+        prepareCeremonyMarks({ admin, context: await writeContext(janeSession) }),
+    );
+    await expectSigningError(
+      "finishing before consent",
+      "CONSENT_REQUIRED",
+      () => finishParticipantSigning({ admin, session: janeSession }),
+    );
+    if ((await countRows("signing_adopted_marks", signingA.signingId)) !== 0) {
+      fail("a mark was recorded before consent");
+    }
+    ok("marks, placements and Finish are refused before consent (server-side)");
 
     // 4. Consent records version + fingerprint and is idempotent.
     const consentContext = await writeContext(janeSession);
@@ -719,27 +738,57 @@ async function main() {
           typedText: "J. Public",
         }),
     );
-    const overriddenInitials = await adoptCeremonyMark({
-      admin,
-      context: consentContext,
-      markKind: "INITIALS",
-      representationType: "TYPED",
-      typedText: "JP",
-    });
-    if (overriddenInitials.mark.typedText !== "JP") {
-      fail("typed initials override was not accepted");
+    for (const typedText of ["JP", "jqp", "JQPX"]) {
+      await expectSigningError(
+        `typed initials "${typedText}" that differ from the derived initials`,
+        "VALIDATION_FAILED",
+        () =>
+          adoptCeremonyMark({
+            admin,
+            context: consentContext,
+            markKind: "INITIALS",
+            representationType: "TYPED",
+            typedText,
+          }),
+      );
     }
-    const signatureMark = await adoptCeremonyMark({
-      admin,
-      context: consentContext,
-      markKind: "SIGNATURE",
-      representationType: "TYPED",
-      typedText: "Jane Q Public",
-    });
-    if (signatureMark.updated || signatureMark.mark.lockedAt) {
-      fail("adopting an unused signature reported an update or a lock");
+    const prepared = await prepareCeremonyMarks({ admin, context: consentContext });
+    if (
+      prepared.signature?.typedText !== "Jane Q Public" ||
+      prepared.initials?.typedText !== suggestTypedInitialsFromDisplayName("Jane Q Public") ||
+      prepared.signature.lockedAt ||
+      prepared.initials.lockedAt
+    ) {
+      fail("Start signing did not record the exact name and derived initials");
     }
-    // Re-adopting an unused mark is allowed; using it is what locks it.
+    const eventsAfterPrepare = await countRows("signing_events", signingA.signingId);
+    const preparedAgain = await prepareCeremonyMarks({ admin, context: consentContext });
+    if (
+      preparedAgain.signature?.markId !== prepared.signature.markId ||
+      preparedAgain.initials?.markId !== prepared.initials.markId ||
+      (await countRows("signing_events", signingA.signingId)) !== eventsAfterPrepare
+    ) {
+      fail("repeating Start signing re-recorded marks");
+    }
+    const { data: adoptedEvents } = await admin
+      .from("signing_events")
+      .select("event_type, details_json, package_revision_id")
+      .eq("signing_id", signingA.signingId)
+      .in("event_type", ["SIGNATURE_ADOPTED", "INITIALS_ADOPTED"]);
+    const sources = new Map(
+      (adoptedEvents ?? []).map((row) => [
+        row.event_type as string,
+        (row.details_json as Record<string, unknown> | null)?.textSource,
+      ]),
+    );
+    if (
+      sources.get("SIGNATURE_ADOPTED") !== "FROZEN_PARTICIPANT_NAME" ||
+      sources.get("INITIALS_ADOPTED") !== "DERIVED_FROM_FROZEN_PARTICIPANT_NAME" ||
+      (adoptedEvents ?? []).some((row) => !row.package_revision_id)
+    ) {
+      fail("mark evidence lacks its text source or package revision");
+    }
+    // Re-recording an unused mark is allowed; using it is what locks it.
     const readopted = await adoptCeremonyMark({
       admin,
       context: consentContext,
@@ -747,11 +796,13 @@ async function main() {
       representationType: "TYPED",
       typedText: "Jane Q Public",
     });
-    if (!readopted.updated) fail("re-adopting an unused mark was not an update");
+    if (!readopted.updated || readopted.mark.lockedAt) {
+      fail("re-recording an unused signature was not an unlocked update");
+    }
     ok(
-      `typed signature exact-match; initials override allowed (suggestion ${suggestTypedInitialsFromDisplayName(
+      `typed signature exact-match; initials exact-match to the derived ${suggestTypedInitialsFromDisplayName(
         "Jane Q Public",
-      )})`,
+      )} (overrides refused); Start signing records both from the Signing name, idempotently, with text-source evidence`,
     );
 
     // 6. First accepted mark freezes the package and applies Date Signed.

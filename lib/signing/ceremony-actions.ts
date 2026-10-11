@@ -4,7 +4,7 @@ import "server-only";
 
 import { cookies, headers } from "next/headers";
 import { redirect, RedirectType } from "next/navigation";
-import { adoptCeremonyMark } from "@/lib/signing/adopted-marks";
+import { prepareCeremonyMarks } from "@/lib/signing/adopted-marks";
 import {
   buildClearedSigningCeremonyCookieAttributes,
   endCeremonyBrowserSession,
@@ -255,21 +255,10 @@ export async function acceptConsentAction(input: {
   );
 }
 
-export async function adoptCeremonyMarkAction(input: {
-  markKind: unknown;
-  representationType: unknown;
-  typedText?: unknown;
-  drawnPath?: unknown;
-}): Promise<SigningCeremonyActionResult> {
+/** "Start signing": records the marks from the Signing name; no browser-supplied text. */
+export async function startCeremonySigningAction(): Promise<SigningCeremonyActionResult> {
   return withCeremonyWriteContext(({ admin, context }) =>
-    adoptCeremonyMark({
-      admin,
-      context,
-      markKind: input.markKind,
-      representationType: input.representationType,
-      typedText: input.typedText,
-      drawnPath: input.drawnPath,
-    }),
+    prepareCeremonyMarks({ admin, context }),
   );
 }
 
