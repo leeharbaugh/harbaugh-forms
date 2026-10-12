@@ -12,6 +12,20 @@ Each decision should include:
 
 ---
 
+## TypeScript test scripts that import app modules run under tsx
+
+**Date:** 2026-10-12 (Stage 1 / Stage 2 script maintenance)
+
+**Decision:** An npm `test:*` script whose test files import application modules through extensionless relative imports or `@/` aliases runs under `npx --yes tsx --tsconfig tsconfig.json --test`. `node --experimental-strip-types --test` stays acceptable only for tests whose whole import graph uses explicit `.ts` extensions. Application code keeps extensionless imports; it is not changed to satisfy a test runner.
+
+**Reason:** Extensionless imports are the repo convention (`moduleResolution: "bundler"`, no `allowImportingTsExtensions`), and Next builds them correctly. Plain Node type stripping cannot resolve them, so Stage 1 and Stage 2 failed after `lib/signing/feature-gate.ts` began importing `../supabase/project-guard`, while the same tests passed under `tsx`.
+
+**Consequences:** No new dependency (`tsx` is fetched by `npx`, as other suites already do). Existing plain-Node scripts are left alone while their imports stay explicit.
+
+**Related:** `package.json` (`test:native-signing-stage1`, `test:native-signing-stage2`), `lib/signing/feature-gate.ts`.
+
+---
+
 ## The combined package stays post-Complete; the manager dashboard keeps refreshing until it settles
 
 **Date:** 2026-10-12 (combined-package refresh tranche)
