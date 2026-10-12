@@ -1,8 +1,29 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-02 (dev-only `brace-expansion` advisories remediated by a lockfile-only PR, full lockfile audit clean; admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 open for `main`; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live since 2026-10-01 via hotfix `2a92d82` = `a87b1aa` + dependency change only; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
+**As of:** 2026-10-12 (production dependency advisories remediated on `security/dependency-advisories-2026-10` — Next.js 16.3.8, sharp 0.35.5, source-map-js 1.2.2; `npm audit --omit=dev` 0; PR open, not merged, not deployed; separate from Native Signing PR #46). Previously 2026-10-02 (dev-only `brace-expansion` advisories remediated by a lockfile-only PR, full lockfile audit clean; admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 open for `main`; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j live since 2026-10-01 via hotfix `2a92d82` = `a87b1aa` + dependency change only; PR #49 open for `main`; earlier: duplicate packet forms deployed to production via hotfix from `348d309`; `main` not yet deployed; Native Signing enabled for local QA only; production Native Signing unavailable)
 
 ## Current State
+
+### Production dependency advisories remediated (2026-10-12)
+
+**Status:** PR on `security/dependency-advisories-2026-10` from `main` `7733493`; not merged, not deployed. Dependency-only (`package.json` + `package-lock.json`); no application code, config, migration, Supabase, env, or Native Signing change. Production untouched. Independent of Native Signing PR #46, which should be synced with `main` after this merges.
+
+| Package | Before → after | Advisories (GitHub Advisory Database) | Relevance here |
+|---------|----------------|----------------------------------------|----------------|
+| `next` (direct) | 16.3.6 → 16.3.8 (`^16.3.8`) | GHSA-cjq9-62q9-8jv4, GHSA-3w37-wq28-93x7, GHSA-4jqv-mc3x-m676, GHSA-mcj8-r9mp-w47p, GHSA-f87g-xv8r-7p7x, GHSA-39w2-rjm5-chcv (all fixed in 16.3.8) | Affected features are not used (no remote image patterns, Draft Mode, Pages Router, root catch-all, or dynamic metadata images); the MCP one is `next dev` only. Patched because the code ships |
+| `sharp` (optional dep of `next`) | 0.35.4 → 0.35.5 | GHSA-wq5f-xc86-pv6w (bundled librsvg) | Next image optimizer only; the app never imports sharp. Now bundles librsvg 2.63.2 |
+| `source-map-js` (via `postcss`) | 1.2.1 → 1.2.2 | GHSA-68fv-2mgg-jv7q | Build-time CSS tooling; not in production server traces |
+
+No overrides, no `npm audit fix`, no packages added or removed; Node engine requirement unchanged (`>=20.9.0`).
+
+| Item | Result |
+|------|--------|
+| Audit | `npm audit --omit=dev`: 3 high → 0. Full `npm audit`: 12 (10 high, 2 moderate) → 9 (7 high, 2 moderate) |
+| Remaining (dev/build only, deferred) | `braces` (GHSA-vfj7-8cjw-p6xm; no patched release exists) via Tailwind 3 and `eslint-config-next`; `postcss-selector-parser` (GHSA-rj75-hqrm-r3gf) via Tailwind 3 — fix needs the Tailwind 4 migration |
+| Regression | Clean `npm ci`; `tsc` pass; `git diff --check` clean; all 52 `test:*` scripts pass (same counts as `main`); `build:validate` pass with Native Signing off, route table identical to `main` on 16.3.6 |
+| Dev smoke | Auth redirects, login, dashboard, Packets list/detail, Contacts, Collections, Forms, Settings, Fill Form PDF rendering, Admin pages, client navigation: pass, results identical to `main` on 16.3.6; 0 server errors/warnings |
+
+**Next step:** merge this PR into `main`, sync PR #46 with the patched `main` and rerun its Signing regressions; production rollout separately with Lee's approval.
 
 ### Packet Created/Updated timestamps in Central time (2026-10-02)
 
