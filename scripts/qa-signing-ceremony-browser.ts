@@ -62,6 +62,7 @@ import { SIGNING_ENTRY_COOKIE_NAME } from "../lib/signing/entry-sessions.ts";
 import { verifySigningEventChain } from "../lib/signing/event-chain.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
 import { acceptFieldPlacement } from "../lib/signing/placements.ts";
+import { renameSigningForActor } from "../lib/signing/rename.ts";
 import type { SigningActor } from "../lib/signing/types.ts";
 import type { Profile } from "../lib/types/profile.ts";
 import { createRuntimeNoiseGuard } from "./qa-runtime-noise.ts";
@@ -126,6 +127,8 @@ async function main() {
   const generatedPaths: string[] = [];
   const signingIds: string[] = [];
   const contactIds: number[] = [];
+  const extraUserIds: string[] = [];
+  const extraOrganizationIds: string[] = [];
   const secrets: string[] = [];
   const devLogStart = existsSync(DEV_LOG) ? readFileSync(DEV_LOG, "utf8").length : 0;
   mkdirSync(OUT_DIR, { recursive: true });
@@ -513,6 +516,51 @@ async function main() {
   async function expectedDate(signingId: string) {
     const tz = (await signingRow(signingId)).sender_timezone ?? "America/Chicago";
     return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  }
+
+  /** A signed-in workspace user with no association to the QA Signings. */
+  async function signedInOutsider(label: string, otherBrokerage: boolean) {
+    let outsiderOrganizationId = organizationId;
+    if (otherBrokerage) {
+      const { data: otherOrg } = await admin.from("organizations").insert({ name: `Ceremony QA Other Brokerage ${stamp}`, status: "ACTIVE" }).select("id").single();
+      outsiderOrganizationId = otherOrg!.id as string;
+      extraOrganizationIds.push(outsiderOrganizationId);
+    }
+    const outsiderEmail = `ceremony-qa-${label}-${stamp}@example.com`;
+    const { data: createdOutsider, error } = await admin.auth.admin.createUser({
+      email: outsiderEmail,
+      password: `CeremonyQa-${randomUUID()}!aA1`,
+      email_confirm: true,
+    });
+    if (error || !createdOutsider.user) fail(error?.message ?? `${label} user`);
+    extraUserIds.push(createdOutsider.user.id);
+    await admin.from("profiles").upsert({
+      id: createdOutsider.user.id,
+      email: outsiderEmail,
+      status: "ACTIVE",
+      app_role: "USER",
+      onboarding_status: "ACTIVE",
+      display_name: `Ceremony QA ${label}`,
+      first_name: "Ceremony",
+      last_name: label,
+      primary_organization_id: outsiderOrganizationId,
+      must_change_password: false,
+    });
+    await admin.from("organization_members").insert({
+      organization_id: outsiderOrganizationId,
+      user_id: createdOutsider.user.id,
+      membership_role: otherBrokerage ? "ORG_ADMIN" : "MEMBER",
+      status: "ACTIVE",
+    });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    const { data: outsiderLink } = await admin.auth.admin.generateLink({ type: "magiclink", email: outsiderEmail });
+    await page.goto(
+      `${APP_ORIGIN}/auth/confirm?token_hash=${encodeURIComponent(outsiderLink!.properties!.hashed_token)}&type=magiclink&next=${encodeURIComponent("/signings")}`,
+      { waitUntil: "networkidle" },
+    );
+    if (page.url().includes("/auth/")) fail(`${label} sign-in failed`);
+    return { context, page };
   }
 
   async function expectRefused(link: string, label: string) {
@@ -1467,6 +1515,7 @@ async function main() {
     ok(`P2: entry, "I am ${P2}", consent, Start signing with read-only "${P2}" / "BR"; Sign here on the contract (Date ${today}) auto-advances to the addendum, where Initial here is applied at its stored position; sees only own 2 fields and none of P1's marks; P1 placements unchanged`);
     if (!manager.url().endsWith(`/signings/${a.signingId}`)) fail(`manager is not on Signing A before P2 finishes (${manager.url()})`);
     await manager.evaluate(() => { (window as unknown as { __qaLive?: string }).__qaLive = "a"; });
+    if ((await manager.getByTestId("completed-documents").count()) !== 0) fail("Completed documents shown while In Progress");
     await finishButton(s2).click();
     await s2.getByRole("alertdialog").getByRole("button", { name: "Yes, finish signing" }).click();
     await s2.waitForURL(/\/sign\/done\?outcome=finished$/, { timeout: 30000 });
@@ -1508,6 +1557,17 @@ async function main() {
       if ((await manager.evaluate(() => (window as unknown as { __qaLive?: string }).__qaLive)) !== "a") fail("the manager page reloaded");
       if ((await manager.getByRole("button", { name: "Copy signing link" }).count()) !== 0) fail("the live manager page still offers Copy signing link after Complete");
       ok(`live refresh (Complete): the manager page left open since before P2 finished showed COMPLETE / Finalization VERIFIED ${((Date.now() - finishedAt) / 1000).toFixed(1)}s after Finish (${((Date.now() - completeAt) / 1000).toFixed(1)}s after the server reached COMPLETE), with no reload`);
+      const liveSection = manager.getByTestId("completed-documents");
+      await liveSection.waitFor({ timeout: 10000 }).catch(() => fail("the live manager page did not show Completed documents with Complete"));
+      const liveRows = await liveSection.locator("li[data-completed-artifact]").evaluateAll((rows) =>
+        rows.map((row) => `${row.getAttribute("data-completed-artifact")}:${row.getAttribute("data-artifact-label")}`),
+      );
+      if (liveRows.filter((row) => row.startsWith("DOCUMENT:")).length !== 2 || !liveRows.includes("CERTIFICATE:Audit certificate")) {
+        fail(`live Completed documents rows: ${JSON.stringify(liveRows)}`);
+      }
+      if ((await manager.evaluate(() => (window as unknown as { __qaLive?: string }).__qaLive)) !== "a") fail("the manager page reloaded");
+      await shot(manager, "a02b-live-completed-documents");
+      ok(`live refresh (Completed documents): the same stale tab shows the Completed documents section (${liveRows.length} rows: ${liveRows.join(", ")}) in the watcher refresh that saw COMPLETE, with no reload`);
     }
 
     const { data: artifacts } = await admin
@@ -1689,6 +1749,13 @@ async function main() {
         seenHashes.add(hash);
       }
       if (seenHashes.size !== 2) fail("completed-package downloads did not cover both documents");
+      for (const suffix of ["", "?download=1"]) {
+        const managerRoute = await context.request.get(`${APP_ORIGIN}/signings/${a.signingId}/completed/${completed[0].id}${suffix}`, { maxRedirects: 0 });
+        if (managerRoute.status() === 200 || (await managerRoute.body()).subarray(0, 5).toString("latin1") === "%PDF-") {
+          fail(`a completed-package (participant) session reached the manager completed-document route (${managerRoute.status()})`);
+        }
+      }
+      ok("a participant completed-package session cannot use the manager completed-document View / Download route");
       await shot(page, "a02-completed-package");
       await context.close();
       ok("completed-package link (account-free) lists both completed documents + Audit certificate; both downloads are 200 and byte-identical to the verified artifacts");
@@ -1707,6 +1774,174 @@ async function main() {
     const managerDownloads = await manager.locator('a[href*="artifact"], a[download]').count();
     await shot(manager, "a03-manager-complete");
     ok(`manager view: COMPLETE badge, Finalization VERIFIED, completed-package delivery rows (participants + copy recipient), no participant link controls; completed-document view/download links on manager page: ${managerDownloads}`);
+
+    // ---------- manager completed documents: View / Download ----------
+    const completedUrl = (signingId: string, artifactId: string, download = false) =>
+      `${APP_ORIGIN}/signings/${signingId}/completed/${artifactId}${download ? "?download=1" : ""}`;
+    const fingerprints = new Map<string, string>();
+    {
+      const section = manager.getByTestId("completed-documents");
+      await section.waitFor({ timeout: 30000 });
+      const rows = await section.locator("li[data-completed-artifact]").evaluateAll((items) =>
+        items.map((item) => ({ kind: item.getAttribute("data-completed-artifact") ?? "", label: item.getAttribute("data-artifact-label") ?? "" })),
+      );
+      const labels = rows.map((row) => `${row.kind}:${row.label}`);
+      if (labels[0] !== "DOCUMENT:Ceremony QA Contract" || labels[1] !== "DOCUMENT:Ceremony QA Addendum" || labels[2] !== "CERTIFICATE:Audit certificate") {
+        fail(`Completed documents rows (package order, then certificate): ${JSON.stringify(labels)}`);
+      }
+      const sectionText = await section.innerText();
+      if (/[0-9a-f]{8}-[0-9a-f]{4}-|signings\/|artifacts\/|sha256|revision/i.test(sectionText)) fail("Completed documents shows ids, keys or revision details");
+      const sectionTop = (await section.boundingBox())!.y;
+      const opsTop = (await manager.getByText("Signing operations").first().boundingBox())!.y;
+      if (sectionTop > opsTop) fail("Completed documents is below the operations panel");
+      const hrefs = await section.locator("a[download]").evaluateAll((links) => links.map((link) => link.getAttribute("href") ?? ""));
+      if (hrefs.some((href) => !/^\/signings\/[0-9a-f-]{36}\/completed\/[0-9a-f-]{36}\?download=1$/.test(href))) fail(`Download links are not opaque same-origin routes: ${JSON.stringify(hrefs)}`);
+      ok(`Completed documents (Complete only): ${labels.join(", ")}; above Signing operations; manager-friendly names, no ids or storage keys; Download links are opaque /signings/{id}/completed/{artifactId} routes`);
+
+      const artifactsByLabel = new Map<string, Record<string, unknown>>([
+        ["Ceremony QA Contract", completed.find((artifact) => artifact.package_revision_document_id === contractDoc.id)!],
+        ["Ceremony QA Addendum", completed.find((artifact) => artifact.package_revision_document_id === addendumDoc.id)!],
+        ["Audit certificate", certificates[0]],
+      ]);
+      const savedFile: Record<string, string> = {
+        "Ceremony QA Contract": "completed_document-contract.pdf",
+        "Ceremony QA Addendum": "completed_document-addendum.pdf",
+        "Audit certificate": "audit_certificate.pdf",
+      };
+      if (labels.includes("COMBINED:Combined signed package")) {
+        const { data: combined } = await admin
+          .from("signing_artifacts")
+          .select("id, content_sha256")
+          .eq("signing_id", a.signingId)
+          .eq("artifact_category", "COMBINED_PACKAGE")
+          .not("verified_at", "is", null)
+          .single();
+        if (!combined) fail("Combined signed package listed without a verified artifact");
+        artifactsByLabel.set("Combined signed package", combined);
+      }
+      for (const [label, artifact] of artifactsByLabel) {
+        const view = await managerContext.request.get(completedUrl(a.signingId, artifact.id as string));
+        const download = await managerContext.request.get(completedUrl(a.signingId, artifact.id as string, true));
+        const viewBytes = await view.body();
+        const downloadBytes = await download.body();
+        const expectedName = label === "Audit certificate" ? "Audit certificate.pdf" : label === "Combined signed package" ? "Combined signed package.pdf" : `${label} - signed.pdf`;
+        if (view.status() !== 200 || download.status() !== 200) fail(`${label}: View ${view.status()} / Download ${download.status()}`);
+        if (view.headers()["content-type"] !== "application/pdf" || download.headers()["content-type"] !== "application/pdf") fail(`${label}: not served as application/pdf`);
+        if (!view.headers()["content-disposition"]?.startsWith(`inline; filename="${expectedName}"`)) fail(`${label}: View disposition ${view.headers()["content-disposition"]}`);
+        if (!download.headers()["content-disposition"]?.startsWith(`attachment; filename="${expectedName}"`)) fail(`${label}: Download disposition ${download.headers()["content-disposition"]}`);
+        if (!/no-store/.test(view.headers()["cache-control"] ?? "") || view.headers()["x-content-type-options"] !== "nosniff") fail(`${label}: missing no-store / nosniff`);
+        if (sha256(viewBytes) !== artifact.content_sha256 || !viewBytes.equals(downloadBytes) || view.headers()["x-signing-artifact-sha256"] !== artifact.content_sha256) {
+          fail(`${label}: View / Download bytes differ from each other or from the recorded SHA-256`);
+        }
+        if (savedFile[label] && !viewBytes.equals(readFileSync(path.join(OUT_DIR, savedFile[label])))) fail(`${label}: served bytes differ from the verified artifact checked above`);
+        fingerprints.set(artifact.id as string, sha256(viewBytes));
+      }
+      ok(`View (inline) and Download (attachment) of ${[...artifactsByLabel.keys()].join(", ")} return byte-identical`);
+      ok("View / Download parity: byte-identical application/pdf bodies equal to the finalization SHA-256 and to the artifacts whose Signature / Initials / Date / Printed Name / Checkmark were verified above; no-store + nosniff; filenames \"Ceremony QA Contract - signed.pdf\", \"Ceremony QA Addendum - signed.pdf\", \"Audit certificate.pdf\"");
+
+      const contractRow = section.locator('li[data-artifact-label="Ceremony QA Contract"]');
+      const viewButton = contractRow.getByRole("button", { name: "View Ceremony QA Contract" });
+      await viewButton.click();
+      const viewer = manager.getByTestId("completed-document-viewer");
+      await viewer.waitFor();
+      await viewer.locator("[data-completed-page] canvas").nth(1).waitFor({ timeout: 60000 });
+      if ((await viewer.locator("[data-completed-page]").count()) !== 2) fail("viewer did not render both contract pages");
+      const viewerText = await viewer.innerText();
+      if (!viewerText.includes("Ceremony QA Contract") || !/read-only/i.test(viewerText)) fail("viewer header missing the document name / read-only note");
+      if ((await viewer.getByRole("button", { name: /Prepare|Add field|Send|Save|Edit/ }).count()) !== 0) fail("viewer offers editing controls");
+      const zoom = viewer.getByTestId("completed-viewer-zoom");
+      const pageWidth = async () => (await viewer.locator("[data-completed-page] canvas").first().boundingBox())!.width;
+      const fitWidth = await pageWidth();
+      const zoomBefore = await zoom.innerText();
+      await viewer.getByRole("button", { name: "Zoom in" }).click();
+      await manager.waitForTimeout(400);
+      if ((await zoom.innerText()) === zoomBefore || (await pageWidth()) <= fitWidth) fail("Zoom in did not enlarge the page");
+      await viewer.getByRole("button", { name: "Zoom out" }).click();
+      await viewer.getByRole("button", { name: "Zoom out" }).click();
+      await manager.waitForTimeout(400);
+      if ((await pageWidth()) >= fitWidth) fail("Zoom out did not shrink the page");
+      await viewer.getByRole("button", { name: "Fit Page" }).click();
+      await manager.waitForTimeout(400);
+      const fitPageWidth = await pageWidth();
+      await viewer.getByRole("button", { name: "Fit Width" }).click();
+      await manager.waitForTimeout(400);
+      if (Math.abs((await pageWidth()) - fitWidth) > 2 || fitPageWidth >= fitWidth) fail(`Fit Page (${fitPageWidth}) / Fit Width (${await pageWidth()} vs ${fitWidth}) did not behave`);
+      await shot(manager, "a04-completed-viewer");
+      const [uiDownload] = await Promise.all([
+        manager.waitForEvent("download"),
+        viewer.getByRole("link", { name: /Download/ }).click(),
+      ]);
+      if (uiDownload.suggestedFilename() !== "Ceremony QA Contract - signed.pdf") fail(`viewer Download filename: ${uiDownload.suggestedFilename()}`);
+      const uiBytes = readFileSync((await uiDownload.path())!);
+      if (sha256(uiBytes) !== fingerprints.get(artifactsByLabel.get("Ceremony QA Contract")!.id as string)) fail("viewer Download bytes differ from the viewed artifact");
+      await manager.keyboard.press("Escape");
+      await viewer.waitFor({ state: "detached" });
+      if (!(await viewButton.evaluate((button) => button === document.activeElement))) fail("focus did not return to the View button");
+      ok(`View: full-screen read-only viewer for "Ceremony QA Contract" rendered both pages; Zoom in / out, Fit Page and Fit Width work (fit width ${Math.round(fitWidth)}px, fit page ${Math.round(fitPageWidth)}px); no editing controls; the viewer's Download saved "Ceremony QA Contract - signed.pdf" with the same SHA-256; Escape closes and returns focus`);
+
+      const [rowDownload] = await Promise.all([
+        manager.waitForEvent("download"),
+        section.locator('li[data-artifact-label="Ceremony QA Addendum"]').getByRole("link", { name: "Download Ceremony QA Addendum" }).click(),
+      ]);
+      if (rowDownload.suggestedFilename() !== "Ceremony QA Addendum - signed.pdf") fail(`row Download filename: ${rowDownload.suggestedFilename()}`);
+      if (sha256(readFileSync((await rowDownload.path())!)) !== fingerprints.get(artifactsByLabel.get("Ceremony QA Addendum")!.id as string)) fail("row Download bytes differ");
+      ok("multiple documents: the addendum's row Download saves its own artifact (\"Ceremony QA Addendum - signed.pdf\"), distinct from the contract");
+
+      // Post-completion changes never reach the completed artifacts.
+      await renameSigningForActor(actor, { signingId: a.signingId, title: `Ceremony QA Renamed After Complete ${stamp}` }, admin);
+      await admin.from("packets").update({ label: `Ceremony QA Packet CHANGED ${stamp}` }).eq("id", packetId);
+      await admin.from("packet_forms").update({ document_name: "Ceremony QA Contract CHANGED", field_data: { changed: true } }).eq("id", formA);
+      {
+        const changed = await PDFDocument.create();
+        const font = await changed.embedFont(StandardFonts.Helvetica);
+        changed.addPage([612, 792]).drawText("CHANGED SOURCE AFTER COMPLETE", { x: 72, y: 720, size: 18, font });
+        const { error } = await admin.storage.from(GENERATED_DOCUMENTS_BUCKET).upload(generatedPaths[0], await changed.save(), { contentType: "application/pdf", upsert: true });
+        if (error) fail(`source overwrite failed: ${error.message}`);
+      }
+      await manager.reload({ waitUntil: "networkidle" });
+      await manager.getByTestId("completed-documents").waitFor({ timeout: 60000 });
+      const rowsAfter = await manager.getByTestId("completed-documents").locator("li[data-completed-artifact]").evaluateAll((items) =>
+        items.map((item) => `${item.getAttribute("data-completed-artifact")}:${item.getAttribute("data-artifact-label")}`),
+      );
+      if (JSON.stringify(rowsAfter) !== JSON.stringify(labels)) fail(`Completed documents changed after source edits: ${JSON.stringify(rowsAfter)}`);
+      for (const [artifactId, fingerprint] of fingerprints) {
+        const again = await managerContext.request.get(completedUrl(a.signingId, artifactId, true));
+        if (again.status() !== 200 || sha256(await again.body()) !== fingerprint) fail("completed bytes changed after rename / Packet / source changes");
+      }
+      const { data: artifactsAfter } = await admin.from("signing_artifacts").select("id, content_sha256, storage_object_key, frozen_filename").eq("signing_id", a.signingId).in("artifact_category", ["COMPLETED_DOCUMENT", "AUDIT_CERTIFICATE"]);
+      for (const row of artifactsAfter ?? []) {
+        const before = (artifacts ?? []).find((artifact) => artifact.id === row.id);
+        if (!before || before.content_sha256 !== row.content_sha256 || before.storage_object_key !== row.storage_object_key || before.frozen_filename !== row.frozen_filename) fail("artifact metadata changed after source edits");
+      }
+      await shot(manager, "a05-completed-documents-after-changes");
+      ok(`immutable: after renaming the Signing, renaming the Packet, editing the source Packet form (name + field data) and overwriting its source PDF, the Completed documents rows, artifact metadata and all ${fingerprints.size} SHA-256 fingerprints are unchanged (Contact-linked Complete immutability: completion-delivery validator)`);
+
+      // Denials: guessed / malformed ids, logged out, unrelated users.
+      for (const [label, artifactId] of [["guessed artifact id", randomUUID()], ["non-UUID id", "not-a-uuid"], ["path-like id", "..%2F..%2Fsignings"]] as const) {
+        const response = await managerContext.request.get(completedUrl(a.signingId, artifactId));
+        if (response.status() !== 404) fail(`${label}: ${response.status()}`);
+      }
+      {
+        const anon = await browser.newContext();
+        for (const download of [false, true]) {
+          const response = await anon.request.get(completedUrl(a.signingId, completed[0].id as string, download), { maxRedirects: 0 });
+          if (response.status() === 200) fail("logged-out request reached a completed document");
+        }
+        await anon.close();
+      }
+      for (const [label, otherBrokerage] of [["outsider", false], ["elsewhere", true]] as const) {
+        const { context, page } = await signedInOutsider(label, otherBrokerage);
+        await page.goto(`${APP_ORIGIN}/signings/${a.signingId}`, { waitUntil: "networkidle" });
+        if ((await page.getByTestId("completed-documents").count()) !== 0) fail(`${label} sees Completed documents`);
+        for (const download of [false, true]) {
+          const response = await context.request.get(completedUrl(a.signingId, completed[0].id as string, download), { maxRedirects: 0 });
+          if (response.status() !== 404) fail(`${label} direct ${download ? "Download" : "View"}: ${response.status()}`);
+        }
+        await shot(page, `a06-${label}-denied`);
+        await context.close();
+      }
+      ok("denied: guessed / non-UUID / path-like artifact ids (404); logged-out View and Download (no PDF); a same-brokerage user with no association and an other-brokerage admin see no Completed documents and get 404 on direct View and Download");
+    }
     await expectRefused(linkP1, "P1 invitation link after Complete");
     {
       const { data: postWork } = await admin
@@ -1863,6 +2098,12 @@ async function main() {
     if (/\bCancell?ed\b/i.test(managerDeclined)) fail("manager presents the Declined Signing as Cancelled");
     await shot(manager, "b03-manager-declined");
     ok("manager sees DECLINED; no completed-package operations for the Declined Signing");
+    if ((await manager.getByTestId("completed-documents").count()) !== 0) fail("Completed documents shown for a Declined Signing");
+    for (const download of [false, true]) {
+      const crossSigning = await managerContext.request.get(completedUrl(b.signingId, completed[0].id as string, download));
+      if (crossSigning.status() !== 404) fail(`Signing A's artifact served under Declined Signing B (${crossSigning.status()})`);
+    }
+    ok("Declined: no Completed documents section; Signing A's artifact id requested under Signing B (cross-Signing) gets 404 for View and Download");
 
     // ---------- Signing D: identity is live while Draft, frozen once sent; Cancel ----------
     const { data: contactD, error: contactDError } = await admin
@@ -1893,6 +2134,7 @@ async function main() {
     await manager.goto(`${APP_ORIGIN}/signings/${d.signingId}`, { waitUntil: "networkidle" });
     const draftRowD = manager.locator('[data-testid="draft-participant-list"] div.rounded-lg', { hasText: "Francine Frozen" }).first();
     await draftRowD.waitFor({ timeout: 60000 });
+    if ((await manager.getByTestId("completed-documents").count()) !== 0) fail("Completed documents shown for a Draft Signing");
     if (!(await draftRowD.locator('[data-testid="participant-identity-source"]').innerText()).trim().startsWith("From Contact")) {
       fail("linked Draft participant must show its identity source");
     }
@@ -1927,6 +2169,9 @@ async function main() {
     await manager.getByText("Signing cancelled. Create a new Signing to send corrected documents.").waitFor({ timeout: 60000 });
     if ((await signingRow(d.signingId)).lifecycle_state !== "CANCELLED") fail("Cancel Signing did not cancel");
     await shot(manager, "d01-cancelled");
+    if ((await manager.getByTestId("completed-documents").count()) !== 0) fail("Completed documents shown for a Cancelled Signing");
+    if ((await managerContext.request.get(completedUrl(d.signingId, completed[0].id as string))).status() !== 404) fail("Signing A's artifact served under Cancelled Signing D");
+    ok("lifecycle gating: no Completed documents on Draft (Signing D before Send), In Progress (Signing A before P2 finished), Declined (B) or Cancelled (D); cross-Signing artifact ids get 404");
     ok("Cancel Signing: confirmation (Keep Signing keeps it); confirm → CANCELLED with the corrected-documents guidance");
     {
       await watcherTab.waitForTimeout(1500);
@@ -2053,15 +2298,23 @@ async function main() {
     if (process.env.QA_KEEP_FIXTURES === "1") {
       console.log(`Fixtures kept: signings ${signingIds.join(", ")}`);
     } else {
-      await cleanup(admin, { signingIds, contactIds, generatedPaths, packetFormIds, packetId, userId, organizationId });
+      await cleanup(admin, { signingIds, contactIds, generatedPaths, packetFormIds, packetId, userId, organizationId, extraUserIds, extraOrganizationIds });
     }
   }
 }
 
 async function cleanup(
   admin: SupabaseClient,
-  fixture: { signingIds: string[]; contactIds: number[]; generatedPaths: string[]; packetFormIds: number[]; packetId: number; userId: string; organizationId: string },
+  fixture: { signingIds: string[]; contactIds: number[]; generatedPaths: string[]; packetFormIds: number[]; packetId: number; userId: string; organizationId: string; extraUserIds: string[]; extraOrganizationIds: string[] },
 ) {
+  for (const extraUserId of fixture.extraUserIds) {
+    await admin.from("organization_members").delete().eq("user_id", extraUserId);
+    await admin.from("profiles").delete().eq("id", extraUserId);
+    await admin.auth.admin.deleteUser(extraUserId);
+  }
+  for (const extraOrganizationId of fixture.extraOrganizationIds) {
+    await admin.from("organizations").delete().eq("id", extraOrganizationId);
+  }
   for (const signingId of fixture.signingIds) {
     const keys: string[] = [];
     for (const [table, column] of [

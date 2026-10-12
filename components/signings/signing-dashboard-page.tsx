@@ -1,6 +1,7 @@
 "use client";
 
 import { ListPageHeader } from "@/components/list-page-header";
+import { SigningCompletedDocuments } from "@/components/signings/signing-completed-documents";
 import { SigningCompletedOpsPanel } from "@/components/signings/signing-completed-ops-panel";
 import { SigningCopyRecipientsPanel } from "@/components/signings/signing-copy-recipients-panel";
 import { SigningDraftPrepPanel } from "@/components/signings/signing-draft-prep-panel";
@@ -583,6 +584,13 @@ export function SigningDashboardPage({
           <p className="font-medium">{outcome.title}</p>
           <p>{outcome.body}</p>
         </div>
+      ) : null}
+
+      {dashboard.signing.lifecycleState === "COMPLETE" ? (
+        <SigningCompletedDocuments
+          signingId={signingId}
+          artifacts={dashboard.completedDocuments}
+        />
       ) : null}
 
       {isDraft && canManage ? (

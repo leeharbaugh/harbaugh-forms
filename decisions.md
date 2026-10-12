@@ -12,6 +12,29 @@ Each decision should include:
 
 ---
 
+## Managers view and download the immutable completed artifacts, server-mediated and only once Complete
+
+**Date:** 2026-10-11 (completed-document access tranche)
+
+**Decision:**
+1. Managers get the actual completed artifacts, never regenerated state. The only source is verified `signing_artifacts` rows (COMPLETED_DOCUMENT, AUDIT_CERTIFICATE, and COMBINED_PACKAGE when its post-Complete work item has produced it) for the Signing's `frozen_package_revision_id`, in the private `signing-artifacts` bucket. Nothing is rendered from the live Packet, Contacts, Packet fields or Draft, and no parallel store is introduced.
+2. Access is server-mediated. `GET /signings/{signingId}/completed/{artifactId}` authenticates (`requireSigningActor`), then checks authority (`canReadCompletedSigningArtifacts`, the existing rule: COMPLETE plus `canRead`, which covers primary agent, co-agent, active TC, originating-brokerage ORG_ADMIN, and historical agent and operator associations, with no Global Admin path). Only after that does it read with the service role. The browser sends only the Signing id and an opaque artifact id, never a bucket or path. The artifact must belong to that Signing, its frozen revision and, for documents, a revision document of that revision, with a bucket and key under `signings/{signingId}/artifacts/`. Anything else gets 404.
+3. View and Download use the same artifact. View is `inline` and Download (`?download=1`) is `attachment`, with the same bytes, the same SHA-256 header and a stable document-based filename (`{frozen document name} - signed.pdf`, `Audit certificate.pdf`, `Combined signed package.pdf`). Bytes are re-hashed on every serve. A mismatch with the recorded `content_sha256` or `byte_size` returns 409 and is never served. For manager access this deliberately supersedes the earlier "untrusted-but-viewable" note.
+4. Access is lifecycle-gated to Complete. The dashboard lists completed artifacts only when the lifecycle is COMPLETE and authority allows. The route enforces the same rule, so Draft, In Progress, Declined and Cancelled get no section and no bytes. The Completed documents card sits at the top of the Complete dashboard. The existing 20 s watcher brings it in when it first sees COMPLETE, because finalization verifies the completed documents and certificate before Complete.
+5. Post-completion changes don't alter artifacts. Renaming the Signing, editing or renaming the Packet and its forms, overwriting the source PDF, and renaming a linked Contact change neither the listed names (frozen revision names), the artifact rows nor the bytes. The validator and browser QA both check this.
+
+**Reason:**
+Managers had no way to see what was signed. Lee's QA flagged this as a pre-production blocker. The artifacts, their fingerprints and the authority rule already existed, so the narrowest correct design reuses them behind one authorized route.
+
+**Consequences:**
+* Manager access is not logged in `signing_completed_package_access_log`, which has no actor-user column. Adding one would need a migration and was out of scope.
+* A combined package produced after the first Complete refresh appears on the next dashboard load.
+* The participant completed-package route still serves without re-hashing (recorded, unchanged).
+
+**Related:** `lib/signing/completed-documents.ts`, `app/signings/[signingId]/completed/[artifactId]/route.ts`, `lib/signing/dashboard.ts`, `components/signings/signing-completed-documents.tsx`, `components/signings/completed-document-viewer.tsx`, `components/signings/signing-dashboard-page.tsx`, `lib/signing/completed-documents.test.ts`, `scripts/validate-native-signing-completion-delivery-dev.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
 ## Applied marks show their full text inside the stored field box, identically in the ceremony and the completed PDF
 
 **Date:** 2026-10-11 (ceremony-regression tranche)

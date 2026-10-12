@@ -74,7 +74,7 @@
     "validate:native-signing-tc-authority-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-tc-authority-dev.ts",
     "test:native-signing-stage6": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/stage6-finalization.test.ts",
     "validate:native-signing-stage6-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-stage6-dev.ts",
-    "test:native-signing-completion-delivery": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/completion-delivery.test.ts",
+    "test:native-signing-completion-delivery": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/completion-delivery.test.ts lib/signing/completed-documents.test.ts",
     "validate:native-signing-completion-delivery-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-completion-delivery-dev.ts",
     "test:native-signing-recovery-access": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/recovery-access.test.ts",
     "validate:native-signing-recovery-access-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-recovery-access-dev.ts",

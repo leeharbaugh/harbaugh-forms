@@ -37,6 +37,10 @@ import { requireManageableDraftSigning } from "./manage";
 import { loadSigningAuthorityBundle } from "./authority-context";
 import { canRenameSigning } from "./rename";
 import {
+  listCompletedArtifactsForActor,
+  type ManagerCompletedArtifact,
+} from "./completed-documents";
+import {
   autoAddDraftPacketParticipants,
   listDraftPacketAutoAddNotice,
   loadDraftRemovedPacketParticipantsWithActor,
@@ -116,6 +120,8 @@ export type SigningDashboard = {
   blockers: SigningReadinessBlocker[];
   documents: SigningDashboardDocument[];
   participants: SigningDashboardParticipant[];
+  /** Complete only, for actors who may read completed artifacts; otherwise empty. */
+  completedDocuments: ManagerCompletedArtifact[];
 };
 
 export async function loadSigningDashboardForActor(
@@ -363,6 +369,11 @@ export async function loadSigningDashboardForActor(
       });
   }
 
+  const completedDocuments =
+    summary.lifecycleState === "COMPLETE"
+      ? ((await listCompletedArtifactsForActor(actor, summary.id, admin)) ?? [])
+      : [];
+
   return {
     participantSync: { addedFromPacket },
     draftPrep: await draftPrepLoad,
@@ -378,5 +389,6 @@ export async function loadSigningDashboardForActor(
     blockers,
     documents,
     participants,
+    completedDocuments,
   };
 }
