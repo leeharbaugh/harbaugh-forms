@@ -20,9 +20,9 @@ Each decision should include:
 
 **Reason:** Extensionless imports are the repo convention (`moduleResolution: "bundler"`, no `allowImportingTsExtensions`), and Next builds them correctly. Plain Node type stripping cannot resolve them, so Stage 1 and Stage 2 failed after `lib/signing/feature-gate.ts` began importing `../supabase/project-guard`, while the same tests passed under `tsx`.
 
-**Consequences:** No new dependency (`tsx` is fetched by `npx`, as other suites already do). Existing plain-Node scripts are left alone while their imports stay explicit.
+**Consequences:** No new dependency (`tsx` is fetched by `npx`, as other suites already do). Existing plain-Node scripts are left alone while their imports stay explicit. Every `*.test.ts` file belongs to the npm `test:*` suite that owns its behavior; a test file no script runs is a gap to fix, not optional coverage.
 
-**Related:** `package.json` (`test:native-signing-stage1`, `test:native-signing-stage2`), `lib/signing/feature-gate.ts`.
+**Related:** `package.json` (`test:native-signing-stage1`, `test:native-signing-stage2`, `test:native-signing-stage4`), `lib/signing/feature-gate.ts`, `lib/signing/participant-link-qa.test.ts`.
 
 ---
 
