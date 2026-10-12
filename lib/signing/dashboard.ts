@@ -37,7 +37,9 @@ import { requireManageableDraftSigning } from "./manage";
 import { loadSigningAuthorityBundle } from "./authority-context";
 import { canRenameSigning } from "./rename";
 import {
-  listCompletedArtifactsForActor,
+  completedArtifactsSettled,
+  loadCompletedArtifactsStateForActor,
+  type CombinedPackageState,
   type ManagerCompletedArtifact,
 } from "./completed-documents";
 import {
@@ -122,6 +124,10 @@ export type SigningDashboard = {
   participants: SigningDashboardParticipant[];
   /** Complete only, for actors who may read completed artifacts; otherwise empty. */
   completedDocuments: ManagerCompletedArtifact[];
+  /** Complete only (null otherwise): whether the optional combined package is ready, on its way or absent. */
+  combinedPackage: CombinedPackageState | null;
+  /** False while a listed-or-expected completed artifact can still appear on its own. */
+  completedArtifactsSettled: boolean;
 };
 
 export async function loadSigningDashboardForActor(
@@ -369,10 +375,12 @@ export async function loadSigningDashboardForActor(
       });
   }
 
-  const completedDocuments =
+  const completedState =
     summary.lifecycleState === "COMPLETE"
-      ? ((await listCompletedArtifactsForActor(actor, summary.id, admin)) ?? [])
-      : [];
+      ? await loadCompletedArtifactsStateForActor(actor, summary.id, admin)
+      : null;
+  const completedDocuments = completedState?.artifacts ?? [];
+  const combinedPackage = completedState?.combinedPackage ?? null;
 
   return {
     participantSync: { addedFromPacket },
@@ -390,5 +398,7 @@ export async function loadSigningDashboardForActor(
     documents,
     participants,
     completedDocuments,
+    combinedPackage,
+    completedArtifactsSettled: completedArtifactsSettled(combinedPackage),
   };
 }

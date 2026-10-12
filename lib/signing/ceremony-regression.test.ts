@@ -216,7 +216,7 @@ describe("Manager Signing page follows changes made elsewhere", () => {
 
   it("the dashboard refreshes through the authorized load and drops stale responses", () => {
     const page = read("components/signings/signing-dashboard-page.tsx");
-    assert.match(page, /useSigningStateWatcher\(\{\s*active: dashboard \? shouldWatchSigningState\(dashboard\.signing\.lifecycleState\) : false,\s*refresh: reload,\s*\}\)/);
+    assert.match(page, /useSigningStateWatcher\(\{\s*active: dashboard\s*\? shouldWatchSigningState\(dashboard\.signing\.lifecycleState, dashboard\.completedArtifactsSettled\)\s*: false,\s*refresh: reload,\s*\}\)/);
     assert.match(page, /const loadSeq = \+\+loadSeqRef\.current;\s*const result = await getSigningDashboardAction\(\{ signingId \}\);\s*if \(loadSeq !== loadSeqRef\.current\) return;/);
     const actions = read("lib/signing/stage4-actions.ts");
     assert.match(actions, /export async function getSigningDashboardAction[\s\S]*?withAuthorizedAdmin\(\(actor, admin\) =>\s*loadSigningDashboardForActor\(actor, input\.signingId, admin\)/);

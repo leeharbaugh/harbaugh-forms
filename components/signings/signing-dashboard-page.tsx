@@ -221,7 +221,9 @@ export function SigningDashboardPage({
 
   const restoring = useHistoryRestoreRefresh(reload);
   useSigningStateWatcher({
-    active: dashboard ? shouldWatchSigningState(dashboard.signing.lifecycleState) : false,
+    active: dashboard
+      ? shouldWatchSigningState(dashboard.signing.lifecycleState, dashboard.completedArtifactsSettled)
+      : false,
     refresh: reload,
   });
 
@@ -590,6 +592,7 @@ export function SigningDashboardPage({
         <SigningCompletedDocuments
           signingId={signingId}
           artifacts={dashboard.completedDocuments}
+          combinedPackage={dashboard.combinedPackage}
         />
       ) : null}
 

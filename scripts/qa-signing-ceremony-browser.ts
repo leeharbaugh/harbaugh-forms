@@ -1566,6 +1566,17 @@ async function main() {
         fail(`live Completed documents rows: ${JSON.stringify(liveRows)}`);
       }
       if ((await manager.evaluate(() => (window as unknown as { __qaLive?: string }).__qaLive)) !== "a") fail("the manager page reloaded");
+      if (!liveRows.includes("COMBINED:Combined signed package")) {
+        const pending = manager.locator('[data-completed-artifact-pending="COMBINED"]');
+        if ((await pending.count()) === 0) fail("Complete without the combined package, but no Preparing row");
+        if ((await pending.locator("a, button").count()) !== 0) fail("the Preparing row offers View or Download");
+        const pendingSince = Date.now();
+        await manager.locator('li[data-completed-artifact="COMBINED"]').waitFor({ timeout: 45000 })
+          .catch(() => fail("the open tab never replaced Preparing with the combined package"));
+        if ((await pending.count()) !== 0) fail("Preparing row still shown next to the ready package");
+        if ((await manager.evaluate(() => (window as unknown as { __qaLive?: string }).__qaLive)) !== "a") fail("the manager page reloaded");
+        ok(`live refresh (combined package): the first Complete refresh showed "Combined signed package — Preparing…" (no View / Download); the same tab gained View / Download ${((Date.now() - pendingSince) / 1000).toFixed(1)}s later, no reload`);
+      }
       await shot(manager, "a02b-live-completed-documents");
       ok(`live refresh (Completed documents): the same stale tab shows the Completed documents section (${liveRows.length} rows: ${liveRows.join(", ")}) in the watcher refresh that saw COMPLETE, with no reload`);
     }

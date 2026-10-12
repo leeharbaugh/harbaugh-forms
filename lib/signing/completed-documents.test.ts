@@ -167,7 +167,7 @@ describe("Completed documents: manager UI", () => {
 
   it("appears only on Complete Signings, from server-listed artifacts", () => {
     assert.match(page, /lifecycleState === "COMPLETE" \? \(?\s*<SigningCompletedDocuments/);
-    assert.match(dashboard, /summary\.lifecycleState === "COMPLETE"[\s\S]{0,80}listCompletedArtifactsForActor/);
+    assert.match(dashboard, /summary\.lifecycleState === "COMPLETE"[\s\S]{0,80}loadCompletedArtifactsStateForActor/);
   });
 
   it("View and Download hit the same server route; no raw storage in the browser", () => {

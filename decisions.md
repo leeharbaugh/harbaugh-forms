@@ -12,6 +12,33 @@ Each decision should include:
 
 ---
 
+## The combined package stays post-Complete; the manager dashboard keeps refreshing until it settles
+
+**Date:** 2026-10-12 (combined-package refresh tranche)
+
+**Decision:**
+1. **Model B: the combined signed package is post-Complete convenience output.** This confirms the existing "Combined convenience PDF is supported and non-blocking for Complete" decision, and the code matches it. Finalization verifies every completed document and the audit certificate, commits COMPLETE, marks FINALIZE_SIGNING succeeded, and only then enqueues `GENERATE_COMBINED_PACKAGE`. The combined worker refuses to run unless the Signing is COMPLETE, and its failure never affects Complete. The lifecycle is not held open for it.
+2. **The manager dashboard keeps refreshing while expected completed artifacts are pending.** `shouldWatchSigningState(lifecycleState, completedArtifactsSettled)` watches IN_PROGRESS, and COMPLETE only while `completedArtifactsSettled` is false. Draft, Declined and Cancelled never watch. The cadence (20 s), hidden-tab skip, refresh on reveal or focus, and the stale-response guard are unchanged. The watcher only re-reads the authorized dashboard. It never kicks, enqueues, retries or writes work.
+3. **The pending combined package is shown explicitly.** The row reads "Combined signed package — Preparing… It will appear here when ready.", with no View or Download. When a refresh finds the verified artifact, the row is replaced by the normal View and Download row in place.
+4. **Settlement comes from authoritative rows, not elapsed time.** `deriveCombinedPackageState`, computed only after the existing completed-artifact authority gate, works as follows:
+   - READY when the verified COMBINED_PACKAGE is listed.
+   - PREPARING when its work item (same idempotency key as the worker) is PENDING or PROCESSING, or FAILED with fewer than 3 attempts. Failures retry on the next kick or Cron.
+   - PREPARING with no work item only in the gap between Complete and the enqueue (FINALIZE_SIGNING succeeded less than 120 s ago).
+   - UNAVAILABLE when retries are exhausted or the work ended without a usable artifact. The row is omitted and the state is settled.
+   - NOT_EXPECTED when no combined work exists. Settled.
+   - Settled means anything but PREPARING. No schema was added.
+
+**Reason:**
+In Lee's QA the combined package appeared only after navigating away and back. On his dev Signings it was verified 5.9 s and 7.5 s after Complete, on the first attempt. The watcher stopped at the first refresh that saw COMPLETE. When that refresh landed in the gap before the combined package existed, nothing refreshed again. This supersedes the previous decision's consequence that a late combined package "appears on the next dashboard load".
+
+**Consequences:**
+* A combined package stuck retrying (FAILED with attempts under 3, waiting for a kick or Cron) keeps an open, visible manager tab polling every 20 s and showing Preparing. This is truthful: the work is still queued.
+* Explaining failed work is out of scope. UNAVAILABLE omits the row.
+
+**Related:** `lib/signing/completed-documents.ts` (`deriveCombinedPackageState`, `loadCompletedArtifactsStateForActor`), `lib/signing/dashboard.ts`, `components/signings/use-signing-state-watcher.ts`, `components/signings/signing-completed-documents.tsx`, `components/signings/signing-dashboard-page.tsx`, `lib/signing/combined-package-refresh.test.ts`, `scripts/qa-signing-combined-refresh-browser.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
 ## Managers view and download the immutable completed artifacts, server-mediated and only once Complete
 
 **Date:** 2026-10-11 (completed-document access tranche)

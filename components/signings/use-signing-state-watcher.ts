@@ -38,9 +38,17 @@ function formatNameList(names: string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/** Only an In Progress Signing changes without this manager acting. */
-export function shouldWatchSigningState(lifecycleState: string): boolean {
-  return lifecycleState === "IN_PROGRESS";
+/**
+ * An In Progress Signing changes without this manager acting, and so does a
+ * Complete one until its post-Complete artifacts (the combined package) settle.
+ * Draft, Declined and Cancelled never change on their own.
+ */
+export function shouldWatchSigningState(
+  lifecycleState: string,
+  completedArtifactsSettled = true,
+): boolean {
+  if (lifecycleState === "IN_PROGRESS") return true;
+  return lifecycleState === "COMPLETE" && !completedArtifactsSettled;
 }
 
 /**

@@ -8,7 +8,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { ManagerCompletedArtifact } from "@/lib/signing/completed-documents";
+import type {
+  CombinedPackageState,
+  ManagerCompletedArtifact,
+} from "@/lib/signing/completed-documents";
 import dynamic from "next/dynamic";
 import { useRef, useState } from "react";
 
@@ -34,9 +37,11 @@ export function completedArtifactUrl(
 export function SigningCompletedDocuments({
   signingId,
   artifacts,
+  combinedPackage = null,
 }: {
   signingId: string;
   artifacts: ManagerCompletedArtifact[];
+  combinedPackage?: CombinedPackageState | null;
 }) {
   const [viewing, setViewing] = useState<ManagerCompletedArtifact | null>(null);
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
@@ -101,7 +106,24 @@ export function SigningCompletedDocuments({
         ) : (
           <>
             <ul className="space-y-2">{documents.map(row)}</ul>
-            {extras.length > 0 ? <ul className="space-y-2">{extras.map(row)}</ul> : null}
+            {extras.length > 0 || combinedPackage === "PREPARING" ? (
+              <ul className="space-y-2">
+                {extras.map(row)}
+                {combinedPackage === "PREPARING" ? (
+                  <li
+                    className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3"
+                    data-completed-artifact-pending="COMBINED"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">Combined signed package</p>
+                      <p className="text-xs text-muted-foreground" role="status">
+                        Preparing… It will appear here when ready.
+                      </p>
+                    </div>
+                  </li>
+                ) : null}
+              </ul>
+            ) : null}
           </>
         )}
       </CardContent>

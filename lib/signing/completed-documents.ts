@@ -27,6 +27,50 @@ export type ManagerCompletedArtifact = {
   pageCount: number | null;
 };
 
+/**
+ * The combined package is optional and generated after Complete
+ * (GENERATE_COMBINED_PACKAGE, enqueued once finalization commits Complete).
+ * READY: verified and listed. PREPARING: its work item is pending, running or
+ * retrying, or finalization finished moments ago and has yet to enqueue it.
+ * UNAVAILABLE: the work stopped without a usable artifact. NOT_EXPECTED: no
+ * combined work exists for this Signing.
+ */
+export type CombinedPackageState = "READY" | "PREPARING" | "UNAVAILABLE" | "NOT_EXPECTED";
+
+export const COMBINED_PACKAGE_WORK_TYPE = "GENERATE_COMBINED_PACKAGE";
+export const FINALIZE_WORK_TYPE = "FINALIZE_SIGNING";
+/** Failed attempts after which the package is no longer presented as on its way. */
+export const COMBINED_PACKAGE_MAX_PREPARING_ATTEMPTS = 3;
+/** Finalization enqueues the combined work just after committing Complete. */
+export const COMBINED_PACKAGE_ENQUEUE_GRACE_MS = 120_000;
+
+export function deriveCombinedPackageState(input: {
+  combinedArtifactListed: boolean;
+  combinedWork: { processingState: string; attemptCount: number } | null;
+  finalizeCompletedAt: string | null;
+  now: number;
+}): CombinedPackageState {
+  if (input.combinedArtifactListed) return "READY";
+  const work = input.combinedWork;
+  if (work) {
+    if (work.processingState === "PENDING" || work.processingState === "PROCESSING") return "PREPARING";
+    if (work.processingState === "FAILED" && work.attemptCount < COMBINED_PACKAGE_MAX_PREPARING_ATTEMPTS) {
+      return "PREPARING";
+    }
+    return "UNAVAILABLE";
+  }
+  const finalizedAt = input.finalizeCompletedAt ? Date.parse(input.finalizeCompletedAt) : NaN;
+  if (Number.isFinite(finalizedAt) && input.now - finalizedAt < COMBINED_PACKAGE_ENQUEUE_GRACE_MS) {
+    return "PREPARING";
+  }
+  return "NOT_EXPECTED";
+}
+
+/** Settled once nothing listed or expected can still change on its own. */
+export function completedArtifactsSettled(combinedPackage: CombinedPackageState | null): boolean {
+  return combinedPackage !== "PREPARING";
+}
+
 const KIND_BY_CATEGORY: Record<SigningArtifactCategory, CompletedArtifactKind> = {
   COMPLETED_DOCUMENT: "DOCUMENT",
   AUDIT_CERTIFICATE: "CERTIFICATE",
@@ -168,6 +212,58 @@ export async function listCompletedArtifactsForActor(
 ): Promise<ManagerCompletedArtifact[] | null> {
   const scope = await completedRevisionForActor(actor, signingIdRaw, admin);
   if (!scope) return null;
+  return listForScope(admin, scope);
+}
+
+/**
+ * Completed artifacts plus the combined package's preparation state, for the
+ * manager dashboard. Read-only: it never enqueues, retries or kicks work.
+ */
+export async function loadCompletedArtifactsStateForActor(
+  actor: SigningActor,
+  signingIdRaw: unknown,
+  admin: SupabaseClient,
+): Promise<{ artifacts: ManagerCompletedArtifact[]; combinedPackage: CombinedPackageState } | null> {
+  const scope = await completedRevisionForActor(actor, signingIdRaw, admin);
+  if (!scope) return null;
+  const [artifacts, work] = await Promise.all([
+    listForScope(admin, scope),
+    admin
+      .from("signing_work_items")
+      .select("work_type, idempotency_key, processing_state, attempt_count, completed_at")
+      .eq("signing_id", scope.signingId)
+      .in("work_type", [COMBINED_PACKAGE_WORK_TYPE, FINALIZE_WORK_TYPE]),
+  ]);
+  if (work.error) throw new Error(work.error.message);
+  const rows = (work.data ?? []) as Array<Record<string, unknown>>;
+  const combined = rows.find(
+    (row) =>
+      row.work_type === COMBINED_PACKAGE_WORK_TYPE &&
+      row.idempotency_key === `${COMBINED_PACKAGE_WORK_TYPE}:${scope.frozenRevisionId}`,
+  );
+  const finalizeCompletedAt =
+    rows
+      .filter((row) => row.work_type === FINALIZE_WORK_TYPE && row.processing_state === "SUCCEEDED")
+      .map((row) => (row.completed_at as string | null) ?? "")
+      .sort()
+      .pop() || null;
+  return {
+    artifacts,
+    combinedPackage: deriveCombinedPackageState({
+      combinedArtifactListed: artifacts.some((artifact) => artifact.kind === "COMBINED"),
+      combinedWork: combined
+        ? { processingState: String(combined.processing_state), attemptCount: Number(combined.attempt_count ?? 0) }
+        : null,
+      finalizeCompletedAt,
+      now: Date.now(),
+    }),
+  };
+}
+
+async function listForScope(
+  admin: SupabaseClient,
+  scope: { signingId: string; frozenRevisionId: string },
+): Promise<ManagerCompletedArtifact[]> {
   const [revisionDocuments, artifacts] = await Promise.all([
     loadRevisionDocuments(admin, scope.signingId, scope.frozenRevisionId),
     verifiedArtifacts(admin, scope.signingId, scope.frozenRevisionId),
