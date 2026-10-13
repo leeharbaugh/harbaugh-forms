@@ -214,8 +214,8 @@ describe("Native Signing Stage 4 activation boundary contracts", () => {
     );
     assert.match(delivery, /outcome: result\.ok \? "ACCEPTED" : "FAILED"/);
     assert.match(delivery, /failure_detail_safe/);
-    // Provider bookkeeping must not touch Signing lifecycle state.
-    assert.doesNotMatch(delivery, /lifecycle_state/);
+    // Provider bookkeeping may read Signing lifecycle state but never write it.
+    assert.doesNotMatch(delivery, /lifecycle_state\s*:/);
     assert.doesNotMatch(delivery, /\.from\("signings"\)\s*\n\s*\.update\(/);
   });
 

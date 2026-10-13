@@ -98,6 +98,22 @@ export type SigningDashboardParticipant = {
   capacityWording?: string | null;
   /** Where name/email come from while Draft; AD_HOC is manager-typed. */
   identitySource: ParticipantIdentitySourceKind;
+  /** Cancelled Signings only: this participant's cancellation email, if one was owed. */
+  cancellationEmail: CancellationEmailStatus | null;
+};
+
+export type CancellationEmailStatus = {
+  deliveryState: string;
+  /** Latest send attempt was accepted by the development sandbox. */
+  sandboxed: boolean;
+  lastFailureSafe: string | null;
+};
+
+export type SigningCancellationDetails = {
+  cancelledAt: string | null;
+  /** Internal audit-history reason; never sent to participants. */
+  reason: string | null;
+  participantMessage: string | null;
 };
 
 export type SigningDashboard = {
@@ -130,7 +146,77 @@ export type SigningDashboard = {
   combinedPackage: CombinedPackageState | null;
   /** False while a listed-or-expected completed artifact can still appear on its own. */
   completedArtifactsSettled: boolean;
+  /** Cancelled only; null otherwise. */
+  cancellation: SigningCancellationDetails | null;
 };
+
+async function loadCancellationState(
+  admin: SupabaseClient,
+  signingId: string,
+): Promise<{
+  details: SigningCancellationDetails;
+  emailByParticipantId: Map<string, CancellationEmailStatus>;
+}> {
+  const [{ data: signing, error: signingError }, { data: instructions, error: instructionError }] =
+    await Promise.all([
+      admin
+        .from("signings")
+        .select("cancelled_at, cancellation_reason, cancellation_participant_message")
+        .eq("id", signingId)
+        .maybeSingle(),
+      admin
+        .from("signing_delivery_instructions")
+        .select("id, signing_participant_id, delivery_state")
+        .eq("signing_id", signingId)
+        .eq("purpose", "CANCELLATION"),
+    ]);
+  if (signingError) throw new Error(signingError.message);
+  if (instructionError) throw new Error(instructionError.message);
+
+  const instructionIds = (instructions ?? []).map((row) => row.id as string);
+  const latestAttemptByInstruction = new Map<
+    string,
+    { outcome: string; failure_detail_safe: string | null; provider_reference: string | null }
+  >();
+  if (instructionIds.length > 0) {
+    const { data: attempts, error: attemptError } = await admin
+      .from("signing_delivery_attempts")
+      .select("delivery_instruction_id, attempt_number, outcome, failure_detail_safe, provider_reference")
+      .in("delivery_instruction_id", instructionIds)
+      .order("attempt_number", { ascending: true });
+    if (attemptError) throw new Error(attemptError.message);
+    for (const attempt of attempts ?? []) {
+      latestAttemptByInstruction.set(attempt.delivery_instruction_id as string, {
+        outcome: attempt.outcome as string,
+        failure_detail_safe: (attempt.failure_detail_safe as string | null) ?? null,
+        provider_reference: (attempt.provider_reference as string | null) ?? null,
+      });
+    }
+  }
+
+  const emailByParticipantId = new Map<string, CancellationEmailStatus>();
+  for (const row of instructions ?? []) {
+    const attempt = latestAttemptByInstruction.get(row.id as string);
+    emailByParticipantId.set(row.signing_participant_id as string, {
+      deliveryState: row.delivery_state as string,
+      sandboxed:
+        attempt?.outcome === "ACCEPTED" &&
+        (attempt.provider_reference ?? "").startsWith("sandbox:"),
+      lastFailureSafe:
+        attempt?.outcome === "FAILED" ? attempt.failure_detail_safe : null,
+    });
+  }
+
+  return {
+    details: {
+      cancelledAt: (signing?.cancelled_at as string | null) ?? null,
+      reason: (signing?.cancellation_reason as string | null) ?? null,
+      participantMessage:
+        (signing?.cancellation_participant_message as string | null) ?? null,
+    },
+    emailByParticipantId,
+  };
+}
 
 export async function loadSigningDashboardForActor(
   actor: SigningActor,
@@ -321,6 +407,11 @@ export async function loadSigningDashboardForActor(
   );
   const instructionRows = (deliveryRows ?? []) as unknown as InvitationInstructionRow[];
 
+  const cancellationState =
+    summary.lifecycleState === "CANCELLED"
+      ? await loadCancellationState(admin, summary.id)
+      : null;
+
   const participants: SigningDashboardParticipant[] = (
     participantRows ?? []
   ).map((row) => ({
@@ -362,6 +453,8 @@ export async function loadSigningDashboardForActor(
       linked_brokerage_settings_id:
         (row.linked_brokerage_settings_id as number | null) ?? null,
     }),
+    cancellationEmail:
+      cancellationState?.emailByParticipantId.get(row.id as string) ?? null,
   }));
 
   let canRename = summary.canManage;
@@ -403,5 +496,6 @@ export async function loadSigningDashboardForActor(
     completedDocuments,
     combinedPackage,
     completedArtifactsSettled: completedArtifactsSettled(combinedPackage),
+    cancellation: cancellationState?.details ?? null,
   };
 }

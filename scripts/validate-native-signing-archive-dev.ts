@@ -203,6 +203,7 @@ async function main() {
         .update({ replaced_by_credential_id: null })
         .eq("signing_id", id);
       await admin.from("signing_participant_credentials").delete().eq("signing_id", id);
+      await admin.from("signing_work_items").delete().eq("signing_id", id);
       await admin.from("signing_delivery_attempts").delete().eq("signing_id", id);
       await admin.from("signing_delivery_instructions").delete().eq("signing_id", id);
       await admin.from("signing_adopted_marks").delete().eq("signing_id", id);
@@ -394,7 +395,7 @@ async function main() {
     ok("Draft unarchived; unarchive idempotent (one event)");
 
     // Cancelled via the real Cancel path, then archived by the primary agent.
-    await cancelSigningWithActor(agent, { signingId: draftId }, admin);
+    await cancelSigningWithActor(agent, { signingId: draftId, reason: "Archive validator" }, admin);
     const cancelledArchived = await archiveSigningForActor(agent, { signingId: draftId }, admin);
     if (cancelledArchived.lifecycleState !== "CANCELLED" || !cancelledArchived.archivedAt) {
       fail("archiving Cancelled must keep CANCELLED");
@@ -739,7 +740,7 @@ async function main() {
       await archiveSigningForActor(agent, { signingId: ipId }, admin);
     }
     const archivedAt = (await loadSigning(admin, ipId)).archived_at;
-    const cancelled = await cancelSigningWithActor(agent, { signingId: ipId }, admin);
+    const cancelled = await cancelSigningWithActor(agent, { signingId: ipId, reason: "Archive validator" }, admin);
     if (cancelled.lifecycleState !== "CANCELLED" || cancelled.archivedAt !== archivedAt) {
       fail("cancelling an archived In Progress Signing must keep it archived");
     }

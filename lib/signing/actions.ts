@@ -229,12 +229,19 @@ export async function renameSigningAction(input: {
  */
 export async function cancelSigningAction(
   input: CancelSigningInput,
-): Promise<SigningActionResult> {
+): Promise<
+  | { ok: true; signing: SigningSummary; cancellationNoticesQueued: number }
+  | { ok: false; code: string; error: string }
+> {
   try {
     const actor = await requireSigningActor();
     const admin = createAdminClient();
     const signing = await cancelSigningWithActor(actor, input, admin);
-    return { ok: true, signing };
+    return {
+      ok: true,
+      signing,
+      cancellationNoticesQueued: signing.cancellationNoticesQueued,
+    };
   } catch (error) {
     return toActionError(error);
   }

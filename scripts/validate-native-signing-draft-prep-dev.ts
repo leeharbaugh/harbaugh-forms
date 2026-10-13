@@ -1523,7 +1523,7 @@ async function main() {
       { signingId: frozenSigningId, fullName: "ignored", linkedContactId: packetBParty },
       admin,
     );
-    await cancelSigningWithActor(agent, { signingId: frozenSigningId }, admin);
+    await cancelSigningWithActor(agent, { signingId: frozenSigningId, reason: "Draft-prep validator" }, admin);
     await admin.from("contacts").update({ first_name: "Patricia" }).eq("id", packetBParty);
     await loadSigningDashboardForActor(agent, frozenSigningId, admin);
     const { data: frozenRow } = await admin

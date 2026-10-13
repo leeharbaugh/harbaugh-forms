@@ -442,6 +442,7 @@ async function main() {
 
       const archivedAt = (await signingRow(ipSigningId)).archived_at;
       await page.getByRole("button", { name: "Cancel Signing", exact: true }).click();
+      await dialog().getByLabel("Internal cancellation reason").fill("Archive QA: abandoned Signing");
       await dialog().getByRole("button", { name: "Cancel Signing", exact: true }).click();
       await page.getByText("CANCELLED", { exact: true }).first().waitFor({ timeout: 30000 });
       await page.getByTestId("signing-archived-badge").waitFor();

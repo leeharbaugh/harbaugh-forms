@@ -1250,7 +1250,7 @@ async function main() {
         participantName: "Cass Cancel",
         participantEmail: `cass-${stamp}@example.com`,
       });
-      await cancelSigningWithActor(agent, { signingId: cancelled.signingId }, admin);
+      await cancelSigningWithActor(agent, { signingId: cancelled.signingId, reason: "Completion-delivery validator" }, admin);
       for (const [label, signingId] of [["IN_PROGRESS", preComplete.signingId], ["DRAFT", draftOnly.id], ["CANCELLED", cancelled.signingId]] as const) {
         if ((await listCompletedArtifactsForActor(agent, signingId, admin)) !== null) bad(`${label} listed completed artifacts`);
         if ((await loadSigningDashboardForActor(agent, signingId, admin)).completedDocuments.length !== 0) bad(`${label} dashboard carried completed documents`);

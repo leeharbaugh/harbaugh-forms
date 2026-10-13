@@ -2176,6 +2176,7 @@ async function main() {
       `Object.defineProperty(document, "visibilityState", { configurable: true, get: function () { return "${state}"; } }); document.dispatchEvent(new Event("visibilitychange"));`;
     await watcherTab.evaluate(`window.__qaLive = "d"; ${setVisibility("hidden")}`);
     await manager.getByRole("button", { name: "Cancel Signing", exact: true }).click();
+    await manager.getByRole("alertdialog").getByLabel("Internal cancellation reason").fill("Ceremony QA: participant identity was wrong");
     await manager.getByRole("alertdialog").getByRole("button", { name: "Cancel Signing", exact: true }).click();
     await manager.getByText("Signing cancelled. Create a new Signing to send corrected documents.").waitFor({ timeout: 60000 });
     if ((await signingRow(d.signingId)).lifecycle_state !== "CANCELLED") fail("Cancel Signing did not cancel");

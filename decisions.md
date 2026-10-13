@@ -12,6 +12,25 @@ Each decision should include:
 
 ---
 
+## Cancel Signing records a private reason and emails invited participants asynchronously (refinement)
+
+**Date:** 2026-10-13 (cancellation emails tranche)
+
+**Decision:** This refines, and does not replace, the existing Cancel semantics: Draft or In Progress only, irreversible, confirmed, lifecycle CANCELLED at once, access ended by the lifecycle gates, Complete and Declined never cancellable, and Decline unchanged.
+1. **Two separate values.**
+   - The required "Internal cancellation reason" (`signings.cancellation_reason`, 1–500 characters) is audit history. It is shown to managers and recorded in the SIGNING_CANCELLED event, and it is never emailed or sent to a provider.
+   - The optional "Message to participants" (`signings.cancellation_participant_message`, up to 1000 characters) is the only manager text included in the email.
+2. **Eligibility comes from invitation history, not current link validity.** A participant is emailed if they ever had an INVITATION delivery instruction, or any credential on a Signing activated by REMOTE_SEND (this covers an invitation enqueue that failed after activation). Finished, revoked-link, replaced-link and archived-then-revoked participants are included. Never-activated Draft participants, in-person-only participants, copy recipients and managers are not. Participants are never removed after activation, so "removed but invited" cannot occur.
+3. **Asynchronous and non-blocking.** `signing_cancel` cancels the Signing and queues one CANCELLATION delivery instruction plus one outbox work item per eligible participant, in the same locked transaction. The email is sent after commit through the shared Signing email boundary: inline best-effort, then the Signing worker. Provider outcome never changes lifecycle. Retryable failures retry every 15 minutes up to 5 attempts, and permanent rejections stop at once. At most one logical email goes to each participant (a partial unique index plus the work-item idempotency key), and an accepted notice is never resent.
+4. **No credential is ever included.** The email has no link, token or call to action. It names the signing request, the agent and brokerage, says the previous link can no longer be used, and adds the optional message. It makes no legal claim about any contract or transaction. Recipient identity is the frozen revision snapshot, then the latest invitation snapshot.
+5. **Queued invitations die with the Signing.** The invitation worker refuses to send for any Signing that is not In Progress, or that is archived.
+
+**Reason:** Participants who were asked to sign should hear that the request ended, without a working link, and without the agent's private notes.
+
+**Related:** `supabase/migrations/20261013120000_native_signing_cancellation_notices.sql`, `lib/signing/cancel.ts`, `lib/signing/cancellation-notices.ts`, `lib/signing/delivery.ts`, `lib/signing/signing-worker-dispatch.ts`, `components/signings/signing-dashboard-page.tsx`.
+
+---
+
 ## Archive Signing is reversible organizational state, and archiving In Progress revokes participant access
 
 **Date:** 2026-10-12 (Archive Signing tranche)

@@ -20,6 +20,7 @@ import { startInPersonHandoffAction } from "@/lib/signing/ceremony-agent-actions
 import { SIGNING_CAPACITY_LABEL_OPTIONS } from "@/lib/signing/capacity-notices";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   archiveSigningAction,
   cancelSigningAction,
@@ -95,6 +96,22 @@ function newClientRequestId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/** Provider acceptance is not proof of delivery, as with invitations. */
+function cancellationEmailLabel(
+  status: NonNullable<SigningDashboard["participants"][number]["cancellationEmail"]>,
+): string {
+  switch (status.deliveryState) {
+    case "ACCEPTED":
+      return status.sandboxed
+        ? "Cancellation email accepted by the development email sandbox (not sent)"
+        : "Cancellation email accepted by the email service";
+    case "FAILED":
+      return "Cancellation email failed";
+    default:
+      return "Cancellation email queued";
+  }
+}
+
 function formatWhen(value: string | null): string | null {
   return value ? new Date(value).toLocaleString() : null;
 }
@@ -163,6 +180,8 @@ export function SigningDashboardPage({
   } | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelMessage, setCancelMessage] = useState("");
   const [confirmingArchive, setConfirmingArchive] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [renameValue, setRenameValue] = useState<string | null>(null);
@@ -265,14 +284,25 @@ export function SigningDashboardPage({
     setCancelling(true);
     setError(null);
     setNotice(null);
-    const result = await cancelSigningAction({ signingId });
+    const result = await cancelSigningAction({
+      signingId,
+      reason: cancelReason,
+      participantMessage: cancelMessage,
+    });
     setCancelling(false);
-    setConfirmingCancel(false);
     if (!result.ok) {
+      setConfirmingCancel(false);
       setError(result.error);
       return;
     }
-    setNotice("Signing cancelled. Create a new Signing to send corrected documents.");
+    setConfirmingCancel(false);
+    setCancelReason("");
+    setCancelMessage("");
+    setNotice(
+      result.cancellationNoticesQueued > 0
+        ? "Signing cancelled. Create a new Signing to send corrected documents. Each invited participant is emailed that this signing request was cancelled."
+        : "Signing cancelled. Create a new Signing to send corrected documents.",
+    );
     await reload();
   }
 
@@ -481,6 +511,11 @@ export function SigningDashboardPage({
   const isInProgress = dashboard.signing.lifecycleState === "IN_PROGRESS";
   const isArchived = dashboard.signing.archivedAt != null;
   const canManage = dashboard.signing.canManage;
+  const cancelEmailsParticipants =
+    dashboard.signing.activationMode === "REMOTE_SEND" ||
+    dashboard.participants.some(
+      (participant) => participant.access.lastInvitationState != null,
+    );
   const canActivate = isDraft && canManage && dashboard.ready && !isArchived;
   const canStartHandoff =
     canManage &&
@@ -703,6 +738,33 @@ export function SigningDashboardPage({
           <p className="font-medium">{outcome.title}</p>
           <p>{outcome.body}</p>
         </div>
+      ) : null}
+      {dashboard.cancellation ? (
+        <Card data-testid="signing-cancellation-details">
+          <CardHeader>
+            <CardTitle>Cancellation</CardTitle>
+            {dashboard.cancellation.cancelledAt ? (
+              <CardDescription>
+                Cancelled {formatWhen(dashboard.cancellation.cancelledAt)}
+              </CardDescription>
+            ) : null}
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {dashboard.cancellation.reason ? (
+              <div>
+                <p className="font-medium">Internal cancellation reason</p>
+                <p className="text-xs text-muted-foreground">Not sent to participants.</p>
+                <p className="whitespace-pre-wrap">{dashboard.cancellation.reason}</p>
+              </div>
+            ) : null}
+            <div>
+              <p className="font-medium">Message to participants</p>
+              <p className="whitespace-pre-wrap text-muted-foreground">
+                {dashboard.cancellation.participantMessage ?? "None"}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       ) : null}
 
       {dashboard.signing.lifecycleState === "COMPLETE" ? (
@@ -1076,6 +1138,18 @@ export function SigningDashboardPage({
                         {invitationStatusLabel(participant.access)}
                       </Badge>
                     ) : null}
+                    {participant.cancellationEmail ? (
+                      <Badge
+                        data-testid="participant-cancellation-email"
+                        variant={
+                          participant.cancellationEmail.deliveryState === "FAILED"
+                            ? "destructive"
+                            : "info"
+                        }
+                      >
+                        {cancellationEmailLabel(participant.cancellationEmail)}
+                      </Badge>
+                    ) : null}
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {participant.email}
@@ -1085,9 +1159,14 @@ export function SigningDashboardPage({
                       Needs at least one Signature or Initials field.
                     </p>
                   ) : null}
-                  {participant.lastDeliveryFailureSafe ? (
+                  {participant.lastDeliveryFailureSafe && !participant.cancellationEmail ? (
                     <p className="text-xs text-destructive">
                       {participant.lastDeliveryFailureSafe}
+                    </p>
+                  ) : null}
+                  {participant.cancellationEmail?.lastFailureSafe ? (
+                    <p className="text-xs text-destructive">
+                      {participant.cancellationEmail.lastFailureSafe}
                     </p>
                   ) : null}
                   {canStartHandoff &&
@@ -1169,17 +1248,64 @@ export function SigningDashboardPage({
       <ConfirmDialog
         open={confirmingCancel}
         title="Cancel this Signing?"
-        message="Signing links stop working and no one can sign. This cannot be undone. To fix a participant's name or email, create a new Signing afterwards."
         confirmLabel="Cancel Signing"
         confirmingLabel="Cancelling…"
         cancelLabel="Keep Signing"
         variant="destructive"
         isConfirming={cancelling}
+        confirmDisabled={cancelReason.trim().length === 0}
         onConfirm={() => void confirmCancelSigning()}
         onCancel={() => {
           if (!cancelling) setConfirmingCancel(false);
         }}
-      />
+      >
+        <div className="space-y-4 text-sm">
+          <p className="text-muted-foreground">
+            Signing links stop working and no one can sign. This cannot be
+            undone. To fix a participant&rsquo;s name or email, create a new
+            Signing afterwards.
+            {cancelEmailsParticipants
+              ? " Each invited participant is emailed that this signing request was cancelled."
+              : null}
+          </p>
+          <div className="space-y-1.5">
+            <Label htmlFor="cancel-signing-reason">Internal cancellation reason</Label>
+            <p id="cancel-signing-reason-help" className="text-xs text-muted-foreground">
+              Required. Saved in Signing history and not sent to participants.
+            </p>
+            <Input
+              id="cancel-signing-reason"
+              aria-describedby="cancel-signing-reason-help"
+              value={cancelReason}
+              maxLength={500}
+              disabled={cancelling}
+              onChange={(event) => setCancelReason(event.target.value)}
+            />
+          </div>
+          {cancelEmailsParticipants ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="cancel-signing-participant-message">
+                Message to participants
+              </Label>
+              <p
+                id="cancel-signing-participant-message-help"
+                className="text-xs text-muted-foreground"
+              >
+                Optional. Included in the cancellation email.
+              </p>
+              <Textarea
+                id="cancel-signing-participant-message"
+                aria-describedby="cancel-signing-participant-message-help"
+                value={cancelMessage}
+                maxLength={1000}
+                rows={3}
+                disabled={cancelling}
+                onChange={(event) => setCancelMessage(event.target.value)}
+              />
+            </div>
+          ) : null}
+        </div>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={confirmingArchive}
