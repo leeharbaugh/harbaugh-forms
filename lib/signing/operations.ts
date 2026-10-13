@@ -99,6 +99,7 @@ function toSummary(
     id: signing.id,
     title: signing.title,
     lifecycleState: signing.lifecycle_state,
+    archivedAt: signing.archived_at ?? null,
     finalizationCondition: signing.finalization_condition,
     originatingOrganizationId: signing.originating_organization_id,
     sourcePacketId: signing.source_packet_id,

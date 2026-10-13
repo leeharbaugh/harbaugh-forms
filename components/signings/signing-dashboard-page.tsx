@@ -20,7 +20,12 @@ import { startInPersonHandoffAction } from "@/lib/signing/ceremony-agent-actions
 import { SIGNING_CAPACITY_LABEL_OPTIONS } from "@/lib/signing/capacity-notices";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cancelSigningAction, renameSigningAction } from "@/lib/signing/actions";
+import {
+  archiveSigningAction,
+  cancelSigningAction,
+  renameSigningAction,
+  unarchiveSigningAction,
+} from "@/lib/signing/actions";
 import { SIGNING_TITLE_MAX_LENGTH } from "@/lib/signing/types";
 import type { SigningDashboard } from "@/lib/signing/dashboard";
 import { invitationStatusLabel } from "@/lib/signing/participant-access-status";
@@ -158,6 +163,8 @@ export function SigningDashboardPage({
   } | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [renameValue, setRenameValue] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -266,6 +273,39 @@ export function SigningDashboardPage({
       return;
     }
     setNotice("Signing cancelled. Create a new Signing to send corrected documents.");
+    await reload();
+  }
+
+  async function confirmArchiveSigning() {
+    setArchiving(true);
+    setError(null);
+    setNotice(null);
+    const result = await archiveSigningAction({ signingId });
+    setArchiving(false);
+    setConfirmingArchive(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setNotice("Signing archived. It is hidden from the default Signings list.");
+    await reload();
+  }
+
+  async function unarchiveSigning() {
+    setArchiving(true);
+    setError(null);
+    setNotice(null);
+    const result = await unarchiveSigningAction({ signingId });
+    setArchiving(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setNotice(
+      result.signing.lifecycleState === "IN_PROGRESS"
+        ? "Signing unarchived. Previous signing links stay revoked. Issue new participant links before signing can resume."
+        : "Signing unarchived.",
+    );
     await reload();
   }
 
@@ -439,16 +479,30 @@ export function SigningDashboardPage({
 
   const isDraft = dashboard.signing.lifecycleState === "DRAFT";
   const isInProgress = dashboard.signing.lifecycleState === "IN_PROGRESS";
+  const isArchived = dashboard.signing.archivedAt != null;
   const canManage = dashboard.signing.canManage;
-  const canActivate = isDraft && canManage && dashboard.ready;
+  const canActivate = isDraft && canManage && dashboard.ready && !isArchived;
   const canStartHandoff =
     canManage &&
     isInProgress &&
+    !isArchived &&
     dashboard.signing.activationMode === "IN_PERSON";
   const canManageRemoteLinks =
     canManage &&
     isInProgress &&
+    !isArchived &&
     dashboard.signing.activationMode === "REMOTE_SEND";
+  const needsReissueAfterArchive =
+    canManage &&
+    isInProgress &&
+    !isArchived &&
+    dashboard.participants.some(
+      (participant) =>
+        participant.access.revokedOnArchive &&
+        participant.participantStatus !== "FINISHED" &&
+        participant.participantStatus !== "DECLINED" &&
+        participant.participantStatus !== "REMOVED",
+    );
   const outcome = signingOutcomeMessage(dashboard, notice);
 
   return (
@@ -457,6 +511,15 @@ export function SigningDashboardPage({
         title={dashboard.signing.title}
         description={
           <span className="flex flex-wrap items-center gap-2">
+            {isArchived ? (
+              <Badge
+                variant="outline"
+                className="text-muted-foreground"
+                data-testid="signing-archived-badge"
+              >
+                Archived
+              </Badge>
+            ) : null}
             <Badge variant={isDraft ? "outline" : "info"}>
               {dashboard.signing.lifecycleState.replace(/_/g, " ")}
             </Badge>
@@ -525,6 +588,27 @@ export function SigningDashboardPage({
               Cancel Signing
             </Button>
           ) : null}
+          {dashboard.canArchive ? (
+            isArchived ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={archiving}
+                onClick={() => void unarchiveSigning()}
+              >
+                {archiving ? "Unarchiving…" : "Unarchive Signing"}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={archiving}
+                onClick={() => setConfirmingArchive(true)}
+              >
+                Archive Signing
+              </Button>
+            )
+          ) : null}
           </>
         }
       />
@@ -576,6 +660,39 @@ export function SigningDashboardPage({
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {notice ? (
         <p className="text-sm text-muted-foreground">{notice}</p>
+      ) : null}
+      {isArchived ? (
+        <div
+          role="status"
+          data-testid="signing-archived-notice"
+          className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+        >
+          <p className="font-medium text-foreground">This Signing is archived.</p>
+          {isInProgress ? (
+            <p>
+              Participant access was revoked when this Signing was archived.
+              Unarchiving does not restore previous signing links.
+            </p>
+          ) : isDraft ? (
+            <p>Unarchive this Signing to send it.</p>
+          ) : (
+            <p>It is hidden from the default Signings list.</p>
+          )}
+        </div>
+      ) : null}
+      {needsReissueAfterArchive ? (
+        <div
+          role="status"
+          data-testid="signing-reissue-notice"
+          className="rounded-md border border-amber-600/30 bg-amber-50 p-3 text-sm text-amber-950"
+        >
+          <p className="font-medium">Participant links need to be reissued.</p>
+          <p>
+            {dashboard.signing.activationMode === "IN_PERSON"
+              ? "Signing links were revoked when this Signing was archived. Hand the device to a participant to resume in-person signing."
+              : "Signing links were revoked when this Signing was archived. Use Replace signing link for each participant who still needs to sign."}
+          </p>
+        </div>
       ) : null}
       {outcome ? (
         <div
@@ -772,7 +889,12 @@ export function SigningDashboardPage({
                         <li>Link replaced {formatWhen(participant.access.lastReplacedAt)}</li>
                       ) : null}
                       {participant.access.revokedAt ? (
-                        <li>Link revoked {formatWhen(participant.access.revokedAt)}</li>
+                        <li>
+                          {participant.access.revokedOnArchive
+                            ? "Link revoked when the Signing was archived"
+                            : "Link revoked"}{" "}
+                          {formatWhen(participant.access.revokedAt)}
+                        </li>
                       ) : null}
                       {participant.access.lastInvitationQueuedAt ? (
                         <li>Last invitation queued {formatWhen(participant.access.lastInvitationQueuedAt)}</li>
@@ -1056,6 +1178,29 @@ export function SigningDashboardPage({
         onConfirm={() => void confirmCancelSigning()}
         onCancel={() => {
           if (!cancelling) setConfirmingCancel(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmingArchive}
+        title={
+          isInProgress
+            ? "Archive this In Progress Signing?"
+            : "Archive this Signing?"
+        }
+        message={
+          isInProgress
+            ? "It will remain In Progress in its history, but all active participant signing links will be revoked. If you later unarchive it, you will need to issue new participant links before signing can resume."
+            : "It will be hidden from the default Signings list. You can unarchive it later."
+        }
+        confirmLabel="Archive Signing"
+        confirmingLabel="Archiving…"
+        cancelLabel={isInProgress ? "Keep Signing Active" : "Cancel"}
+        variant={isInProgress ? "destructive" : "default"}
+        isConfirming={archiving}
+        onConfirm={() => void confirmArchiveSigning()}
+        onCancel={() => {
+          if (!archiving) setConfirmingArchive(false);
         }}
       />
 

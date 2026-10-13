@@ -32,6 +32,8 @@ export const NATIVE_SIGNING_ALL_MIGRATIONS = [
   "20261009120000_native_signing_draft_identity_sync",
   "20261009130000_native_signing_draft_auto_add_marker",
   "20261010120000_native_signing_auto_add_notice_ack",
+  "20261012120000_native_signing_archive",
+  "20261012120100_native_signing_archive_evidence_guard_fix",
 ] as const;
 
 export function listNativeSigningMigrationFilesFromDisk(

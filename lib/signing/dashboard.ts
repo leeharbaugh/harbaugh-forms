@@ -110,6 +110,8 @@ export type SigningDashboard = {
   draftPrep: SigningDraftPrep | null;
   /** May rename (any lifecycle state); never true for read-only viewers. */
   canRename: boolean;
+  /** May archive / unarchive; same people who may rename. */
+  canArchive: boolean;
   signing: SigningSummary & {
     activationMode: string | null;
     activatedAt: string | null;
@@ -386,6 +388,7 @@ export async function loadSigningDashboardForActor(
     participantSync: { addedFromPacket },
     draftPrep: await draftPrepLoad,
     canRename,
+    canArchive: canRename,
     signing: {
       ...summary,
       activationMode: (activation?.activation_mode as string | null) ?? null,

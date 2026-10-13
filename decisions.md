@@ -12,6 +12,46 @@ Each decision should include:
 
 ---
 
+## Archive Signing is reversible organizational state, and archiving In Progress revokes participant access
+
+**Date:** 2026-10-12 (Archive Signing tranche)
+
+**Decision:**
+1. **Archive is organizational state, not Signing lifecycle.** `signings.archived_at timestamptz null` (null means not archived) sits beside `lifecycle_state`. ARCHIVED is not a lifecycle value. Lifecycle answers "what happened to this Signing?"; archive answers "should it stay in my working list?".
+2. **Draft, In Progress, Complete, Declined and Cancelled may all be archived.**
+3. **Archiving never rewrites lifecycle.** Complete stays Complete, Declined stays Declined, Cancelled stays Cancelled, In Progress stays In Progress. Cancel remains available on an archived unfinished Signing, and the Signing stays archived after cancelling.
+4. **Archived Signings are hidden from the default Signings list but stay directly viewable by authorized managers.** The list has an unpersisted "Show archived" toggle. Archived rows show a subtle Archived badge next to the lifecycle badge. The dashboard URL keeps working, with an Archived badge and notice.
+5. **Archive is reversible.** "Archive Signing" / "Unarchive Signing". Both are idempotent. Unarchive restores list visibility only. It does not rewrite lifecycle, recreate evidence, regenerate documents, re-enable credentials, undo Cancel or Decline, or reopen Complete.
+6. **Archiving an In Progress Signing revokes all active participant access.** In one transaction, `signing_archive` locks the Signing row, sets `archived_at`, and revokes:
+   - current credentials (`revoked_reason = 'SIGNING_ARCHIVED'`);
+   - unrevoked entry sessions;
+   - unconsumed in-person handoffs;
+   - presence leases;
+   - active ceremony browser sessions.
+
+   Database guards then refuse new credentials, entry sessions, handoffs, ceremony sessions, leases, placements, marks and participant status changes while an In Progress Signing is archived, and they take the Signing row lock so a concurrent issuer serializes behind the archive. The credential, entry, handoff and ceremony gates also recheck `archived_at` on every request. The manager confirmation names this before archiving ("Archive Signing" / "Keep Signing Active").
+7. **Unarchiving does not restore old participant credentials.** Revoked links, sessions and handoffs stay dead, and no invitation is sent.
+8. **To resume an unarchived In Progress Signing, managers explicitly Replace participant links** using the existing link controls. While archived, Replace, in-person signing, Send and amendment are refused on the server. The unarchived dashboard says links need to be reissued.
+9. **Archive preserves all evidence, marks, package revisions and completed artifacts.** No participant, credential row, event, mark, placement or revision is deleted or rewritten.
+10. **Complete artifact bytes and hashes are unaffected by archive/unarchive.** Managers can View and Download completed documents, the certificate and the combined package while a Signing is archived, with identical bytes, SHA-256 and filenames.
+
+**Reason:** Agents abandon Signings when a participant never engages and the deal moves on in a new Signing. They want the old one out of the list without asserting the stronger meaning of "Cancelled". Stale links capable of signing an abandoned package would be unsafe. Silently resurrecting them on unarchive would be both confusing and unsafe.
+
+**Consequences:**
+* Authority is the existing rename authority (`canRenameSigning`), which spans every lifecycle state:
+  - Draft / In Progress: manage authority.
+  - Terminal states: eligible brokerage admin, active primary, co-agent or active TC.
+
+  Unrelated members and other-brokerage admins get NOT_FOUND. There is no Global Admin bypass, and authority is checked before the service-role RPC.
+* `archived_by` was not added: SIGNING_ARCHIVED / SIGNING_UNARCHIVED events (BUSINESS visibility, idempotency key per archive instant) record actor, time, lifecycle and revocation counts. No index was added; the list loads the actor's Signings and filters in the browser.
+* Finalization of an archived In Progress Signing whose participants had all finished still runs, because it is system work, not participant access. Device handoff locks are left alone, as with Cancel.
+* An open participant ceremony tab shows the existing "This signing session is no longer active" message after archive (the revoked-session path); the old link reaches the unavailable message.
+* Production must apply `20261012120000_native_signing_archive` then `20261012120100_native_signing_archive_evidence_guard_fix`. The second fixes a guard in the first that raised on placement and mark writes.
+
+**Related:** `supabase/migrations/20261012120000_native_signing_archive.sql`, `supabase/migrations/20261012120100_native_signing_archive_evidence_guard_fix.sql`, `lib/signing/archive.ts`, `lib/signing/actions.ts`, `lib/signing/credentials.ts`, `lib/signing/entry-sessions.ts`, `lib/signing/browser-sessions.ts`, `lib/signing/ceremony-context.ts`, `lib/signing/in-person-handoff.ts`, `lib/signing/participant-credential-recovery.ts`, `lib/signing/activation.ts`, `lib/signing/amendment-locks.ts`, `components/signings/signings-list-page.tsx`, `components/signings/signing-dashboard-page.tsx`, `lib/signing/archive.test.ts`, `scripts/validate-native-signing-archive-dev.ts`, `scripts/qa-signing-archive-browser.ts`.
+
+---
+
 ## TypeScript test scripts that import app modules run under tsx
 
 **Date:** 2026-10-12 (Stage 1 / Stage 2 script maintenance)

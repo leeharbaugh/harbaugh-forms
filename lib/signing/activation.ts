@@ -28,6 +28,7 @@ import {
   enqueueParticipantInvitations,
   type ParticipantInvitationTarget,
 } from "./delivery";
+import { assertSigningNotArchived } from "./archive";
 import { loadSigningAuthorityBundle } from "./authority-context";
 import { syncDraftParticipantIdentities } from "./draft-participant-sync";
 import {
@@ -326,6 +327,10 @@ export async function activateSigningWithActor(
       admin,
     );
     previousPointer = signing.current_package_revision_id;
+    assertSigningNotArchived(
+      signing,
+      "This Signing is archived. Unarchive it before sending.",
+    );
 
     // Canonization boundary: linked identities are brought current one last
     // time, then promotion freezes them. Packet auto-add is deliberately not

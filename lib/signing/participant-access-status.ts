@@ -12,8 +12,10 @@ export type ParticipantAccessStatus = {
   linkIssuedAt: string | null;
   /** When a manager last replaced this participant's link. */
   lastReplacedAt: string | null;
-  /** When a manager revoked the link (REVOKED only). */
+  /** When a manager revoked the link, directly or by archiving (REVOKED only). */
   revokedAt: string | null;
+  /** The link was revoked because the Signing was archived (REVOKED only). */
+  revokedOnArchive: boolean;
   /** Latest invitation instruction for this participant. */
   lastInvitationQueuedAt: string | null;
   lastInvitationState: string | null;
@@ -67,7 +69,12 @@ export function summarizeParticipantAccess(
   const revoked = current
     ? null
     : latest(
-        own.filter((row) => row.revoked_reason === "REVOKED_BY_MANAGER" && row.revoked_at),
+        own.filter(
+          (row) =>
+            (row.revoked_reason === "REVOKED_BY_MANAGER" ||
+              row.revoked_reason === "SIGNING_ARCHIVED") &&
+            row.revoked_at,
+        ),
         (row) => row.revoked_at!,
       );
 
@@ -87,6 +94,7 @@ export function summarizeParticipantAccess(
     linkIssuedAt: current?.issued_at ?? null,
     lastReplacedAt: replaced?.revoked_at ?? null,
     revokedAt: revoked?.revoked_at ?? null,
+    revokedOnArchive: revoked?.revoked_reason === "SIGNING_ARCHIVED",
     lastInvitationQueuedAt: instruction?.create_date ?? null,
     lastInvitationState: instruction?.delivery_state ?? null,
     lastAttemptAt: attempt?.attempted_at ?? null,

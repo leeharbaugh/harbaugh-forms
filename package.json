@@ -78,6 +78,8 @@
     "validate:native-signing-completion-delivery-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-completion-delivery-dev.ts",
     "test:native-signing-recovery-access": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/recovery-access.test.ts",
     "validate:native-signing-recovery-access-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-recovery-access-dev.ts",
+    "test:native-signing-archive": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/archive.test.ts",
+    "validate:native-signing-archive-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-archive-dev.ts",
     "validate:native-signing-production-readiness": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-production-readiness.ts",
     "plan:native-signing-production-migrate": "npx --yes tsx --tsconfig tsconfig.json scripts/native-signing-production-migrate.ts",
     "test:native-signing-draft-prep": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/draft-prep-editor.test.ts lib/signing/draft-prep-model.test.ts lib/signing/draft-identity-sync.test.ts lib/signing/draft-multiselect.test.ts lib/signing/visual-field-editor.test.ts lib/signing/ad-hoc-documents.test.ts lib/signing/copy-recipients-precomplete.test.ts lib/signing/preview.test.ts lib/signing/manager-qa.test.ts lib/signing/manager-correctness.test.ts lib/signing/prepare-polish.test.ts",

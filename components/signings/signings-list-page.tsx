@@ -2,6 +2,7 @@
 
 import { ListEmptyState } from "@/components/list-empty-state";
 import { ListPageHeader } from "@/components/list-page-header";
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +60,10 @@ export function SigningsListPage({
   );
   const [title, setTitle] = useState("DEV QA Test Signing");
   const [creating, setCreating] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const visibleSignings = showArchived
+    ? signings
+    : signings.filter((signing) => !signing.archivedAt);
 
   const reload = useCallback(async () => {
     const result = await listSigningsAction();
@@ -132,14 +137,32 @@ export function SigningsListPage({
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      {signings.length === 0 ? (
-        <ListEmptyState
-          title="No Signings yet"
-          description="Create a Draft Signing to begin preparation."
+      <div className="flex items-center gap-2">
+        <AppCheckbox
+          id="show_archived_signings"
+          checked={showArchived}
+          onCheckedChange={(checked) => setShowArchived(checked === true)}
         />
+        <Label htmlFor="show_archived_signings" className="font-normal">
+          Show archived
+        </Label>
+      </div>
+
+      {visibleSignings.length === 0 ? (
+        signings.length === 0 ? (
+          <ListEmptyState
+            title="No Signings yet"
+            description="Create a Draft Signing to begin preparation."
+          />
+        ) : (
+          <ListEmptyState
+            title="No unarchived Signings"
+            description="Select Show archived to see archived Signings."
+          />
+        )
       ) : (
         <div className="space-y-2">
-          {signings.map((signing) => (
+          {visibleSignings.map((signing) => (
             <Link
               key={signing.id}
               href={`/signings/${signing.id}`}
@@ -151,9 +174,20 @@ export function SigningsListPage({
                   Updated {new Date(signing.updateDate).toLocaleString()}
                 </p>
               </div>
-              <Badge variant={lifecycleVariant(signing.lifecycleState)}>
-                {signing.lifecycleState.replace(/_/g, " ")}
-              </Badge>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {signing.archivedAt ? (
+                  <Badge
+                    variant="outline"
+                    className="text-muted-foreground"
+                    data-testid="signing-archived-badge"
+                  >
+                    Archived
+                  </Badge>
+                ) : null}
+                <Badge variant={lifecycleVariant(signing.lifecycleState)}>
+                  {signing.lifecycleState.replace(/_/g, " ")}
+                </Badge>
+              </div>
             </Link>
           ))}
         </div>

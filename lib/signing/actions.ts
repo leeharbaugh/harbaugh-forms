@@ -4,6 +4,10 @@ import "server-only";
 
 import { requireSigningActor } from "@/lib/signing/actor";
 import {
+  archiveSigningForActor,
+  unarchiveSigningForActor,
+} from "@/lib/signing/archive";
+import {
   cancelSigningWithActor,
   type CancelSigningInput,
 } from "@/lib/signing/cancel";
@@ -230,6 +234,40 @@ export async function cancelSigningAction(
     const actor = await requireSigningActor();
     const admin = createAdminClient();
     const signing = await cancelSigningWithActor(actor, input, admin);
+    return { ok: true, signing };
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+/**
+ * Server action: archive a Signing in any lifecycle state. Lifecycle is never
+ * changed; archiving In Progress revokes all participant access.
+ */
+export async function archiveSigningAction(input: {
+  signingId: unknown;
+}): Promise<SigningActionResult> {
+  try {
+    const actor = await requireSigningActor();
+    const admin = createAdminClient();
+    const signing = await archiveSigningForActor(actor, input, admin);
+    return { ok: true, signing };
+  } catch (error) {
+    return toActionError(error);
+  }
+}
+
+/**
+ * Server action: unarchive a Signing. Restores list visibility only; revoked
+ * participant links stay revoked.
+ */
+export async function unarchiveSigningAction(input: {
+  signingId: unknown;
+}): Promise<SigningActionResult> {
+  try {
+    const actor = await requireSigningActor();
+    const admin = createAdminClient();
+    const signing = await unarchiveSigningForActor(actor, input, admin);
     return { ok: true, signing };
   } catch (error) {
     return toActionError(error);

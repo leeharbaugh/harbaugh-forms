@@ -65,7 +65,7 @@ export async function loadPreAffirmationContext(options: {
     options.admin
       .from("signings")
       .select(
-        "id, title, lifecycle_state, original_sender_display_name, originating_organization_id",
+        "id, title, lifecycle_state, archived_at, original_sender_display_name, originating_organization_id",
       )
       .eq("id", options.signingId)
       .maybeSingle(),
@@ -80,6 +80,7 @@ export async function loadPreAffirmationContext(options: {
   if (participantError) throw new Error(participantError.message);
 
   if (!signing || signing.lifecycle_state !== "IN_PROGRESS") return null;
+  if (signing.archived_at) return null;
   if (!participant || participant.participant_status === "REMOVED") return null;
 
   const { data: organization, error: organizationError } = await options.admin

@@ -452,7 +452,7 @@ export async function resolveCeremonyBrowserSession(
     admin
       .from("signings")
       .select(
-        "id, title, lifecycle_state, sender_timezone, current_package_revision_id, frozen_package_revision_id",
+        "id, title, lifecycle_state, archived_at, sender_timezone, current_package_revision_id, frozen_package_revision_id",
       )
       .eq("id", session.signing_id as string)
       .maybeSingle(),
@@ -469,6 +469,7 @@ export async function resolveCeremonyBrowserSession(
   if (!signing || signing.lifecycle_state !== "IN_PROGRESS") {
     return FORBIDDEN;
   }
+  if (signing.archived_at) return FORBIDDEN;
   if (!participant || participant.participant_status === "REMOVED") {
     return FORBIDDEN;
   }

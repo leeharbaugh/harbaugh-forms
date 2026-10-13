@@ -3,6 +3,7 @@
  * Managers may resend (same link), replace (new link), or revoke access.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { assertSigningNotArchived } from "./archive";
 import { loadSigningAuthorityBundle } from "./authority-context";
 import {
   issueParticipantCredentialsForActivation,
@@ -66,6 +67,7 @@ async function requireInProgressManageableParticipant(options: {
       "Participant invitation links may only be managed while the Signing is In Progress.",
     );
   }
+  assertSigningNotArchived(bundle.signing);
 
   const { data: activation, error: activationError } = await options.admin
     .from("signings")
@@ -304,6 +306,7 @@ export async function replaceParticipantCredentialsWithActor(
       "Participant credentials may only be replaced while the Signing is In Progress.",
     );
   }
+  assertSigningNotArchived(bundle.signing);
 
   if (!Array.isArray(input.participantIds) || input.participantIds.length === 0) {
     throw new SigningError("INVALID_INPUT", "participantIds required.");
