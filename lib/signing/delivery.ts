@@ -24,6 +24,10 @@ import {
 import { loadRawParticipantCredentialToken } from "./credentials";
 import { SigningError } from "./errors";
 import { getSigningExternalAccessState } from "./external-access";
+import {
+  type SandboxEmailInspection,
+  writeSandboxEmailInspection,
+} from "./sandbox-email-inspection";
 import { isSigningWorkSuspended } from "./work-suspension";
 
 export { buildCompletedPackageUrl, buildParticipantInviteUrl };
@@ -150,6 +154,7 @@ export function signingEmailSandboxed(): boolean {
  */
 export async function sendSigningEmail(
   message: SigningEmailMessage,
+  options: { sandboxInspection?: SandboxEmailInspection } = {},
 ): Promise<SigningEmailSendResult> {
   if (process.env.SIGNING_EMAIL_SANDBOX?.trim() === "true") {
     if (process.env.VERCEL_ENV?.trim() === "production") {
@@ -158,6 +163,9 @@ export async function sendSigningEmail(
         failureDetailSafe:
           "Signing email sandbox is not allowed in production; message was not sent.",
       };
+    }
+    if (options.sandboxInspection) {
+      await writeSandboxEmailInspection(message, options.sandboxInspection);
     }
     const toFingerprint = message.to.trim().toLowerCase().slice(0, 64);
     return {

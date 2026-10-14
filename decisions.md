@@ -12,6 +12,18 @@ Each decision should include:
 
 ---
 
+## Development sandbox email copies are local QA files, never delivery persistence
+
+**Date:** 2026-10-14
+
+**Decision:** When the development email sandbox accepts a Signing email whose caller opts in, the exact subject and body are written to the gitignored `_audit_tmp/signing-email-sandbox/`. This is never stored in the database and never part of production delivery. Only link-free emails opt in (currently cancellation notices); emails carrying bearer links never do. The copy is gated like the participant-link QA helper, plus `NODE_ENV !== "production"`, and writing it never changes delivery results.
+
+**Reason:** Manual QA needs to see exactly what a sandboxed send produced. Adding body columns or an inbox would create production-facing data for a development need.
+
+**Related:** `lib/signing/sandbox-email-inspection.ts`, `lib/signing/delivery.ts`, `lib/signing/cancellation-notices.ts`.
+
+---
+
 ## Cancel Signing records a private reason and emails invited participants asynchronously (refinement)
 
 **Date:** 2026-10-13 (cancellation emails tranche)

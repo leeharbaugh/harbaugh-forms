@@ -20,7 +20,7 @@
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { chromium, type Page } from "playwright";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { PDFDocument, StandardFonts } from "pdf-lib";
@@ -335,6 +335,22 @@ async function main() {
         if (/Message from/.test(message.textBody)) fail("empty message produced a message section");
       }
       ok("no message: Cancellation card shows None, emails have no message section; the finished participant is emailed too");
+
+      // The dev server's own sandbox send (manual UI path) left one inspectable copy per notice.
+      const sandboxDir = path.join("_audit_tmp", "signing-email-sandbox");
+      const sandboxFiles = existsSync(sandboxDir) ? readdirSync(sandboxDir) : [];
+      for (const notice of await notices(signing.signingId)) {
+        const matches = sandboxFiles.filter((name) => name.includes(notice.id as string));
+        if (matches.length !== 1) fail(`expected one sandbox copy for a notice, found ${matches.length}`);
+        const text = readFileSync(path.join(sandboxDir, matches[0]), "utf8");
+        const rendered = emails.get(notice.recipient_email_snapshot as string)!;
+        if (!text.endsWith(`Subject: ${rendered.subject}\n\n${rendered.textBody}\n`)) fail("sandbox copy differs from the email");
+        if (text.includes(reason) || /Message from/.test(text) || /https?:\/\/|\/sign\/|#[A-Za-z0-9_-]{20,}/.test(text)) {
+          fail("sandbox copy contains the reason, an empty message section, a link or a token");
+        }
+        ok(`manual UI cancel left ${path.join(sandboxDir, matches[0])}`);
+      }
+      ok("sandbox copies from the dev server: one per notice, exact subject/body, no message section, no reason, no link or token");
     }
 
     // ---------- 3. Archived In Progress, then Cancel ----------

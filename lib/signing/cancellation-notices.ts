@@ -230,6 +230,8 @@ export async function processCancellationNoticeWorkItem(options: {
 
   const signing = await loadNoticeSigning(admin, signingId);
   const recipientEmail = String(instruction.recipient_email_snapshot ?? "").trim();
+  const recipientName = String(instruction.recipient_name_snapshot ?? "Participant");
+  const attemptNumber = await nextAttemptNumber(admin, deliveryInstructionId);
 
   let result: SigningEmailSendResult;
   if (!signing || signing.lifecycleState !== "CANCELLED") {
@@ -252,17 +254,26 @@ export async function processCancellationNoticeWorkItem(options: {
       return suspended("Signing external access is suspended.");
     }
     const message = buildCancellationNoticeMessage({
-      recipientName: String(instruction.recipient_name_snapshot ?? "Participant"),
+      recipientName,
       recipientEmail,
       signingTitle: signing.title,
       senderDisplayName: signing.senderDisplayName,
       brokerageName: signing.brokerageName,
       participantMessage: signing.participantMessage,
     });
-    result = await (options.send ?? sendSigningEmail)(message);
+    result = options.send
+      ? await options.send(message)
+      : await sendSigningEmail(message, {
+          sandboxInspection: {
+            purpose: "CANCELLATION",
+            signingId,
+            deliveryInstructionId,
+            attemptNumber,
+            recipientName,
+          },
+        });
   }
 
-  const attemptNumber = await nextAttemptNumber(admin, deliveryInstructionId);
   const { error: attemptError } = await admin
     .from("signing_delivery_attempts")
     .insert({

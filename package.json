@@ -80,6 +80,7 @@
     "validate:native-signing-recovery-access-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-recovery-access-dev.ts",
     "test:native-signing-archive": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/archive.test.ts",
     "test:native-signing-cancellation-notices": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/cancellation-notices.test.ts",
+    "test:native-signing-sandbox-email-inspection": "npx --yes tsx --tsconfig tsconfig.json --test lib/signing/sandbox-email-inspection.test.ts",
     "validate:native-signing-archive-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-archive-dev.ts",
     "validate:native-signing-cancellation-notices-dev": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-cancellation-notices-dev.ts",
     "validate:native-signing-production-readiness": "npx --yes tsx --tsconfig tsconfig.json --env-file=.env.local scripts/validate-native-signing-production-readiness.ts",
