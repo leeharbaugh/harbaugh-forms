@@ -1,4 +1,5 @@
 import { FormsPage } from "@/components/forms/forms-page";
+import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <FormsPage />;
+  return <FormsPage nativeSigningEnabled={isNativeSigningEnabled()} />;
 }

@@ -129,7 +129,11 @@ type PublishPreviewState = {
   issues: Array<{ code: string; message: string; blocking: boolean }>;
 };
 
-export function FormsPage() {
+export function FormsPage({
+  nativeSigningEnabled = false,
+}: {
+  nativeSigningEnabled?: boolean;
+}) {
   const { actor } = useLibraryActor();
   const router = useRouter();
   const [templates, setTemplates] = useState<FormListItem[]>([]);
@@ -1507,6 +1511,15 @@ export function FormsPage() {
                           <Button variant="outline" size="sm" asChild>
                             <Link href={mapFieldsEditorPath(template.id)}>
                               Map Fields
+                            </Link>
+                          </Button>
+                        ) : null}
+                        {nativeSigningEnabled &&
+                        (template.publication_state === "PUBLISHED" ||
+                          template.status === "INACTIVE") ? (
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={`/forms/${template.id}/signing-placements`}>
+                              Signing placements
                             </Link>
                           </Button>
                         ) : null}

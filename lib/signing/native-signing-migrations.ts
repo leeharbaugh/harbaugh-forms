@@ -35,6 +35,7 @@ export const NATIVE_SIGNING_ALL_MIGRATIONS = [
   "20261012120000_native_signing_archive",
   "20261012120100_native_signing_archive_evidence_guard_fix",
   "20261013120000_native_signing_cancellation_notices",
+  "20261014120000_native_signing_placement_templates",
 ] as const;
 
 export function listNativeSigningMigrationFilesFromDisk(

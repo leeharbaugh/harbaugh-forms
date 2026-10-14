@@ -12,6 +12,42 @@ Each decision should include:
 
 ---
 
+## Signing Placement Templates are exact-version, slot-based, explicitly applied configuration
+
+**Date:** 2026-10-14 (Signing Placement Templates tranche)
+
+**Decision:**
+1. **Exact version.** A placement template attaches to one exact Form/version record, `forms.id`. Only published or retired versions are eligible, because their PDFs are immutable. Draft versions (whose PDF can still change) and deleted versions are refused.
+2. **Two scopes.** Scopes are Personal (one owner) and Organization (one organization) only. There is no Global scope, and an application admin gets no extra reach.
+3. **Personal fully overrides Organization.** For the same exact version, the acting manager's own Personal template is used whenever it exists. The originating organization's template is used only otherwise. The two are never merged or partially overridden.
+4. **Role slots, not people.** Templates reference role slots `(role_code, ordinal)`, such as Buyer 2. They never store a Contact, User, participant id, name or email.
+5. **Stable ordering.** Slot N of a role is that role's Nth non-removed participant, ordered by `display_order`, then `create_date`, then `id`. The SQL transaction and the preview use the same rule.
+6. **No identity matching.** There is no name, email, Contact, User or fuzzy matching, and `optional_role` labels are ignored.
+7. **Explicit apply.** Applying is always an explicit, previewed manager action in Prepare Documents. It never happens on Signing creation, on document add, or when the editor opens.
+8. **Missing slots.** A slot with no matching participant is skipped and named in the preview ("Buyer 3 has no matching participant. 2 placements will not be added."). The manager confirms with "Apply available placements" or cancels.
+9. **Extra participants.** Participants with no slot receive nothing; nothing is guessed.
+10. **No live link.** Applying copies the placements into ordinary `signing_draft_fields` and `signing_draft_prepared_content`. There is no link back to the template: editing either one never changes the other.
+11. **Configuration, not evidence.** Templates are editable configuration. They are soft-deleted (status DELETED plus `deleted_at`), cannot be undeleted, and never become evidence. Signing evidence starts at activation, as before.
+12. **Checkmark.** A Checkmark has no slot and is applied as participant-free prepared content.
+13. **Version mismatch.** A template whose `form_id` differs from the document's exact version cannot be applied. The server and the database transaction both refuse it.
+14. **Copy from another version.** Copying is explicit. It creates a new, independent template in the same scope for the target version, records `copied_from_template_id` only as provenance, and opens the editor with "Placement locations may have changed in this form version. Review all placements before using this template." Placements on pages the target version does not have are skipped and reported.
+15. **No inference when copying.** Copying uses no AI, OCR or coordinate inference. Geometry is copied as-is. Sources are suggested only by the explicit `form_family_key`; otherwise the manager chooses.
+
+**Implementation choices that follow:**
+- **Reapply policy.** If the document already has placements, the preview warns, and applying adds alongside them. Manual placements are never deleted or overwritten.
+- **Idempotency.** Each apply carries one request id, recorded in `signing_placement_template_applications` under the Signing row lock. Repeating it replays the result; reusing it for a different document or template is refused. Placements are never deduplicated by coordinates.
+- **Browser input.** The browser sends only the template id, Signing document id and request id. The server re-authorizes Draft management, re-resolves the effective template, and maps participants itself.
+- **Organization authority** mirrors existing organization-default authority. ORG_ADMIN members of the organization edit and delete; active members can view and apply; other organizations get nothing. An Organization template applies to a Signing only through `signings.originating_organization_id`, and only for active members.
+- **Dates.** A Date belongs to the same slot as its linked Signature or Initials. On apply, the source is created first and the Date is linked to the new source.
+
+**Reason:** Agents re-place the same Signature and Initials on the same forms in every transaction. Exact-version, slot-based templates remove that repetition without guessing identities or locations, and without crossing Signing authorization or evidence boundaries.
+
+**Consequences:** Native Signing migration inventory is now 31. Production must apply `20261014120000` after `20261013120000`. Template tables are deny-all to browser roles, and both transactions are service-role only.
+
+**Related:** `supabase/migrations/20261014120000_native_signing_placement_templates.sql`; `lib/signing/placement-template-model.ts`, `placement-templates.ts`, `placement-template-apply.ts`, `placement-template-actions.ts`; `app/forms/[id]/signing-placements/`; `components/forms/signing-placements-page.tsx`; `components/signings/placement-template-apply-panel.tsx`; `components/signings/signing-preview-dialog.tsx`.
+
+---
+
 ## Development sandbox email copies are local QA files, never delivery persistence
 
 **Date:** 2026-10-14

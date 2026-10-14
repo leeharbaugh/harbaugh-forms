@@ -5,6 +5,7 @@ import "react-pdf/dist/Page/TextLayer.css";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { PlacementTemplateApplyPanel } from "@/components/signings/placement-template-apply-panel";
 import { acquirePdfWorker, releasePdfWorker } from "@/lib/pdfjs-setup";
 import {
   PDF_EDITOR_SIDEBAR_WIDTH,
@@ -98,6 +99,104 @@ export type SigningDocumentWorkspaceMode = "preview" | "prepare";
 
 const ADOPTION_BOUNDARY_COPY =
   "Place signing fields for each participant. Participants adopt their signatures and initials when they sign.";
+
+const SIGNING_PLACEMENT_HELP =
+  "Choose a participant, then a field, then click the page once to place it. Signature, Initials, Date and Printed Name belong to the chosen participant; a Checkmark belongs to no one. A Signature also places its Date Signed. A Date links to the participant's nearest Signature or Initials on that page; to link it elsewhere, delete it and place it again. Printed Name and Checkmark are prepared content: they are printed into the document when it is sent and are not signing actions. Drag or resize to adjust. Ctrl-click (⌘-click on Mac) selects several; Copy (Ctrl/⌘+C) then click the page to place the copy; Paste (Ctrl/⌘+V) places it again; Delete removes the selection.";
+
+type WorkspaceResult = { ok: true; data?: unknown } | { ok: false; error: string };
+
+export type PlacementWorkspaceCopy = {
+  prepareTitle: string;
+  prepareSubtitle: string;
+  previewTitle: string;
+  previewSubtitle: string;
+  participantLabel: string;
+  noParticipants: string;
+  chooseParticipantFirst: string;
+  adoptionBoundary: string;
+  placementHelp: string;
+  noFieldsYet: string;
+};
+
+const SIGNING_WORKSPACE_COPY: PlacementWorkspaceCopy = {
+  prepareTitle: "Prepare Documents",
+  prepareSubtitle: "Changes save to Draft preparation only.",
+  previewTitle: "Preview Signing",
+  previewSubtitle:
+    "Documents and Signing fields exactly as prepared. This does not send or freeze the Signing.",
+  participantLabel: "Participant",
+  noParticipants: "Add a participant first",
+  chooseParticipantFirst: "Choose a participant before placing this field.",
+  adoptionBoundary: ADOPTION_BOUNDARY_COPY,
+  placementHelp: SIGNING_PLACEMENT_HELP,
+  noFieldsYet: "No Signing fields yet. Choose a participant and a field, then click the page.",
+};
+
+/**
+ * Where the placement editor loads and saves. The Signing workspace uses the
+ * Draft preparation actions; a placement template supplies its own trusted
+ * actions. Each source authorizes every write on the server.
+ */
+export type PlacementWorkspace = {
+  kind: "signing" | "template";
+  load: () => Promise<WorkspaceResult>;
+  documentPdfUrl: (document: SigningPreviewDocument) => string | null;
+  savePlacement: (input: {
+    documentId: string;
+    field: SigningPreviewField;
+    existingId: string | undefined;
+    linkedSourceId: string | undefined;
+    dateLinkMode: "AUTO_NEAREST" | undefined;
+  }) => Promise<WorkspaceResult>;
+  removePlacement: (input: { id: string; prepared: boolean }) => Promise<WorkspaceResult>;
+  copy?: Partial<PlacementWorkspaceCopy>;
+};
+
+function signingWorkspace(signingId: string): PlacementWorkspace {
+  return {
+    kind: "signing",
+    load: () => getSigningPreviewAction({ signingId }),
+    documentPdfUrl: (document) =>
+      document.hasSelectedSnapshot
+        ? `/signings/${signingId}/preview/document/${document.id}`
+        : null,
+    savePlacement: ({ documentId, field, existingId, linkedSourceId, dateLinkMode }) => {
+      if (isPreparedContentType(field.fieldType)) {
+        return upsertDraftPreparedContentAction({
+          signingId,
+          contentId: existingId,
+          signingDocumentId: documentId,
+          signingParticipantId: field.participantId || undefined,
+          contentType: field.fieldType,
+          pageNumber: field.pageNumber,
+          x: field.x,
+          y: field.y,
+          width: field.width,
+          height: field.height,
+        });
+      }
+      return upsertDraftSigningFieldAction({
+        signingId,
+        fieldId: existingId,
+        signingDocumentId: documentId,
+        signingParticipantId: field.participantId,
+        fieldType: field.fieldType,
+        isRequired: field.isRequired,
+        pageNumber: field.pageNumber,
+        x: field.x,
+        y: field.y,
+        width: field.width,
+        height: field.height,
+        linkedSignatureDraftFieldId: linkedSourceId,
+        dateLinkMode,
+      });
+    },
+    removePlacement: ({ id, prepared }) =>
+      prepared
+        ? removeDraftPreparedContentAction({ signingId, contentId: id })
+        : removeDraftSigningFieldAction({ signingId, fieldId: id }),
+  };
+}
 
 const fieldTypeLabel = draftFieldTypeLabel;
 
@@ -352,6 +451,7 @@ export function SigningPreviewDialog({
   onChanged,
   readiness = null,
   onPreparationReadiness,
+  workspace,
 }: {
   open: boolean;
   signingId: string;
@@ -363,9 +463,19 @@ export function SigningPreviewDialog({
   readiness?: { ready: boolean; blockers: SigningReadinessBlocker[] } | null;
   /** Fresh server preparation blockers after saved placement changes. */
   onPreparationReadiness?: (blockers: SigningReadinessBlocker[]) => void;
+  /** Non-Signing placement source (memoize it); defaults to this Signing's Draft. */
+  workspace?: PlacementWorkspace;
 }) {
   const titleId = useId();
   const editable = mode === "prepare";
+  const activeWorkspace = useMemo(
+    () => workspace ?? signingWorkspace(signingId),
+    [workspace, signingId],
+  );
+  const copy: PlacementWorkspaceCopy = {
+    ...SIGNING_WORKSPACE_COPY,
+    ...activeWorkspace.copy,
+  };
   const [model, setModel] = useState<SigningPreviewModel | null>(null);
   const [initialLoading, setInitialLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -451,7 +561,7 @@ export function SigningPreviewDialog({
     idMapRef.current = new Map();
     dirtyRef.current = false;
     void (async () => {
-      const result = await getSigningPreviewAction({ signingId });
+      const result = await activeWorkspace.load();
       if (cancelled) return;
       if (!result.ok) {
         setError(result.error);
@@ -476,7 +586,7 @@ export function SigningPreviewDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, signingId, initialDocumentId, replaceModel]);
+  }, [open, activeWorkspace, initialDocumentId, replaceModel]);
 
   useEffect(() => {
     if (!open) return;
@@ -505,9 +615,7 @@ export function SigningPreviewDialog({
   );
   const currentDocument: SigningPreviewDocument | null =
     documentIndex >= 0 ? documents[documentIndex] : null;
-  const pdfUrl = currentDocument?.hasSelectedSnapshot
-    ? `/signings/${signingId}/preview/document/${currentDocument.id}`
-    : null;
+  const pdfUrl = currentDocument ? activeWorkspace.documentPdfUrl(currentDocument) : null;
   const numPages = currentDocument
     ? (numPagesByDocument[currentDocument.id] ?? 0)
     : 0;
@@ -574,14 +682,14 @@ export function SigningPreviewDialog({
 
   /** Trusted server state wins after a failed write; view state is kept. */
   const reconcile = useCallback(async () => {
-    const result = await getSigningPreviewAction({ signingId });
+    const result = await activeWorkspace.load();
     if (!result.ok) return;
     const data = result.data as SigningPreviewModel;
     replaceModel(data);
     setSelectedFieldIds((previous) =>
       previous.map(resolveId).filter((id) => findField(data, id) !== null),
     );
-  }, [signingId, resolveId, replaceModel]);
+  }, [activeWorkspace, resolveId, replaceModel]);
 
   function metricsFor(documentId: string, pageNumber: number): PageMetrics | null {
     const size = pageSizes[`${documentId}:${pageNumber}`];
@@ -600,33 +708,11 @@ export function SigningPreviewDialog({
     field: SigningPreviewField,
     existingId: string | undefined,
   ) {
-    if (isPreparedContentType(field.fieldType)) {
-      return upsertDraftPreparedContentAction({
-        signingId,
-        contentId: existingId,
-        signingDocumentId: documentId,
-        signingParticipantId: field.participantId || undefined,
-        contentType: field.fieldType,
-        pageNumber: field.pageNumber,
-        x: field.x,
-        y: field.y,
-        width: field.width,
-        height: field.height,
-      });
-    }
-    return upsertDraftSigningFieldAction({
-      signingId,
-      fieldId: existingId,
-      signingDocumentId: documentId,
-      signingParticipantId: field.participantId,
-      fieldType: field.fieldType,
-      isRequired: field.isRequired,
-      pageNumber: field.pageNumber,
-      x: field.x,
-      y: field.y,
-      width: field.width,
-      height: field.height,
-      linkedSignatureDraftFieldId: field.linkedSignatureFieldId
+    return activeWorkspace.savePlacement({
+      documentId,
+      field,
+      existingId,
+      linkedSourceId: field.linkedSignatureFieldId
         ? resolveId(field.linkedSignatureFieldId)
         : undefined,
       dateLinkMode:
@@ -740,7 +826,7 @@ export function SigningPreviewDialog({
     if (!editable) return;
     cancelPasteMode();
     if (placementHasParticipant(tool) && !selectedParticipantId) {
-      setError("Choose a participant before placing this field.");
+      setError(copy.chooseParticipantFirst);
       return;
     }
     setSelectedFieldIds([]);
@@ -823,7 +909,7 @@ export function SigningPreviewDialog({
     if (selectedFieldIds.length > 0) setSelectedFieldIds([]);
     const needsParticipant = placementHasParticipant(tool);
     if (needsParticipant && !selectedParticipantId) {
-      setError("Choose a participant before placing this field.");
+      setError(copy.chooseParticipantFirst);
       return;
     }
     const metrics = metricsFor(currentDocument.id, pageNumber);
@@ -1026,9 +1112,10 @@ export function SigningPreviewDialog({
       for (const fieldId of primary) {
         const realId = resolveId(fieldId);
         if (realId.startsWith("local-")) continue;
-        const result = preparedIds.has(fieldId)
-          ? await removeDraftPreparedContentAction({ signingId, contentId: realId })
-          : await removeDraftSigningFieldAction({ signingId, fieldId: realId });
+        const result = await activeWorkspace.removePlacement({
+          id: realId,
+          prepared: preparedIds.has(fieldId),
+        });
         if (!result.ok) {
           setError(result.error);
           await reconcile();
@@ -1303,12 +1390,10 @@ export function SigningPreviewDialog({
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b px-4 py-2">
         <div className="min-w-0 flex-1">
           <h2 id={titleId} className="text-base font-semibold leading-tight">
-            {editable ? "Prepare Documents" : "Preview Signing"}
+            {editable ? copy.prepareTitle : copy.previewTitle}
           </h2>
           <p className="truncate text-xs text-muted-foreground">
-            {editable
-              ? "Changes save to Draft preparation only."
-              : "Documents and Signing fields exactly as prepared. This does not send or freeze the Signing."}
+            {editable ? copy.prepareSubtitle : copy.previewSubtitle}
           </p>
         </div>
         {model ? (
@@ -1661,11 +1746,24 @@ export function SigningPreviewDialog({
         <aside className="flex min-h-0 flex-col overflow-y-auto border-t p-4 text-sm lg:border-t-0">
           {editable ? (
             <div className="space-y-4">
-              <p className="text-xs text-muted-foreground">{ADOPTION_BOUNDARY_COPY}</p>
+              <p className="text-xs text-muted-foreground">{copy.adoptionBoundary}</p>
+              {activeWorkspace.kind === "signing" && currentDocument ? (
+                <PlacementTemplateApplyPanel
+                  key={currentDocument.id}
+                  signingId={signingId}
+                  documentId={currentDocument.id}
+                  saving={pendingCount > 0}
+                  onApplied={async () => {
+                    dirtyRef.current = true;
+                    await reconcile();
+                    void refreshReadiness();
+                  }}
+                />
+              ) : null}
               {model ? (
                 <div className="space-y-3">
                   <div className="space-y-1">
-                    <Label htmlFor="prepare-participant">Participant</Label>
+                    <Label htmlFor="prepare-participant">{copy.participantLabel}</Label>
                     <select
                       id="prepare-participant"
                       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
@@ -1678,7 +1776,7 @@ export function SigningPreviewDialog({
                       disabled={model.participants.length === 0}
                     >
                       {model.participants.length === 0 ? (
-                        <option value="">Add a participant first</option>
+                        <option value="">{copy.noParticipants}</option>
                       ) : (
                         model.participants.map((participant) => (
                           <option key={participant.id} value={participant.id}>
@@ -1738,20 +1836,7 @@ export function SigningPreviewDialog({
                       </p>
                     ) : null}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Choose a participant, then a field, then click the page
-                    once to place it. Signature, Initials, Date and Printed
-                    Name belong to the chosen participant; a Checkmark belongs
-                    to no one. A Signature also places its Date Signed. A Date
-                    links to the participant&apos;s nearest Signature or
-                    Initials on that page; to link it elsewhere, delete it and
-                    place it again. Printed Name and Checkmark are prepared
-                    content: they are printed into the document when it is sent
-                    and are not signing actions. Drag or resize to adjust.
-                    Ctrl-click (⌘-click on Mac) selects several; Copy
-                    (Ctrl/⌘+C) then click the page to place the copy; Paste
-                    (Ctrl/⌘+V) places it again; Delete removes the selection.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{copy.placementHelp}</p>
                 </div>
               ) : null}
 
@@ -1884,7 +1969,7 @@ export function SigningPreviewDialog({
             {sortedFields.length === 0 ? (
               <p className="text-muted-foreground">
                 {editable
-                  ? "No Signing fields yet. Choose a participant and a field, then click the page."
+                  ? copy.noFieldsYet
                   : "No Signing fields are placed on this document yet."}
               </p>
             ) : (
