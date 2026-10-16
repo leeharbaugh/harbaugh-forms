@@ -48,6 +48,7 @@ export function roleCodeForPacketRole(role: PacketContactRole): SigningParticipa
     case "SELLER":
     case "TENANT":
     case "LANDLORD":
+    case "AGENT":
       return role;
     default:
       return "OTHER";

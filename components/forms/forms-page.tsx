@@ -3,7 +3,6 @@
 import { FormForm } from "@/components/forms/form-form";
 import { ListEmptyState } from "@/components/list-empty-state";
 import { ListPageHeader } from "@/components/list-page-header";
-import { ListRowActions } from "@/components/list-row-actions";
 import {
   ResizableDataTable,
   ResizableDataTableActionsCell,
@@ -13,6 +12,12 @@ import {
 } from "@/components/resizable-data-table";
 import { Button } from "@/components/ui/button";
 import { AppCheckbox } from "@/components/ui/app-checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   FormPublicationBadge,
   LibraryScopeBadge,
@@ -113,11 +118,10 @@ const FORM_TABLE_COLUMNS: ResizableDataTableColumn[] = [
   {
     id: "actions",
     label: "Actions",
-    // Sized for Map Fields + Edit + Delete only. Lower maxWidth also clamps
-    // previously saved oversized widths from the older multi-action layout.
-    defaultWidth: 280,
-    minWidth: 250,
-    maxWidth: 340,
+    // Compact Actions menu (no horizontal button strip / scroll).
+    defaultWidth: 120,
+    minWidth: 100,
+    maxWidth: 160,
     isActions: true,
   },
 ];
@@ -1505,43 +1509,71 @@ export function FormsPage({
                       </span>
                     </ResizableDataTableCell>
                     <ResizableDataTableActionsCell>
-                      <ListRowActions>
-                        {canMapFormFields(actor, template) ||
-                        canOfferFormDefaultsManagement(template) ? (
-                          <Button variant="outline" size="sm" asChild>
-                            <Link href={mapFieldsEditorPath(template.id)}>
-                              Map Fields
-                            </Link>
-                          </Button>
-                        ) : null}
-                        {nativeSigningEnabled &&
-                        (template.publication_state === "PUBLISHED" ||
-                          template.status === "INACTIVE") ? (
-                          <Button variant="outline" size="sm" asChild>
-                            <Link href={`/forms/${template.id}/signing-placements`}>
-                              Signing placements
-                            </Link>
-                          </Button>
-                        ) : null}
-                        {canEditForm(actor, template) ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openEditForm(template)}
-                          >
-                            Edit
-                          </Button>
-                        ) : null}
-                        {canDeleteForm(actor, template) ? (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => openDeleteDialog(template)}
-                          >
-                            Delete
-                          </Button>
-                        ) : null}
-                      </ListRowActions>
+                      {(() => {
+                        const canMap =
+                          canMapFormFields(actor, template) ||
+                          canOfferFormDefaultsManagement(template);
+                        const canPlacements =
+                          nativeSigningEnabled &&
+                          (template.publication_state === "PUBLISHED" ||
+                            template.status === "INACTIVE");
+                        const canEdit = canEditForm(actor, template);
+                        const canDelete = canDeleteForm(actor, template);
+                        if (!canMap && !canPlacements && !canEdit && !canDelete) {
+                          return (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          );
+                        }
+                        return (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                data-testid="form-row-actions"
+                                aria-label={`Actions for ${template.form_name}`}
+                              >
+                                Actions
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="min-w-[12rem]">
+                              {canMap ? (
+                                <DropdownMenuItem asChild>
+                                  <Link href={mapFieldsEditorPath(template.id)}>
+                                    Map Fields
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : null}
+                              {canPlacements ? (
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={`/forms/${template.id}/signing-placements`}
+                                    data-testid="form-row-signing-placements"
+                                  >
+                                    Signing placements
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : null}
+                              {canEdit ? (
+                                <DropdownMenuItem
+                                  onSelect={() => openEditForm(template)}
+                                >
+                                  Edit
+                                </DropdownMenuItem>
+                              ) : null}
+                              {canDelete ? (
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onSelect={() => openDeleteDialog(template)}
+                                >
+                                  Delete
+                                </DropdownMenuItem>
+                              ) : null}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        );
+                      })()}
                     </ResizableDataTableActionsCell>
                   </ResizableDataTableRow>
                 );

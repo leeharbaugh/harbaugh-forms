@@ -8,8 +8,11 @@ import {
   COPY_FROM_VERSION_WARNING,
   formVersionDisplay,
   formVersionPlacementEligibility,
+  isAdminManagingOwnerPersonalTemplate,
   mapParticipantsToSlots,
   parseSlotKey,
+  personalTemplateCardTitle,
+  personalTemplateSubjectUserId,
   pickEffectiveTemplate,
   planTemplateApplication,
   planTemplateCopy,
@@ -20,6 +23,8 @@ import {
   unresolvedSlotNotice,
   type SlotRankableParticipant,
 } from "./placement-template-model";
+import { roleCodeForPacketRole } from "./participant-roles";
+import { PACKET_CONTACT_ROLES } from "@/lib/types/packet-contact";
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8");
 const migration = read(
@@ -207,7 +212,7 @@ describe("Form version eligibility and scope", () => {
     );
   });
 
-  it("allows Personal templates on forms the user can use, with no admin override", () => {
+  it("allows Personal templates on forms the user can use; Global Admin may open a private owner's form", () => {
     const actor = { userId: "u1", memberOrganizationIds: ["org-a"] };
     assert.equal(canUseFormForPersonalTemplate(actor, form), true);
     assert.equal(
@@ -219,11 +224,49 @@ describe("Form version eligibility and scope", () => {
       false,
     );
     assert.equal(
+      canUseFormForPersonalTemplate(
+        { ...actor, isActiveAppAdmin: true },
+        { ...form, scope: "PRIVATE", owner_user_id: "u2" },
+      ),
+      true,
+    );
+    assert.equal(
       canUseFormForPersonalTemplate(actor, { ...form, scope: "ORGANIZATION", organization_id: "org-b" }),
       false,
     );
-    assert.doesNotMatch(templatesModule, /isActiveAdmin|app_role|requireAppAdmin/);
-    assert.doesNotMatch(applyModule, /isActiveAdmin|app_role|requireAppAdmin/);
+    // Apply path stays free of app-admin override (Personal precedence is the acting manager).
+    assert.doesNotMatch(applyModule, /isActiveAppAdmin|isActivePlacementAppAdmin|requireAppAdmin/);
+  });
+
+  it("keeps Personal ownership on the form owner when a Global Admin manages on behalf", () => {
+    const privateForm = { ...form, scope: "PRIVATE", owner_user_id: "owner-1" };
+    const admin = { userId: "admin-1", isActiveAppAdmin: true };
+    assert.equal(personalTemplateSubjectUserId(admin, privateForm), "owner-1");
+    assert.equal(isAdminManagingOwnerPersonalTemplate(admin, privateForm), true);
+    assert.equal(
+      personalTemplateCardTitle({
+        ownerDisplayName: "Lee Harbaugh",
+        managingOnBehalf: true,
+      }),
+      "Personal placement template for Lee Harbaugh",
+    );
+    assert.equal(
+      personalTemplateSubjectUserId(admin, form),
+      "admin-1",
+      "Global forms stay the acting admin's own Personal template",
+    );
+    assert.equal(
+      isAdminManagingOwnerPersonalTemplate(
+        { userId: "owner-1", isActiveAppAdmin: false },
+        privateForm,
+      ),
+      false,
+    );
+  });
+
+  it("maps Packet Contact role AGENT to Signing participant AGENT", () => {
+    assert.ok(PACKET_CONTACT_ROLES.includes("AGENT"));
+    assert.equal(roleCodeForPacketRole("AGENT"), "AGENT");
   });
 
   it("allows Organization templates only on forms all members can use", () => {

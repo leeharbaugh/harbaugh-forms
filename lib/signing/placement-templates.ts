@@ -9,8 +9,12 @@ import {
   COPY_FROM_VERSION_WARNING,
   formVersionDisplay,
   formVersionPlacementEligibility,
+  isActivePlacementAppAdmin,
+  isAdminManagingOwnerPersonalTemplate,
   isPlacementTemplateFieldType,
   parseSlotKey,
+  personalTemplateCardTitle,
+  personalTemplateSubjectUserId,
   slotFromColumns,
   slotKey,
   slotLabel,
@@ -94,24 +98,58 @@ export function orgAdminOrganizationIds(actor: SigningActor): string[] {
     .map((row) => row.organizationId);
 }
 
-/** Who may see a template (members may use an Organization template). */
+function actorIsActiveAppAdmin(actor: SigningActor): boolean {
+  return isActivePlacementAppAdmin(actor.profile);
+}
+
+/**
+ * Who may see a template. Members may use an Organization template.
+ * An active Global Admin may read a Personal template they are authorized
+ * to administer for a Form owner (checked with form context at the call site
+ * when elevating; ownership alone is never enough for an unrelated admin).
+ */
 export function canReadPlacementTemplate(
   actor: SigningActor,
-  template: Pick<PlacementTemplateRow, "scope_type" | "owner_user_id" | "organization_id">,
+  template: Pick<PlacementTemplateRow, "scope_type" | "owner_user_id" | "organization_id" | "form_id">,
+  options?: { form?: PlacementTemplateFormRef | null },
 ): boolean {
-  if (template.scope_type === "PERSONAL") return template.owner_user_id === actor.userId;
+  if (template.scope_type === "PERSONAL") {
+    if (template.owner_user_id === actor.userId) return true;
+    if (!actorIsActiveAppAdmin(actor) || !options?.form) return false;
+    return (
+      personalTemplateSubjectUserId(
+        { userId: actor.userId, isActiveAppAdmin: true },
+        options.form,
+      ) === template.owner_user_id &&
+      options.form.id === template.form_id
+    );
+  }
   return (
     template.organization_id != null &&
     activeOrganizationIds(actor).includes(template.organization_id)
   );
 }
 
-/** Who may change a template: its owner, or an ORG_ADMIN of its organization. */
+/**
+ * Who may change a template: its owner, an ORG_ADMIN of its organization, or
+ * a Global Admin managing the Form owner's Personal template on their behalf.
+ */
 export function canEditPlacementTemplate(
   actor: SigningActor,
-  template: Pick<PlacementTemplateRow, "scope_type" | "owner_user_id" | "organization_id">,
+  template: Pick<PlacementTemplateRow, "scope_type" | "owner_user_id" | "organization_id" | "form_id">,
+  options?: { form?: PlacementTemplateFormRef | null },
 ): boolean {
-  if (template.scope_type === "PERSONAL") return template.owner_user_id === actor.userId;
+  if (template.scope_type === "PERSONAL") {
+    if (template.owner_user_id === actor.userId) return true;
+    if (!actorIsActiveAppAdmin(actor) || !options?.form) return false;
+    return (
+      personalTemplateSubjectUserId(
+        { userId: actor.userId, isActiveAppAdmin: true },
+        options.form,
+      ) === template.owner_user_id &&
+      options.form.id === template.form_id
+    );
+  }
   return (
     template.organization_id != null &&
     orgAdminOrganizationIds(actor).includes(template.organization_id)
@@ -150,13 +188,16 @@ async function loadVisibleForm(
   return data as PlacementFormRow;
 }
 
+function personalActorContext(actor: SigningActor) {
+  return {
+    userId: actor.userId,
+    memberOrganizationIds: activeOrganizationIds(actor),
+    isActiveAppAdmin: actorIsActiveAppAdmin(actor),
+  };
+}
+
 function assertFormUsableForPersonal(actor: SigningActor, form: PlacementFormRow) {
-  if (
-    !canUseFormForPersonalTemplate(
-      { userId: actor.userId, memberOrganizationIds: activeOrganizationIds(actor) },
-      form,
-    )
-  ) {
+  if (!canUseFormForPersonalTemplate(personalActorContext(actor), form)) {
     throw new SigningError("NOT_FOUND", "Form not found.");
   }
 }
@@ -241,13 +282,31 @@ export async function requirePlacementTemplate(
   need: "read" | "edit",
 ): Promise<PlacementTemplateRow> {
   const template = await loadTemplateRow(admin, templateIdRaw);
-  if (!template || template.status !== "ACTIVE" || !canReadPlacementTemplate(actor, template)) {
+  if (!template || template.status !== "ACTIVE") {
     throw new SigningError("NOT_FOUND", "Placement template not found.");
   }
-  if (need === "edit" && !canEditPlacementTemplate(actor, template)) {
+  let form: PlacementFormRow | null = null;
+  if (template.scope_type === "PERSONAL" && template.owner_user_id !== actor.userId) {
+    // Global Admin on-behalf path: Form must be PRIVATE and owned by the
+    // template's owner. Never grants access to another user's Personal
+    // template on a Global form.
+    const { data, error } = await admin
+      .from("forms")
+      .select(FORM_SELECT)
+      .eq("id", template.form_id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    form = (data as PlacementFormRow | null) ?? null;
+  }
+  if (!canReadPlacementTemplate(actor, template, { form })) {
+    throw new SigningError("NOT_FOUND", "Placement template not found.");
+  }
+  if (need === "edit" && !canEditPlacementTemplate(actor, template, { form })) {
     throw new SigningError(
       "FORBIDDEN",
-      "Only an organization admin can change this Organization placement template.",
+      template.scope_type === "ORGANIZATION"
+        ? "Only an organization admin can change this Organization placement template."
+        : "You cannot change this Personal placement template.",
     );
   }
   return template;
@@ -307,9 +366,16 @@ export type FormPlacementPageModel = {
     versionLabel: string | null;
     status: string | null;
     publicationState: string | null;
+    scope: string | null;
+    ownerUserId: string | null;
   };
   eligibility: { ok: true } | { ok: false; reason: string };
+  /** Display name of the Personal template's subject (owner), not always the actor. */
+  personalOwnerDisplayName: string | null;
   ownerFirstName: string | null;
+  /** True when a Global Admin is managing the Form owner's Personal template. */
+  managingPersonalOnBehalf: boolean;
+  personalCardTitle: string;
   personal: PlacementTemplateSummary | null;
   personalCopySources: PlacementCopySource[];
   organizations: FormPlacementOrganization[];
@@ -389,6 +455,12 @@ export async function loadFormPlacementPageWithActor(
   const form = await loadVisibleForm(input.formId, session);
   assertFormUsableForPersonal(actor, form);
 
+  const subjectUserId = personalTemplateSubjectUserId(personalActorContext(actor), form);
+  const managingOnBehalf = isAdminManagingOwnerPersonalTemplate(
+    personalActorContext(actor),
+    form,
+  );
+
   const memberOrgIds = activeOrganizationIds(actor);
   const adminOrgIds = orgAdminOrganizationIds(actor);
 
@@ -396,7 +468,7 @@ export async function loadFormPlacementPageWithActor(
     .from("signing_placement_templates")
     .select(TEMPLATE_SELECT)
     .eq("scope_type", "PERSONAL")
-    .eq("owner_user_id", actor.userId)
+    .eq("owner_user_id", subjectUserId)
     .eq("status", "ACTIVE");
   if (personalError) throw new Error(personalError.message);
 
@@ -418,6 +490,34 @@ export async function loadFormPlacementPageWithActor(
     ...organizationRows.map((row) => row.id),
   ]);
   const names = await loadOrganizationNames(admin, memberOrgIds);
+
+  let personalOwnerDisplayName: string | null =
+    subjectUserId === actor.userId
+      ? [actor.profile.first_name, actor.profile.last_name]
+          .map((part) => part?.trim())
+          .filter(Boolean)
+          .join(" ") ||
+        actor.profile.display_name?.trim() ||
+        actor.profile.first_name?.trim() ||
+        null
+      : null;
+  if (subjectUserId !== actor.userId) {
+    const { data: ownerProfile, error: ownerError } = await admin
+      .from("profiles")
+      .select("first_name, last_name, display_name")
+      .eq("id", subjectUserId)
+      .maybeSingle();
+    if (ownerError) throw new Error(ownerError.message);
+    personalOwnerDisplayName =
+      [ownerProfile?.first_name, ownerProfile?.last_name]
+        .map((part) => (typeof part === "string" ? part.trim() : ""))
+        .filter(Boolean)
+        .join(" ") ||
+      (typeof ownerProfile?.display_name === "string"
+        ? ownerProfile.display_name.trim()
+        : null) ||
+      null;
+  }
 
   const personal = personalTemplates.find((row) => row.form_id === form.id) ?? null;
   const personalCopySources = await loadCopySources(admin, {
@@ -446,6 +546,10 @@ export async function loadFormPlacementPageWithActor(
     });
   }
 
+  const ownerFirstName =
+    personalOwnerDisplayName?.split(/\s+/)[0] ??
+    (subjectUserId === actor.userId ? actor.profile.first_name ?? null : null);
+
   return {
     form: {
       id: form.id,
@@ -455,9 +559,17 @@ export async function loadFormPlacementPageWithActor(
       versionLabel: form.version_label,
       status: form.status,
       publicationState: form.publication_state,
+      scope: form.scope,
+      ownerUserId: form.owner_user_id,
     },
     eligibility: formVersionPlacementEligibility(form),
-    ownerFirstName: actor.profile.first_name ?? null,
+    personalOwnerDisplayName,
+    ownerFirstName,
+    managingPersonalOnBehalf: managingOnBehalf,
+    personalCardTitle: personalTemplateCardTitle({
+      ownerDisplayName: personalOwnerDisplayName,
+      managingOnBehalf: managingOnBehalf,
+    }),
     personal: personal ? summarize(personal, counts) : null,
     personalCopySources,
     organizations,
@@ -474,7 +586,11 @@ function parseScope(value: unknown): PlacementTemplateScope {
   throw new SigningError("INVALID_INPUT", "Choose Personal or Organization.");
 }
 
-/** Authorize creating a template of `scope` for `form` (no admin override). */
+/**
+ * Authorize creating a template of `scope` for `form`.
+ * Personal ownership is the subject user (Form owner when a Global Admin
+ * manages a private Form on their behalf); created_by / updated_by stay the actor.
+ */
 function authorizeTemplateScope(
   actor: SigningActor,
   form: PlacementFormRow,
@@ -483,7 +599,10 @@ function authorizeTemplateScope(
 ): { ownerUserId: string | null; organizationId: string | null } {
   if (scope === "PERSONAL") {
     assertFormUsableForPersonal(actor, form);
-    return { ownerUserId: actor.userId, organizationId: null };
+    return {
+      ownerUserId: personalTemplateSubjectUserId(personalActorContext(actor), form),
+      organizationId: null,
+    };
   }
   if (!isUuid(organizationIdRaw)) {
     throw new SigningError("INVALID_INPUT", "Choose an organization.");
@@ -529,10 +648,14 @@ export async function createPlacementTemplateWithActor(
     .single();
   if (error) {
     if (error.code === "23505") {
+      const personalConflict =
+        owner.ownerUserId === actor.userId
+          ? "You already have a Personal placement template for this form version."
+          : "This person already has a Personal placement template for this form version.";
       throw new SigningError(
         "CONFLICT",
         scope === "PERSONAL"
-          ? "You already have a Personal placement template for this form version."
+          ? personalConflict
           : "This organization already has a placement template for this form version.",
       );
     }
@@ -636,7 +759,9 @@ export async function loadPlacementTemplateEditorWithActor(
       ],
       participants: templateSlotOptions(used).map(slotParticipant),
     },
-    canEdit: canEditPlacementTemplate(actor, template),
+    canEdit: canEditPlacementTemplate(actor, template, {
+      form: form as PlacementFormRow,
+    }),
     scope: template.scope_type,
     formId: template.form_id,
     formDisplay: display,

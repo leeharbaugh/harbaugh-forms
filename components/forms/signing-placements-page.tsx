@@ -296,6 +296,16 @@ export function SigningPlacementsPage({ formId }: { formId: number }) {
         <p className="text-sm font-medium" data-testid="placement-form-version">
           {page.form.display}
         </p>
+        {page.managingPersonalOnBehalf && page.personalOwnerDisplayName ? (
+          <p
+            className="text-sm font-medium text-amber-900"
+            data-testid="placement-admin-on-behalf"
+          >
+            Managing {page.personalOwnerDisplayName}&apos;s Personal template
+            (not a Global template). Edits are attributed to you as
+            administrator; ownership stays with {page.personalOwnerDisplayName}.
+          </p>
+        ) : null}
         <p className="max-w-3xl text-sm text-muted-foreground">
           A placement template is an optional starting point for this exact form
           version only. It is used only when a manager chooses Apply in Prepare
@@ -324,9 +334,13 @@ export function SigningPlacementsPage({ formId }: { formId: number }) {
 
       <Card data-testid="placement-personal-card">
         <CardHeader>
-          <CardTitle className="text-lg">Personal</CardTitle>
+          <CardTitle className="text-lg" data-testid="placement-personal-card-title">
+            {page.personalCardTitle}
+          </CardTitle>
           <CardDescription>
-            Only you can see, edit, or apply your Personal template.
+            {page.managingPersonalOnBehalf
+              ? "This is that individual's Personal template. It is not a Global or Organization template."
+              : "Only you can see, edit, or apply your Personal template (unless an application admin manages it on your behalf)."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -336,7 +350,7 @@ export function SigningPlacementsPage({ formId }: { formId: number }) {
                 Placement template available · {personalLabel} ·{" "}
                 {placementCountLabel(page.personal.placementCount)}
               </p>
-              {anyOrganizationTemplate ? (
+              {anyOrganizationTemplate && !page.managingPersonalOnBehalf ? (
                 <p className="text-xs text-muted-foreground">
                   Your Personal template is used for your Signings instead of the
                   Organization template.

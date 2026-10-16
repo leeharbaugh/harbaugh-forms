@@ -299,13 +299,37 @@ export function formVersionPlacementEligibility(
   return { ok: true };
 }
 
-/** Forms a user may attach a Personal template to (no application-admin override). */
+/** Active application (Global) Admin — never grants Organization template authority alone. */
+export function isActivePlacementAppAdmin(profile: {
+  status?: string | null;
+  app_role?: string | null;
+  onboarding_status?: string | null;
+} | null | undefined): boolean {
+  return (
+    profile?.status === "ACTIVE" &&
+    profile?.app_role === "ADMIN" &&
+    profile?.onboarding_status === "ACTIVE"
+  );
+}
+
+/**
+ * Forms a user may attach a Personal template to.
+ * An active Global Admin may also open a privately owned Form to manage that
+ * owner's Personal template (not a Global template, and not ownership transfer).
+ */
 export function canUseFormForPersonalTemplate(
-  actor: { userId: string; memberOrganizationIds: readonly string[] },
+  actor: {
+    userId: string;
+    memberOrganizationIds: readonly string[];
+    isActiveAppAdmin?: boolean;
+  },
   form: PlacementTemplateFormRef,
 ): boolean {
   if (form.scope === "GLOBAL") return true;
-  if (form.scope === "PRIVATE") return form.owner_user_id === actor.userId;
+  if (form.scope === "PRIVATE") {
+    if (form.owner_user_id === actor.userId) return true;
+    return Boolean(actor.isActiveAppAdmin && form.owner_user_id);
+  }
   if (form.scope === "ORGANIZATION") {
     return (
       form.organization_id != null &&
@@ -313,6 +337,50 @@ export function canUseFormForPersonalTemplate(
     );
   }
   return false;
+}
+
+/**
+ * Whose Personal template the page manages for this form.
+ * Private forms under Global Admin management stay owned by the form owner.
+ * Global / own forms stay the signed-in user.
+ */
+export function personalTemplateSubjectUserId(
+  actor: { userId: string; isActiveAppAdmin?: boolean },
+  form: PlacementTemplateFormRef,
+): string {
+  if (
+    form.scope === "PRIVATE" &&
+    form.owner_user_id &&
+    actor.isActiveAppAdmin &&
+    form.owner_user_id !== actor.userId
+  ) {
+    return form.owner_user_id;
+  }
+  return actor.userId;
+}
+
+/** True when the actor is managing another user's Personal template on their behalf. */
+export function isAdminManagingOwnerPersonalTemplate(
+  actor: { userId: string; isActiveAppAdmin?: boolean },
+  form: PlacementTemplateFormRef,
+): boolean {
+  return (
+    personalTemplateSubjectUserId(actor, form) !== actor.userId &&
+    Boolean(actor.isActiveAppAdmin)
+  );
+}
+
+/** Card / summary label for a Personal template (never says "Global"). */
+export function personalTemplateCardTitle(input: {
+  ownerDisplayName: string | null;
+  managingOnBehalf: boolean;
+}): string {
+  const name = input.ownerDisplayName?.trim();
+  if (input.managingOnBehalf && name) {
+    return `Personal placement template for ${name}`;
+  }
+  if (name) return `${name} · Personal`;
+  return "Personal";
 }
 
 /** Forms an organization's members can all see, so an Organization template is usable. */

@@ -353,9 +353,16 @@ async function main() {
     // ---------------------------------------------------------------------
     const patPage = await signIn(pat.email, "pat", "/forms");
     ok("signed in as Pat (organization member)");
-    const v2Entry = patPage.locator(`a[href="/forms/${formV2}/signing-placements"]`);
-    await v2Entry.first().waitFor({ timeout: 60000 });
-    ok("Forms list offers a Signing placements entry for the published form version");
+    // Prefer the Actions menu (no horizontal button strip).
+    const actionsButton = patPage.getByTestId("form-row-actions").first();
+    await actionsButton.waitFor({ timeout: 60000 });
+    await actionsButton.click();
+    const placementsItem = patPage.getByTestId("form-row-signing-placements").or(
+      patPage.getByRole("menuitem", { name: "Signing placements" }),
+    );
+    await placementsItem.first().waitFor({ timeout: 10000 });
+    ok("Forms list Actions menu offers Signing placements without a horizontal button strip");
+    await patPage.keyboard.press("Escape");
 
     await patPage.goto(`${APP_ORIGIN}/forms/${formV1}/signing-placements`, { waitUntil: "networkidle" });
     const versionLine = patPage.locator('[data-testid="placement-form-version"]');

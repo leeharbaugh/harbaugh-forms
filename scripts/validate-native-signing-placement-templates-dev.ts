@@ -667,6 +667,67 @@ async function main() {
       loadPlacementTemplateEditorWithActor(appAdmin, { templateId: orgGlobal }, admin),
     );
 
+    // Global Admin may manage a private Form owner's Personal template on
+    // their behalf (ownership stays with the owner; no Global scope).
+    {
+      const { error: promoteError } = await admin
+        .from("profiles")
+        .update({ app_role: "ADMIN" })
+        .eq("id", outsider.actor.userId);
+      if (promoteError) fail(`promote app admin failed: ${promoteError.message}`);
+      const adminOnBehalf = buildActor({
+        userId: outsider.actor.userId,
+        email: outsider.actor.email,
+        firstName: "Olive",
+        memberships: [{ organizationId: otherOrgId, membershipRole: "ORG_ADMIN" }],
+        appRole: "ADMIN",
+      });
+      const privatePage = await loadFormPlacementPageWithActor(
+        adminOnBehalf,
+        { formId: formOthers },
+        admin,
+        { sessionClient: outsider.session },
+      );
+      if (!privatePage.managingPersonalOnBehalf) fail("admin page did not mark on-behalf management");
+      if (!privatePage.personalCardTitle.includes("Robin")) {
+        fail(`admin personal card title missing owner: ${privatePage.personalCardTitle}`);
+      }
+      if (privatePage.form.scope !== "PRIVATE") fail("private Form scope not shown");
+      const createdForOwner = await createPlacementTemplateWithActor(
+        adminOnBehalf,
+        { formId: formOthers, scope: "PERSONAL" },
+        admin,
+        { sessionClient: outsider.session },
+      );
+      const { data: ownedRow } = await admin
+        .from("signing_placement_templates")
+        .select("owner_user_id, created_by_user_id, scope_type")
+        .eq("id", createdForOwner.templateId)
+        .single();
+      if (
+        ownedRow?.owner_user_id !== orgAdmin.actor.userId ||
+        ownedRow.created_by_user_id !== outsider.actor.userId ||
+        ownedRow.scope_type !== "PERSONAL"
+      ) {
+        fail(`admin-on-behalf template ownership wrong: ${JSON.stringify(ownedRow)}`);
+      }
+      await place(adminOnBehalf, createdForOwner.templateId, {
+        fieldType: "SIGNATURE",
+        slotKey: "BUYER:1",
+        pageNumber: 1,
+      });
+      await expectSigningError("organization admin editing another user's Personal template", "NOT_FOUND", () =>
+        place(orgAdmin.actor, personalV1, { fieldType: "SIGNATURE", slotKey: "BUYER:1", pageNumber: 1 }),
+      );
+      await expectSigningError("unrelated member opening another user's private Form placements", "NOT_FOUND", () =>
+        loadFormPlacementPageWithActor(agent.actor, { formId: formOthers }, admin, {
+          sessionClient: agent.session,
+        }),
+      );
+      ok("Global Admin manages the private Form owner's Personal template on their behalf (owner stays owner; actor attributed)");
+      await admin.from("profiles").update({ app_role: "USER" }).eq("id", outsider.actor.userId);
+    }
+
     const agentSelect = await agent.session.from("signing_placement_templates").select("id");
     if (agentSelect.error == null && (agentSelect.data ?? []).length > 0) {
       fail("an authenticated browser session can read template rows");

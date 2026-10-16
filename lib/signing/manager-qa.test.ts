@@ -43,10 +43,12 @@ describe("representative capacity helpers", () => {
     );
   });
 
-  it("derives packet parties from transaction roles only", () => {
+  it("derives packet parties from transaction roles including Agent", () => {
     assert.ok(PACKET_SIGNING_PARTY_ROLES.includes("BUYER"));
     assert.ok(PACKET_SIGNING_PARTY_ROLES.includes("SELLER"));
-    assert.ok(!PACKET_SIGNING_PARTY_ROLES.includes("AGENT" as never));
+    // Packet Contact role AGENT is a transaction party that may become a
+    // Signing participant. It is not co-agent / Include-me authority.
+    assert.ok(PACKET_SIGNING_PARTY_ROLES.includes("AGENT"));
   });
 });
 

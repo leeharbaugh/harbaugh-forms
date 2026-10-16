@@ -39,6 +39,7 @@ import {
   type PropertyInput,
   type PropertySelectionMode,
 } from "@/lib/types/property";
+import { useResetPendingOnMount } from "@/lib/ui/reset-pending-on-mount";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -69,6 +70,9 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Soft navigation can restore this editor with isSaving still true after a
+  // prior save that navigated away without clearing the flag.
+  useResetPendingOnMount(setIsSaving);
 
   const loadPacket = useCallback(async () => {
     setIsLoading(true);
@@ -179,6 +183,7 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
         { hasLegacyAgreement },
       );
 
+      setIsSaving(false);
       router.push(`/packets/${packetId}`);
       router.refresh();
     } catch (error) {

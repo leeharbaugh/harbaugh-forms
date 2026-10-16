@@ -12,13 +12,54 @@ Each decision should include:
 
 ---
 
+## Soft-nav mutation pending flags reset on mount
+
+**Date:** 2026-10-16 (Placement Template QA stabilization)
+
+**Decision:** Client forms that set a local `isLoading` / `isSaving` flag before a soft navigation must clear that flag on mount (`useResetPendingOnMount`). Logout uses `router.replace` then `router.refresh` so the login route is not restored from a stale client cache with pending UI. Do not paper over with timers.
+
+**Reason:** Soft navigation and route cache can remount or restore a component that left pending true after a successful submit that navigated away without resetting the flag. Login after logout and Packet Edit after Signing both stuck on "Logging in…" / "Saving…" for that reason.
+
+**Related:** `lib/ui/reset-pending-on-mount.ts`; `components/login-form.tsx`, `logout-button.tsx`, `packet-edit-form.tsx`, `update-password-form.tsx`.
+
+---
+
+## Packet Contact role AGENT is a transaction party, not app authority
+
+**Date:** 2026-10-16 (Placement Template QA stabilization)
+
+**Decision:** `AGENT` is a valid Packet contact role. It maps deterministically to Signing participant role `AGENT` ("Agent"). It does not grant co-agent association, Include-me identity, brokerage management, or representative capacity. It is distinct from the authenticated agent / Include me / co-agent concepts.
+
+**Reason:** Managers need an extra Agent participant on a Signing for placement-template and ceremony QA without collapsing contact role into application authority.
+
+**Related:** `supabase/migrations/20261016120000_packet_contact_role_agent.sql`; `lib/types/packet-contact.ts`; `lib/signing/participant-roles.ts`, `packet-to-signing.ts`.
+
+---
+
+## Authorized Global Admin may manage an owner's Personal placement template on their behalf
+
+**Date:** 2026-10-16 (Placement Template QA stabilization; refines 2026-10-14)
+
+**Decision:**
+1. Personal template **ownership** remains the target individual's `owner_user_id`. There is still no Global placement-template scope.
+2. An **active Global Admin** (`is_app_admin`) who is authorized to administer a privately owned Form may create, edit, and delete that owner's Personal template for that exact form version. The page must label the target owner explicitly (e.g. "Personal placement template for Lee Harbaugh") and state that it is not Global.
+3. `created_by_user_id` / `updated_by_user_id` record the admin actor. Ownership is never rewritten to the admin.
+4. Ordinary users manage only their own Personal templates. Organization admin membership alone does not authorize editing another user's Personal template. Unrelated users are denied.
+5. For Global forms, behavior is unchanged: the signed-in user manages their own Personal template; eligible ORG_ADMIN members manage Organization templates.
+
+**Reason:** Global Admin could see a private Form in the Forms list but hit "Form not found" on Signing placements, while only the owner could create the Personal template. Administrative help must stay honest about ownership and actor attribution.
+
+**Related:** `lib/signing/placement-template-model.ts`, `placement-templates.ts`; `components/forms/signing-placements-page.tsx`.
+
+---
+
 ## Signing Placement Templates are exact-version, slot-based, explicitly applied configuration
 
-**Date:** 2026-10-14 (Signing Placement Templates tranche)
+**Date:** 2026-10-14 (Signing Placement Templates tranche); refined 2026-10-16 for admin-on-behalf Personal management
 
 **Decision:**
 1. **Exact version.** A placement template attaches to one exact Form/version record, `forms.id`. Only published or retired versions are eligible, because their PDFs are immutable. Draft versions (whose PDF can still change) and deleted versions are refused.
-2. **Two scopes.** Scopes are Personal (one owner) and Organization (one organization) only. There is no Global scope, and an application admin gets no extra reach.
+2. **Two scopes.** Scopes are Personal (one owner) and Organization (one organization) only. There is no Global placement-template scope. Personal ownership stays with the individual; an authorized Global Admin may manage that owner's Personal template on their behalf (see 2026-10-16 decision) without becoming the owner and without creating a Global scope.
 3. **Personal fully overrides Organization.** For the same exact version, the acting manager's own Personal template is used whenever it exists. The originating organization's template is used only otherwise. The two are never merged or partially overridden.
 4. **Role slots, not people.** Templates reference role slots `(role_code, ordinal)`, such as Buyer 2. They never store a Contact, User, participant id, name or email.
 5. **Stable ordering.** Slot N of a role is that role's Nth non-removed participant, ordered by `display_order`, then `create_date`, then `id`. The SQL transaction and the preview use the same rule.

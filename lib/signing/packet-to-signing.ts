@@ -4,7 +4,8 @@
  * Source of truth for parties: ACTIVE packet_contacts joined to contacts, plus
  * ACTIVE clients of the Packet's representation agreement (legacy Packets).
  * Does not guess representative capacity from roles.
- * Does not include agents/brokers/TCs as participants.
+ * Packet Contact role AGENT may become a Signing participant role Agent; that
+ * is not co-agent association, Include-me, or brokerage management authority.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -34,6 +35,7 @@ export const PACKET_SIGNING_PARTY_ROLES: readonly PacketContactRole[] = [
   "SELLER",
   "TENANT",
   "LANDLORD",
+  "AGENT",
   "PRIMARY",
   "CO_CLIENT",
   "SPOUSE",
@@ -61,6 +63,8 @@ function roleLabel(role: PacketContactRole): string {
       return "Tenant";
     case "LANDLORD":
       return "Landlord";
+    case "AGENT":
+      return "Agent";
     case "PRIMARY":
       return "Primary";
     case "CO_CLIENT":
