@@ -2,16 +2,20 @@ import { FragmentExchangeBootstrap } from "@/components/sign/fragment-exchange-b
 import { SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE } from "@/lib/signing/external-access";
 import { isSigningCredentialPublicId } from "@/lib/signing/bearer-transport";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
+import { connection } from "next/server";
 
 /**
  * Participant invitation landing: path holds nonsecret public credential id.
  * Fragment secret is exchanged client-side via POST (never logged as request path).
  */
+export const instant = false;
+
 export default async function SignEntryLandingPage({
   params,
 }: {
   params: Promise<{ publicId: string }>;
 }) {
+  await connection();
   if (!isNativeSigningEnabled()) {
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">

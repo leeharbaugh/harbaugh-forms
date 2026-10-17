@@ -2,6 +2,7 @@ import {
   DEVICE_HANDOFF_LOCK_COOKIE_NAME,
   isPathAllowedDuringDeviceHandoffLock,
 } from "@/lib/signing/device-handoff-lock";
+import { isParticipantSigningPath } from "@/lib/signing/bearer-transport";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
@@ -64,6 +65,12 @@ export async function updateSession(request: NextRequest) {
   // with the Supabase Contact, your users may be randomly logged out.
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
+
+  // Participants sign without a workspace account; their routes authenticate
+  // with Signing credentials/sessions and are exempt from workspace login.
+  if (isParticipantSigningPath(path)) {
+    return supabaseResponse;
+  }
 
   if (
     !user &&

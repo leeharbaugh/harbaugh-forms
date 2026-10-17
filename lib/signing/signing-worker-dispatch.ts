@@ -9,6 +9,10 @@
  */
 import { timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  PARTICIPANT_CANCELLATION_WORK_TYPE,
+  processNextCancellationNoticeWorkItem,
+} from "./cancellation-notices";
 import { FINALIZE_SIGNING_WORK_TYPE } from "./ceremony-finish";
 import {
   processNextCompletedPackageDeliveryWorkItem,
@@ -188,6 +192,19 @@ export async function processSigningWorkBatch(options: {
     });
     if (invitation) {
       processed.push(invitation);
+      continue;
+    }
+
+    const cancellation = await processNextCancellationNoticeWorkItem({
+      admin: options.admin,
+      workerId: `${workerId}:cancellation`,
+      signingId: options.signingId,
+    });
+    if (cancellation.outcome === "SUSPENDED") {
+      return { status: "SUSPENDED", processed, detail: "Signing work is suspended." };
+    }
+    if (cancellation.outcome !== "NO_WORK") {
+      processed.push({ workType: PARTICIPANT_CANCELLATION_WORK_TYPE, ...cancellation });
       continue;
     }
 

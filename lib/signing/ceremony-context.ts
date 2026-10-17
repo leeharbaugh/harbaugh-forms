@@ -65,7 +65,7 @@ export async function loadPreAffirmationContext(options: {
     options.admin
       .from("signings")
       .select(
-        "id, title, lifecycle_state, original_sender_display_name, originating_organization_id",
+        "id, title, lifecycle_state, archived_at, original_sender_display_name, originating_organization_id",
       )
       .eq("id", options.signingId)
       .maybeSingle(),
@@ -80,6 +80,7 @@ export async function loadPreAffirmationContext(options: {
   if (participantError) throw new Error(participantError.message);
 
   if (!signing || signing.lifecycle_state !== "IN_PROGRESS") return null;
+  if (signing.archived_at) return null;
   if (!participant || participant.participant_status === "REMOVED") return null;
 
   const { data: organization, error: organizationError } = await options.admin
@@ -107,8 +108,16 @@ export type CeremonyWriteContext = {
   frozenPackageRevisionId: string | null;
   /** `signing_package_revision_participants.id` for this participant. */
   revisionParticipantId: string;
-  /** Frozen displayed name — what typed marks must match and events record. */
+  /**
+   * Identity display name (actual signatory). Affirmation and events use this.
+   */
   displayedName: string;
+  /** PERSONAL or REPRESENTATIVE (frozen). */
+  capacityMode: "PERSONAL" | "REPRESENTATIVE";
+  /** Exact text a typed Signature must match. */
+  expectedTypedSignatureText: string;
+  representedPartyName: string | null;
+  capacityWording: string | null;
 };
 
 /**
@@ -156,7 +165,9 @@ export async function requireCeremonyWriteContext(options: {
   const { data: revisionParticipant, error: revisionParticipantError } =
     await admin
       .from("signing_package_revision_participants")
-      .select("frozen_full_name")
+      .select(
+        "frozen_full_name, frozen_signing_capacity_mode, frozen_represented_party_name, frozen_capacity_wording",
+      )
       .eq("id", revisionParticipantId)
       .eq("signing_id", session.signingId)
       .maybeSingle();
@@ -173,14 +184,34 @@ export async function requireCeremonyWriteContext(options: {
     });
   }
 
+  const signatoryName =
+    (revisionParticipant?.frozen_full_name as string | null) ??
+    session.participantFullName;
+  const capacityModeRaw =
+    (revisionParticipant?.frozen_signing_capacity_mode as string | null) ??
+    "PERSONAL";
+  const capacityMode =
+    capacityModeRaw === "REPRESENTATIVE" ? "REPRESENTATIVE" : "PERSONAL";
+  const capacityWording =
+    (revisionParticipant?.frozen_capacity_wording as string | null) ?? null;
+  const representedPartyName =
+    (revisionParticipant?.frozen_represented_party_name as string | null) ??
+    null;
+  const expectedTypedSignatureText =
+    capacityMode === "REPRESENTATIVE"
+      ? (capacityWording ?? "").trim()
+      : signatoryName.trim();
+
   return {
     session,
     packageRevisionId,
     frozenPackageRevisionId: session.frozenPackageRevisionId,
     revisionParticipantId,
-    displayedName:
-      (revisionParticipant?.frozen_full_name as string | null) ??
-      session.participantFullName,
+    displayedName: signatoryName,
+    capacityMode,
+    expectedTypedSignatureText,
+    representedPartyName,
+    capacityWording,
   };
 }
 
@@ -274,6 +305,12 @@ export type CeremonyOverview = {
   signingTitle: string;
   participantFullName: string;
   displayedName: string;
+  /** PERSONAL or REPRESENTATIVE. */
+  capacityMode: "PERSONAL" | "REPRESENTATIVE";
+  representedPartyName: string | null;
+  capacityWording: string | null;
+  /** Exact text typed Signature must match. */
+  expectedTypedSignatureText: string;
   participantStatus: string;
   packageRevisionId: string;
   frozenPackageRevisionId: string | null;
@@ -285,8 +322,8 @@ export type CeremonyOverview = {
   requiredRemaining: number;
   canFinish: boolean;
   nextStep: CeremonyStep;
-  /** Suggested typed initials (editable until first Initials use). */
-  suggestedTypedInitials: string;
+  /** Typed initials derived from the Signing name; not editable. */
+  typedInitials: string;
   /** True when this ceremony session began from supervised in-person handoff. */
   inPersonCeremony: boolean;
 };
@@ -318,7 +355,9 @@ export async function loadCeremonyOverview(options: {
   ] = await Promise.all([
     admin
       .from("signing_package_revision_participants")
-      .select("frozen_full_name")
+      .select(
+        "frozen_full_name, frozen_signing_capacity_mode, frozen_represented_party_name, frozen_capacity_wording",
+      )
       .eq("id", revisionParticipantId)
       .eq("signing_id", session.signingId)
       .maybeSingle(),
@@ -360,6 +399,20 @@ export async function loadCeremonyOverview(options: {
   const displayedName =
     (revisionParticipant?.frozen_full_name as string | null) ??
     session.participantFullName;
+  const capacityModeRaw =
+    (revisionParticipant?.frozen_signing_capacity_mode as string | null) ??
+    "PERSONAL";
+  const capacityMode =
+    capacityModeRaw === "REPRESENTATIVE" ? "REPRESENTATIVE" : "PERSONAL";
+  const representedPartyName =
+    (revisionParticipant?.frozen_represented_party_name as string | null) ??
+    null;
+  const capacityWording =
+    (revisionParticipant?.frozen_capacity_wording as string | null) ?? null;
+  const expectedTypedSignatureText =
+    capacityMode === "REPRESENTATIVE"
+      ? (capacityWording ?? "").trim()
+      : displayedName.trim();
 
   const currentDisclosure = await loadCurrentConsentDisclosure(admin);
   const consent = await checkConsentSatisfied({
@@ -457,6 +510,10 @@ export async function loadCeremonyOverview(options: {
     signingTitle: session.signingTitle,
     participantFullName: session.participantFullName,
     displayedName,
+    capacityMode,
+    representedPartyName,
+    capacityWording,
+    expectedTypedSignatureText,
     participantStatus,
     packageRevisionId,
     frozenPackageRevisionId: session.frozenPackageRevisionId,
@@ -468,7 +525,7 @@ export async function loadCeremonyOverview(options: {
     requiredRemaining,
     canFinish: participantStatus !== "FINISHED" && requiredRemaining === 0,
     nextStep,
-    suggestedTypedInitials: suggestTypedInitialsFromDisplayName(displayedName),
+    typedInitials: suggestTypedInitialsFromDisplayName(displayedName),
     inPersonCeremony: session.inPersonHandoffId !== null,
   };
 }

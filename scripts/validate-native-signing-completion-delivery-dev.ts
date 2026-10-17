@@ -9,8 +9,18 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { randomBytes, randomUUID } from "node:crypto";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import {
+  decodePDFRawStream,
+  PDFArray,
+  PDFContentStream,
+  PDFDocument,
+  PDFRawStream,
+  StandardFonts,
+} from "pdf-lib";
 import { activateSigningWithActor } from "../lib/signing/activation.ts";
+import { upsertDraftPreparedContentWithActor } from "../lib/signing/draft-prepared-content.ts";
+import { SigningError } from "../lib/signing/errors.ts";
+import { evaluateSigningReadiness } from "../lib/signing/readiness.ts";
 import { adoptCeremonyMark } from "../lib/signing/adopted-marks.ts";
 import { affirmIdentityFromEntrySession } from "../lib/signing/ceremony-affirmation.ts";
 import { requireCeremonyWriteContext } from "../lib/signing/ceremony-context.ts";
@@ -27,7 +37,11 @@ import {
 } from "../lib/signing/credentials.ts";
 import { addDraftSigningDocumentWithActor } from "../lib/signing/draft-documents.ts";
 import { upsertDraftSigningFieldWithActor } from "../lib/signing/draft-fields.ts";
-import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
+import {
+  addDraftSigningParticipantWithActor,
+  updateDraftSigningParticipantWithActor,
+} from "../lib/signing/draft-participants.ts";
+import { loadSigningDashboardForActor } from "../lib/signing/dashboard.ts";
 import { createSigningEntrySession } from "../lib/signing/entry-sessions.ts";
 import { requireCeremonyBrowserSession } from "../lib/signing/browser-sessions.ts";
 import {
@@ -36,7 +50,17 @@ import {
 } from "../lib/signing/event-chain-keys.ts";
 import { processNextFinalizationWorkItem } from "../lib/signing/finalization-worker.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
-import { acceptFieldPlacement } from "../lib/signing/placements.ts";
+import { cancelSigningWithActor } from "../lib/signing/cancel.ts";
+import {
+  listCompletedArtifactsForActor,
+  loadCompletedArtifactForActor,
+} from "../lib/signing/completed-documents.ts";
+import { renameSigningForActor } from "../lib/signing/rename.ts";
+import {
+  acceptFieldPlacement,
+  removeFieldPlacement,
+  senderLocalDate,
+} from "../lib/signing/placements.ts";
 import {
   NATIVE_SIGNING_COMPLETION_DELIVERY_TABLES,
   NATIVE_SIGNING_STAGE6_TABLES,
@@ -174,6 +198,32 @@ async function makeFixturePdf(label: string): Promise<Uint8Array> {
   return pdf.save();
 }
 
+/** Decoded page content streams, upper-cased, for text-operator searches. */
+async function decodedPageContent(bytes: Uint8Array): Promise<string> {
+  const pdf = await PDFDocument.load(bytes);
+  const parts: string[] = [];
+  for (const page of pdf.getPages()) {
+    const contents = page.node.Contents();
+    const streams =
+      contents instanceof PDFArray
+        ? contents.asArray().map((ref) => pdf.context.lookup(ref))
+        : [contents];
+    for (const stream of streams) {
+      if (stream instanceof PDFRawStream) {
+        parts.push(Buffer.from(decodePDFRawStream(stream).decode()).toString("latin1"));
+      } else if (stream instanceof PDFContentStream) {
+        parts.push(Buffer.from(stream.getUnencodedContents()).toString("latin1"));
+      }
+    }
+  }
+  return parts.join("\n").toUpperCase();
+}
+
+/** Standard-font text is written as a hex string of WinAnsi bytes. */
+function pdfHexText(text: string): string {
+  return Buffer.from(text, "latin1").toString("hex").toUpperCase();
+}
+
 async function main() {
   ensureDevKeys();
 
@@ -206,6 +256,7 @@ async function main() {
   let packetId: number | null = null;
   let packetFormId: number | null = null;
   const signingIds: string[] = [];
+  const contactIds: number[] = [];
   const generatedPaths: string[] = [];
   const artifactKeys: string[] = [];
   let suspendedForTest = false;
@@ -254,6 +305,14 @@ async function main() {
     }
 
     for (const id of signingIds) {
+      await admin
+        .from("signings")
+        .update({
+          current_primary_agent_association_id: null,
+          current_package_revision_id: null,
+          frozen_package_revision_id: null,
+        })
+        .eq("id", id);
       await cleanupCompletionDeliveryTables(id);
       await admin.from("signing_work_items").delete().eq("signing_id", id);
       await admin.from("signing_artifacts").delete().eq("signing_id", id);
@@ -271,14 +330,31 @@ async function main() {
         .delete()
         .eq("signing_id", id);
       await admin.from("signing_document_versions").delete().eq("signing_id", id);
-      await admin.from("signing_documents").delete().eq("signing_id", id);
-      await admin.from("signing_package_revisions").delete().eq("signing_id", id);
       await admin
-        .from("signing_participant_credentials")
+        .from("signing_draft_prepared_content")
         .delete()
         .eq("signing_id", id);
-      await admin.from("signing_browser_sessions").delete().eq("signing_id", id);
-      await admin.from("signing_entry_sessions").delete().eq("signing_id", id);
+      await admin
+        .from("signing_documents")
+        .update({ selected_draft_source_snapshot_id: null })
+        .eq("signing_id", id);
+      await admin
+        .from("signing_draft_source_snapshots")
+        .delete()
+        .eq("signing_id", id);
+      await admin
+        .from("signing_draft_fields")
+        .update({ linked_signature_draft_field_id: null })
+        .eq("signing_id", id);
+      await admin.from("signing_draft_fields").delete().eq("signing_id", id);
+      const { error: documentsDeleteError } = await admin
+        .from("signing_documents")
+        .delete()
+        .eq("signing_id", id);
+      if (documentsDeleteError) {
+        console.error(`Cleanup: documents ${id}: ${documentsDeleteError.message}`);
+      }
+      await admin.from("signing_package_revisions").delete().eq("signing_id", id);
       await admin
         .from("signing_participant_presence_leases")
         .delete()
@@ -289,11 +365,12 @@ async function main() {
         .delete()
         .eq("signing_id", id);
       await admin.from("signing_in_person_handoffs").delete().eq("signing_id", id);
+      await admin.from("signing_browser_sessions").delete().eq("signing_id", id);
+      await admin.from("signing_entry_sessions").delete().eq("signing_id", id);
       await admin
-        .from("signing_draft_source_snapshots")
+        .from("signing_participant_credentials")
         .delete()
         .eq("signing_id", id);
-      await admin.from("signing_draft_fields").delete().eq("signing_id", id);
       await admin.from("signing_participants").delete().eq("signing_id", id);
       await admin
         .from("signing_operator_associations")
@@ -304,20 +381,25 @@ async function main() {
         .delete()
         .eq("signing_id", id);
       await admin
+        .from("signing_operation_idempotency")
+        .delete()
+        .eq("signing_id", id);
+      const { error: signingDeleteError } = await admin
         .from("signings")
-        .update({
-          current_primary_agent_association_id: null,
-          current_package_revision_id: null,
-          frozen_package_revision_id: null,
-        })
+        .delete()
         .eq("id", id);
-      await admin.from("signings").delete().eq("id", id);
+      if (signingDeleteError) {
+        console.error(`Cleanup: Signing ${id}: ${signingDeleteError.message}`);
+      }
     }
     if (artifactKeys.length > 0) {
       await admin.storage.from(SIGNING_ARTIFACTS_BUCKET).remove(artifactKeys);
     }
     if (generatedPaths.length > 0) {
       await admin.storage.from(GENERATED_DOCUMENTS_BUCKET).remove(generatedPaths);
+    }
+    if (contactIds.length > 0) {
+      await admin.from("contacts").delete().in("id", contactIds);
     }
     if (packetFormId != null) {
       await admin.from("packet_forms").delete().eq("id", packetFormId);
@@ -470,10 +552,116 @@ async function main() {
 
     await loadCurrentConsentDisclosure(admin);
 
+    const EVIDENCE_TABLES = [
+      "signing_package_revisions",
+      "signing_package_revision_documents",
+      "signing_package_revision_participants",
+      "signing_document_versions",
+      "signing_documents",
+      "signing_participants",
+      "signing_fields",
+      "signing_adopted_marks",
+      "signing_field_placements",
+      "signing_artifacts",
+      "signing_participant_credentials",
+      "signing_agent_associations",
+    ];
+
+    // Contents are compared, never printed (credential rows hold token hashes).
+    async function evidenceSnapshot(signingId: string): Promise<string> {
+      const parts: Record<string, unknown> = {};
+      for (const table of EVIDENCE_TABLES) {
+        const { data, error } = await admin
+          .from(table)
+          .select("*")
+          .eq("signing_id", signingId)
+          .order("id");
+        if (error) fail(`${table}: ${error.message}`);
+        parts[table] = data ?? [];
+      }
+      const { data: signingRow, error } = await admin
+        .from("signings")
+        .select("*")
+        .eq("id", signingId)
+        .single();
+      if (error || !signingRow) fail(error?.message ?? "signing missing");
+      const rest: Record<string, unknown> = { ...signingRow };
+      delete rest.title;
+      delete rest.update_date;
+      parts.signings = rest;
+      return JSON.stringify(parts);
+    }
+
+    async function expectSigningError(
+      label: string,
+      codes: string[],
+      action: () => Promise<unknown>,
+    ) {
+      try {
+        await action();
+      } catch (error) {
+        if (error instanceof SigningError && codes.includes(error.code)) {
+          ok(`${label} rejected (${error.code})`);
+          return;
+        }
+        fail(`${label} threw unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      fail(`${label} unexpectedly succeeded`);
+    }
+
+    async function renameAndVerify(signingId: string, newTitle: string, stage: string) {
+      const before = await evidenceSnapshot(signingId);
+      const { data: previous } = await admin
+        .from("signings")
+        .select("title")
+        .eq("id", signingId)
+        .single();
+      const renamed = await renameSigningForActor(
+        agent,
+        { signingId, title: `  ${newTitle}  ` },
+        admin,
+      );
+      if (renamed.title !== newTitle) fail(`${stage}: rename did not trim/apply`);
+      const { data: stored } = await admin
+        .from("signings")
+        .select("title, lifecycle_state")
+        .eq("id", signingId)
+        .single();
+      if (stored?.title !== newTitle) fail(`${stage}: rename not persisted`);
+      if ((await evidenceSnapshot(signingId)) !== before) {
+        fail(`${stage}: rename changed documents, participants, revisions, hashes, links or marks`);
+      }
+      const { data: events } = await admin
+        .from("signing_events")
+        .select("event_type, actor_user_id, details_json, visibility, create_date")
+        .eq("signing_id", signingId)
+        .eq("event_type", "SIGNING_TITLE_UPDATED")
+        .order("create_date", { ascending: false })
+        .limit(1);
+      const event = events?.[0];
+      const details = (event?.details_json ?? {}) as Record<string, unknown>;
+      if (
+        !event ||
+        event.actor_user_id !== agentUserId ||
+        event.visibility !== "BUSINESS" ||
+        !event.create_date ||
+        details.previousTitle !== previous?.title ||
+        details.newTitle !== newTitle ||
+        details.lifecycleState !== stored?.lifecycle_state
+      ) {
+        fail(`${stage}: rename event missing or incomplete`);
+      }
+      if (/token|https?:\/\/|\/sign\//i.test(JSON.stringify(details))) {
+        fail(`${stage}: rename event carries a link or secret`);
+      }
+      ok(`${stage}: rename persisted, event recorded, evidence unchanged`);
+    }
+
     async function buildActivatedSigning(options: {
       title: string;
       participantName: string;
       participantEmail: string;
+      linkedContactId?: number;
     }): Promise<{
       signingId: string;
       participantId: string;
@@ -496,6 +684,7 @@ async function main() {
           signingId: draft.id,
           fullName: options.participantName,
           email: options.participantEmail,
+          ...(options.linkedContactId ? { linkedContactId: options.linkedContactId } : {}),
         },
         admin,
       );
@@ -693,8 +882,21 @@ async function main() {
       participantName: "Pat Participant",
       participantEmail: `pat-${stamp}@example.com`,
     });
+    await renameAndVerify(primary.signingId, `CompDel Renamed In Progress ${stamp}`, "IN_PROGRESS");
+    await expectSigningError("rename to blank name", ["INVALID_INPUT"], () =>
+      renameSigningForActor(agent, { signingId: primary.signingId, title: "   " }, admin),
+    );
+    await expectSigningError("rename over max length", ["INVALID_INPUT"], () =>
+      renameSigningForActor(
+        agent,
+        { signingId: primary.signingId, title: "x".repeat(201) },
+        admin,
+      ),
+    );
+    // The participant link issued before the rename still drives the ceremony.
     await runCeremonyToComplete(primary);
     ok("primary Signing COMPLETE with artifacts");
+    await renameAndVerify(primary.signingId, `CompDel Renamed Complete ${stamp}`, "COMPLETE");
 
     const { data: fanOutCred } = await admin
       .from("signing_completed_package_credentials")
@@ -957,6 +1159,170 @@ async function main() {
     }
     ok("artifact download mediation denies wrong Signing/artifact");
 
+    // --- Manager View / Download of completed artifacts ---------------------
+    {
+      const bad = (label: string) => fail(`manager completed documents: ${label}`);
+      const sameOrgOutsider = buildActor({
+        userId: randomUUID(),
+        email: `outsider-${stamp}@example.com`,
+        displayName: "CompDel Outsider",
+        organizationId: organizationId!,
+      });
+      const brokerageAdmin = buildActor({
+        userId: randomUUID(),
+        email: `orgadmin-${stamp}@example.com`,
+        displayName: "CompDel Org Admin",
+        organizationId: organizationId!,
+        membershipRole: "ORG_ADMIN",
+      });
+      const otherBrokerage = buildActor({
+        userId: randomUUID(),
+        email: `elsewhere-${stamp}@example.com`,
+        displayName: "CompDel Elsewhere",
+        organizationId: randomUUID(),
+        membershipRole: "ORG_ADMIN",
+      });
+
+      const { data: recorded } = await admin
+        .from("signing_artifacts")
+        .select("id, artifact_category, content_sha256, storage_object_key, package_revision_document_id")
+        .eq("signing_id", primary.signingId)
+        .not("verified_at", "is", null);
+      const recordedById = new Map((recorded ?? []).map((row) => [row.id as string, row]));
+
+      const listed = await listCompletedArtifactsForActor(agent, primary.signingId, admin);
+      if (!listed) bad("primary agent got no list on a Complete Signing");
+      const docs = listed.filter((row) => row.kind === "DOCUMENT");
+      const { data: revisionDocs } = await admin
+        .from("signing_package_revision_documents")
+        .select("frozen_display_name")
+        .eq("signing_id", primary.signingId);
+      if (docs.length !== (revisionDocs ?? []).length || docs.length === 0) bad(`expected one row per frozen document, got ${docs.length}`);
+      if (!listed.some((row) => row.kind === "CERTIFICATE")) bad("audit certificate not listed");
+      for (const row of listed) {
+        if (!recordedById.has(row.artifactId)) bad("listed an artifact that is not a verified artifact of this Signing");
+        if (/[0-9a-f]{8}-[0-9a-f]{4}-|signings\/|artifacts\//i.test(`${row.label} ${row.filename}`)) bad(`label/filename leaks ids or storage keys: ${row.label} / ${row.filename}`);
+      }
+      if (docs[0]!.label !== (revisionDocs?.[0]?.frozen_display_name as string)) bad(`label "${docs[0]!.label}" is not the frozen document name`);
+      if (!docs[0]!.filename.endsWith(" - signed.pdf")) bad(`filename "${docs[0]!.filename}"`);
+      ok(`manager list: ${docs.length} completed document(s) + ${listed.length - docs.length} other artifact(s), frozen names, no ids or storage keys`);
+
+      const served = new Map<string, { sha256: string; bytes: Buffer }>();
+      for (const row of listed) {
+        const artifact = await loadCompletedArtifactForActor({ actor: agent, signingId: primary.signingId, artifactId: row.artifactId, admin });
+        const expected = recordedById.get(row.artifactId)!;
+        if (artifact.sha256 !== expected.content_sha256) bad(`${row.label} served bytes do not match the recorded SHA-256`);
+        if (artifact.filename !== row.filename) bad(`served filename ${artifact.filename} differs from listed ${row.filename}`);
+        if (!Buffer.from(artifact.bytes.subarray(0, 5)).toString("latin1").startsWith("%PDF-")) bad(`${row.label} is not a PDF`);
+        served.set(row.artifactId, { sha256: artifact.sha256, bytes: Buffer.from(artifact.bytes) });
+      }
+      ok("manager load: every listed artifact is served with bytes matching its finalization SHA-256");
+
+      const adminList = await listCompletedArtifactsForActor(brokerageAdmin, primary.signingId, admin);
+      if (!adminList || adminList.length !== listed.length) bad("originating brokerage admin could not list completed documents");
+      await loadCompletedArtifactForActor({ actor: brokerageAdmin, signingId: primary.signingId, artifactId: docs[0]!.artifactId, admin });
+      ok("brokerage admin (ORG_ADMIN in the originating brokerage) may view/download");
+
+      for (const [label, actor] of [["same-brokerage user with no association", sameOrgOutsider], ["other-brokerage admin", otherBrokerage]] as const) {
+        if ((await listCompletedArtifactsForActor(actor, primary.signingId, admin)) !== null) bad(`${label} got a list`);
+        await expectSigningError(`${label} load`, ["NOT_FOUND"], () =>
+          loadCompletedArtifactForActor({ actor, signingId: primary.signingId, artifactId: docs[0]!.artifactId, admin }),
+        );
+        const dashboard = await loadSigningDashboardForActor(actor, primary.signingId, admin).catch(() => null);
+        if (dashboard && dashboard.completedDocuments.length > 0) bad(`${label} dashboard carried completed documents`);
+      }
+
+      await expectSigningError("cross-Signing artifact id under the primary Signing", ["NOT_FOUND"], () =>
+        loadCompletedArtifactForActor({ actor: agent, signingId: primary.signingId, artifactId: otherArtifactId, admin }),
+      );
+      await expectSigningError("guessed artifact id", ["NOT_FOUND"], () =>
+        loadCompletedArtifactForActor({ actor: agent, signingId: primary.signingId, artifactId: randomUUID(), admin }),
+      );
+      await expectSigningError("non-UUID artifact id / storage path", ["NOT_FOUND"], () =>
+        loadCompletedArtifactForActor({ actor: agent, signingId: primary.signingId, artifactId: String(recorded?.[0]?.storage_object_key ?? "signings/x/artifacts/completed/y.pdf"), admin }),
+      );
+
+      // Lifecycle gating: In Progress, Draft and Cancelled have no completed documents.
+      const draftOnly = await createDraftSigningWithActor(agent, { title: `CompDel Draft Gate ${stamp}` }, admin);
+      signingIds.push(draftOnly.id);
+      const cancelled = await buildActivatedSigning({
+        title: `CompDel Cancelled Gate ${stamp}`,
+        participantName: "Cass Cancel",
+        participantEmail: `cass-${stamp}@example.com`,
+      });
+      await cancelSigningWithActor(agent, { signingId: cancelled.signingId, reason: "Completion-delivery validator" }, admin);
+      for (const [label, signingId] of [["IN_PROGRESS", preComplete.signingId], ["DRAFT", draftOnly.id], ["CANCELLED", cancelled.signingId]] as const) {
+        if ((await listCompletedArtifactsForActor(agent, signingId, admin)) !== null) bad(`${label} listed completed artifacts`);
+        if ((await loadSigningDashboardForActor(agent, signingId, admin)).completedDocuments.length !== 0) bad(`${label} dashboard carried completed documents`);
+        await expectSigningError(`${label}: the primary Signing's artifact id under this Signing`, ["NOT_FOUND"], () =>
+          loadCompletedArtifactForActor({ actor: agent, signingId, artifactId: docs[0]!.artifactId, admin }),
+        );
+      }
+      if ((await loadSigningDashboardForActor(agent, primary.signingId, admin)).completedDocuments.length !== listed.length) bad("Complete dashboard missing completed documents");
+      ok("lifecycle gating: Draft, In Progress and Cancelled list nothing and serve nothing; Complete lists all (Declined: pure authority test + browser QA)");
+
+      // Post-completion source changes never reach the completed artifacts.
+      await admin.from("packets").update({ label: `CompDel packet changed ${stamp}` }).eq("id", packetId!);
+      await admin.from("packet_forms").update({ document_name: `CompDel Agreement CHANGED ${stamp}`, field_data: { changed: true } }).eq("id", packetFormId!);
+      const replacementSource = await makeFixturePdf(`CompDel CHANGED SOURCE ${stamp}`);
+      const { error: overwriteError } = await admin.storage
+        .from(GENERATED_DOCUMENTS_BUCKET)
+        .upload(generatedPaths[0]!, replacementSource, { contentType: "application/pdf", upsert: true });
+      if (overwriteError) bad(`source overwrite failed: ${overwriteError.message}`);
+      await renameSigningForActor(agent, { signingId: primary.signingId, title: `CompDel Renamed Again ${stamp}` }, admin);
+      const relisted = await listCompletedArtifactsForActor(agent, primary.signingId, admin);
+      if (JSON.stringify(relisted) !== JSON.stringify(listed)) bad("list changed after Packet / source / rename changes");
+      for (const row of relisted!) {
+        const again = await loadCompletedArtifactForActor({ actor: agent, signingId: primary.signingId, artifactId: row.artifactId, admin });
+        const before = served.get(row.artifactId)!;
+        if (again.sha256 !== before.sha256 || !Buffer.from(again.bytes).equals(before.bytes)) bad(`${row.label} bytes changed after source changes`);
+      }
+      ok("immutable: after Packet label/field change, source PDF overwrite and Signing rename, labels, filenames and bytes are identical (SHA-256 unchanged)");
+
+      // A linked Contact renamed after Complete changes nothing either.
+      const { data: oliveContact, error: oliveError } = await admin
+        .from("contacts")
+        .insert({ owner_user_id: agent.userId, contact_type: "INDIVIDUAL", first_name: "Olive", last_name: "Linked", email: `olive-${stamp}@example.com`, status: "ACTIVE" })
+        .select("id")
+        .single();
+      if (oliveError || !oliveContact) bad(oliveError?.message ?? "contact create failed");
+      contactIds.push(oliveContact.id as number);
+      const linked = await buildActivatedSigning({
+        title: `CompDel Contact ${stamp}`,
+        participantName: "Olive Linked",
+        participantEmail: `olive-${stamp}@example.com`,
+        linkedContactId: oliveContact.id as number,
+      });
+      await runCeremonyToComplete(linked);
+      const linkedBefore = await listCompletedArtifactsForActor(agent, linked.signingId, admin);
+      const linkedDoc = linkedBefore?.find((row) => row.kind === "DOCUMENT");
+      if (!linkedDoc) bad("Contact-linked Signing has no completed document");
+      const linkedBytes = await loadCompletedArtifactForActor({ actor: agent, signingId: linked.signingId, artifactId: linkedDoc.artifactId, admin });
+      await admin.from("contacts").update({ first_name: "Olivia", last_name: "Changed" }).eq("id", oliveContact.id as number);
+      const linkedAfter = await loadCompletedArtifactForActor({ actor: agent, signingId: linked.signingId, artifactId: linkedDoc.artifactId, admin });
+      if (linkedAfter.sha256 !== linkedBytes.sha256) bad("completed bytes changed after the linked Contact was renamed");
+      const { data: frozenParticipant } = await admin.from("signing_participants").select("full_name").eq("signing_id", linked.signingId).single();
+      if (frozenParticipant?.full_name !== "Olive Linked") bad("Complete participant identity followed the Contact");
+      ok("immutable: renaming the linked Contact after Complete leaves the participant and the completed bytes unchanged");
+
+      // Integrity: a tampered stored object is never served.
+      const { data: otherRow } = await admin
+        .from("signing_artifacts")
+        .select("storage_object_key")
+        .eq("id", otherArtifactId)
+        .single();
+      const { error: tamperError } = await admin.storage
+        .from(SIGNING_ARTIFACTS_BUCKET)
+        .upload(otherRow!.storage_object_key as string, await makeFixturePdf("tampered"), { contentType: "application/pdf", upsert: true });
+      if (tamperError) bad(`tamper upload failed: ${tamperError.message}`);
+      await expectSigningError("tampered completed artifact", ["INTEGRITY_MISMATCH"], () =>
+        loadCompletedArtifactForActor({ actor: agent, signingId: other.signingId, artifactId: otherArtifactId, admin }),
+      );
+      const { data: stillRecorded } = await admin.from("signing_artifacts").select("content_sha256, verified_at").eq("id", otherArtifactId).single();
+      if (!stillRecorded?.content_sha256 || !stillRecorded.verified_at) bad("integrity failure rewrote the recorded fingerprint");
+      ok("integrity: a stored object that no longer matches its SHA-256 is refused (INTEGRITY_MISMATCH) and the recorded fingerprint is untouched");
+    }
+
     // --- Revoke / replace credentials ---
     const priorCredentialId = validated.credentialId;
     const replaced = await replaceCompletedPackageCredential({
@@ -1059,6 +1425,368 @@ async function main() {
       fail("canManageCompletedSigningOperations allowed pre-Complete");
     }
     ok("canManageCompletedSigningOperations COMPLETE-only");
+
+    // --- Draft prep tranche: Initials-linked Date + prepared content -------
+    {
+      const draft = await createDraftSigningWithActor(
+        agent,
+        { title: `CompDel Prepared ${stamp}` },
+        admin,
+      );
+      signingIds.push(draft.id);
+      const document = await addDraftSigningDocumentWithActor(
+        agent,
+        { signingId: draft.id, sourcePacketFormId: packetFormId! },
+        admin,
+      );
+      const { data: ivyContact, error: ivyContactError } = await admin
+        .from("contacts")
+        .insert({
+          owner_user_id: agent.userId,
+          contact_type: "INDIVIDUAL",
+          first_name: "Ivy",
+          last_name: "Initials",
+          email: `ivy-${stamp}@example.com`,
+          status: "ACTIVE",
+        })
+        .select("id")
+        .single();
+      if (ivyContactError || !ivyContact) fail(ivyContactError?.message ?? "contact create failed");
+      const ivyContactId = ivyContact.id as number;
+      contactIds.push(ivyContactId);
+      const participant = await addDraftSigningParticipantWithActor(
+        agent,
+        {
+          signingId: draft.id,
+          fullName: "Browser Supplied",
+          linkedContactId: ivyContactId,
+          roleCode: "BUYER",
+        },
+        admin,
+      );
+      if (participant.full_name !== "Ivy Initials") {
+        fail("a Contact-linked participant must take its name from the Contact");
+      }
+      // Draft: the Contact rename flows into the participant (and its Printed Name).
+      await admin.from("contacts").update({ first_name: "Ivana" }).eq("id", ivyContactId);
+      const signerName = "Ivana Initials";
+      const initials = await upsertDraftSigningFieldWithActor(
+        agent,
+        {
+          signingId: draft.id,
+          signingDocumentId: document.id,
+          signingParticipantId: participant.id,
+          fieldType: "INITIALS",
+          pageNumber: 1,
+          x: 72,
+          y: 300,
+          width: 48,
+          height: 24,
+        },
+        admin,
+      );
+      await upsertDraftSigningFieldWithActor(
+        agent,
+        {
+          signingId: draft.id,
+          signingDocumentId: document.id,
+          signingParticipantId: participant.id,
+          fieldType: "DATE_SIGNED",
+          pageNumber: 1,
+          x: 140,
+          y: 300,
+          width: 100,
+          height: 24,
+          linkedSignatureDraftFieldId: initials.id,
+        },
+        admin,
+      );
+      await upsertDraftPreparedContentWithActor(
+        agent,
+        {
+          signingId: draft.id,
+          signingDocumentId: document.id,
+          signingParticipantId: participant.id,
+          contentType: "PRINTED_NAME",
+          pageNumber: 1,
+          x: 72,
+          y: 400,
+          width: 160,
+          height: 16,
+        },
+        admin,
+      );
+      const checkmark = await upsertDraftPreparedContentWithActor(
+        agent,
+        {
+          signingId: draft.id,
+          signingDocumentId: document.id,
+          signingParticipantId: participant.id,
+          contentType: "CHECKMARK",
+          pageNumber: 1,
+          x: 300,
+          y: 400,
+          width: 12,
+          height: 12,
+        },
+        admin,
+      );
+      if (checkmark.signing_participant_id !== null) {
+        fail("a Checkmark must never carry participant authority");
+      }
+      const readiness = await evaluateSigningReadiness(admin, draft.id, agent);
+      if (!readiness.ready) {
+        fail(`Initials + linked Date + prepared content should be ready: ${JSON.stringify(readiness.blockers)}`);
+      }
+      ok("Initials-only participant with an Initials-linked Date and prepared content is ready");
+
+      await activateSigningWithActor(
+        agent,
+        { signingId: draft.id, mode: "REMOTE_SEND", clientRequestId: randomUUID() },
+        admin,
+      );
+
+      const { data: revisionFields } = await admin
+        .from("signing_fields")
+        .select("id, field_type, linked_signature_field_id")
+        .eq("signing_id", draft.id);
+      const revisionInitials = revisionFields?.find((row) => row.field_type === "INITIALS");
+      const revisionDate = revisionFields?.find((row) => row.field_type === "DATE_SIGNED");
+      if (
+        revisionFields?.length !== 2 ||
+        !revisionInitials ||
+        revisionDate?.linked_signature_field_id !== revisionInitials.id
+      ) {
+        fail("activation must promote Initials + linked Date only (no prepared content as fields)");
+      }
+      const { count: preparedMarks } = await admin
+        .from("signing_adopted_marks")
+        .select("id", { count: "exact", head: true })
+        .eq("signing_id", draft.id);
+      if ((preparedMarks ?? 0) !== 0) fail("prepared content created adopted marks");
+      const { data: frozenParticipant } = await admin
+        .from("signing_package_revision_participants")
+        .select("frozen_role_code")
+        .eq("signing_id", draft.id)
+        .single();
+      if (frozenParticipant?.frozen_role_code !== "BUYER") {
+        fail("participant role must freeze into the revision snapshot");
+      }
+      ok("activation froze the role and promoted the Initials-linked Date; prepared content is not evidence");
+
+      const { data: version } = await admin
+        .from("signing_document_versions")
+        .select("storage_object_key")
+        .eq("signing_id", draft.id)
+        .single();
+      if (!version?.storage_object_key) fail("prepared version missing");
+      artifactKeys.push(version.storage_object_key as string);
+      const { data: preparedBlob, error: preparedError } = await admin.storage
+        .from(SIGNING_ARTIFACTS_BUCKET)
+        .download(version.storage_object_key as string);
+      if (preparedError || !preparedBlob) fail(preparedError?.message ?? "prepared download failed");
+      const preparedContent = await decodedPageContent(
+        new Uint8Array(await preparedBlob.arrayBuffer()),
+      );
+      if (!preparedContent.includes(pdfHexText(signerName))) {
+        fail("Printed Name was not baked into the prepared version with the current Contact name");
+      }
+      if ((preparedContent.match(/ L\b/g) ?? []).length < 2) {
+        fail("Checkmark strokes were not baked into the prepared version");
+      }
+      ok("Printed Name (current Contact name at activation) and Checkmark are baked into the prepared version");
+
+      // After activation the identity is canonized: later source changes never apply.
+      await admin.from("contacts").update({ first_name: "Changed", email: `changed-${stamp}@example.com` }).eq("id", ivyContactId);
+      await loadSigningDashboardForActor(agent, draft.id, admin);
+      const { data: liveAfter } = await admin
+        .from("signing_participants")
+        .select("full_name, email")
+        .eq("id", participant.id)
+        .single();
+      const { data: frozenIdentity } = await admin
+        .from("signing_package_revision_participants")
+        .select("frozen_full_name, frozen_email")
+        .eq("signing_id", draft.id)
+        .single();
+      if (
+        liveAfter?.full_name !== signerName ||
+        liveAfter.email !== `ivy-${stamp}@example.com` ||
+        frozenIdentity?.frozen_full_name !== signerName ||
+        frozenIdentity.frozen_email !== `ivy-${stamp}@example.com`
+      ) {
+        fail(`identity must stay frozen after activation: ${JSON.stringify({ liveAfter, frozenIdentity })}`);
+      }
+      const { error: hiddenMutation } = await admin
+        .from("signing_participants")
+        .update({ email: `hidden-${stamp}@example.com` })
+        .eq("id", participant.id);
+      if (!hiddenMutation?.message.includes("SIGNING_PARTICIPANT_IDENTITY_FROZEN")) {
+        fail("the database must reject a participant email change after activation");
+      }
+      try {
+        await updateDraftSigningParticipantWithActor(
+          agent,
+          { signingId: draft.id, participantId: participant.id, fullName: "Edited Later" },
+          admin,
+        );
+        fail("post-activation participant identity edit unexpectedly succeeded");
+      } catch (error) {
+        if (!(error instanceof SigningError) || error.code !== "CONFLICT") throw error;
+      }
+      ok("after activation: Contact changes and refresh never alter the participant; edits and direct writes rejected");
+
+      try {
+        await upsertDraftPreparedContentWithActor(
+          agent,
+          {
+            signingId: draft.id,
+            signingDocumentId: document.id,
+            contentType: "CHECKMARK",
+            pageNumber: 1,
+            x: 10,
+            y: 10,
+            width: 12,
+            height: 12,
+          },
+          admin,
+        );
+        fail("prepared content edit after activation unexpectedly succeeded");
+      } catch (error) {
+        if (!(error instanceof SigningError)) throw error;
+      }
+      const { error: directInsertError } = await admin
+        .from("signing_draft_prepared_content")
+        .insert({
+          signing_id: draft.id,
+          signing_document_id: document.id,
+          content_type: "CHECKMARK",
+          page_number: 1,
+          x: 10,
+          y: 10,
+          width: 12,
+          height: 12,
+        });
+      if (!directInsertError?.message.includes("SIGNING_PREPARED_CONTENT_NOT_DRAFT")) {
+        fail("database must reject prepared content once the Signing left Draft");
+      }
+      ok("prepared content is editable only during Draft (server + database)");
+
+      const { data: credential } = await admin
+        .from("signing_participant_credentials")
+        .select("id")
+        .eq("signing_id", draft.id)
+        .eq("signing_participant_id", participant.id)
+        .eq("is_current", true)
+        .is("revoked_at", null)
+        .single();
+      const rawToken = await loadRawParticipantCredentialToken({
+        admin,
+        signingId: draft.id,
+        credentialId: credential!.id as string,
+      });
+      const resolved = await validateParticipantCredential(admin, rawToken!);
+      const entry = await createSigningEntrySession({ admin, credential: resolved! });
+      const affirmed = await affirmIdentityFromEntrySession({
+        admin,
+        rawEntrySessionToken: entry.rawSessionToken,
+      });
+      const ceremonySession = await requireCeremonyBrowserSession(admin, affirmed.cookie.value);
+      const context = await requireCeremonyWriteContext({ admin, session: ceremonySession });
+      const disclosure = await loadCurrentConsentDisclosure(admin);
+      await acceptConsent({ admin, context, disclosureVersionId: disclosure.id });
+      await adoptCeremonyMark({
+        admin,
+        context,
+        markKind: "INITIALS",
+        representationType: "TYPED",
+        typedText: "II",
+      });
+
+      const firstAccept = await acceptFieldPlacement({
+        admin,
+        context,
+        signingFieldId: revisionInitials.id as string,
+        clientRequestId: randomUUID(),
+      });
+      if (firstAccept.linkedDatePlacementIds.length !== 1) {
+        fail("accepting Initials must apply its linked Date Signed");
+      }
+      const { data: signingRow } = await admin
+        .from("signings")
+        .select("sender_timezone")
+        .eq("id", draft.id)
+        .single();
+      const expectedDate = senderLocalDate(
+        (signingRow?.sender_timezone as string) ?? "America/Chicago",
+      );
+      const { data: firstDate } = await admin
+        .from("signing_field_placements")
+        .select("signing_field_id, rendered_sender_local_date")
+        .eq("id", firstAccept.linkedDatePlacementIds[0] as string)
+        .single();
+      if (
+        firstDate?.signing_field_id !== revisionDate.id ||
+        firstDate?.rendered_sender_local_date !== expectedDate
+      ) {
+        fail("Initials-linked Date did not take the server acceptance date");
+      }
+      const removed = await removeFieldPlacement({
+        admin,
+        context,
+        signingFieldId: revisionInitials.id as string,
+        clientRequestId: randomUUID(),
+      });
+      if (removed.removedLinkedDatePlacementIds.length !== 1) {
+        fail("removing Initials must make its linked Date ineffective");
+      }
+      const reapplied = await acceptFieldPlacement({
+        admin,
+        context,
+        signingFieldId: revisionInitials.id as string,
+        clientRequestId: randomUUID(),
+      });
+      if (
+        reapplied.linkedDatePlacementIds.length !== 1 ||
+        reapplied.linkedDatePlacementIds[0] === firstAccept.linkedDatePlacementIds[0]
+      ) {
+        fail("reapplying Initials must apply a fresh linked Date");
+      }
+      ok("Initials-linked Date: applied on accept, removed with Initials, fresh on reapply");
+
+      const finish = await finishParticipantSigning({ admin, session: ceremonySession });
+      if (finish.finalizationCondition !== "READY") {
+        fail(`prepared content must not hold up Finish (got ${finish.finalizationCondition})`);
+      }
+      const finalized = await processNextFinalizationWorkItem({ admin, signingId: draft.id });
+      if (finalized.status !== "COMPLETED") {
+        fail(`prepared Signing finalization failed: ${finalized.detail ?? finalized.status}`);
+      }
+      const { data: completedArtifacts } = await admin
+        .from("signing_artifacts")
+        .select("storage_object_key, artifact_category")
+        .eq("signing_id", draft.id)
+        .not("verified_at", "is", null);
+      for (const row of completedArtifacts ?? []) {
+        artifactKeys.push(row.storage_object_key as string);
+      }
+      const completedKey = completedArtifacts?.find(
+        (row) => row.artifact_category === "COMPLETED_DOCUMENT",
+      )?.storage_object_key as string | undefined;
+      if (!completedKey) fail("prepared Signing has no completed document");
+      const { data: finalBlob, error: finalError } = await admin.storage
+        .from(SIGNING_ARTIFACTS_BUCKET)
+        .download(completedKey);
+      if (finalError || !finalBlob) fail(finalError?.message ?? "final download failed");
+      const finalContent = await decodedPageContent(new Uint8Array(await finalBlob.arrayBuffer()));
+      if (!finalContent.includes(pdfHexText(signerName))) {
+        fail("Printed Name is missing from the final PDF");
+      }
+      if (!finalContent.includes(pdfHexText(expectedDate))) {
+        fail("Initials-linked Date is missing from the final PDF");
+      }
+      ok("final PDF keeps Printed Name + Checkmark and renders the Initials-linked Date");
+    }
 
     console.log("\nPASS: native-signing-completion-delivery-dev");
   } catch (error) {

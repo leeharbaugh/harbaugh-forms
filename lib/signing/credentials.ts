@@ -526,7 +526,7 @@ async function finalizeValidatedParticipantCredential(
   ] = await Promise.all([
     admin
       .from("signings")
-      .select("id, title, lifecycle_state")
+      .select("id, title, lifecycle_state, archived_at")
       .eq("id", credential.signing_id)
       .maybeSingle(),
     admin
@@ -542,6 +542,7 @@ async function finalizeValidatedParticipantCredential(
   if (!signing || signing.lifecycle_state !== "IN_PROGRESS") {
     return null;
   }
+  if (signing.archived_at) return null;
   if (!participant || participant.participant_status === "REMOVED") {
     return null;
   }

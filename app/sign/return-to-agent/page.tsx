@@ -30,6 +30,7 @@ export const instant = false;
  * No document content. Unlock restores agent workspace access only.
  * Invalid/expired/epoch-mismatched locks redirect to /sign/unavailable which
  * clears device cookies so proxy cannot trap the agent after recovery bump.
+ * No lock cookie at all renders a static unlocked notice instead.
  */
 export default async function ReturnToAgentPage() {
   await connection();
@@ -41,7 +42,21 @@ export default async function ReturnToAgentPage() {
   const cookieStore = await cookies();
   const rawLockToken = cookieStore.get(DEVICE_HANDOFF_LOCK_COOKIE_NAME)?.value;
   if (!rawLockToken) {
-    redirect("/sign/unavailable");
+    // Also what the unlock action's re-render sees after it clears the lock
+    // cookie; redirecting here would pre-empt the form's hard navigation back
+    // to the workspace.
+    return (
+      <main className="mx-auto flex min-h-svh max-w-lg flex-col justify-center p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Agent workspace unlocked</CardTitle>
+            <CardDescription>
+              This device is not in participant handoff mode.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </main>
+    );
   }
 
   const admin = createAdminClient();

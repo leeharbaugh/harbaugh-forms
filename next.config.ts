@@ -13,6 +13,8 @@ const nextConfig: NextConfig = {
     },
   },
   async headers() {
+    // React needs eval() only in development (debug call stacks); never in production.
+    const devEval = process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
     return [
       {
         // Signing entry/package bootstrap pages: path holds nonsecret public ids
@@ -29,7 +31,7 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'none'",
-              "script-src 'self' 'unsafe-inline'",
+              `script-src 'self' 'unsafe-inline'${devEval}`,
               "connect-src 'self'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data:",

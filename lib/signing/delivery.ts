@@ -24,6 +24,10 @@ import {
 import { loadRawParticipantCredentialToken } from "./credentials";
 import { SigningError } from "./errors";
 import { getSigningExternalAccessState } from "./external-access";
+import {
+  type SandboxEmailInspection,
+  writeSandboxEmailInspection,
+} from "./sandbox-email-inspection";
 import { isSigningWorkSuspended } from "./work-suspension";
 
 export { buildCompletedPackageUrl, buildParticipantInviteUrl };
@@ -128,7 +132,16 @@ export type SigningEmailMessage = {
 
 export type SigningEmailSendResult =
   | { ok: true; providerReference: string | null }
-  | { ok: false; failureDetailSafe: string };
+  /** `retryable: false` marks a failure that sending again cannot fix. */
+  | { ok: false; failureDetailSafe: string; retryable?: boolean };
+
+/** Development sandbox: sends are accepted without reaching the provider. */
+export function signingEmailSandboxed(): boolean {
+  return (
+    process.env.SIGNING_EMAIL_SANDBOX?.trim() === "true" &&
+    process.env.VERCEL_ENV?.trim() !== "production"
+  );
+}
 
 /**
  * Minimal provider-neutral transactional mail boundary.
@@ -141,6 +154,7 @@ export type SigningEmailSendResult =
  */
 export async function sendSigningEmail(
   message: SigningEmailMessage,
+  options: { sandboxInspection?: SandboxEmailInspection } = {},
 ): Promise<SigningEmailSendResult> {
   if (process.env.SIGNING_EMAIL_SANDBOX?.trim() === "true") {
     if (process.env.VERCEL_ENV?.trim() === "production") {
@@ -149,6 +163,9 @@ export async function sendSigningEmail(
         failureDetailSafe:
           "Signing email sandbox is not allowed in production; message was not sent.",
       };
+    }
+    if (options.sandboxInspection) {
+      await writeSandboxEmailInspection(message, options.sandboxInspection);
     }
     const toFingerprint = message.to.trim().toLowerCase().slice(0, 64);
     return {
@@ -187,6 +204,7 @@ export async function sendSigningEmail(
       return {
         ok: false,
         failureDetailSafe: `Email provider rejected the message (status ${response.status}).`,
+        retryable: response.status === 429 || response.status >= 500,
       };
     }
 
@@ -374,10 +392,44 @@ export async function processParticipantInvitationWorkItem(options: {
 
   const { data: signing, error: signingError } = await options.admin
     .from("signings")
-    .select("title")
+    .select("title, lifecycle_state, archived_at")
     .eq("id", workItem.signing_id as string)
     .maybeSingle();
   if (signingError) throw new Error(signingError.message);
+
+  // A Cancelled, Declined, Complete or archived Signing never sends an
+  // invitation, even from a retry queued before it ended.
+  if (!signing || signing.lifecycle_state !== "IN_PROGRESS" || signing.archived_at) {
+    const detail = "This Signing is no longer accepting signatures; invitation was not sent.";
+    await options.admin.from("signing_delivery_attempts").insert({
+      signing_id: workItem.signing_id as string,
+      delivery_instruction_id: deliveryInstructionId,
+      attempt_number: await nextAttemptNumber(options.admin, deliveryInstructionId),
+      outcome: "FAILED",
+      failure_detail_safe: detail,
+    });
+    await options.admin
+      .from("signing_delivery_instructions")
+      .update({ delivery_state: "FAILED" })
+      .eq("id", deliveryInstructionId)
+      .eq("signing_id", workItem.signing_id as string);
+    await options.admin
+      .from("signing_work_items")
+      .update({
+        processing_state: "FAILED",
+        last_error_safe: detail,
+        next_attempt_at: new Date(Date.now() + 86_400_000 * 365).toISOString(),
+        claimed_by: null,
+        claimed_until: null,
+      })
+      .eq("id", options.workItemId);
+    return {
+      workItemId: options.workItemId,
+      deliveryInstructionId,
+      outcome: "FAILED",
+      failureDetailSafe: detail,
+    };
+  }
 
   // Recheck immediately before external side effect (suspension race).
   if (await isSigningWorkSuspended(options.admin)) {

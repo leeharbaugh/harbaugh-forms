@@ -55,8 +55,8 @@ export type DraftSourceSnapshotRow = {
   create_date: string;
   signing_id: string;
   signing_document_id: string;
-  source_packet_form_id: number;
-  source_packet_id: number;
+  source_packet_form_id: number | null;
+  source_packet_id: number | null;
   form_id: number | null;
   document_name_snapshot: string;
   source_pdf_storage_bucket: string;
@@ -69,8 +69,8 @@ export type DraftSourceSnapshotRow = {
 };
 
 export type CapturedDraftSourceState = {
-  sourcePacketFormId: number;
-  sourcePacketId: number;
+  sourcePacketFormId: number | null;
+  sourcePacketId: number | null;
   formId: number | null;
   documentName: string;
   sourcePdfBytes: Uint8Array;
@@ -79,8 +79,8 @@ export type CapturedDraftSourceState = {
   fields: DraftSnapshotField[];
   annotations: DraftSnapshotAnnotation[];
   contentFingerprint: string;
-  /** packet_forms.update_date observed on both sides of the capture. */
-  sourceUpdatedAt: string;
+  /** packet_forms.update_date observed on both sides of the capture; null for ad hoc. */
+  sourceUpdatedAt: string | null;
 };
 
 /**
@@ -102,6 +102,26 @@ export function buildDraftSourceObjectKey(options: {
     "documents",
     options.documentId,
     "draft-snapshots",
+    options.snapshotId,
+    "source.pdf",
+  ].join("/");
+}
+
+/**
+ * Signing-owned ad hoc Draft PDF bytes. Distinct from Packet-derived
+ * `draft-snapshots/` and evidentiary `versions/` namespaces.
+ */
+export function buildAdHocDraftSourceObjectKey(options: {
+  signingId: string;
+  documentId: string;
+  snapshotId: string;
+}): string {
+  return [
+    "signings",
+    options.signingId,
+    "documents",
+    options.documentId,
+    "draft-ad-hoc",
     options.snapshotId,
     "source.pdf",
   ].join("/");
@@ -313,11 +333,20 @@ export async function persistDraftSourceSnapshot(options: {
   captured: CapturedDraftSourceState;
 }): Promise<DraftSourceSnapshotRow> {
   const snapshotId = newOpaqueId();
-  const objectKey = buildDraftSourceObjectKey({
-    signingId: options.signingId,
-    documentId: options.signingDocumentId,
-    snapshotId,
-  });
+  const isAdHoc =
+    options.captured.sourcePacketFormId == null &&
+    options.captured.sourcePacketId == null;
+  const objectKey = isAdHoc
+    ? buildAdHocDraftSourceObjectKey({
+        signingId: options.signingId,
+        documentId: options.signingDocumentId,
+        snapshotId,
+      })
+    : buildDraftSourceObjectKey({
+        signingId: options.signingId,
+        documentId: options.signingDocumentId,
+        snapshotId,
+      });
 
   await uploadPreparedPdfObject({
     admin: options.admin,
@@ -462,6 +491,79 @@ export async function captureAndSelectDraftSourceSnapshot(options: {
 }
 
 /**
+ * Capture an ad hoc uploaded PDF as a Signing-owned Draft source snapshot.
+ * Empty render inputs: the uploaded bytes are the prepared appearance.
+ */
+export async function captureAndSelectAdHocDraftSourceSnapshot(options: {
+  admin: SupabaseClient;
+  signingId: string;
+  signingDocumentId: string;
+  documentName: string;
+  sourcePdfBytes: Uint8Array;
+}): Promise<DraftSourceSnapshotRow> {
+  // Reject encrypted / unloadable PDFs up front so Draft never holds bad source.
+  let pageCount = 0;
+  try {
+    const pdf = await PDFDocument.load(options.sourcePdfBytes, {
+      ignoreEncryption: false,
+    });
+    pageCount = pdf.getPageCount();
+  } catch {
+    throw new SigningError(
+      "VALIDATION_FAILED",
+      "The uploaded file is not a usable PDF.",
+    );
+  }
+  if (pageCount < 1) {
+    throw new SigningError(
+      "VALIDATION_FAILED",
+      "The uploaded PDF has no pages.",
+    );
+  }
+  if (pageCount > 200) {
+    throw new SigningError(
+      "VALIDATION_FAILED",
+      "The uploaded PDF has too many pages (maximum 200).",
+    );
+  }
+
+  const sourcePdfSha256 = sha256Hex(options.sourcePdfBytes);
+  const contentFingerprint = computeDraftContentFingerprint({
+    sourcePdfSha256,
+    fieldViews: [],
+    annotations: [],
+  });
+
+  const captured: CapturedDraftSourceState = {
+    sourcePacketFormId: null,
+    sourcePacketId: null,
+    formId: null,
+    documentName: options.documentName,
+    sourcePdfBytes: options.sourcePdfBytes,
+    sourcePdfSha256,
+    sourcePdfByteSize: options.sourcePdfBytes.byteLength,
+    fields: [],
+    annotations: [],
+    contentFingerprint,
+    sourceUpdatedAt: null,
+  };
+
+  const snapshot = await persistDraftSourceSnapshot({
+    admin: options.admin,
+    signingId: options.signingId,
+    signingDocumentId: options.signingDocumentId,
+    captured,
+  });
+  await selectDraftSourceSnapshotOnDocument(
+    options.admin,
+    options.signingId,
+    options.signingDocumentId,
+    snapshot.id,
+  );
+  return snapshot;
+}
+
+/**
  * Render prepared PDF bytes from a Draft source snapshot.
  * This is the only rendering path allowed for promotion/activation.
  */
@@ -518,7 +620,7 @@ export async function renderPreparedPdfFromDraftSnapshot(options: {
     contentSha256: sha256Hex(bytes),
     byteSize: bytes.byteLength,
     pageCount: pdf.getPageCount(),
-    sourcePacketFormId: options.snapshot.source_packet_form_id,
+    sourcePacketFormId: options.snapshot.source_packet_form_id ?? null,
     sourceDocumentName: options.snapshot.document_name_snapshot,
     sourceUpdatedAt: options.snapshot.create_date,
   };

@@ -253,9 +253,11 @@ describe("Native Signing completion delivery", () => {
 
   it("wires fan-out after Complete without failing finalization", () => {
     assert.match(finalization, /enqueueInitialCompletedPackageFanOut/);
+    assert.match(finalization, /enqueueInitialCopyRecipientFanOut/);
     assert.match(finalization, /must never fail or roll back Complete/);
     assert.match(finalization, /isSigningWorkSuspended/);
     assert.match(delivery, /enqueueInitialCompletedPackageFanOut/);
+    assert.match(delivery, /enqueueInitialCopyRecipientFanOut/);
     assert.match(delivery, /frozen_email/);
     assert.match(delivery, /COMPLETED_PACKAGE_SENT/);
     assert.match(delivery, /COMPLETED_PACKAGE_RESEND_REQUESTED/);
@@ -312,9 +314,10 @@ describe("Native Signing completion delivery", () => {
     assert.match(artifactRoute, /appendCompletedPackageAccessLog/);
   });
 
-  it("keeps ceremony shell typed-only (drawn UI not enabled)", () => {
-    assert.match(ceremonyShell, /representationType:\s*"TYPED"/);
-    assert.doesNotMatch(ceremonyShell, /representationType:\s*"DRAWN"/);
+  it("keeps the ceremony typed-only (drawn UI not enabled)", () => {
+    const adoptedMarks = read("lib/signing/adopted-marks.ts");
+    assert.match(adoptedMarks, /representationType: "TYPED",\s*typedText: expected,/);
+    assert.doesNotMatch(ceremonyShell, /"DRAWN"/);
   });
 
   it("builds text-only completed-package email messages", () => {

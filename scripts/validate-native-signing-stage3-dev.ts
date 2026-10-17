@@ -651,7 +651,12 @@ async function main() {
     ok("pre-activation document removal works; promotion freezes remaining docs");
 
     // Integrity mismatch fail-closed: tamper storage object for a version.
-    const victim = (versionsAfter1 ?? [])[0];
+    // The contract (docA) changed in Revision 3, so its Revision 1 version is no
+    // longer a reuse candidate; tamper an unchanged document's version instead.
+    const victim = (versionsAfter1 ?? []).find(
+      (version) => version.signing_document_id === docB.id,
+    );
+    if (!victim) fail("missing Revision 1 version for the unchanged Financing document");
     if (victim?.storage_object_key && victim?.id) {
       const expected = victim.content_sha256 as string;
       await admin.storage.from(SIGNING_ARTIFACTS_BUCKET).upload(

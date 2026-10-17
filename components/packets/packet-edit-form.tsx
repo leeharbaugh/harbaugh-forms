@@ -39,6 +39,7 @@ import {
   type PropertyInput,
   type PropertySelectionMode,
 } from "@/lib/types/property";
+import { useResetPendingOnMount } from "@/lib/ui/reset-pending-on-mount";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -61,7 +62,6 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
   const [packetType, setPacketType] = useState<PacketWorkflowType | "">("");
   const [collectionId, setCollectionId] = useState<number | null>(null);
   const [notes, setNotes] = useState("");
-  const [status, setStatus] = useState("ACTIVE");
   const [propertyMode, setPropertyMode] =
     useState<PropertySelectionMode>("existing");
   const [propertyId, setPropertyId] = useState<number | null>(null);
@@ -70,6 +70,9 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Soft navigation can restore this editor with isSaving still true after a
+  // prior save that navigated away without clearing the flag.
+  useResetPendingOnMount(setIsSaving);
 
   const loadPacket = useCallback(async () => {
     setIsLoading(true);
@@ -102,7 +105,6 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
     setPacketType((detail.packet_type as PacketWorkflowType) ?? "");
     setCollectionId(detail.collection_id);
     setNotes(detail.notes ?? "");
-    setStatus(detail.status);
     setPropertyId(detail.property_id);
     if (detail.properties) {
       setProperty(propertyToInput(detail.properties));
@@ -177,11 +179,11 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
           collectionId: packetType === "custom" ? null : collectionId,
           propertyId: showPropertySelection ? propertyId : null,
           notes,
-          status,
         },
         { hasLegacyAgreement },
       );
 
+      setIsSaving(false);
       router.push(`/packets/${packetId}`);
       router.refresh();
     } catch (error) {
@@ -324,19 +326,6 @@ export function PacketEditForm({ packetId }: PacketEditFormProps) {
               onChange={(event) => setNotes(event.target.value)}
               disabled={isSaving}
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="packet_status">Status</Label>
-            <Select
-              id="packet_status"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-              disabled={isSaving}
-            >
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-            </Select>
           </div>
 
           {showPropertySelection && (

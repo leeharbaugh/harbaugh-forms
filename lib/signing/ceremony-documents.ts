@@ -36,6 +36,15 @@ export type CeremonyDocumentBytes = {
   bytes: Uint8Array;
 };
 
+/**
+ * Authorization denials (ended or foreign session, wrong participant or
+ * Signing, malformed id) are expected traffic and are not logged as errors;
+ * integrity and infrastructure failures are. Response shape never differs.
+ */
+export function isRoutineCeremonyDocumentDenial(error: unknown): boolean {
+  return error instanceof SigningError && error.code !== "INTEGRITY_MISMATCH";
+}
+
 export async function loadCeremonyDocumentBytes(options: {
   admin: SupabaseClient;
   session: ValidatedCeremonySession;

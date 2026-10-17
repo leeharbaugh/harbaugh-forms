@@ -1,17 +1,22 @@
 import { SigningsListPage } from "@/components/signings/signings-list-page";
+import { listSigningsAction } from "@/lib/signing/actions";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { notFound } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Signings | Harbaugh Forms",
-  description: "Prepare and manage Native Signings",
+  description: "Prepare and manage Signings",
 };
 
-export default function Page() {
+export const instant = false;
+
+export default async function Page() {
+  await connection();
   if (!isNativeSigningEnabled()) {
     notFound();
   }
 
-  return <SigningsListPage />;
+  return <SigningsListPage initial={await listSigningsAction()} />;
 }

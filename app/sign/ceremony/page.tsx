@@ -56,7 +56,7 @@ async function SignCeremonyBody() {
       redirect("/sign/unavailable");
     }
     return (
-      <Card>
+      <Card className="mx-auto mt-10 max-w-2xl">
         <CardHeader>
           <CardTitle className="text-base">
             This signing session is no longer active
@@ -83,10 +83,10 @@ async function SignCeremonyBody() {
 
 export default function Page() {
   return (
-    <main className="mx-auto min-h-screen max-w-2xl px-5 py-10">
+    <main className="min-h-dvh">
       <Suspense
         fallback={
-          <p className="text-sm text-muted-foreground">Loading Signing…</p>
+          <p className="px-4 py-10 text-sm text-muted-foreground">Loading Signing…</p>
         }
       >
         <SignCeremonyBody />
