@@ -20,6 +20,8 @@ import {
   type DraftBundle,
 } from "@/lib/signing/package-promotion";
 import {
+  descriptiveRoleLabel,
+  isCanonicalRoleLabel,
   isPacketImportedRole,
   packetSigningRole,
   participantRoleDisplay,
@@ -105,56 +107,87 @@ describe("participant role model", () => {
     assert.equal(participantRoleDisplay(null, null), null);
   });
 
-  it("maps each direct Packet role to the same Signing role", () => {
+  it("maps each direct Packet role to the same Signing role with no label", () => {
     for (const role of ["BUYER", "SELLER", "TENANT", "LANDLORD", "AGENT"] as const) {
       const derived = packetSigningRole([role]);
-      assert.equal(derived.roleCode, role);
-      assert.equal(participantRoleDisplay(derived.roleCode, derived.optionalRole), derived.optionalRole);
+      assert.deepEqual(derived, { roleCode: role, optionalRole: null, packetRole: role });
     }
-    assert.deepEqual(packetSigningRole(["AGENT"]), {
-      roleCode: "AGENT",
-      optionalRole: "Agent",
-      packetRole: "AGENT",
-    });
+    assert.equal(participantRoleDisplay("AGENT", packetSigningRole(["AGENT"]).optionalRole), "Agent");
   });
 
-  it("keeps relationship roles as Other with their label", () => {
+  it("keeps relationship roles as Other with their label, and Other alone", () => {
     for (const [role, label] of [
       ["PRIMARY", "Primary"],
       ["CO_CLIENT", "Co-client"],
       ["SPOUSE", "Spouse"],
       ["POWER_OF_ATTORNEY", "Power of attorney"],
-      ["OTHER", "Other"],
     ] as const) {
       assert.deepEqual(packetSigningRole([role]), { roleCode: "OTHER", optionalRole: label, packetRole: role });
     }
+    assert.deepEqual(packetSigningRole(["OTHER"]), { roleCode: "OTHER", optionalRole: null, packetRole: "OTHER" });
   });
 
-  it("lets a direct role win over a relationship role, which stays the label only", () => {
-    // Packet row says Primary, the representation agreement says Buyer.
-    const buyer = packetSigningRole(["PRIMARY", "BUYER"]);
-    assert.deepEqual(buyer, { roleCode: "BUYER", optionalRole: "Primary", packetRole: "BUYER" });
-    assert.equal(participantRoleDisplay(buyer.roleCode, buyer.optionalRole), "Buyer · Primary");
-    assert.equal(packetSigningRole(["CO_CLIENT", "SELLER"]).roleCode, "SELLER");
-    // The Packet row is the more explicit current role: Seller beats the agreement's Buyer.
-    assert.equal(packetSigningRole(["SELLER", "BUYER"]).roleCode, "SELLER");
-    // Other is not a descriptive relationship label.
-    assert.equal(packetSigningRole(["OTHER", "BUYER"]).optionalRole, "Buyer");
+  it("puts the direct role in role_code and only a relationship in the label", () => {
+    const show = (...roles: Parameters<typeof packetSigningRole>[0]) => {
+      const derived = packetSigningRole(roles);
+      return participantRoleDisplay(derived.roleCode, derived.optionalRole);
+    };
+    assert.equal(show("PRIMARY", "BUYER"), "Buyer · Primary");
+    assert.equal(show("CO_CLIENT", "BUYER"), "Buyer · Co-client");
+    assert.equal(show("SPOUSE", "SELLER"), "Seller · Spouse");
+    // The same canonical role from two sources adds no redundant label.
+    assert.equal(show("BUYER", "BUYER"), "Buyer");
+    // The Packet row is the more explicit current role; the agreement's
+    // competing Buyer never becomes a label.
+    assert.equal(show("SELLER", "BUYER"), "Seller");
+    assert.equal(show("OTHER", "BUYER"), "Buyer");
   });
 
-  it("recognizes an untouched import and never a manager's Draft edit", () => {
+  it("never shows a canonical role as the secondary label", () => {
+    // Lee's Signing 7238ed74 rows, written before labels were relationship-only.
+    assert.equal(participantRoleDisplay("BUYER", "Seller"), "Buyer");
+    assert.equal(participantRoleDisplay("AGENT", "Tenant"), "Agent");
+    assert.equal(participantRoleDisplay("BUYER", "Primary"), "Buyer · Primary");
+    assert.equal(descriptiveRoleLabel("BUYER", "seller"), null);
+    assert.equal(descriptiveRoleLabel("BUYER", " Co-client "), "Co-client");
+    // Without a role, legacy free text is all there is, so it is kept.
+    assert.equal(descriptiveRoleLabel(null, "Buyer"), "Buyer");
+    assert.equal(isCanonicalRoleLabel("Broker"), true);
+    assert.equal(isCanonicalRoleLabel("Lead buyer"), false);
+  });
+
+  it("recognizes an untouched import, old or new format, and never a manager's edit", () => {
+    // Current format.
+    assert.equal(isPacketImportedRole({ roleCode: "SELLER", optionalRole: null }, null), true);
     assert.equal(isPacketImportedRole({ roleCode: "OTHER", optionalRole: "Co-client" }, null), true);
-    assert.equal(isPacketImportedRole({ roleCode: "OTHER", optionalRole: "Primary" }, null), true);
-    assert.equal(isPacketImportedRole({ roleCode: "AGENT", optionalRole: "Agent" }, null), true);
-    // Lee's Draft edits on Packet 970: role changed, old label kept.
-    assert.equal(isPacketImportedRole({ roleCode: "BUYER", optionalRole: "Primary" }, null), false);
-    assert.equal(isPacketImportedRole({ roleCode: "AGENT", optionalRole: "Co-client" }, null), false);
-    // Only an agreement client can carry a direct role with a relationship label.
     assert.equal(isPacketImportedRole({ roleCode: "BUYER", optionalRole: "Primary" }, "BUYER"), true);
+    // Pre-fix format (direct role stored as its own label) still converges.
+    assert.equal(isPacketImportedRole({ roleCode: "SELLER", optionalRole: "Seller" }, null), true);
+    assert.equal(isPacketImportedRole({ roleCode: "OTHER", optionalRole: "Other" }, null), true);
+    // Pre-marker manager edits: role changed, old label kept.
+    assert.equal(isPacketImportedRole({ roleCode: "BUYER", optionalRole: "Seller" }, null), false);
+    assert.equal(isPacketImportedRole({ roleCode: "AGENT", optionalRole: "Tenant" }, null), false);
+    assert.equal(isPacketImportedRole({ roleCode: "BUYER", optionalRole: "Primary" }, null), false);
     assert.equal(isPacketImportedRole({ roleCode: "SELLER", optionalRole: "Primary" }, "BUYER"), false);
     // Manual free text or a missing role is never an import.
     assert.equal(isPacketImportedRole({ roleCode: "BUYER", optionalRole: "Lead buyer" }, null), false);
     assert.equal(isPacketImportedRole({ roleCode: null, optionalRole: "Buyer" }, null), false);
+  });
+
+  it("marks a manager's Draft role change and drops a stale canonical label", () => {
+    const participants = read("lib/signing/draft-participants.ts");
+    const update = participants.slice(
+      participants.indexOf("export async function updateDraftSigningParticipantWithActor"),
+    );
+    assert.match(update, /patch\.role_overridden_at = new Date\(\)\.toISOString\(\)/);
+    assert.match(update, /descriptiveRoleLabel\(nextRoleCode, current\.optional_role/);
+    const add = participants.slice(
+      participants.indexOf("export async function addDraftSigningParticipantWithActor"),
+    );
+    assert.match(add, /descriptiveRoleLabel\(\s*roleCode,/);
+    const migration = read("supabase/migrations/20261017120000_native_signing_participant_role_override.sql");
+    assert.match(migration, /add column if not exists role_overridden_at timestamptz/);
+    assert.doesNotMatch(migration, /update public\.signing_participants|drop /i);
   });
 
   it("syncs Packet roles only on the authorized Draft dashboard, never at Send", () => {
@@ -168,6 +201,8 @@ describe("participant role model", () => {
     );
     assert.match(sync, /if \(!isDraftIdentityLive\(signing\)\) return/);
     assert.match(sync, /isPacketImportedRole\(/);
+    // A manager's override marker excludes the row from both the read and the write.
+    assert.equal((sync.match(/\.is\("role_overridden_at", null\)/g) ?? []).length, 2);
     // Conditional write: a concurrent manager edit wins.
     assert.match(sync, /update\.eq\("role_code", roleCode\)/);
     assert.match(sync, /update\.eq\("optional_role", optionalRole\)/);

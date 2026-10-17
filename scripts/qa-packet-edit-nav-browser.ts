@@ -40,7 +40,7 @@ async function main() {
   let packetId = 0;
   let contactId = 0;
   let contactB = 0;
-  let contactC = 0;
+  const extraContactIds: number[] = [];
   let signingId = "";
   const generatedPaths: string[] = [];
 
@@ -280,61 +280,92 @@ async function main() {
     }
     ok('Draft Signing shows Packet Buyer as "Buyer" and Packet Agent as "Agent"');
 
-    const { data: casey, error: caseyError } = await admin
-      .from("contacts")
-      .insert({
-        owner_user_id: userId,
-        contact_type: "INDIVIDUAL",
-        first_name: "Casey",
-        last_name: "Client",
-        email: `casey-${stamp}@example.com`,
-        status: "ACTIVE",
-      })
-      .select("id")
-      .single();
-    if (caseyError || !casey) fail(caseyError?.message ?? "casey");
-    contactC = casey.id as number;
-    const { data: caseyLink } = await admin
-      .from("packet_contacts")
-      .insert({ packet_id: packetId, contact_id: contactC, packet_role: "CO_CLIENT", sort_order: 2, status: "ACTIVE" })
-      .select("id")
-      .single();
+    /** Adds a Contact to the Packet with a role; returns its packet_contacts id. */
+    const addPacketContact = async (firstName: string, lastName: string, role: string, sortOrder: number) => {
+      const { data: contact, error } = await admin
+        .from("contacts")
+        .insert({
+          owner_user_id: userId,
+          contact_type: "INDIVIDUAL",
+          first_name: firstName,
+          last_name: lastName,
+          email: `${firstName.toLowerCase()}-${stamp}@example.com`,
+          status: "ACTIVE",
+        })
+        .select("id")
+        .single();
+      if (error || !contact) fail(error?.message ?? "contact");
+      extraContactIds.push(contact.id as number);
+      const { data: link } = await admin
+        .from("packet_contacts")
+        .insert({ packet_id: packetId, contact_id: contact.id, packet_role: role, sort_order: sortOrder, status: "ACTIVE" })
+        .select("id")
+        .single();
+      return { contactId: contact.id as number, linkId: link!.id as number };
+    };
+    /** Changes a Packet contact role through the real Packet Edit role selector. */
+    const setPacketRoleInUi = async (linkId: number, role: string) => {
+      const select = page.locator(`#role_${linkId}`);
+      await select.waitFor({ timeout: 30000 });
+      await select.selectOption(role);
+      await page.waitForFunction(
+        (id) => (document.querySelector(`#role_${id}`) as HTMLSelectElement | null)?.disabled === false,
+        linkId,
+        { timeout: 20000 },
+      );
+      const { data } = await admin.from("packet_contacts").select("packet_role").eq("id", linkId).single();
+      if (data?.packet_role !== role) fail(`Packet role change to ${role} was not saved: ${JSON.stringify(data)}`);
+    };
+
+    const sam = await addPacketContact("Sam", "Seller", "SELLER", 2);
+    const tess = await addPacketContact("Tess", "Tenant", "TENANT", 3);
+    const casey = await addPacketContact("Casey", "Client", "CO_CLIENT", 4);
     await page.reload({ waitUntil: "networkidle" });
-    const caseyBefore = await participantRole("Casey Client");
-    if (caseyBefore !== "Other · Co-client") fail(`a Co-client imports as "Other · Co-client", got "${caseyBefore}"`);
+    const imported = [
+      await participantRole("Sam Seller"),
+      await participantRole("Tess Tenant"),
+      await participantRole("Casey Client"),
+    ];
+    if (JSON.stringify(imported) !== JSON.stringify(["Seller", "Tenant", "Other · Co-client"])) {
+      fail(`Packet roles must import as Seller, Tenant, Other · Co-client: ${JSON.stringify(imported)}`);
+    }
 
     await page.goto(`${APP_ORIGIN}/packets/${packetId}/edit`, { waitUntil: "networkidle" });
-    const caseySelect = page.locator(`#role_${caseyLink!.id}`);
-    await caseySelect.waitFor({ timeout: 30000 });
-    await caseySelect.selectOption("AGENT");
-    await page.waitForFunction(
-      (id) => (document.querySelector(`#role_${id}`) as HTMLSelectElement | null)?.disabled === false,
-      caseyLink!.id,
-      { timeout: 20000 },
-    );
-    const { data: caseyStored } = await admin
-      .from("packet_contacts")
-      .select("packet_role")
-      .eq("id", caseyLink!.id)
-      .single();
-    if (caseyStored?.packet_role !== "AGENT") fail(`Packet role change was not saved: ${JSON.stringify(caseyStored)}`);
+    await setPacketRoleInUi(sam.linkId, "BUYER");
+    await setPacketRoleInUi(tess.linkId, "AGENT");
     await page.goto(`${APP_ORIGIN}/signings/${signingId}`, { waitUntil: "networkidle" });
-    const caseyAfter = await participantRole("Casey Client");
-    if (caseyAfter !== "Agent") fail(`a Packet role change before Send must reach the Draft, got "${caseyAfter}"`);
-    const { data: caseyParticipant } = await admin
+    const samAfter = await participantRole("Sam Seller");
+    const tessAfter = await participantRole("Tess Tenant");
+    if (samAfter !== "Buyer" || tessAfter !== "Agent") {
+      fail(`Seller -> Buyer must show "Buyer" and Tenant -> Agent "Agent": got "${samAfter}", "${tessAfter}"`);
+    }
+    const { data: tessRow } = await admin
       .from("signing_participants")
       .select("role_code, optional_role, linked_user_id")
       .eq("signing_id", signingId)
-      .eq("linked_contact_id", contactC)
+      .eq("linked_contact_id", tess.contactId)
       .single();
-    if (
-      caseyParticipant?.role_code !== "AGENT" ||
-      caseyParticipant.optional_role !== "Agent" ||
-      caseyParticipant.linked_user_id !== null
-    ) {
-      fail(`Casey's Draft participant: ${JSON.stringify(caseyParticipant)}`);
+    if (tessRow?.role_code !== "AGENT" || tessRow.optional_role !== null || tessRow.linked_user_id !== null) {
+      fail(`Tess's Draft participant: ${JSON.stringify(tessRow)}`);
     }
-    ok('Packet Co-client -> Draft "Other · Co-client"; Packet role set to Agent in the UI -> Draft "Agent" without editing the Signing');
+    ok('Packet Seller -> Buyer and Tenant -> Agent in the Packet UI: the Draft shows "Buyer" and "Agent" only (no stale "Seller" / "Tenant")');
+
+    // A legitimate relationship label, then a manager override that Packet changes leave alone.
+    const caseyRoleSelect = page.getByRole("combobox", { name: "Role for Casey Client" });
+    await caseyRoleSelect.selectOption("BUYER");
+    await page.getByText("Participant role updated.").waitFor({ timeout: 20000 });
+    let caseyOverride = await participantRole("Casey Client");
+    for (let attempt = 0; attempt < 40 && caseyOverride !== "Buyer · Co-client"; attempt += 1) {
+      await page.waitForTimeout(500);
+      caseyOverride = await participantRole("Casey Client");
+    }
+    if (caseyOverride !== "Buyer · Co-client") fail(`manager role Buyer on a Co-client must read "Buyer · Co-client", got "${caseyOverride}"`);
+    await page.goto(`${APP_ORIGIN}/packets/${packetId}/edit`, { waitUntil: "networkidle" });
+    await setPacketRoleInUi(casey.linkId, "SELLER");
+    await page.goto(`${APP_ORIGIN}/signings/${signingId}`, { waitUntil: "networkidle" });
+    const caseyKept = await participantRole("Casey Client");
+    if (caseyKept !== "Buyer · Co-client") fail(`a manager's Draft role must survive Packet changes, got "${caseyKept}"`);
+    ok('relationship label kept: Co-client set to Buyer in the Draft reads "Buyer · Co-client" and survives a Packet change to Seller');
 
     // History: Signing → Edit via Back.
     await page.goto(`${APP_ORIGIN}/packets/${packetId}/edit`, { waitUntil: "networkidle" });
@@ -369,7 +400,7 @@ async function main() {
       await admin.from("packet_forms").update({ status: "DELETED" }).eq("packet_id", packetId);
       await admin.from("packets").update({ status: "DELETED" }).eq("id", packetId);
     }
-    for (const id of [contactId, contactB, contactC].filter(Boolean)) {
+    for (const id of [contactId, contactB, ...extraContactIds].filter(Boolean)) {
       await admin.from("contacts").delete().eq("id", id);
     }
     if (userId) {

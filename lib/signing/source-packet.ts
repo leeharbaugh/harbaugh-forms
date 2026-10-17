@@ -363,8 +363,10 @@ export async function autoAddDraftPacketParticipants(
  * Draft role sync from the bound source Packet. Caller must already have
  * authorized Draft management for `signing`. A linked participant whose role
  * is still exactly what a Packet import produces follows the Packet's current
- * role; a role a manager edited in the Draft is never overwritten. Each write
- * is conditioned on the role it read, so a concurrent manager edit wins. No-op
+ * role and relationship label; a participant whose role a manager changed
+ * (`role_overridden_at`, or a pre-marker edit that no longer looks imported)
+ * is never touched. Each write is conditioned on what it read and on the
+ * marker still being unset, so a concurrent manager edit wins. No-op
  * once a package revision exists or the Signing leaves Draft: activation
  * freezes roles in the package revision.
  */
@@ -384,7 +386,8 @@ export async function syncDraftPacketParticipantRoles(
     .select("id, linked_contact_id, role_code, optional_role")
     .eq("signing_id", signing.id)
     .neq("participant_status", "REMOVED")
-    .not("linked_contact_id", "is", null);
+    .not("linked_contact_id", "is", null)
+    .is("role_overridden_at", null);
   if (error) throw new Error(error.message);
 
   const updatedParticipantIds: string[] = [];
@@ -407,7 +410,8 @@ export async function syncDraftPacketParticipantRoles(
       .from("signing_participants")
       .update({ role_code: party.role_code, optional_role: party.optional_role })
       .eq("id", row.id)
-      .eq("signing_id", signing.id);
+      .eq("signing_id", signing.id)
+      .is("role_overridden_at", null);
     update = roleCode === null ? update.is("role_code", null) : update.eq("role_code", roleCode);
     update =
       optionalRole === null

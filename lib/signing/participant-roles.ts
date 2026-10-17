@@ -74,77 +74,94 @@ export function isDirectPacketRole(role: PacketContactRole): boolean {
 
 export type PacketSigningRole = {
   roleCode: SigningParticipantRoleCode;
-  optionalRole: string;
+  /** Descriptive relationship label only; never a canonical role name. */
+  optionalRole: string | null;
   packetRole: PacketContactRole;
 };
+
+/** True when a label is a canonical role's name (Buyer, Seller, …, Other). */
+export function isCanonicalRoleLabel(label: string | null | undefined): boolean {
+  const value = label?.trim().toLowerCase();
+  return Boolean(value) && Object.values(ROLE_LABELS).some((name) => name.toLowerCase() === value);
+}
+
+/**
+ * The label to keep next to a role: trimmed, and dropped when the participant
+ * has a role and the label names a canonical role (stale or redundant). A
+ * participant without a role keeps legacy free text as is.
+ */
+export function descriptiveRoleLabel(
+  roleCode: string | null | undefined,
+  label: string | null | undefined,
+): string | null {
+  const value = label?.trim() || null;
+  if (!value) return null;
+  return isSigningParticipantRoleCode(roleCode) && isCanonicalRoleLabel(value) ? null : value;
+}
 
 /**
  * A Contact's Signing role from all of its Packet roles, most explicit source
  * first (the Packet contact row, then a representation-agreement client row).
- * The first direct role wins over any relationship role (Primary, Co-client,
- * Spouse, Power of attorney); the relationship role then stays as the label,
- * never the role. With no direct role, the first role maps to Other.
+ * The first direct role becomes the role; the first relationship role (Primary,
+ * Co-client, Spouse, Power of attorney) becomes the label. A canonical role is
+ * never a label. With no direct role, the role is Other.
  */
 export function packetSigningRole(
   roles: readonly PacketContactRole[],
 ): PacketSigningRole {
   if (roles.length === 0) throw new Error("packetSigningRole needs at least one role");
   const direct = roles.find(isDirectPacketRole);
-  if (!direct) {
-    return {
-      roleCode: "OTHER",
-      optionalRole: formatPacketContactRole(roles[0]),
-      packetRole: roles[0],
-    };
-  }
   const relationship = roles.find(
     (role) => !isDirectPacketRole(role) && role !== "OTHER",
   );
   return {
-    roleCode: roleCodeForPacketRole(direct),
-    optionalRole: formatPacketContactRole(relationship ?? direct),
-    packetRole: direct,
+    roleCode: direct ? roleCodeForPacketRole(direct) : "OTHER",
+    optionalRole: relationship ? formatPacketContactRole(relationship) : null,
+    packetRole: direct ?? roles[0],
   };
 }
 
 /**
  * True when a participant's role is exactly what a Packet import produces for
- * a Contact, so no manager has edited it in the Draft. A direct role can carry
- * a relationship label only when the Contact is also a representation-agreement
- * client (`agreementRole`), so a manager's edit such as Buyer · Primary on a
- * Packet without an agreement is never mistaken for an import.
+ * a Contact, today or before labels became relationship-only (when a direct
+ * role was also stored as its own label, e.g. Seller · "Seller"). Draft role
+ * sync uses it, together with `role_overridden_at`, to leave participants a
+ * manager edited alone. A direct role carries a relationship label only for a
+ * representation-agreement client (`agreementRole`).
  */
 export function isPacketImportedRole(
   current: { roleCode: string | null; optionalRole: string | null },
   agreementRole: PacketContactRole | null,
 ): boolean {
-  const matches = (derived: PacketSigningRole) =>
-    derived.roleCode === current.roleCode &&
-    derived.optionalRole === (current.optionalRole?.trim() || null);
-  if (PACKET_CONTACT_ROLES.some((role) => matches(packetSigningRole([role])))) {
-    return true;
+  const label = current.optionalRole?.trim() || null;
+  const matches = (roleCode: string, optionalRole: string | null) =>
+    roleCode === current.roleCode && optionalRole === label;
+  for (const role of PACKET_CONTACT_ROLES) {
+    const derived = packetSigningRole([role]);
+    if (matches(derived.roleCode, derived.optionalRole)) return true;
+    if (matches(roleCodeForPacketRole(role), formatPacketContactRole(role))) return true;
   }
   if (!agreementRole || !isDirectPacketRole(agreementRole)) return false;
   return PACKET_CONTACT_ROLES.some(
     (role) =>
       !isDirectPacketRole(role) &&
       role !== "OTHER" &&
-      matches(packetSigningRole([role, agreementRole])),
+      matches(roleCodeForPacketRole(agreementRole), formatPacketContactRole(role)),
   );
 }
 
 /**
- * Display text for a participant's role: the vocabulary label, plus the free
- * text label when it adds detail (e.g. "Other · Spouse"). Legacy participants
- * with only free text show that text.
+ * Display text for a participant's role: the vocabulary label, plus a
+ * descriptive relationship label when there is one (e.g. "Buyer · Primary").
+ * A label naming a canonical role is never shown next to a role. Legacy
+ * participants with only free text show that text.
  */
 export function participantRoleDisplay(
   roleCode: string | null | undefined,
   optionalRole: string | null | undefined,
 ): string | null {
-  const label = optionalRole?.trim() || null;
+  const label = descriptiveRoleLabel(roleCode, optionalRole);
   if (!isSigningParticipantRoleCode(roleCode)) return label;
   const base = ROLE_LABELS[roleCode];
-  if (!label || label.toLowerCase() === base.toLowerCase()) return base;
-  return `${base} · ${label}`;
+  return label ? `${base} · ${label}` : base;
 }

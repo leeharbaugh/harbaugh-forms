@@ -1344,9 +1344,17 @@ async function main() {
       const rhea = await createContact(agent.userId, "Rhea", "Buyer", "rhea@example.com");
       const rex = await createContact(agent.userId, "Rex", "Agent", "rex@example.com");
       const rory = await createContact(agent.userId, "Rory", "Coclient", "rory@example.com");
+      const sam = await createContact(agent.userId, "Sam", "Seller", "sam@example.com");
+      const tess = await createContact(agent.userId, "Tess", "Tenant", "tess@example.com");
+      const lou = await createContact(agent.userId, "Lou", "Legacy", "lou@example.com");
+      const pia = await createContact(agent.userId, "Pia", "Premarker", "pia@example.com");
       await linkContact(rolePacket.packetId, rhea, "BUYER", 0);
       await linkContact(rolePacket.packetId, rex, "AGENT", 1);
       await linkContact(rolePacket.packetId, rory, "CO_CLIENT", 2);
+      await linkContact(rolePacket.packetId, sam, "SELLER", 3);
+      await linkContact(rolePacket.packetId, tess, "TENANT", 4);
+      await linkContact(rolePacket.packetId, lou, "SELLER", 5);
+      await linkContact(rolePacket.packetId, pia, "SELLER", 6);
       const roleSigning = await createSigningFromPacketWithActor(
         agent,
         { packetId: rolePacket.packetId, confirmDuplicate: true },
@@ -1375,7 +1383,7 @@ async function main() {
         label: string,
         row: { role_code: unknown; optional_role: unknown } | undefined,
         roleCode: string,
-        optionalRole: string,
+        optionalRole: string | null,
       ) => {
         if (row?.role_code !== roleCode || row.optional_role !== optionalRole) {
           fail(`${label}: ${JSON.stringify(row)}, expected ${roleCode} / ${optionalRole}`);
@@ -1383,8 +1391,8 @@ async function main() {
       };
 
       let roles = await rolesNow();
-      expectRole("Packet Buyer imports as Buyer", roles.get(rhea), "BUYER", "Buyer");
-      expectRole("Packet Agent imports as Agent", roles.get(rex), "AGENT", "Agent");
+      expectRole("Packet Buyer imports as Buyer", roles.get(rhea), "BUYER", null);
+      expectRole("Packet Agent imports as Agent", roles.get(rex), "AGENT", null);
       expectRole("Packet Co-client imports as Other", roles.get(rory), "OTHER", "Co-client");
       const { count: associationCount } = await admin
         .from("signing_agent_associations")
@@ -1399,21 +1407,56 @@ async function main() {
       }
       ok("Create Signing maps Packet Buyer -> Buyer, Agent -> Agent (no association, no User link), Co-client -> Other · Co-client");
 
+      // Rows written before labels became relationship-only: an untouched
+      // legacy import (Seller · "Seller") and a pre-marker manager edit
+      // (Buyer · "Seller", no override marker).
+      await admin
+        .from("signing_participants")
+        .update({ optional_role: "Seller" })
+        .eq("id", roles.get(lou)!.id);
+      await admin
+        .from("signing_participants")
+        .update({ role_code: "BUYER", optional_role: "Seller" })
+        .eq("id", roles.get(pia)!.id);
+
       await setPacketRole(rory, "AGENT");
+      await setPacketRole(sam, "BUYER");
+      await setPacketRole(tess, "AGENT");
+      await setPacketRole(lou, "SPOUSE");
+      await setPacketRole(pia, "LANDLORD");
       await loadSigningDashboardForActor(agent, roleSigning.signingId, admin);
       roles = await rolesNow();
-      expectRole("an untouched import follows a later Packet role", roles.get(rory), "AGENT", "Agent");
+      expectRole("an untouched import follows a later Packet role", roles.get(rory), "AGENT", null);
+      expectRole("Packet Seller -> Buyer shows Buyer only", roles.get(sam), "BUYER", null);
+      expectRole("Packet Tenant -> Agent shows Agent only", roles.get(tess), "AGENT", null);
+      expectRole("a legacy Seller · Seller import converges", roles.get(lou), "OTHER", "Spouse");
+      expectRole("a pre-marker manager edit is left alone", roles.get(pia), "BUYER", "Seller");
+      ok("Draft role sync: Seller -> Buyer and Tenant -> Agent show the new role only; a legacy import converges; a pre-marker edit is kept");
 
       await updateDraftSigningParticipantWithActor(
         agent,
         { signingId: roleSigning.signingId, participantId: roles.get(rhea)!.id, roleCode: "SELLER" },
         admin,
       );
+      await updateDraftSigningParticipantWithActor(
+        agent,
+        { signingId: roleSigning.signingId, participantId: roles.get(pia)!.id, roleCode: "TENANT" },
+        admin,
+      );
+      const { data: marked } = await admin
+        .from("signing_participants")
+        .select("linked_contact_id, role_overridden_at")
+        .in("id", [roles.get(rhea)!.id, roles.get(pia)!.id]);
+      if ((marked ?? []).some((row) => !row.role_overridden_at)) {
+        fail("a manager's Draft role change must set role_overridden_at");
+      }
       await setPacketRole(rhea, "TENANT");
+      await setPacketRole(pia, "BUYER");
       await loadSigningDashboardForActor(agent, roleSigning.signingId, admin);
       roles = await rolesNow();
-      expectRole("a manager's Draft role edit is never overwritten", roles.get(rhea), "SELLER", "Buyer");
-      ok("Draft role sync: an untouched imported participant follows the Packet (Co-client -> Agent); a manager's edit (Seller) is kept");
+      expectRole("a manager's Draft role edit is never overwritten", roles.get(rhea), "SELLER", null);
+      expectRole("a manager edit drops a stale canonical label", roles.get(pia), "TENANT", null);
+      ok("manager Draft role edits set role_overridden_at, drop a stale canonical label, and are never overwritten by Packet changes");
 
       await cancelSigningWithActor(
         agent,
@@ -1423,7 +1466,7 @@ async function main() {
       await setPacketRole(rory, "SELLER");
       await loadSigningDashboardForActor(agent, roleSigning.signingId, admin);
       roles = await rolesNow();
-      expectRole("a Signing that left Draft keeps its role", roles.get(rory), "AGENT", "Agent");
+      expectRole("a Signing that left Draft keeps its role", roles.get(rory), "AGENT", null);
       ok("role sync stops once the Signing leaves Draft");
     }
 

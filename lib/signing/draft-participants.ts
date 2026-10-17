@@ -7,6 +7,7 @@ import {
 } from "./capacity-notices";
 import { SigningError } from "./errors";
 import {
+  descriptiveRoleLabel,
   isSigningParticipantRoleCode,
   type SigningParticipantRoleCode,
 } from "./participant-roles";
@@ -167,9 +168,12 @@ export async function addDraftSigningParticipantWithActor(
     admin,
   );
 
-  const optionalRole = normalizeOptionalText(input.optionalRole, "role", 120);
   const roleCode =
     input.roleCode === undefined ? null : parseRoleCode(input.roleCode);
+  const optionalRole = descriptiveRoleLabel(
+    roleCode,
+    normalizeOptionalText(input.optionalRole, "role", 120),
+  );
   const capacity = parseCapacityFields(input);
 
   let fullName: string;
@@ -281,7 +285,7 @@ export async function updateDraftSigningParticipantWithActor(
 
   const { data: current, error: currentError } = await admin
     .from("signing_participants")
-    .select("id, linked_contact_id, linked_user_id, linked_brokerage_settings_id")
+    .select("id, linked_contact_id, linked_user_id, linked_brokerage_settings_id, role_code, optional_role")
     .eq("id", input.participantId)
     .eq("signing_id", signing.id)
     .maybeSingle();
@@ -306,11 +310,22 @@ export async function updateDraftSigningParticipantWithActor(
   if (input.email !== undefined) {
     patch.email = normalizeEmailOptional(input.email);
   }
-  if (input.optionalRole !== undefined) {
-    patch.optional_role = normalizeOptionalText(input.optionalRole, "role", 120);
-  }
   if (input.roleCode !== undefined) {
     patch.role_code = parseRoleCode(input.roleCode);
+    // An explicit role change is the manager's: Packet role sync stops here.
+    patch.role_overridden_at = new Date().toISOString();
+  }
+  const nextRoleCode =
+    input.roleCode !== undefined ? patch.role_code : (current.role_code as string | null);
+  if (input.optionalRole !== undefined) {
+    patch.optional_role = descriptiveRoleLabel(
+      nextRoleCode,
+      normalizeOptionalText(input.optionalRole, "role", 120),
+    );
+  } else if (input.roleCode !== undefined) {
+    // Keep a relationship label; drop one that names a (now competing) role.
+    const kept = descriptiveRoleLabel(nextRoleCode, current.optional_role as string | null);
+    if (kept !== ((current.optional_role as string | null) ?? null)) patch.optional_role = kept;
   }
   if (
     input.signingCapacityMode !== undefined ||
