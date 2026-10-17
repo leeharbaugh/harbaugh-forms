@@ -185,6 +185,7 @@ async function main() {
       await admin.from("packets").delete().eq("id", packetId);
     }
     for (const id of formIds) {
+      await admin.from("form_field_mappings").update({ status: "DELETED" }).eq("form_id", id);
       await admin.from("forms").update({ status: "DELETED", publication_state: "DRAFT" }).eq("id", id);
     }
     if (storagePaths.length > 0) {
@@ -330,15 +331,71 @@ async function main() {
       if (error) fail(`publish failed: ${error.message}`);
     }
 
+    // Mapped regions use an existing ACTIVE catalog field; mappings are added
+    // before publishing because published forms are structurally locked.
+    const { data: catalogField, error: catalogError } = await admin
+      .from("fields")
+      .select("id")
+      .eq("status", "ACTIVE")
+      .limit(1)
+      .single();
+    if (catalogError || !catalogField) fail(`no ACTIVE catalog field: ${catalogError?.message}`);
+    async function mapField(
+      formId: number,
+      mappingName: string,
+      options: { page?: number; status?: string; widget?: string; y?: number } = {},
+    ) {
+      const { error } = await admin.from("form_field_mappings").insert({
+        form_id: formId,
+        field_id: catalogField!.id,
+        mapping_name: mappingName,
+        page_number: options.page ?? 1,
+        x: 100,
+        y: options.y ?? 200,
+        width: 180,
+        height: 14,
+        page_width: 612,
+        page_height: 792,
+        field_widget_type: options.widget ?? "text",
+        status: options.status ?? "ACTIVE",
+      });
+      if (error) fail(`mapping insert failed: ${error.message}`);
+    }
+
     const formV1 = await createForm({ label: "v1", pages: 3, scope: "PRIVATE", ownerUserId: agent.actor.userId, family });
+    await mapField(formV1, "V1 Agent Name");
     await publish(formV1, agent.actor.userId);
     const formV2 = await createForm({ label: "v2", pages: 2, scope: "PRIVATE", ownerUserId: agent.actor.userId, family });
+    await mapField(formV2, "V2 Agent Name", { y: 260 });
+    await mapField(formV2, "V2 Retired Mapping", { status: "INACTIVE" });
+    await mapField(formV2, "V2 Checkbox", { page: 2, widget: "checkbox" });
     await publish(formV2, agent.actor.userId, formV1);
     const formDraft = await createForm({ label: "draft", pages: 1, scope: "PRIVATE", ownerUserId: agent.actor.userId });
     const formOthers = await createForm({ label: "others", pages: 1, scope: "PRIVATE", ownerUserId: orgAdmin.actor.userId });
+    await mapField(formOthers, "Owner Agent Name");
     await publish(formOthers, orgAdmin.actor.userId);
     const formGlobal = await createForm({ label: "global", pages: 2, scope: "GLOBAL", ownerUserId: null });
+    await mapField(formGlobal, "Global Broker Name");
     await publish(formGlobal, LEE_USER_ID);
+
+    function expectMappedRegions(
+      label: string,
+      model: { model: { documents: { mappedRegions?: { label: string; pageNumber: number }[] }[] } },
+      expected: string[],
+    ) {
+      const regions = model.model.documents[0]?.mappedRegions ?? [];
+      const labels = regions.map((region) => region.label).sort();
+      if (JSON.stringify(labels) !== JSON.stringify([...expected].sort())) {
+        fail(`${label}: mapped regions ${JSON.stringify(labels)}, expected ${JSON.stringify(expected)}`);
+      }
+      for (const region of regions) {
+        const keys = Object.keys(region).sort().join(",");
+        if (keys !== "height,kind,label,pageHeight,pageNumber,pageWidth,width,x,y") {
+          fail(`${label}: mapped region carries extra data: ${keys}`);
+        }
+      }
+      ok(`${label}: editor shows exactly ${expected.length} mapped region(s) of this form version`);
+    }
     const { data: v1Row } = await admin.from("forms").select("status").eq("id", formV1).single();
     if (v1Row?.status !== "INACTIVE") fail("publishing v2 did not retire v1");
     ok("created disposable forms: retired v1 (3 pages), published v2 (2 pages, same family), Draft, another user's Private, Global");
@@ -747,6 +804,7 @@ async function main() {
       if (emptyEditor.model.documents[0]?.fields.length !== 0 || !emptyEditor.canEdit) {
         fail("a new zero-placement on-behalf template must open editable with 0 placements");
       }
+      expectMappedRegions("Global Admin on behalf, private Form", emptyEditor, ["Owner Agent Name"]);
       await expectEditorPdf("Global Admin on behalf, zero placements", adminOnBehalf, formOthers, createdForOwner.templateId);
       await expectEditorPdf("private Form owner", orgAdmin.actor, formOthers, createdForOwner.templateId);
       await expectSigningError("unrelated member loading another user's template PDF", "NOT_FOUND", () =>
@@ -790,6 +848,17 @@ async function main() {
       if (emptyGlobal.model.documents[0]?.fields.length !== 0 || !emptyGlobal.canEdit) {
         fail("a new Global Form Personal template must open editable with 0 placements");
       }
+      expectMappedRegions("Global Form Personal", emptyGlobal, ["Global Broker Name"]);
+      expectMappedRegions(
+        "Organization template, member view",
+        await loadPlacementTemplateEditorWithActor(agent.actor, { templateId: orgGlobal }, admin),
+        ["Global Broker Name"],
+      );
+      expectMappedRegions(
+        "Organization template, organization admin",
+        await loadPlacementTemplateEditorWithActor(orgAdmin.actor, { templateId: orgGlobal }, admin),
+        ["Global Broker Name"],
+      );
       await expectEditorPdf("Global Form Personal, zero placements", agent.actor, formGlobal, globalPersonal.templateId);
       await expectSigningError("another organization's admin loading a Personal template PDF", "NOT_FOUND", () =>
         loadPlacementTemplatePdfWithActor(outsider.actor, { formId: formGlobal, templateId: globalPersonal.templateId }, admin),
@@ -861,6 +930,16 @@ async function main() {
       fail("copied template has the wrong scope or form");
     }
     ok("copy created an independent Personal template: 6 copied, page 3's 2 placements skipped, Dates relinked");
+    expectMappedRegions(
+      "copied v1 template opened on v2 (target version only; inactive excluded)",
+      await loadPlacementTemplateEditorWithActor(agent.actor, { templateId: copy.templateId }, admin),
+      ["V2 Agent Name", "V2 Checkbox"],
+    );
+    expectMappedRegions(
+      "the v1 source template",
+      await loadPlacementTemplateEditorWithActor(agent.actor, { templateId: personalV1 }, admin),
+      ["V1 Agent Name"],
+    );
     await expectSigningError("copying onto a version that already has a template", "CONFLICT", () =>
       copyPlacementTemplateWithActor(agent.actor, { sourceTemplateId: personalV1, targetFormId: formV2 }, admin, {
         sessionClient: agent.session,

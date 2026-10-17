@@ -13,6 +13,7 @@ import { syncDraftParticipantIdentities } from "./draft-participant-sync";
 import { renderPreparedPdfFromSelectedDraftSnapshot } from "./draft-source-snapshots";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
+import type { PlacementMappedRegion } from "./placement-template-model";
 import type { PreparedContentType } from "./prepared-content-types";
 import type { SigningActor } from "./types";
 import { isUuid } from "./types";
@@ -59,6 +60,8 @@ export type SigningPreviewDocument = {
   pageCount: number | null;
   hasSelectedSnapshot: boolean;
   fields: SigningPreviewField[];
+  /** Placement template editor only: the form version's mapped regions. */
+  mappedRegions?: PlacementMappedRegion[];
 };
 
 export type SigningPreviewModel = {

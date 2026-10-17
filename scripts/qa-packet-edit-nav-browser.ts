@@ -40,6 +40,7 @@ async function main() {
   let packetId = 0;
   let contactId = 0;
   let contactB = 0;
+  let contactC = 0;
   let signingId = "";
   const generatedPaths: string[] = [];
 
@@ -261,6 +262,80 @@ async function main() {
     }
     ok("Agent Packet role persisted in the database");
 
+    // Packet roles carry into the Draft Signing (Lee's flow).
+    const participantRole = async (name: string) => {
+      const row = page
+        .getByTestId("draft-participant-list")
+        .locator("div.rounded-lg")
+        .filter({ has: page.getByText(name, { exact: true }) })
+        .first();
+      await row.waitFor({ timeout: 30000 });
+      return (await row.getByTestId("participant-role").innerText()).trim();
+    };
+    await page.goto(`${APP_ORIGIN}/signings/${signingId}`, { waitUntil: "networkidle" });
+    const baileyRole = await participantRole("Bailey Buyer");
+    const averyRole = await participantRole("Avery Agent");
+    if (baileyRole !== "Buyer" || averyRole !== "Agent") {
+      fail(`Draft roles must follow the Packet: Bailey "${baileyRole}", Avery "${averyRole}"`);
+    }
+    ok('Draft Signing shows Packet Buyer as "Buyer" and Packet Agent as "Agent"');
+
+    const { data: casey, error: caseyError } = await admin
+      .from("contacts")
+      .insert({
+        owner_user_id: userId,
+        contact_type: "INDIVIDUAL",
+        first_name: "Casey",
+        last_name: "Client",
+        email: `casey-${stamp}@example.com`,
+        status: "ACTIVE",
+      })
+      .select("id")
+      .single();
+    if (caseyError || !casey) fail(caseyError?.message ?? "casey");
+    contactC = casey.id as number;
+    const { data: caseyLink } = await admin
+      .from("packet_contacts")
+      .insert({ packet_id: packetId, contact_id: contactC, packet_role: "CO_CLIENT", sort_order: 2, status: "ACTIVE" })
+      .select("id")
+      .single();
+    await page.reload({ waitUntil: "networkidle" });
+    const caseyBefore = await participantRole("Casey Client");
+    if (caseyBefore !== "Other · Co-client") fail(`a Co-client imports as "Other · Co-client", got "${caseyBefore}"`);
+
+    await page.goto(`${APP_ORIGIN}/packets/${packetId}/edit`, { waitUntil: "networkidle" });
+    const caseySelect = page.locator(`#role_${caseyLink!.id}`);
+    await caseySelect.waitFor({ timeout: 30000 });
+    await caseySelect.selectOption("AGENT");
+    await page.waitForFunction(
+      (id) => (document.querySelector(`#role_${id}`) as HTMLSelectElement | null)?.disabled === false,
+      caseyLink!.id,
+      { timeout: 20000 },
+    );
+    const { data: caseyStored } = await admin
+      .from("packet_contacts")
+      .select("packet_role")
+      .eq("id", caseyLink!.id)
+      .single();
+    if (caseyStored?.packet_role !== "AGENT") fail(`Packet role change was not saved: ${JSON.stringify(caseyStored)}`);
+    await page.goto(`${APP_ORIGIN}/signings/${signingId}`, { waitUntil: "networkidle" });
+    const caseyAfter = await participantRole("Casey Client");
+    if (caseyAfter !== "Agent") fail(`a Packet role change before Send must reach the Draft, got "${caseyAfter}"`);
+    const { data: caseyParticipant } = await admin
+      .from("signing_participants")
+      .select("role_code, optional_role, linked_user_id")
+      .eq("signing_id", signingId)
+      .eq("linked_contact_id", contactC)
+      .single();
+    if (
+      caseyParticipant?.role_code !== "AGENT" ||
+      caseyParticipant.optional_role !== "Agent" ||
+      caseyParticipant.linked_user_id !== null
+    ) {
+      fail(`Casey's Draft participant: ${JSON.stringify(caseyParticipant)}`);
+    }
+    ok('Packet Co-client -> Draft "Other · Co-client"; Packet role set to Agent in the UI -> Draft "Agent" without editing the Signing');
+
     // History: Signing → Edit via Back.
     await page.goto(`${APP_ORIGIN}/packets/${packetId}/edit`, { waitUntil: "networkidle" });
     await page.goto(`${APP_ORIGIN}/signings/${signingId}`, { waitUntil: "networkidle" });
@@ -294,7 +369,7 @@ async function main() {
       await admin.from("packet_forms").update({ status: "DELETED" }).eq("packet_id", packetId);
       await admin.from("packets").update({ status: "DELETED" }).eq("id", packetId);
     }
-    for (const id of [contactId, contactB].filter(Boolean)) {
+    for (const id of [contactId, contactB, contactC].filter(Boolean)) {
       await admin.from("contacts").delete().eq("id", id);
     }
     if (userId) {

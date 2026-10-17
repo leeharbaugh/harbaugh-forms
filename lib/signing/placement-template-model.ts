@@ -9,6 +9,104 @@ import {
   signingParticipantRoleLabel,
   type SigningParticipantRoleCode,
 } from "@/lib/signing/participant-roles";
+import { catalogTypesToLegacyFieldType } from "@/lib/types/field";
+import { formatMappingOverlayLabel } from "@/lib/types/pdf-field-mapping-editor";
+import {
+  getEffectivePdfFieldDimensions,
+  isCheckboxPdfField,
+  type PlacedPdfField,
+} from "@/lib/types/template-pdf-field";
+
+/**
+ * A Form field mapping shown as read-only context in the placement template
+ * editor: page, geometry (Map Fields' top-left page coordinates) and a label.
+ * It carries no ids, field keys, resolver sources, defaults, or values.
+ */
+export type PlacementMappedRegion = {
+  pageNumber: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  pageWidth: number | null;
+  pageHeight: number | null;
+  label: string;
+  kind: "TEXT" | "CHECKBOX";
+};
+
+/** The `form_field_mappings` columns the editor overlay reads. */
+export type MappedRegionSourceRow = {
+  status: string;
+  field_id: string | null;
+  mapping_name: string | null;
+  occurrence_index: number | null;
+  page_number: number;
+  x: number | string;
+  y: number | string;
+  width: number | string | null;
+  height: number | string | null;
+  page_width: number | string | null;
+  page_height: number | string | null;
+  field_widget_type: string | null;
+  fields: {
+    field_key: string | null;
+    field_label: string | null;
+    field_widget_type: string | null;
+    status: string;
+  } | null;
+};
+
+function finiteOrNull(value: number | string | null): number | null {
+  if (value == null) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+/**
+ * Mapped Form regions for one exact form version: ACTIVE mappings connected
+ * to an ACTIVE catalog field with a page and position. Size and label follow
+ * Map Fields (checkboxes use the fixed checkbox size; label is mapping name,
+ * then field label, then field key).
+ */
+export function mappedRegionsFromMappings(
+  rows: readonly MappedRegionSourceRow[],
+): PlacementMappedRegion[] {
+  const regions: PlacementMappedRegion[] = [];
+  for (const row of rows) {
+    if (row.status !== "ACTIVE" || !row.field_id || row.fields?.status !== "ACTIVE") continue;
+    const x = finiteOrNull(row.x);
+    const y = finiteOrNull(row.y);
+    if (!Number.isInteger(row.page_number) || row.page_number < 1 || x == null || y == null) {
+      continue;
+    }
+    const widgetType = row.field_widget_type ?? row.fields.field_widget_type ?? "text";
+    const shape = {
+      field_type: catalogTypesToLegacyFieldType(widgetType),
+      field_widget_type: widgetType,
+      width: finiteOrNull(row.width),
+      height: finiteOrNull(row.height),
+    };
+    const size = getEffectivePdfFieldDimensions(shape);
+    const label = formatMappingOverlayLabel({
+      mapping_name: row.mapping_name,
+      field_label: row.fields.field_label,
+      field_key: row.fields.field_key ?? "",
+      occurrence_index: row.occurrence_index,
+    } as PlacedPdfField);
+    regions.push({
+      pageNumber: row.page_number,
+      x,
+      y,
+      width: size.width,
+      height: size.height,
+      pageWidth: finiteOrNull(row.page_width),
+      pageHeight: finiteOrNull(row.page_height),
+      label: label === "Field" ? "Mapped field" : label,
+      kind: isCheckboxPdfField(shape) ? "CHECKBOX" : "TEXT",
+    });
+  }
+  return regions;
+}
 
 export const PLACEMENT_TEMPLATE_FIELD_TYPES = [
   "SIGNATURE",

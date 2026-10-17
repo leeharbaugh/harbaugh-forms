@@ -5,7 +5,9 @@
  * picking to that Packet, and imports its transaction parties as Draft
  * participants. While Draft, parties added to the Packet later are added
  * automatically (additive, matched by Contact id) unless the manager removed
- * that Contact from this Signing; nothing syncs after activation. Switching
+ * that Contact from this Signing, and an imported participant whose role no
+ * manager has edited follows the Packet's current role; nothing syncs after
+ * activation. Switching
  * is allowed only while the Signing holds no Packet-derived documents or
  * participants; it never remaps.
  */
@@ -27,8 +29,13 @@ import {
   packetSourceEligibility,
   SIGNING_SOURCE_PACKET_STATUS,
 } from "./packet-signing-eligibility";
+import { isDraftIdentityLive } from "./draft-participant-sync";
 import { deriveSigningParticipantsFromPacket } from "./packet-to-signing";
-import type { SigningParticipantRoleCode } from "./participant-roles";
+import {
+  isPacketImportedRole,
+  type SigningParticipantRoleCode,
+} from "./participant-roles";
+import type { PacketContactRole } from "@/lib/types/packet-contact";
 import { isUuid, type SigningActor, type SigningRow } from "./types";
 
 export type DraftSourcePacketState = {
@@ -211,7 +218,11 @@ async function buildPacketParties(
   actor: SigningActor,
   admin: SupabaseClient,
   packetId: number,
-): Promise<{ parties: PacketPartyInsert[]; reviewNote: string | null }> {
+): Promise<{
+  parties: PacketPartyInsert[];
+  reviewNote: string | null;
+  agreementRoles: Map<number, PacketContactRole | null>;
+}> {
   const derived = await deriveSigningParticipantsFromPacket(admin, packetId);
   const usable = derived.participants.filter(
     (party) => party.contactOwnerUserId === actor.userId,
@@ -234,7 +245,10 @@ async function buildPacketParties(
     role_code: party.roleCode,
     linked_contact_id: party.linkedContactId,
   }));
-  return { parties, reviewNote };
+  const agreementRoles = new Map(
+    usable.map((party) => [party.linkedContactId, party.agreementRole]),
+  );
+  return { parties, reviewNote, agreementRoles };
 }
 
 async function linkedContactIds(
@@ -343,6 +357,67 @@ export async function autoAddDraftPacketParticipants(
         linkedContactId: party.linked_contact_id,
       })),
   };
+}
+
+/**
+ * Draft role sync from the bound source Packet. Caller must already have
+ * authorized Draft management for `signing`. A linked participant whose role
+ * is still exactly what a Packet import produces follows the Packet's current
+ * role; a role a manager edited in the Draft is never overwritten. Each write
+ * is conditioned on the role it read, so a concurrent manager edit wins. No-op
+ * once a package revision exists or the Signing leaves Draft: activation
+ * freezes roles in the package revision.
+ */
+export async function syncDraftPacketParticipantRoles(
+  actor: SigningActor,
+  admin: SupabaseClient,
+  signing: SigningRow,
+): Promise<{ updatedParticipantIds: string[] }> {
+  if (!isDraftIdentityLive(signing)) return { updatedParticipantIds: [] };
+  const packetId = await ownedSourcePacketId(actor, admin, signing);
+  if (packetId == null) return { updatedParticipantIds: [] };
+
+  const { parties, agreementRoles } = await buildPacketParties(actor, admin, packetId);
+  const partyByContact = new Map(parties.map((party) => [party.linked_contact_id, party]));
+  const { data, error } = await admin
+    .from("signing_participants")
+    .select("id, linked_contact_id, role_code, optional_role")
+    .eq("signing_id", signing.id)
+    .neq("participant_status", "REMOVED")
+    .not("linked_contact_id", "is", null);
+  if (error) throw new Error(error.message);
+
+  const updatedParticipantIds: string[] = [];
+  for (const row of data ?? []) {
+    const contactId = row.linked_contact_id as number;
+    const party = partyByContact.get(contactId);
+    if (!party) continue;
+    const roleCode = (row.role_code as string | null) ?? null;
+    const optionalRole = (row.optional_role as string | null) ?? null;
+    if (roleCode === party.role_code && optionalRole === party.optional_role) continue;
+    if (
+      !isPacketImportedRole(
+        { roleCode, optionalRole },
+        agreementRoles.get(contactId) ?? null,
+      )
+    ) {
+      continue;
+    }
+    let update = admin
+      .from("signing_participants")
+      .update({ role_code: party.role_code, optional_role: party.optional_role })
+      .eq("id", row.id)
+      .eq("signing_id", signing.id);
+    update = roleCode === null ? update.is("role_code", null) : update.eq("role_code", roleCode);
+    update =
+      optionalRole === null
+        ? update.is("optional_role", null)
+        : update.eq("optional_role", optionalRole);
+    const { data: written, error: updateError } = await update.select("id");
+    if (updateError) throw new Error(updateError.message);
+    if ((written ?? []).length > 0) updatedParticipantIds.push(row.id as string);
+  }
+  return { updatedParticipantIds };
 }
 
 export type DraftPacketAutoAddNoticeEntry = {

@@ -12,6 +12,7 @@ import {
   isActivePlacementAppAdmin,
   isAdminManagingOwnerPersonalTemplate,
   isPlacementTemplateFieldType,
+  mappedRegionsFromMappings,
   parseSlotKey,
   personalTemplateCardTitle,
   personalTemplateSubjectUserId,
@@ -19,6 +20,8 @@ import {
   slotKey,
   slotLabel,
   templateSlotOptions,
+  type MappedRegionSourceRow,
+  type PlacementMappedRegion,
   type PlacementSlot,
   type PlacementTemplateFieldRecord,
   type PlacementTemplateFieldType,
@@ -727,6 +730,35 @@ function editorField(field: PlacementTemplateFieldRecord): SigningPreviewField {
   };
 }
 
+const MAPPED_REGION_SELECT =
+  "status, field_id, mapping_name, occurrence_index, page_number, x, y, width, height, page_width, page_height, field_widget_type, fields(field_key, field_label, field_widget_type, status)";
+
+/**
+ * The exact form version's mapped regions, as editor context only. Called
+ * after the template read is authorized; never another version's mappings.
+ */
+async function loadMappedRegions(
+  admin: SupabaseClient,
+  formId: number,
+): Promise<PlacementMappedRegion[]> {
+  const { data, error } = await admin
+    .from("form_field_mappings")
+    .select(MAPPED_REGION_SELECT)
+    .eq("form_id", formId)
+    .eq("status", "ACTIVE")
+    .not("field_id", "is", null)
+    .order("page_number", { ascending: true })
+    .order("y", { ascending: true })
+    .order("x", { ascending: true });
+  if (error) throw new Error(error.message);
+  return mappedRegionsFromMappings(
+    (data ?? []).map((row) => ({
+      ...row,
+      fields: Array.isArray(row.fields) ? (row.fields[0] ?? null) : row.fields,
+    })) as MappedRegionSourceRow[],
+  );
+}
+
 export async function loadPlacementTemplateEditorWithActor(
   actor: SigningActor,
   input: { templateId: unknown },
@@ -741,6 +773,7 @@ export async function loadPlacementTemplateEditorWithActor(
   if (formError) throw new Error(formError.message);
   if (!form) throw new SigningError("NOT_FOUND", "Form not found.");
   const fields = await loadTemplateFields(admin, template.id);
+  const mappedRegions = await loadMappedRegions(admin, template.form_id);
   const used = fields.flatMap((field) => (field.slot ? [field.slot] : []));
   const display = formVersionDisplay(form as PlacementFormRow);
   return {
@@ -755,6 +788,7 @@ export async function loadPlacementTemplateEditorWithActor(
           pageCount: null,
           hasSelectedSnapshot: true,
           fields: fields.map(editorField),
+          mappedRegions,
         },
       ],
       participants: templateSlotOptions(used).map(slotParticipant),

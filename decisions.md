@@ -12,6 +12,39 @@ Each decision should include:
 
 ---
 
+## Packet roles carry into Draft Signing roles; untouched imports follow the Packet until Send
+
+**Date:** 2026-10-17 (Placement Template QA follow-up)
+
+**Decision:**
+1. **Precedence.** A Contact's Signing role comes from all of its Packet roles, the Packet contact row first and then a representation-agreement client row. The first direct role wins: BUYER, SELLER, TENANT, LANDLORD or AGENT maps to the same Signing role. Relationship roles (PRIMARY, CO_CLIENT, SPOUSE, POWER_OF_ATTORNEY) never override it; they stay as `optional_role`, for example Buyer · Primary. With no direct role, the role is Other, labeled with the Packet role. `optional_role` never decides `role_code`, and no new Signing role codes were added.
+2. **Draft role sync.** While a Signing is Draft with no package revision, opening it re-reads the source Packet. An imported participant whose role and label are still exactly what an import produces follows the Packet's current role. Once a manager edits a participant's role in the Draft, that role is never overwritten. Each write is conditioned on the values it read, so a concurrent edit wins. Send does not run role sync, just as it does not run Packet auto-add, so a Signing never activates with a change the agent has not seen. Activation freezes roles in the package revision.
+3. **No authority.** A Signing role of AGENT is a preparation label only. It grants no manager, co-agent, TC or brokerage authority, no User link and no Include me semantics.
+
+**Reason:** In Lee's QA, contact roles that changed in the Packet after the Draft imported participants never reached the Draft. Custom Packets also give new contacts relationship defaults (Primary, then Co-client), which correctly import as Other.
+
+**Related:** `lib/signing/participant-roles.ts` (`packetSigningRole`, `isPacketImportedRole`), `lib/signing/packet-to-signing.ts`, `lib/signing/source-packet.ts` (`syncDraftPacketParticipantRoles`), `lib/signing/dashboard.ts`.
+
+---
+
+## The Placement Template editor shows the form version's mapped fields as context
+
+**Date:** 2026-10-17 (Placement Template QA follow-up)
+
+**Decision:** The Signing Placement Template editor draws the exact form version's mapped regions over the blank PDF as informational context. These are ACTIVE `form_field_mappings` rows for the template's own `forms.id` that are connected to an ACTIVE catalog field. Their geometry and label match Map Fields (`pdfToRenderRect`, `formatMappingOverlayLabel`). The overlay:
+- is on by default, with an editor-only "Show mapped fields" toggle (no stored preference);
+- is drawn beneath Signing placements with `pointer-events: none`;
+- never blocks, snaps, validates or alters a placement, and overlap is allowed;
+- is never stored on, or applied from, a template.
+
+A copied template always shows the target version's mappings, never the source's. The browser receives only page, geometry, label and kind: no ids, field keys, resolver sources, defaults or values. Mapped regions are read only after the template read is authorized. Prepare Documents for a real Signing is unchanged and keeps showing its prepared snapshot.
+
+**Reason:** Lines that Fill Form will populate look blank in the template editor. Without context, a manager could place a Printed Name over an already-mapped Agent Name and print it twice.
+
+**Related:** `lib/signing/placement-template-model.ts` (`mappedRegionsFromMappings`), `lib/signing/placement-templates.ts` (`loadMappedRegions`), `components/signings/signing-preview-dialog.tsx` (`MappedRegionOverlay`).
+
+---
+
 ## Soft-nav mutation pending flags reset on mount
 
 **Date:** 2026-10-16 (Placement Template QA stabilization)

@@ -47,6 +47,7 @@ import {
   listDraftPacketAutoAddNotice,
   loadDraftRemovedPacketParticipantsWithActor,
   loadDraftSourcePacketStateWithActor,
+  syncDraftPacketParticipantRoles,
   type DraftPacketAutoAddNoticeEntry,
   type DraftRemovedPacketParticipants,
   type DraftSourcePacketState,
@@ -235,6 +236,7 @@ export async function loadSigningDashboardForActor(
       admin,
     );
     await autoAddDraftPacketParticipants(actor, admin, signing);
+    await syncDraftPacketParticipantRoles(actor, admin, signing);
     await syncDraftParticipantIdentities(admin, signing);
     addedFromPacket = await listDraftPacketAutoAddNotice(admin, summary.id);
   }

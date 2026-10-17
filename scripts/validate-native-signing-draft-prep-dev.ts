@@ -1338,6 +1338,95 @@ async function main() {
     await admin.from("contacts").update({ first_name: "Deanna", last_name: "Buyer" }).eq("id", buyer3);
     ok("linked Contact name/email update the Draft participant live; an unusable source keeps the last values");
 
+    // --- Packet role precedence and Draft role sync -----------------------------
+    {
+      const rolePacket = await createPacket(agent.userId, "Role sync", 1);
+      const rhea = await createContact(agent.userId, "Rhea", "Buyer", "rhea@example.com");
+      const rex = await createContact(agent.userId, "Rex", "Agent", "rex@example.com");
+      const rory = await createContact(agent.userId, "Rory", "Coclient", "rory@example.com");
+      await linkContact(rolePacket.packetId, rhea, "BUYER", 0);
+      await linkContact(rolePacket.packetId, rex, "AGENT", 1);
+      await linkContact(rolePacket.packetId, rory, "CO_CLIENT", 2);
+      const roleSigning = await createSigningFromPacketWithActor(
+        agent,
+        { packetId: rolePacket.packetId, confirmDuplicate: true },
+        admin,
+      );
+      signingIds.push(roleSigning.signingId);
+      const rolesNow = async () => {
+        const { data, error } = await admin
+          .from("signing_participants")
+          .select("id, linked_contact_id, linked_user_id, role_code, optional_role")
+          .eq("signing_id", roleSigning.signingId)
+          .neq("participant_status", "REMOVED");
+        if (error) fail(error.message);
+        return new Map((data ?? []).map((row) => [row.linked_contact_id as number, row]));
+      };
+      const setPacketRole = async (contactId: number, role: string) => {
+        const { error } = await admin
+          .from("packet_contacts")
+          .update({ packet_role: role })
+          .eq("packet_id", rolePacket.packetId)
+          .eq("contact_id", contactId)
+          .eq("status", "ACTIVE");
+        if (error) fail(error.message);
+      };
+      const expectRole = (
+        label: string,
+        row: { role_code: unknown; optional_role: unknown } | undefined,
+        roleCode: string,
+        optionalRole: string,
+      ) => {
+        if (row?.role_code !== roleCode || row.optional_role !== optionalRole) {
+          fail(`${label}: ${JSON.stringify(row)}, expected ${roleCode} / ${optionalRole}`);
+        }
+      };
+
+      let roles = await rolesNow();
+      expectRole("Packet Buyer imports as Buyer", roles.get(rhea), "BUYER", "Buyer");
+      expectRole("Packet Agent imports as Agent", roles.get(rex), "AGENT", "Agent");
+      expectRole("Packet Co-client imports as Other", roles.get(rory), "OTHER", "Co-client");
+      const { count: associationCount } = await admin
+        .from("signing_agent_associations")
+        .select("id", { count: "exact", head: true })
+        .eq("signing_id", roleSigning.signingId);
+      const { count: operatorCount } = await admin
+        .from("signing_operator_associations")
+        .select("id", { count: "exact", head: true })
+        .eq("signing_id", roleSigning.signingId);
+      if (associationCount !== 1 || operatorCount !== 0 || roles.get(rex)?.linked_user_id != null) {
+        fail("a Packet Agent participant must not gain an agent/TC association or a User link");
+      }
+      ok("Create Signing maps Packet Buyer -> Buyer, Agent -> Agent (no association, no User link), Co-client -> Other · Co-client");
+
+      await setPacketRole(rory, "AGENT");
+      await loadSigningDashboardForActor(agent, roleSigning.signingId, admin);
+      roles = await rolesNow();
+      expectRole("an untouched import follows a later Packet role", roles.get(rory), "AGENT", "Agent");
+
+      await updateDraftSigningParticipantWithActor(
+        agent,
+        { signingId: roleSigning.signingId, participantId: roles.get(rhea)!.id, roleCode: "SELLER" },
+        admin,
+      );
+      await setPacketRole(rhea, "TENANT");
+      await loadSigningDashboardForActor(agent, roleSigning.signingId, admin);
+      roles = await rolesNow();
+      expectRole("a manager's Draft role edit is never overwritten", roles.get(rhea), "SELLER", "Buyer");
+      ok("Draft role sync: an untouched imported participant follows the Packet (Co-client -> Agent); a manager's edit (Seller) is kept");
+
+      await cancelSigningWithActor(
+        agent,
+        { signingId: roleSigning.signingId, reason: "Draft-prep validator role sync" },
+        admin,
+      );
+      await setPacketRole(rory, "SELLER");
+      await loadSigningDashboardForActor(agent, roleSigning.signingId, admin);
+      roles = await rolesNow();
+      expectRole("a Signing that left Draft keeps its role", roles.get(rory), "AGENT", "Agent");
+      ok("role sync stops once the Signing leaves Draft");
+    }
+
     await expectSigningError("a manual name override on a Contact participant", ["INVALID_INPUT"], () =>
       updateDraftSigningParticipantWithActor(
         agent,

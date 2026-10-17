@@ -9,6 +9,7 @@ import {
   formVersionDisplay,
   formVersionPlacementEligibility,
   isAdminManagingOwnerPersonalTemplate,
+  mappedRegionsFromMappings,
   mapParticipantsToSlots,
   parseSlotKey,
   personalTemplateCardTitle,
@@ -21,6 +22,7 @@ import {
   templateSlotOptions,
   templateSourceLabel,
   unresolvedSlotNotice,
+  type MappedRegionSourceRow,
   type SlotRankableParticipant,
 } from "./placement-template-model";
 import { roleCodeForPacketRole } from "./participant-roles";
@@ -373,6 +375,84 @@ describe("Database protections", () => {
   });
 });
 
+describe("Mapped Form regions", () => {
+  const row = (extra: Partial<MappedRegionSourceRow> = {}): MappedRegionSourceRow => ({
+    status: "ACTIVE",
+    field_id: "f1",
+    mapping_name: null,
+    occurrence_index: null,
+    page_number: 1,
+    x: "151.98",
+    y: 73.9,
+    width: 153.9,
+    height: "13.85",
+    page_width: 612,
+    page_height: 792,
+    field_widget_type: null,
+    fields: { field_key: "listing_agent_name", field_label: "Listing Agent Name", field_widget_type: "text", status: "ACTIVE" },
+    ...extra,
+  });
+
+  it("keeps only ACTIVE mappings connected to an ACTIVE field with a page and position", () => {
+    const regions = mappedRegionsFromMappings([
+      row(),
+      row({ status: "INACTIVE" }),
+      row({ status: "DELETED" }),
+      row({ field_id: null }),
+      row({ fields: null }),
+      row({ fields: { field_key: "x", field_label: "X", field_widget_type: "text", status: "INACTIVE" } }),
+      row({ page_number: 0 }),
+      row({ x: "not a number" }),
+    ]);
+    assert.equal(regions.length, 1);
+    assert.deepEqual(regions[0], {
+      pageNumber: 1,
+      x: 151.98,
+      y: 73.9,
+      width: 153.9,
+      height: 13.85,
+      pageWidth: 612,
+      pageHeight: 792,
+      label: "Listing Agent Name",
+      kind: "TEXT",
+    });
+  });
+
+  it("labels like Map Fields and never sends ids, keys, sources or values", () => {
+    const [named, numbered, keyOnly, bare] = mappedRegionsFromMappings([
+      row({ mapping_name: "Seller agent notice email" }),
+      row({ mapping_name: "Buyer name", occurrence_index: 2 }),
+      row({ fields: { field_key: "broker_full_name", field_label: null, field_widget_type: "text", status: "ACTIVE" } }),
+      row({ fields: { field_key: "", field_label: "  ", field_widget_type: "text", status: "ACTIVE" } }),
+    ]);
+    assert.equal(named.label, "Seller agent notice email");
+    assert.equal(numbered.label, "Buyer name #2");
+    assert.equal(keyOnly.label, "broker_full_name");
+    assert.equal(bare.label, "Mapped field");
+    assert.deepEqual(Object.keys(named).sort(), [
+      "height",
+      "kind",
+      "label",
+      "pageHeight",
+      "pageNumber",
+      "pageWidth",
+      "width",
+      "x",
+      "y",
+    ]);
+  });
+
+  it("uses the Map Fields checkbox size and default sizes", () => {
+    const [checkbox, unsized] = mappedRegionsFromMappings([
+      row({ field_widget_type: "checkbox", width: 40, height: 40 }),
+      row({ width: null, height: null }),
+    ]);
+    assert.equal(checkbox.kind, "CHECKBOX");
+    assert.ok(checkbox.width < 40 && checkbox.width === checkbox.height);
+    assert.ok(unsized.width > 0 && unsized.height > 0);
+  });
+});
+
 describe("Server and browser boundaries", () => {
   it("accepts only template, document, and request ids from the browser on apply", () => {
     const signature = actions.slice(actions.indexOf("export async function applyPlacementTemplateAction"));
@@ -433,6 +513,37 @@ describe("Server and browser boundaries", () => {
   it("treats an Organization template as read-only for members", () => {
     assert.match(templatesModule, /membershipRole === "ORG_ADMIN"/);
     assert.match(page, /canEdit: org\.isOrgAdmin/);
+  });
+
+  it("shows the template's exact form version mapped regions as pointer-free context", () => {
+    const loader = templatesModule.slice(
+      templatesModule.indexOf("export async function loadPlacementTemplateEditorWithActor"),
+    );
+    const readAt = loader.indexOf('requirePlacementTemplate(actor, input.templateId, admin, "read")');
+    const regionsAt = loader.indexOf("loadMappedRegions(admin, template.form_id)");
+    assert.ok(readAt > 0 && regionsAt > readAt, "mapped regions load only after the template read is authorized");
+    const regionLoader = templatesModule.slice(
+      templatesModule.indexOf("async function loadMappedRegions"),
+      templatesModule.indexOf("export async function loadPlacementTemplateEditorWithActor"),
+    );
+    assert.match(regionLoader, /\.eq\("form_id", formId\)/);
+    assert.match(regionLoader, /\.eq\("status", "ACTIVE"\)/);
+    assert.doesNotMatch(regionLoader, /form_family_key|copied_from|field_instances|packet/);
+    const select = templatesModule.match(/const MAPPED_REGION_SELECT =\s*"([^"]+)"/)?.[1] ?? "";
+    assert.ok(select.length > 0);
+    assert.doesNotMatch(
+      select,
+      /default_value|static_value|source|resolver|pdf_field_name|notes|value/,
+    );
+    // Only the template editor supplies mapped regions; Prepare Documents does not.
+    assert.doesNotMatch(read("lib/signing/preview.ts"), /mappedRegions:/);
+    assert.match(dialog, /const \[showMappedFields, setShowMappedFields\] = useState\(true\)/);
+    assert.match(dialog, /metrics && showMappedFields/);
+    assert.match(dialog, /pointer-events-none absolute rounded-\[2px\] border border-dashed/);
+    assert.match(dialog, /pdfToRenderRect\(/);
+    // Drawn before the Signing placement overlays so placements stay on top.
+    assert.ok(dialog.indexOf("<MappedRegionOverlay") < dialog.indexOf("<SigningFieldOverlay"));
+    assert.match(dialog, /Show mapped fields \(/);
   });
 
   it("points the editor at the exact-version PDF route and labels a load failure as the form PDF", () => {

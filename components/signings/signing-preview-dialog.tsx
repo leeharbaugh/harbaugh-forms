@@ -3,6 +3,7 @@
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
+import { AppCheckbox } from "@/components/ui/app-checkbox";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { PlacementTemplateApplyPanel } from "@/components/signings/placement-template-apply-panel";
@@ -75,8 +76,10 @@ import {
   upsertDraftPreparedContentAction,
   upsertDraftSigningFieldAction,
 } from "@/lib/signing/stage3-actions";
+import type { PlacementMappedRegion } from "@/lib/signing/placement-template-model";
 import {
   clickToPdfCoordinates,
+  pdfToRenderRect,
   renderRectToPdfPlacement,
   type PageMetrics,
 } from "@/lib/types/template-pdf-field";
@@ -218,6 +221,45 @@ function participantOptionLabel(participant: SigningPreviewParticipant): string 
 const BASELINE_OFFSET_EM = 0.16;
 
 /** Exact PDF geometry scaled to the rendered page; never inflated. */
+/**
+ * A Form field mapping drawn as context: Map Fields' own transform, beneath
+ * Signing placements, and never a pointer target.
+ */
+function MappedRegionOverlay({
+  region,
+  metrics,
+}: {
+  region: PlacementMappedRegion;
+  metrics: PageMetrics;
+}) {
+  const rect = pdfToRenderRect(
+    {
+      x_position: region.x,
+      y_position: region.y,
+      width: region.width,
+      height: region.height,
+      field_type: region.kind,
+      field_widget_type: null,
+      page_width: region.pageWidth,
+      page_height: region.pageHeight,
+    },
+    metrics,
+  );
+  return (
+    <div
+      aria-hidden
+      data-mapped-region={region.kind}
+      title={region.label}
+      className="pointer-events-none absolute rounded-[2px] border border-dashed border-teal-500/70 bg-teal-300/15"
+      style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
+    >
+      <span className="absolute bottom-full left-0 mb-px block max-w-[11rem] truncate rounded-sm bg-white/80 px-0.5 text-[9px] leading-tight text-teal-800">
+        {region.label}
+      </span>
+    </div>
+  );
+}
+
 function toRenderRect(field: PdfRect, metrics: PageMetrics): PdfRect {
   return {
     x: (field.x / metrics.originalWidth) * metrics.renderedWidth,
@@ -515,6 +557,7 @@ export function SigningPreviewDialog({
   const [pendingCount, setPendingCount] = useState(0);
   const [workspaceEl, setWorkspaceEl] = useState<HTMLDivElement | null>(null);
   const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 });
+  const [showMappedFields, setShowMappedFields] = useState(true);
   const [zoomMode, setZoomMode] = useState<PdfZoomMode>("fit-width");
   const [zoomPercent, setZoomPercent] = useState(100);
 
@@ -1646,6 +1689,17 @@ export function SigningPreviewDialog({
                               );
                             }}
                           />
+                          {metrics && showMappedFields
+                            ? (currentDocument.mappedRegions ?? [])
+                                .filter((region) => region.pageNumber === pageNumber)
+                                .map((region, index) => (
+                                  <MappedRegionOverlay
+                                    key={`mapped-${pageNumber}-${index}`}
+                                    region={region}
+                                    metrics={metrics}
+                                  />
+                                ))
+                            : null}
                           {metrics
                             ? pageFields.map((field) => (
                                 <SigningFieldOverlay
@@ -1963,6 +2017,30 @@ export function SigningPreviewDialog({
                   </Button>
                 </div>
               ) : null}
+            </div>
+          ) : null}
+
+          {currentDocument?.mappedRegions ? (
+            <div
+              className="mt-4 space-y-1 border-t pt-4"
+              data-testid="mapped-fields-panel"
+            >
+              <div className="flex items-center gap-2">
+                <AppCheckbox
+                  id="show-mapped-fields"
+                  data-testid="show-mapped-fields"
+                  checked={showMappedFields}
+                  onCheckedChange={(checked) => setShowMappedFields(checked === true)}
+                />
+                <Label htmlFor="show-mapped-fields" className="font-medium">
+                  Show mapped fields ({currentDocument.mappedRegions.length})
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Teal dashed areas are mapped on this form version and may be
+                filled by Fill Form. They are shown for reference only; you can
+                still place Signing fields over them.
+              </p>
             </div>
           ) : null}
 

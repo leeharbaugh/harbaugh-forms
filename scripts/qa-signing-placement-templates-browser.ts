@@ -310,10 +310,45 @@ async function main() {
     const pat = await newUser("pat", "Pat", "MEMBER");
     const robin = await newUser("robin", "Robin", "ORG_ADMIN");
 
+    // Form field mappings (what Fill Form fills) on an existing ACTIVE catalog
+    // field, added before publishing because published forms are locked.
+    const { data: catalogField, error: catalogError } = await admin
+      .from("fields")
+      .select("id")
+      .eq("status", "ACTIVE")
+      .limit(1)
+      .single();
+    if (catalogError || !catalogField) fail(`no ACTIVE catalog field: ${catalogError?.message}`);
+    async function mapField(
+      formId: number,
+      mappingName: string,
+      rect: { page: number; x: number; y: number; width: number; height: number; widget?: string },
+    ) {
+      const { error } = await admin.from("form_field_mappings").insert({
+        form_id: formId,
+        field_id: catalogField!.id,
+        mapping_name: mappingName,
+        page_number: rect.page,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        page_width: 612,
+        page_height: 792,
+        field_widget_type: rect.widget ?? "text",
+        status: "ACTIVE",
+      });
+      if (error) fail(`mapping insert failed: ${error.message}`);
+    }
+    const V1_AGENT_NAME = { page: 1, x: 90, y: 492, width: 220, height: 22 };
+
     const family = `PQA-FAMILY-${stamp}`;
     const formV1 = await createForm({ label: "v1", pages: 3, scope: "PRIVATE", ownerUserId: pat.id, family });
+    await mapField(formV1, "Agent Name", V1_AGENT_NAME);
     await publish(formV1, pat.id);
     const formV2 = await createForm({ label: "v2", pages: 2, scope: "PRIVATE", ownerUserId: pat.id, family });
+    await mapField(formV2, "Agent Name (v2)", { page: 1, x: 300, y: 420, width: 200, height: 18 });
+    await mapField(formV2, "Buyer Signs Here (v2)", { page: 2, x: 72, y: 300, width: 12, height: 12, widget: "checkbox" });
     await publish(formV2, pat.id, formV1);
     const formGlobal = await createForm({
       label: "global",
@@ -430,6 +465,130 @@ async function main() {
       fail(`template placements: ${JSON.stringify(v1Fields)}`);
     }
     ok("Personal template placements saved by slot: Buyer 1/Buyer 2 Signatures with same-slot Dates, Seller 1 Printed Name, a slotless Checkmark, Buyer 1 Initials on page 3");
+
+    // Mapped Form fields: context only, on by default, aligned at every zoom.
+    const mappedRegions = patPage.locator("[data-mapped-region]");
+    const mappedToggle = patPage.getByTestId("show-mapped-fields");
+    if ((await mappedRegions.count()) !== 1) fail(`v1 editor must show its 1 mapped region, got ${await mappedRegions.count()}`);
+    if ((await mappedToggle.getAttribute("aria-checked")) !== "true") fail("Show mapped fields must default on");
+    if ((await mappedRegions.first().innerText()).trim() !== "Agent Name") fail("mapped region must show its label");
+    if ((await mappedRegions.first().getAttribute("title")) !== "Agent Name") fail("mapped region must carry its full label");
+    async function expectRegionAligned(when: string) {
+      await patPage.waitForTimeout(600);
+      const pageBox = (await patPage.locator(".react-pdf__Page").first().boundingBox())!;
+      const scale = pageBox.width / 612;
+      const box = (await mappedRegions.first().boundingBox())!;
+      const off = [
+        box.x - (pageBox.x + V1_AGENT_NAME.x * scale),
+        box.y - (pageBox.y + V1_AGENT_NAME.y * scale),
+        box.width - V1_AGENT_NAME.width * scale,
+        box.height - V1_AGENT_NAME.height * scale,
+      ].map(Math.abs);
+      if (off.some((delta) => delta > 1.5)) fail(`mapped region misaligned at ${when}: ${off.join(", ")}`);
+      return pageBox.width;
+    }
+    const fitWidth = await expectRegionAligned("Fit Width");
+    await patPage.getByRole("button", { name: "Zoom in" }).click();
+    await patPage.getByRole("button", { name: "Zoom in" }).click();
+    const zoomed = await expectRegionAligned("zoomed in");
+    await patPage.getByRole("button", { name: "Fit Page" }).click();
+    const fitPage = await expectRegionAligned("Fit Page");
+    await patPage.getByRole("button", { name: "Zoom out" }).click();
+    await expectRegionAligned("zoomed out");
+    await patPage.getByRole("button", { name: "Fit Width" }).click();
+    await expectRegionAligned("Fit Width again");
+    if (new Set([Math.round(fitWidth), Math.round(zoomed), Math.round(fitPage)]).size < 2) {
+      fail("zoom controls did not change the rendered page size");
+    }
+    ok("mapped Form field shown by default with its label, aligned within 1.5px at Fit Width, zoomed in, Fit Page and zoomed out");
+
+    const signingOverlays = patPage.locator(".signing-field-overlay");
+    const overlaysBefore = await signingOverlays.count();
+    await mappedToggle.click();
+    if ((await mappedRegions.count()) !== 0) fail("turning Show mapped fields off must hide mapped regions");
+    if ((await signingOverlays.count()) !== overlaysBefore) fail("hiding mapped fields must not touch Signing placements");
+    await mappedToggle.click();
+    if ((await mappedRegions.count()) !== 1) fail("turning Show mapped fields on must show them again");
+    ok("Show mapped fields hides and restores only the mapped regions; Signing placements unchanged");
+
+    const pointerEvents = await mappedRegions.first().evaluate((node) => getComputedStyle(node).pointerEvents);
+    if (pointerEvents !== "none") fail(`mapped region must not take pointer events (${pointerEvents})`);
+    const buyer1Signature = byType(v1Fields, "SIGNATURE").find((row) => row.slot_role_code === "BUYER" && row.slot_ordinal === 1)!;
+    const sigY = Number(buyer1Signature.y);
+    if (!(sigY < V1_AGENT_NAME.y + V1_AGENT_NAME.height && sigY + 10 > V1_AGENT_NAME.y)) {
+      fail(`the Buyer 1 Signature was meant to be placed over the mapped field (y=${sigY})`);
+    }
+    // Drag Buyer 2's Signature (y≈600) across the mapped field, then resize it there.
+    /** The Signing overlay whose top-left sits at this PDF point, scrolled into view. */
+    async function overlayAtPdf(x: number, y: number) {
+      const firstPage = patPage.locator(".react-pdf__Page").first();
+      const box = (await firstPage.boundingBox())!;
+      const s = box.width / 612;
+      const index = await signingOverlays.evaluateAll(
+        (nodes, want) =>
+          nodes.findIndex((node) => {
+            const rect = node.getBoundingClientRect();
+            return Math.abs(rect.left - want.left) < 4 && Math.abs(rect.top - want.top) < 4;
+          }),
+        { left: box.x + x * s, top: box.y + y * s },
+      );
+      if (index < 0) fail(`no Signing overlay at (${x}, ${y})`);
+      const overlay = signingOverlays.nth(index);
+      await overlay.scrollIntoViewIfNeeded();
+      await patPage.waitForTimeout(300);
+      return { overlay, page: (await firstPage.boundingBox())!, box: (await overlay.boundingBox())! };
+    }
+    const buyer2 = byType(v1Fields, "SIGNATURE").find((row) => row.slot_role_code === "BUYER" && row.slot_ordinal === 2)!;
+    const b2 = { x: Number(buyer2.x), y: Number(buyer2.y) };
+    const grabbed = await overlayAtPdf(b2.x, b2.y);
+    const pageBox = grabbed.page;
+    const scale = pageBox.width / 612;
+    const start = { x: grabbed.box.x + 20, y: grabbed.box.y + grabbed.box.height / 2 };
+    const target = { x: start.x + 40 * scale, y: start.y - (b2.y - (V1_AGENT_NAME.y - 40)) * scale };
+    await patPage.mouse.move(start.x, start.y);
+    await patPage.mouse.down();
+    await patPage.mouse.move(start.x + 10, (start.y + target.y) / 2, { steps: 8 });
+    await patPage.mouse.move(target.x, target.y, { steps: 8 });
+    await patPage.mouse.up();
+    await patPage.getByText("Saved", { exact: true }).waitFor({ timeout: 20000 });
+    await patPage.waitForTimeout(800);
+    const moved = (await templateFields(personalV1.id)).find((row) => row.id === buyer2.id)!;
+    if (Math.abs(Number(moved.y) - b2.y) < 40) fail(`dragging across a mapped field must move the Signature (${b2.y} -> ${moved.y})`);
+    const resizeTarget = await overlayAtPdf(Number(moved.x), Number(moved.y));
+    const movedBox = {
+      right: resizeTarget.box.x + resizeTarget.box.width,
+      bottom: resizeTarget.box.y + resizeTarget.box.height,
+    };
+    const { data: beforeResize } = await admin
+      .from("signing_placement_template_fields")
+      .select("width")
+      .eq("id", buyer2.id)
+      .single();
+    const widthBefore = Number(beforeResize?.width);
+    if (!(widthBefore > 0)) fail("Buyer 2 Signature width missing");
+    await patPage.mouse.move(movedBox.right - 2, movedBox.bottom - 2);
+    await patPage.mouse.down();
+    await patPage.mouse.move(movedBox.right + 30, movedBox.bottom + 10, { steps: 8 });
+    await patPage.mouse.up();
+    await patPage.getByText("Saved", { exact: true }).waitFor({ timeout: 20000 });
+    await patPage.waitForTimeout(800);
+    const { data: resizedRow } = await admin
+      .from("signing_placement_template_fields")
+      .select("width")
+      .eq("id", buyer2.id)
+      .single();
+    if (!(Number(resizedRow?.width) > widthBefore + 10)) {
+      fail(`resizing next to a mapped field must persist (${widthBefore} -> ${resizedRow?.width})`);
+    }
+    await shot(patPage, "37-mapped-fields-overlap");
+    ok("a Signature placed over the mapped field saved; another dragged across it and resized beside it; overlays never take the pointer");
+
+    await patEditor.close();
+    await patPage.getByRole("button", { name: "Edit placements" }).first().click();
+    await patEditor.open();
+    if ((await mappedRegions.count()) !== 1) fail("mapped region must return on reopen");
+    if ((await templateFields(personalV1.id)).length !== 7) fail("placements must persist across reopen");
+    ok("close/reopen: 7 placements persist; mapped region still comes from the form version");
     await patEditor.close();
     const personalSummary = patPage.locator('[data-testid="placement-personal-summary"]');
     await personalSummary.getByText("Placement template available · Pat Personal · 7 placements").waitFor({ timeout: 20000 });
@@ -471,6 +630,29 @@ async function main() {
     }
     if ((await templateFields(personalV1.id)).length !== 7) fail("copying changed the source template");
     ok("copy opened the editor with the review warning; 6 placements copied, page 3's 1 skipped and reported; source untouched");
+    const v2Labels = (await patPage.locator("[data-mapped-region]").evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("title")),
+    )).sort();
+    if (JSON.stringify(v2Labels) !== JSON.stringify(["Agent Name (v2)", "Buyer Signs Here (v2)"])) {
+      fail(`copied template must show the TARGET version's mapped fields only: ${JSON.stringify(v2Labels)}`);
+    }
+    const copiedSignature = v2Fields.find((row) => row.field_type === "SIGNATURE" && row.page_number === 1)!;
+    const copied = await overlayAtPdf(Number(copiedSignature.x), Number(copiedSignature.y));
+    const v2Scale = copied.page.width / 612;
+    const grab = { x: copied.box.x + 20, y: copied.box.y + copied.box.height / 2 };
+    await patPage.mouse.move(grab.x, grab.y);
+    await patPage.mouse.down();
+    await patPage.mouse.move(grab.x + 60 * v2Scale, grab.y - 30 * v2Scale, { steps: 6 });
+    await patPage.mouse.move(grab.x + 120 * v2Scale, grab.y - 60 * v2Scale, { steps: 6 });
+    await patPage.mouse.up();
+    await patPage.getByText("Saved", { exact: true }).waitFor({ timeout: 20000 });
+    await patPage.waitForTimeout(800);
+    const repositioned = (await templateFields(personalV2.id)).find((row) => row.id === copiedSignature.id)!;
+    if (Math.abs(Number(repositioned.y) - Number(copiedSignature.y)) < 40) {
+      fail("a copied placement must stay editable next to the target version's mapped field");
+    }
+    await shot(patPage, "46-copied-template-target-mappings");
+    ok("copied template shows only the v2 mapped fields (not v1's); a copied Signature was dragged next to v2's Agent Name");
     await patEditor.close();
     await personalSummary.getByText("Placement template available · Pat Personal · 6 placements").waitFor({ timeout: 20000 });
 

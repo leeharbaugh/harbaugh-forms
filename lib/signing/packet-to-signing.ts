@@ -24,7 +24,7 @@ import {
   getPacketSigningEligibility,
 } from "./packet-signing-eligibility";
 import {
-  roleCodeForPacketRole,
+  packetSigningRole,
   type SigningParticipantRoleCode,
 } from "./participant-roles";
 import type { SigningActor } from "./types";
@@ -51,32 +51,9 @@ export type DerivedPacketSigningParticipant = {
   linkedContactId: number;
   contactOwnerUserId: string | null;
   packetRole: PacketContactRole;
+  /** The Contact's role as a representation-agreement client, if any. */
+  agreementRole: PacketContactRole | null;
 };
-
-function roleLabel(role: PacketContactRole): string {
-  switch (role) {
-    case "BUYER":
-      return "Buyer";
-    case "SELLER":
-      return "Seller";
-    case "TENANT":
-      return "Tenant";
-    case "LANDLORD":
-      return "Landlord";
-    case "AGENT":
-      return "Agent";
-    case "PRIMARY":
-      return "Primary";
-    case "CO_CLIENT":
-      return "Co-client";
-    case "SPOUSE":
-      return "Spouse";
-    case "POWER_OF_ATTORNEY":
-      return "Power of attorney";
-    case "OTHER":
-      return "Other";
-  }
-}
 
 function agreementClientRole(agreementType: unknown): PacketContactRole {
   if (agreementType === "BUYER_REP") return "BUYER";
@@ -96,7 +73,12 @@ async function loadPacketPartyRows(
   admin: SupabaseClient,
   packetId: number,
 ): Promise<
-  { contactId: number; role: PacketContactRole; contact: Contact | null }[]
+  {
+    contactId: number;
+    role: PacketContactRole;
+    contact: Contact | null;
+    fromAgreement: boolean;
+  }[]
 > {
   const { data, error } = await admin
     .from("packet_contacts")
@@ -111,6 +93,7 @@ async function loadPacketPartyRows(
     contactId: row.contact_id as number,
     role: row.packet_role as PacketContactRole,
     contact: firstJoined(row.contacts as Contact | Contact[] | null),
+    fromAgreement: false,
   }));
 
   const { data: packet, error: packetError } = await admin
@@ -149,6 +132,7 @@ async function loadPacketPartyRows(
         contactId: link.contact_id,
         role,
         contact: firstJoined(link.contacts),
+        fromAgreement: true,
       });
     }
   }
@@ -157,8 +141,11 @@ async function loadPacketPartyRows(
 }
 
 /**
- * Deterministic derivation: one participant per contact id (first role wins
- * for optional_role label; packet_contacts before agreement clients).
+ * Deterministic derivation: one participant per contact id, in first-seen
+ * order (packet_contacts before agreement clients). The role comes from all of
+ * the Contact's rows via `packetSigningRole`: a direct role (Buyer, Seller,
+ * Tenant, Landlord, Agent) wins over a relationship role, which stays as the
+ * label.
  */
 export async function deriveSigningParticipantsFromPacket(
   admin: SupabaseClient,
@@ -170,33 +157,46 @@ export async function deriveSigningParticipantsFromPacket(
   const rows = await loadPacketPartyRows(admin, packetId);
 
   const allowed = new Set<string>(PACKET_SIGNING_PARTY_ROLES);
-  const seenContacts = new Set<number>();
+  const byContact = new Map<
+    number,
+    {
+      contact: Contact | null;
+      roles: PacketContactRole[];
+      agreementRole: PacketContactRole | null;
+    }
+  >();
+  for (const row of rows) {
+    if (!allowed.has(row.role)) continue;
+    let entry = byContact.get(row.contactId);
+    if (!entry) {
+      entry = { contact: row.contact, roles: [], agreementRole: null };
+      byContact.set(row.contactId, entry);
+    }
+    entry.roles.push(row.role);
+    if (row.fromAgreement && entry.agreementRole === null) {
+      entry.agreementRole = row.role;
+    }
+  }
+
   const participants: DerivedPacketSigningParticipant[] = [];
   let skippedUnnamed = 0;
-
-  for (const row of rows) {
-    const role = row.role;
-    if (!allowed.has(role)) continue;
-    const contactId = row.contactId;
-    if (seenContacts.has(contactId)) continue;
-
-    const contact = row.contact;
+  for (const [contactId, entry] of byContact) {
+    const contact = entry.contact;
     if (!contact || contact.status !== "ACTIVE") continue;
     if (!hasUsableContactDisplayName(contact)) {
       skippedUnnamed += 1;
       continue;
     }
-
-    seenContacts.add(contactId);
-    const email = (contact.email ?? "").trim().toLowerCase();
+    const role = packetSigningRole(entry.roles);
     participants.push({
       fullName: formatContactDisplayName(contact),
-      email,
-      optionalRole: roleLabel(role),
-      roleCode: roleCodeForPacketRole(role),
+      email: (contact.email ?? "").trim().toLowerCase(),
+      optionalRole: role.optionalRole,
+      roleCode: role.roleCode,
       linkedContactId: contactId,
       contactOwnerUserId: contact.owner_user_id ?? null,
-      packetRole: role,
+      packetRole: role.packetRole,
+      agreementRole: entry.agreementRole,
     });
   }
 

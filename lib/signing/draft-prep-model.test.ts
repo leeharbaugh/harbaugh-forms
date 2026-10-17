@@ -20,6 +20,8 @@ import {
   type DraftBundle,
 } from "@/lib/signing/package-promotion";
 import {
+  isPacketImportedRole,
+  packetSigningRole,
   participantRoleDisplay,
   roleCodeForPacketRole,
   isSigningParticipantRoleCode,
@@ -101,6 +103,77 @@ describe("participant role model", () => {
     assert.equal(participantRoleDisplay("AGENT", null), "Agent");
     assert.equal(participantRoleDisplay(null, "Co-client"), "Co-client");
     assert.equal(participantRoleDisplay(null, null), null);
+  });
+
+  it("maps each direct Packet role to the same Signing role", () => {
+    for (const role of ["BUYER", "SELLER", "TENANT", "LANDLORD", "AGENT"] as const) {
+      const derived = packetSigningRole([role]);
+      assert.equal(derived.roleCode, role);
+      assert.equal(participantRoleDisplay(derived.roleCode, derived.optionalRole), derived.optionalRole);
+    }
+    assert.deepEqual(packetSigningRole(["AGENT"]), {
+      roleCode: "AGENT",
+      optionalRole: "Agent",
+      packetRole: "AGENT",
+    });
+  });
+
+  it("keeps relationship roles as Other with their label", () => {
+    for (const [role, label] of [
+      ["PRIMARY", "Primary"],
+      ["CO_CLIENT", "Co-client"],
+      ["SPOUSE", "Spouse"],
+      ["POWER_OF_ATTORNEY", "Power of attorney"],
+      ["OTHER", "Other"],
+    ] as const) {
+      assert.deepEqual(packetSigningRole([role]), { roleCode: "OTHER", optionalRole: label, packetRole: role });
+    }
+  });
+
+  it("lets a direct role win over a relationship role, which stays the label only", () => {
+    // Packet row says Primary, the representation agreement says Buyer.
+    const buyer = packetSigningRole(["PRIMARY", "BUYER"]);
+    assert.deepEqual(buyer, { roleCode: "BUYER", optionalRole: "Primary", packetRole: "BUYER" });
+    assert.equal(participantRoleDisplay(buyer.roleCode, buyer.optionalRole), "Buyer · Primary");
+    assert.equal(packetSigningRole(["CO_CLIENT", "SELLER"]).roleCode, "SELLER");
+    // The Packet row is the more explicit current role: Seller beats the agreement's Buyer.
+    assert.equal(packetSigningRole(["SELLER", "BUYER"]).roleCode, "SELLER");
+    // Other is not a descriptive relationship label.
+    assert.equal(packetSigningRole(["OTHER", "BUYER"]).optionalRole, "Buyer");
+  });
+
+  it("recognizes an untouched import and never a manager's Draft edit", () => {
+    assert.equal(isPacketImportedRole({ roleCode: "OTHER", optionalRole: "Co-client" }, null), true);
+    assert.equal(isPacketImportedRole({ roleCode: "OTHER", optionalRole: "Primary" }, null), true);
+    assert.equal(isPacketImportedRole({ roleCode: "AGENT", optionalRole: "Agent" }, null), true);
+    // Lee's Draft edits on Packet 970: role changed, old label kept.
+    assert.equal(isPacketImportedRole({ roleCode: "BUYER", optionalRole: "Primary" }, null), false);
+    assert.equal(isPacketImportedRole({ roleCode: "AGENT", optionalRole: "Co-client" }, null), false);
+    // Only an agreement client can carry a direct role with a relationship label.
+    assert.equal(isPacketImportedRole({ roleCode: "BUYER", optionalRole: "Primary" }, "BUYER"), true);
+    assert.equal(isPacketImportedRole({ roleCode: "SELLER", optionalRole: "Primary" }, "BUYER"), false);
+    // Manual free text or a missing role is never an import.
+    assert.equal(isPacketImportedRole({ roleCode: "BUYER", optionalRole: "Lead buyer" }, null), false);
+    assert.equal(isPacketImportedRole({ roleCode: null, optionalRole: "Buyer" }, null), false);
+  });
+
+  it("syncs Packet roles only on the authorized Draft dashboard, never at Send", () => {
+    const dashboard = read("lib/signing/dashboard.ts");
+    const authorizeAt = dashboard.indexOf("requireManageableDraftSigning(");
+    const syncAt = dashboard.indexOf("syncDraftPacketParticipantRoles(actor, admin, signing)");
+    assert.ok(authorizeAt > 0 && syncAt > authorizeAt);
+    assert.doesNotMatch(read("lib/signing/activation.ts"), /syncDraftPacketParticipantRoles/);
+    const sync = read("lib/signing/source-packet.ts").slice(
+      read("lib/signing/source-packet.ts").indexOf("export async function syncDraftPacketParticipantRoles"),
+    );
+    assert.match(sync, /if \(!isDraftIdentityLive\(signing\)\) return/);
+    assert.match(sync, /isPacketImportedRole\(/);
+    // Conditional write: a concurrent manager edit wins.
+    assert.match(sync, /update\.eq\("role_code", roleCode\)/);
+    assert.match(sync, /update\.eq\("optional_role", optionalRole\)/);
+    // Role only: never identity, links, authority or associations.
+    assert.match(sync, /\.update\(\{ role_code: party\.role_code, optional_role: party\.optional_role \}\)/);
+    assert.doesNotMatch(sync, /signing_agent_associations|signing_operator_associations|linked_user_id/);
   });
 });
 
