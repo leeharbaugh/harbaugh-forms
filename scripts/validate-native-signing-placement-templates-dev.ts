@@ -32,6 +32,7 @@ import {
   deletePlacementTemplateWithActor,
   loadFormPlacementPageWithActor,
   loadPlacementTemplateEditorWithActor,
+  loadPlacementTemplatePdfWithActor,
   removePlacementTemplateFieldWithActor,
   upsertPlacementTemplateFieldWithActor,
 } from "../lib/signing/placement-templates.ts";
@@ -341,6 +342,33 @@ async function main() {
     const { data: v1Row } = await admin.from("forms").select("status").eq("id", formV1).single();
     if (v1Row?.status !== "INACTIVE") fail("publishing v2 did not retire v1");
     ok("created disposable forms: retired v1 (3 pages), published v2 (2 pages, same family), Draft, another user's Private, Global");
+
+    /** The editor PDF must be byte-identical to the template's exact form version. */
+    async function expectEditorPdf(
+      label: string,
+      actor: SigningActor,
+      formId: number,
+      templateId: string,
+    ) {
+      const pdf = await loadPlacementTemplatePdfWithActor(actor, { formId, templateId }, admin);
+      const { data: formRow } = await admin
+        .from("forms")
+        .select("source_storage_path")
+        .eq("id", formId)
+        .single();
+      const { data: blob, error } = await admin.storage
+        .from(FORM_TEMPLATES_BUCKET)
+        .download(formRow?.source_storage_path as string);
+      if (error || !blob) fail(`${label}: exact form PDF missing from storage`);
+      const expected = new Uint8Array(await blob.arrayBuffer());
+      if (
+        pdf.bytes.byteLength !== expected.byteLength ||
+        !pdf.bytes.every((byte, index) => byte === expected[index])
+      ) {
+        fail(`${label}: editor PDF bytes differ from Form #${formId}`);
+      }
+      ok(`${label}: editor PDF is Form #${formId}'s exact bytes (${expected.byteLength} B)`);
+    }
 
     // -------------------------------------------------------------------
     // Personal templates, eligibility, and field rules
@@ -711,6 +739,22 @@ async function main() {
       ) {
         fail(`admin-on-behalf template ownership wrong: ${JSON.stringify(ownedRow)}`);
       }
+      const emptyEditor = await loadPlacementTemplateEditorWithActor(
+        adminOnBehalf,
+        { templateId: createdForOwner.templateId },
+        admin,
+      );
+      if (emptyEditor.model.documents[0]?.fields.length !== 0 || !emptyEditor.canEdit) {
+        fail("a new zero-placement on-behalf template must open editable with 0 placements");
+      }
+      await expectEditorPdf("Global Admin on behalf, zero placements", adminOnBehalf, formOthers, createdForOwner.templateId);
+      await expectEditorPdf("private Form owner", orgAdmin.actor, formOthers, createdForOwner.templateId);
+      await expectSigningError("unrelated member loading another user's template PDF", "NOT_FOUND", () =>
+        loadPlacementTemplatePdfWithActor(agent.actor, { formId: formOthers, templateId: createdForOwner.templateId }, admin),
+      );
+      await expectSigningError("template PDF requested under a different form id", "NOT_FOUND", () =>
+        loadPlacementTemplatePdfWithActor(adminOnBehalf, { formId: formGlobal, templateId: createdForOwner.templateId }, admin),
+      );
       await place(adminOnBehalf, createdForOwner.templateId, {
         fieldType: "SIGNATURE",
         slotKey: "BUYER:1",
@@ -724,8 +768,39 @@ async function main() {
           sessionClient: agent.session,
         }),
       );
+      await expectEditorPdf("Global Admin on behalf, after a placement", adminOnBehalf, formOthers, createdForOwner.templateId);
       ok("Global Admin manages the private Form owner's Personal template on their behalf (owner stays owner; actor attributed)");
       await admin.from("profiles").update({ app_role: "USER" }).eq("id", outsider.actor.userId);
+    }
+
+    // The editor PDF loads for every authorized template reader, Global Forms
+    // included, and for a brand-new template with no placements.
+    {
+      const globalPersonal = await createPlacementTemplateWithActor(
+        agent.actor,
+        { formId: formGlobal, scope: "PERSONAL" },
+        admin,
+        { sessionClient: agent.session },
+      );
+      const emptyGlobal = await loadPlacementTemplateEditorWithActor(
+        agent.actor,
+        { templateId: globalPersonal.templateId },
+        admin,
+      );
+      if (emptyGlobal.model.documents[0]?.fields.length !== 0 || !emptyGlobal.canEdit) {
+        fail("a new Global Form Personal template must open editable with 0 placements");
+      }
+      await expectEditorPdf("Global Form Personal, zero placements", agent.actor, formGlobal, globalPersonal.templateId);
+      await expectSigningError("another organization's admin loading a Personal template PDF", "NOT_FOUND", () =>
+        loadPlacementTemplatePdfWithActor(outsider.actor, { formId: formGlobal, templateId: globalPersonal.templateId }, admin),
+      );
+      await expectEditorPdf("Organization template, organization admin", orgAdmin.actor, formGlobal, orgGlobal);
+      await expectEditorPdf("Organization template, member (view only)", agent.actor, formGlobal, orgGlobal);
+      await expectSigningError("another organization loading an Organization template PDF", "NOT_FOUND", () =>
+        loadPlacementTemplatePdfWithActor(outsider.actor, { formId: formGlobal, templateId: orgGlobal }, admin),
+      );
+      await deletePlacementTemplateWithActor(agent.actor, { templateId: globalPersonal.templateId }, admin);
+      ok("editor PDF loads for Global Form Personal and Organization templates; other users and organizations get NOT_FOUND");
     }
 
     const agentSelect = await agent.session.from("signing_placement_templates").select("id");

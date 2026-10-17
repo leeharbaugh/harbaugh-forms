@@ -88,6 +88,8 @@ function templateWorkspace(options: {
         "Place fields for signer slots such as Buyer 1 or Seller 2. When a Signing applies this template, each slot is matched to that Signing's participants by role and order.",
       placementHelp: TEMPLATE_PLACEMENT_HELP,
       noFieldsYet: "No placements yet. Choose a signer slot and a field, then click the page.",
+      documentLoadError:
+        "Could not load the PDF for this form version. Close the editor and try again; if it keeps failing, the form PDF is not available.",
     },
   };
 }

@@ -88,7 +88,24 @@ async function main() {
   const noise = createRuntimeNoiseGuard();
   const contexts: BrowserContext[] = [];
 
-  async function newUser(label: string, firstName: string, role: "MEMBER" | "ORG_ADMIN") {
+  /** Every editor PDF response must be the exact form PDF, never a 404 / HTML page. */
+  const pdfProblems: string[] = [];
+  let pdfOkCount = 0;
+  function watchEditorPdf(page: Page, label: string) {
+    page.on("response", (response) => {
+      if (!/\/forms\/\d+\/signing-placements\/[0-9a-f-]+\/pdf$/.test(new URL(response.url()).pathname)) return;
+      const type = response.headers()["content-type"] ?? "";
+      if (response.status() === 200 && type.startsWith("application/pdf")) pdfOkCount += 1;
+      else pdfProblems.push(`[${label}] ${response.status()} ${type} ${new URL(response.url()).pathname}`);
+    });
+  }
+
+  async function newUser(
+    label: string,
+    firstName: string,
+    role: "MEMBER" | "ORG_ADMIN",
+    appRole: "USER" | "ADMIN" = "USER",
+  ) {
     const email = `placement-qa-${label}-${stamp}@example.com`;
     const { data, error } = await admin.auth.admin.createUser({
       email,
@@ -102,7 +119,7 @@ async function main() {
       id,
       email,
       status: "ACTIVE",
-      app_role: "USER",
+      app_role: appRole,
       onboarding_status: "ACTIVE",
       display_name: `${firstName} Placement`,
       first_name: firstName,
@@ -125,6 +142,7 @@ async function main() {
     contexts.push(context);
     const page = await context.newPage();
     noise.watch(page, label);
+    watchEditorPdf(page, label);
     const { data: link, error } = await admin.auth.admin.generateLink({ type: "magiclink", email });
     if (error || !link.properties?.hashed_token) fail("generateLink failed");
     await page.goto(
@@ -690,11 +708,19 @@ async function main() {
 
     const patForms = await patPage.context().newPage();
     noise.watch(patForms, "pat-forms");
+    watchEditorPdf(patForms, "pat-forms");
     await patForms.goto(`${APP_ORIGIN}/forms/${formGlobal}/signing-placements`, { waitUntil: "networkidle" });
     await patForms.getByRole("button", { name: "Create Personal template" }).waitFor({ timeout: 60000 });
     await patForms.getByRole("button", { name: "Create Personal template" }).click();
     const patFormsEditor = editor(patForms);
     await patFormsEditor.open();
+    await patForms
+      .getByText("No placements yet. Choose a signer slot and a field, then click the page.")
+      .waitFor({ timeout: 20000 });
+    if ((await patForms.getByTestId("placement-document-load-error").count()) !== 0) {
+      fail("a new zero-placement Global Form Personal template must load its form PDF");
+    }
+    ok("a new zero-placement Global Form Personal template opens with the form PDF rendered");
     await patFormsEditor.selectSlot("Buyer 1");
     await patFormsEditor.place("INITIALS", 1, { x: 450, y: 700 });
     await patFormsEditor.close();
@@ -726,6 +752,55 @@ async function main() {
     }
     await shot(patPage, "39-personal-wins-applied");
     ok("once Pat has a Personal template it is offered and applied alone (1 Initials); nothing merged from the Organization template's 4");
+
+    // ---------------------------------------------------------------------
+    // Global Admin manages Pat's Personal template on Pat's private Form
+    // ---------------------------------------------------------------------
+    const gale = await newUser("gale", "Gale", "MEMBER", "ADMIN");
+    const galePage = await signIn(gale.email, "gale", `/forms/${formV2}/signing-placements`);
+    await galePage.getByTestId("placement-admin-on-behalf").waitFor({ timeout: 60000 });
+    const banner = (await galePage.getByTestId("placement-admin-on-behalf").innerText()).trim();
+    const cardTitle = (await galePage.getByTestId("placement-personal-card-title").innerText()).trim();
+    if (!banner.includes("Pat Placement") || !banner.includes("not a Global template")) {
+      fail(`on-behalf banner must name the owner and say it is not Global: ${banner}`);
+    }
+    if (cardTitle !== "Personal placement template for Pat Placement") {
+      fail(`on-behalf card title must name the owner: ${cardTitle}`);
+    }
+    ok(`Global Admin sees "${cardTitle}" with the not-Global banner`);
+    const patV2 = await templateFor(formV2, "PERSONAL");
+    if (!patV2) fail("Pat's v2 Personal template missing");
+    const beforeAdmin = (await templateFields(patV2.id)).length;
+    const personalCard = galePage.getByTestId("placement-personal-card");
+    await personalCard.getByRole("button", { name: "Edit placements" }).click();
+    const galeEditor = editor(galePage);
+    await galeEditor.open();
+    await galeEditor.place("CHECKMARK", 0, { x: 300, y: 150 });
+    await galeEditor.close();
+    await personalCard.getByRole("button", { name: "Edit placements" }).click();
+    await galeEditor.open();
+    if ((await galePage.getByTestId("placement-document-load-error").count()) !== 0) {
+      fail("on-behalf editor must reload the form PDF");
+    }
+    await galeEditor.close();
+    const { data: patV2Row } = await admin
+      .from("signing_placement_templates")
+      .select("owner_user_id, scope_type, updated_by_user_id")
+      .eq("id", patV2.id)
+      .single();
+    if (
+      (await templateFields(patV2.id)).length !== beforeAdmin + 1 ||
+      patV2Row?.owner_user_id !== pat.id ||
+      patV2Row.scope_type !== "PERSONAL" ||
+      patV2Row.updated_by_user_id !== gale.id
+    ) {
+      fail(`on-behalf edit must keep Pat as owner and attribute Gale: ${JSON.stringify(patV2Row)}`);
+    }
+    await shot(galePage, "40-admin-on-behalf-editor");
+    ok("Global Admin opened the editor (PDF rendered), placed a Checkmark, closed and reopened; owner stays Pat, update attributed to Gale");
+
+    if (pdfProblems.length > 0) fail(`editor PDF requests failed:\n${pdfProblems.join("\n")}`);
+    ok(`all ${pdfOkCount} editor PDF responses were 200 application/pdf`);
 
     const issues = noise.issues();
     if (issues.length > 0) fail(`unexpected runtime errors/warnings:\n${issues.join("\n")}`);

@@ -116,6 +116,7 @@ export type PlacementWorkspaceCopy = {
   adoptionBoundary: string;
   placementHelp: string;
   noFieldsYet: string;
+  documentLoadError: string;
 };
 
 const SIGNING_WORKSPACE_COPY: PlacementWorkspaceCopy = {
@@ -130,6 +131,7 @@ const SIGNING_WORKSPACE_COPY: PlacementWorkspaceCopy = {
   adoptionBoundary: ADOPTION_BOUNDARY_COPY,
   placementHelp: SIGNING_PLACEMENT_HELP,
   noFieldsYet: "No Signing fields yet. Choose a participant and a field, then click the page.",
+  documentLoadError: "Could not load this Signing document.",
 };
 
 /**
@@ -1568,8 +1570,8 @@ export function SigningPreviewDialog({
                     </p>
                   }
                   error={
-                    <p className="text-sm text-destructive">
-                      Could not load this Signing document.
+                    <p className="text-sm text-destructive" data-testid="placement-document-load-error">
+                      {copy.documentLoadError}
                     </p>
                   }
                   onLoadSuccess={(pdf) => {

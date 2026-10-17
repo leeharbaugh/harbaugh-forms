@@ -434,4 +434,24 @@ describe("Server and browser boundaries", () => {
     assert.match(templatesModule, /membershipRole === "ORG_ADMIN"/);
     assert.match(page, /canEdit: org\.isOrgAdmin/);
   });
+
+  it("points the editor at the exact-version PDF route and labels a load failure as the form PDF", () => {
+    const route = read("app/forms/[id]/signing-placements/[templateId]/pdf/route.ts");
+    assert.match(page, /documentPdfUrl: \(\) => `\/forms\/\$\{formId\}\/signing-placements\/\$\{templateId\}\/pdf`/);
+    assert.match(route, /export async function GET/);
+    assert.ok(
+      route.indexOf("requireSigningActor()") < route.indexOf("createAdminClient()"),
+      "the PDF route must establish the actor before elevating",
+    );
+    assert.match(route, /loadPlacementTemplatePdfWithActor\(\s*actor,\s*\{ formId: id, templateId \}/);
+    const loader = templatesModule.slice(
+      templatesModule.indexOf("export async function loadPlacementTemplatePdfWithActor"),
+    );
+    assert.match(loader, /requirePlacementTemplate\(actor, input\.templateId, admin, "read"\)/);
+    assert.match(loader, /template\.form_id !== formId/);
+    assert.match(loader, /\.eq\("id", formId\)/);
+    assert.doesNotMatch(loader, /form_family_key/);
+    assert.match(dialog, /\{copy\.documentLoadError\}/);
+    assert.match(page, /documentLoadError:\s*\n?\s*"Could not load the PDF for this form version\./);
+  });
 });
