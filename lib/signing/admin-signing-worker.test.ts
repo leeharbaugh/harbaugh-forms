@@ -25,7 +25,8 @@ describe("admin signing worker sweep", () => {
     assert.match(worker, /recordAuditEvent/);
     assert.doesNotMatch(worker, /signingId:/);
     assert.match(page, /AdminSigningWorkerControls/);
+    assert.match(page, /every 2 minutes/);
     assert.match(controls, /Run Signing Worker Now/);
-    assert.match(controls, /every 2 minutes/);
+    assert.match(controls, /Pending:/);
   });
 });

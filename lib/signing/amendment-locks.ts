@@ -11,6 +11,7 @@
  * amendment). That check is applied by future amendment UI callers.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { assertSigningNotArchived } from "./archive";
 import { loadSigningAuthorityBundle } from "./authority-context";
 import { SigningError } from "./errors";
 import { assertNativeSigningEnabled } from "./feature-gate";
@@ -111,6 +112,10 @@ export async function acquireAmendmentLockWithActor(
       "Amendment locks are only available before completion or cancellation.",
     );
   }
+  assertSigningNotArchived(
+    signing,
+    "This Signing is archived. Unarchive it before amending it.",
+  );
   if (!signing.current_package_revision_id && signing.lifecycle_state === "IN_PROGRESS") {
     throw new SigningError(
       "CONFLICT",

@@ -16,6 +16,7 @@ export type PacketContactRole =
   | "TENANT"
   | "SELLER"
   | "LANDLORD"
+  | "AGENT"
   | "OTHER";
 
 export type PacketContact = {
@@ -45,6 +46,7 @@ const ROLE_LABELS: Record<PacketContactRole, string> = {
   TENANT: "Tenant",
   SELLER: "Seller",
   LANDLORD: "Landlord",
+  AGENT: "Agent",
   OTHER: "Other",
 };
 
@@ -57,6 +59,7 @@ export const PACKET_CONTACT_ROLES: PacketContactRole[] = [
   "TENANT",
   "SELLER",
   "LANDLORD",
+  "AGENT",
   "OTHER",
 ];
 
@@ -83,13 +86,13 @@ export function getPacketContactRolesForWorkflow(
 ): PacketContactRole[] {
   switch (workflow) {
     case "buyer_rep":
-      return ["BUYER", "CO_CLIENT", "SPOUSE", "TENANT", "OTHER"];
+      return ["BUYER", "CO_CLIENT", "SPOUSE", "TENANT", "AGENT", "OTHER"];
     case "listing":
       return listingOwnerKind === "landlord"
-        ? ["LANDLORD", "CO_CLIENT", "SPOUSE", "SELLER", "OTHER"]
-        : ["SELLER", "CO_CLIENT", "SPOUSE", "LANDLORD", "OTHER"];
+        ? ["LANDLORD", "CO_CLIENT", "SPOUSE", "SELLER", "AGENT", "OTHER"]
+        : ["SELLER", "CO_CLIENT", "SPOUSE", "LANDLORD", "AGENT", "OTHER"];
     case "contract_offer":
-      return ["PRIMARY", "CO_CLIENT", "BUYER", "SELLER", "OTHER"];
+      return ["PRIMARY", "CO_CLIENT", "BUYER", "SELLER", "AGENT", "OTHER"];
     default:
       return PACKET_CONTACT_ROLES;
   }

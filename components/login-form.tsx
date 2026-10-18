@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { useResetPendingOnMount } from "@/lib/ui/reset-pending-on-mount";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -21,6 +22,9 @@ export function LoginForm({
 }: React.ComponentPropsWithoutRef<"div">) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // Soft navigation can restore this form with isLoading still true after a
+  // prior successful login redirected away without resetting the flag.
+  useResetPendingOnMount(setIsLoading);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

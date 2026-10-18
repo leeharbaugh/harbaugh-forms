@@ -8,6 +8,7 @@ import {
   requireManageableDraftSigning,
 } from "./manage";
 import { resolveSigningPacketOwnerUserId } from "./operations";
+import { packetSourceEligibility } from "./packet-signing-eligibility";
 import { SIGNING_ARTIFACTS_BUCKET } from "./stage1-schema";
 import type { SigningActor } from "./types";
 import { isUuid } from "./types";
@@ -15,6 +16,7 @@ import { isUuid } from "./types";
 export type SigningDocumentRow = {
   id: string;
   signing_id: string;
+  source_kind?: "PACKET_FORM" | "AD_HOC_PDF" | string | null;
   source_packet_form_id: number | null;
   display_order: number;
   logical_label: string | null;
@@ -42,6 +44,87 @@ async function reloadSigningDocument(
     throw new Error(error?.message ?? "Failed to reload Signing document.");
   }
   return data as SigningDocumentRow;
+}
+
+/**
+ * Packet ids of included Packet-derived documents on this Signing. Ad hoc PDFs
+ * carry no Packet and are never counted.
+ */
+export async function listIncludedPacketDocumentPacketIds(
+  admin: SupabaseClient,
+  signingId: string,
+): Promise<number[]> {
+  const { data, error } = await admin
+    .from("signing_documents")
+    .select("source_packet_form_id, packet_forms!inner(packet_id)")
+    .eq("signing_id", signingId)
+    .eq("included_in_draft", true)
+    .not("source_packet_form_id", "is", null);
+  if (error) throw new Error(error.message);
+  const packetIds = new Set<number>();
+  for (const row of data ?? []) {
+    const form = Array.isArray(row.packet_forms)
+      ? row.packet_forms[0]
+      : row.packet_forms;
+    const packetId = (form as { packet_id?: number } | null)?.packet_id;
+    if (typeof packetId === "number") packetIds.add(packetId);
+  }
+  return Array.from(packetIds);
+}
+
+function isSourcePacketMismatch(message: string | undefined): boolean {
+  return message?.includes("SOURCE_PACKET_DOCUMENT_MISMATCH") ?? false;
+}
+
+function sourcePacketMismatchError(): SigningError {
+  return new SigningError(
+    "INVALID_PACKET",
+    "The Packet Form does not belong to this Signing's source Packet.",
+  );
+}
+
+/**
+ * One source Packet per Signing. Binds an unbound Draft to `packetId` with a
+ * compare-and-set so concurrent adds from different Packets cannot both win.
+ * Never remaps an already-bound Signing.
+ */
+export async function bindSigningSourcePacketIfUnset(
+  admin: SupabaseClient,
+  signingId: string,
+  packetId: number,
+): Promise<void> {
+  const existingPacketIds = await listIncludedPacketDocumentPacketIds(
+    admin,
+    signingId,
+  );
+  if (existingPacketIds.some((id) => id !== packetId)) {
+    throw new SigningError(
+      "INVALID_PACKET",
+      "This Signing already includes documents from a different Packet.",
+    );
+  }
+
+  const { error: bindError } = await admin
+    .from("signings")
+    .update({ source_packet_id: packetId })
+    .eq("id", signingId)
+    .is("source_packet_id", null);
+  if (bindError) throw new Error(bindError.message);
+
+  const { data: bound, error: readError } = await admin
+    .from("signings")
+    .select("source_packet_id")
+    .eq("id", signingId)
+    .single();
+  if (readError || !bound) {
+    throw new Error(readError?.message ?? "Failed to read Signing source Packet.");
+  }
+  if (bound.source_packet_id !== packetId) {
+    throw new SigningError(
+      "INVALID_PACKET",
+      "This Signing is tied to a different source Packet.",
+    );
+  }
 }
 
 async function nextDocumentDisplayOrder(
@@ -97,17 +180,17 @@ export async function addDraftSigningDocumentWithActor(
   const packet = Array.isArray(packetForm.packets)
     ? packetForm.packets[0]
     : packetForm.packets;
-  if (!packet || packet.status === "DELETED") {
+  const packetEligibility = packetSourceEligibility(packet ?? null, actor.userId);
+  if (!packet || packetEligibility.reasonCode === "PACKET_DELETED") {
     throw new SigningError("INVALID_PACKET", "The Packet is not available.");
   }
-  if (packet.owner_user_id !== actor.userId) {
+  if (!packetEligibility.eligible) {
     throw new SigningError(
       "INVALID_PACKET",
       "The Packet Form is not available to this Signing.",
     );
   }
 
-  // Prefer Signing's source packet when set; otherwise require owner match only.
   if (
     signing.source_packet_id != null &&
     packet.id !== signing.source_packet_id
@@ -116,6 +199,9 @@ export async function addDraftSigningDocumentWithActor(
       "INVALID_PACKET",
       "The Packet Form does not belong to this Signing's source Packet.",
     );
+  }
+  if (signing.source_packet_id == null) {
+    await bindSigningSourcePacketIfUnset(admin, signing.id, packet.id as number);
   }
 
   const displayName =
@@ -157,6 +243,9 @@ export async function addDraftSigningDocumentWithActor(
       .select("*")
       .single();
     if (reincludeError || !reincluded) {
+      if (isSourcePacketMismatch(reincludeError?.message)) {
+        throw sourcePacketMismatchError();
+      }
       throw new Error(
         reincludeError?.message ?? "Failed to re-include Signing document.",
       );
@@ -185,6 +274,7 @@ export async function addDraftSigningDocumentWithActor(
     .from("signing_documents")
     .insert({
       signing_id: signing.id,
+      source_kind: "PACKET_FORM",
       source_packet_form_id: packetFormId,
       display_order: displayOrder,
       logical_label: logicalLabel,
@@ -201,6 +291,9 @@ export async function addDraftSigningDocumentWithActor(
         "CONFLICT",
         "That Packet Form is already included in this Signing.",
       );
+    }
+    if (isSourcePacketMismatch(insertError?.message)) {
+      throw sourcePacketMismatchError();
     }
     throw new Error(insertError?.message ?? "Failed to add Signing document.");
   }
@@ -254,12 +347,18 @@ export async function removeDraftSigningDocumentWithActor(
     throw new SigningError("NOT_FOUND", "Signing document not found.");
   }
 
-  // Clear Draft field instructions for this document either way.
+  // Clear Draft field instructions and prepared content for this document either way.
   await admin
     .from("signing_draft_fields")
     .delete()
     .eq("signing_id", signing.id)
     .eq("signing_document_id", input.signingDocumentId);
+  const { error: preparedError } = await admin
+    .from("signing_draft_prepared_content")
+    .delete()
+    .eq("signing_id", signing.id)
+    .eq("signing_document_id", input.signingDocumentId);
+  if (preparedError) throw new Error(preparedError.message);
 
   const [{ data: versions, error: versionError }, { data: revisionDocs, error: revisionDocError }] =
     await Promise.all([
@@ -448,4 +547,193 @@ export async function updateDraftSigningDocumentMetadataWithActor(
     throw new Error(error?.message ?? "Failed to update Signing document.");
   }
   return data as SigningDocumentRow;
+}
+
+/**
+ * Add every remaining eligible Packet Form from the Signing's source Packet
+ * (or an explicitly selected owned Packet for standalone Signings).
+ * Skips forms already included; uses the same eligibility as Packet → Create Signing.
+ */
+export async function addRemainingPacketDocumentsWithActor(
+  actor: SigningActor,
+  input: {
+    signingId: unknown;
+    /** Required when the Signing has no source_packet_id (standalone). */
+    packetId?: unknown;
+  },
+  admin: SupabaseClient,
+): Promise<{ addedCount: number; skippedDuplicateCount: number }> {
+  const { signing } = await requireManageableDraftSigning(
+    actor,
+    input.signingId,
+    admin,
+  );
+
+  let packetId: number | null = signing.source_packet_id;
+  if (packetId == null) {
+    packetId = parsePositiveInt(input.packetId, "Packet id");
+  } else if (input.packetId !== undefined && input.packetId !== null) {
+    const requested = parsePositiveInt(input.packetId, "Packet id");
+    if (requested !== packetId) {
+      throw new SigningError(
+        "INVALID_PACKET",
+        "This Signing is tied to a different source Packet.",
+      );
+    }
+  }
+
+  const { data: packet, error: packetError } = await admin
+    .from("packets")
+    .select("id, owner_user_id, status")
+    .eq("id", packetId)
+    .maybeSingle();
+  if (packetError) throw new Error(packetError.message);
+  const packetEligibility = packetSourceEligibility(packet, actor.userId);
+  if (!packet || packetEligibility.reasonCode === "PACKET_DELETED") {
+    throw new SigningError("INVALID_PACKET", "The Packet is not available.");
+  }
+  if (!packetEligibility.eligible) {
+    throw new SigningError(
+      "INVALID_PACKET",
+      "The Packet is not available to this Signing.",
+    );
+  }
+  if (
+    signing.source_packet_id != null &&
+    packet.id !== signing.source_packet_id
+  ) {
+    throw new SigningError(
+      "INVALID_PACKET",
+      "The Packet does not belong to this Signing's source Packet.",
+    );
+  }
+
+  const { data: forms, error: formError } = await admin
+    .from("packet_forms")
+    .select(
+      "id, document_name, status, availability_state, storage_path, sort_order",
+    )
+    .eq("packet_id", packetId)
+    .eq("status", "ACTIVE")
+    .eq("availability_state", "AVAILABLE")
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
+  if (formError) throw new Error(formError.message);
+
+  let addedCount = 0;
+  let skippedDuplicateCount = 0;
+  for (const form of forms ?? []) {
+    if (!form.storage_path) continue;
+    try {
+      await addDraftSigningDocumentWithActor(
+        actor,
+        {
+          signingId: signing.id,
+          sourcePacketFormId: form.id,
+          displayName: form.document_name ?? "Document",
+        },
+        admin,
+      );
+      addedCount += 1;
+    } catch (error) {
+      if (
+        error instanceof SigningError &&
+        error.code === "CONFLICT" &&
+        /already included/i.test(error.message)
+      ) {
+        skippedDuplicateCount += 1;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return { addedCount, skippedDuplicateCount };
+}
+
+export type DraftPacketFormOption = {
+  id: number;
+  packetId: number;
+  documentName: string;
+  packetLabel: string | null;
+  alreadyIncluded: false;
+};
+
+/**
+ * List AVAILABLE Packet Forms from this Draft Signing's source Packet that may
+ * still be added. Empty until a source Packet is selected (one source Packet
+ * per Signing). Used by the manager Draft preparation UI.
+ */
+export async function listPacketFormsForDraftWithActor(
+  actor: SigningActor,
+  input: { signingId: unknown },
+  admin: SupabaseClient,
+): Promise<DraftPacketFormOption[]> {
+  const { signing } = await requireManageableDraftSigning(
+    actor,
+    input.signingId,
+    admin,
+  );
+
+  if (signing.source_packet_id == null) {
+    return [];
+  }
+
+  const { data: rows, error: packetError } = await admin
+    .from("packets")
+    .select("id, label, status, owner_user_id")
+    .eq("id", signing.source_packet_id);
+  if (packetError) throw new Error(packetError.message);
+  const packets = (rows ?? []).filter(
+    (row) => packetSourceEligibility(row, actor.userId).eligible,
+  );
+
+  const packetIds = packets.map((row) => row.id as number);
+  if (packetIds.length === 0) {
+    return [];
+  }
+
+  const packetLabelById = new Map(
+    packets.map((row) => [
+      row.id as number,
+      (row.label as string | null) ?? null,
+    ]),
+  );
+
+  const { data: includedDocs, error: includedError } = await admin
+    .from("signing_documents")
+    .select("source_packet_form_id")
+    .eq("signing_id", signing.id)
+    .eq("included_in_draft", true)
+    .not("source_packet_form_id", "is", null);
+  if (includedError) throw new Error(includedError.message);
+  const includedFormIds = new Set(
+    (includedDocs ?? [])
+      .map((row) => row.source_packet_form_id as number | null)
+      .filter((id): id is number => id != null),
+  );
+
+  const { data: forms, error: formError } = await admin
+    .from("packet_forms")
+    .select(
+      "id, packet_id, document_name, status, availability_state, storage_path, sort_order",
+    )
+    .in("packet_id", packetIds)
+    .eq("status", "ACTIVE")
+    .eq("availability_state", "AVAILABLE")
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(200);
+  if (formError) throw new Error(formError.message);
+
+  return (forms ?? [])
+    .filter((form) => Boolean(form.storage_path))
+    .filter((form) => !includedFormIds.has(form.id as number))
+    .map((form) => ({
+      id: form.id as number,
+      packetId: form.packet_id as number,
+      documentName: String(form.document_name ?? "Document"),
+      packetLabel: packetLabelById.get(form.packet_id as number) ?? null,
+      alreadyIncluded: false as const,
+    }));
 }

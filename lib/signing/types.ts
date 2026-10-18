@@ -45,6 +45,7 @@ export type SigningRow = {
   source_packet_id: number | null;
   /** Actual User who created the Signing (may be a TC). */
   created_by_user_id?: string | null;
+  archived_at?: string | null;
   original_sender_user_id: string | null;
   original_sender_display_name: string;
   original_sender_email: string | null;
@@ -78,6 +79,8 @@ export type SigningSummary = {
   id: string;
   title: string;
   lifecycleState: string;
+  /** Organizational state only; independent of `lifecycleState`. */
+  archivedAt: string | null;
   finalizationCondition: string;
   originatingOrganizationId: string;
   sourcePacketId: number | null;

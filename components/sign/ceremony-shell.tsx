@@ -9,12 +9,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import type { CeremonyFocusRequest } from "@/components/sign/ceremony-document-viewer";
 import {
   acceptConsentAction,
-  adoptCeremonyMarkAction,
   ceremonyHeartbeatAction,
   declineCeremonyAction,
   exitCeremonyAction,
@@ -24,10 +24,65 @@ import {
   placeCeremonyFieldAction,
   removeCeremonyPlacementAction,
   replaceCeremonyPlacementAction,
+  startCeremonySigningAction,
 } from "@/lib/signing/ceremony-actions";
 import type { CeremonyOverview } from "@/lib/signing/ceremony-context";
+import {
+  ceremonyFieldListEntries,
+  isParticipantActionableField,
+  linkedDateSignedBySignatureField,
+  nextIncompleteCeremonyField,
+  type CeremonyActionableField,
+} from "@/lib/signing/ceremony-field-view";
+import {
+  ceremonyFieldsPanelMode,
+  type CeremonyFieldsPanelMode,
+} from "@/lib/signing/ceremony-layout";
 import { SIGNING_PRESENCE_HEARTBEAT_SECONDS } from "@/lib/signing/presence";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { cn } from "@/lib/utils";
+import dynamic from "next/dynamic";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+
+/** pdf.js is browser-only; keep it out of the server-rendered graph. */
+const CeremonyDocumentViewer = dynamic(
+  () => import("@/components/sign/ceremony-document-viewer"),
+  {
+    ssr: false,
+    loading: () => (
+      <p className="p-4 text-sm text-muted-foreground">Loading documents…</p>
+    ),
+  },
+);
+
+type CeremonyActionResult =
+  | { ok: true; data?: unknown }
+  | { ok: false; code: string; error: string };
+
+const NETWORK_ERROR =
+  "We could not reach Harbaugh Forms, so that was not saved. Check your connection and try again.";
+
+function firstRequiredField(overview: CeremonyOverview) {
+  return nextIncompleteCeremonyField(overview.fields, overview.documents, null, {
+    requiredOnly: true,
+  });
+}
+
+function needsMarkSetup(overview: CeremonyOverview): boolean {
+  const kinds = new Set(
+    overview.fields.filter(isParticipantActionableField).map((field) => field.fieldType),
+  );
+  return (
+    (kinds.has("SIGNATURE") && !overview.marks.signature) ||
+    (kinds.has("INITIALS") && !overview.marks.initials)
+  );
+}
 
 /**
  * Focused participant ceremony shell.
@@ -37,54 +92,62 @@ import { useCallback, useEffect, useState, useTransition } from "react";
  * nothing important exists only in this component's state, so a timeout or a
  * superseded session never loses confirmed work.
  *
- * Typed adoption is the keyboard-accessible path implemented here; the server
- * also accepts a drawn representation for a later drawing surface.
+ * The document fills the screen. Guidance (the first required field on Start
+ * signing, the next one after each accepted mark) only scrolls and highlights;
+ * the participant applies every mark with their own click, navigation waits
+ * for the server to accept it, and review stays free at all times.
  */
 export function CeremonyShell({
   initialOverview,
 }: {
   initialOverview: CeremonyOverview;
 }) {
+  const initialFirstField =
+    initialOverview.consent.satisfied && !needsMarkSetup(initialOverview)
+      ? firstRequiredField(initialOverview)
+      : null;
   const [overview, setOverview] = useState(initialOverview);
   const [error, setError] = useState<string | null>(null);
+  const [retryField, setRetryField] = useState<CeremonyActionableField | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sessionEnded, setSessionEnded] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [typedSignature, setTypedSignature] = useState("");
-  const [typedInitials, setTypedInitials] = useState(
-    initialOverview.suggestedTypedInitials,
-  );
-  const [initialsPrefilled, setInitialsPrefilled] = useState(false);
+  const [finishConfirmOpen, setFinishConfirmOpen] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
-  const [finished, setFinished] = useState(
-    initialOverview.participantStatus === "FINISHED",
+  const [fieldsPanelOpen, setFieldsPanelOpen] = useState(false);
+  const [shellElement, setShellElement] = useState<HTMLDivElement | null>(null);
+  const [panelMode, setPanelMode] = useState<CeremonyFieldsPanelMode>("docked");
+  const fieldsToggleRef = useRef<HTMLButtonElement | null>(null);
+  const fieldsCloseRef = useRef<HTMLButtonElement | null>(null);
+  const [currentDocumentId, setCurrentDocumentId] = useState(
+    () =>
+      (
+        initialFirstField ??
+        nextIncompleteCeremonyField(initialOverview.fields, initialOverview.documents)
+      )?.revisionDocumentId ??
+      initialOverview.documents[0]?.revisionDocumentId ??
+      "",
   );
+  const [focusRequest, setFocusRequest] = useState<CeremonyFocusRequest | null>(() =>
+    initialFirstField
+      ? { fieldId: initialFirstField.fieldId, nonce: 1, guide: true }
+      : null,
+  );
+  const focusNonce = useRef(1);
+  const focusFinishWhenReady = useRef(false);
+  const finishButtonRef = useRef<HTMLButtonElement | null>(null);
+  const finished = overview.participantStatus === "FINISHED";
 
   const refresh = useCallback(async () => {
     const result = await getCeremonyOverviewAction();
     if (result.ok) {
-      const next = result.data as CeremonyOverview;
-      setOverview(next);
-      if (!initialsPrefilled && !next.marks.initials) {
-        setTypedInitials(next.suggestedTypedInitials);
-        setInitialsPrefilled(true);
-      }
+      setOverview(result.data as CeremonyOverview);
       return true;
     }
     setSessionEnded(result.error);
     return false;
-  }, [initialsPrefilled]);
-
-  function redirectAfterInPersonExit(data: unknown) {
-    const payload = data as {
-      inPersonCeremony?: boolean;
-      returnToAgentPath?: string | null;
-    };
-    if (payload.inPersonCeremony && payload.returnToAgentPath) {
-      window.location.assign(payload.returnToAgentPath);
-    }
-  }
+  }, []);
 
   // Presence heartbeat. This renews the lease only; the 60-minute inactivity
   // deadline still depends on meaningful activity.
@@ -101,16 +164,68 @@ export function CeremonyShell({
     return () => clearInterval(interval);
   }, [finished, sessionEnded]);
 
+  // Once the last required field is accepted, move focus to Finish. Never
+  // before the refreshed server state says Finish is available.
+  useEffect(() => {
+    if (focusFinishWhenReady.current && overview.canFinish && !pending) {
+      focusFinishWhenReady.current = false;
+      finishButtonRef.current?.focus();
+    }
+  }, [overview.canFinish, pending]);
+
+  useLayoutEffect(() => {
+    if (!shellElement) return;
+    const update = () => {
+      const mode = ceremonyFieldsPanelMode(shellElement.getBoundingClientRect().width);
+      setPanelMode(mode);
+      if (mode === "docked") setFieldsPanelOpen(false);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(shellElement);
+    return () => observer.disconnect();
+  }, [shellElement]);
+
+  const docked = panelMode === "docked";
+  const drawerOpen = !docked && fieldsPanelOpen;
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    fieldsCloseRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setFieldsPanelOpen(false);
+      fieldsToggleRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [drawerOpen]);
+
+  function closeFieldsDrawer() {
+    setFieldsPanelOpen(false);
+    fieldsToggleRef.current?.focus();
+  }
+
   function run(
-    action: () => Promise<
-      { ok: true; data?: unknown } | { ok: false; code: string; error: string }
-    >,
-    options?: { onSuccess?: (data: unknown) => void; successNotice?: string },
+    action: () => Promise<CeremonyActionResult>,
+    options?: {
+      onSuccess?: (data: unknown) => void;
+      successNotice?: string;
+      retry?: CeremonyActionableField;
+    },
   ) {
     setError(null);
+    setRetryField(null);
     setNotice(null);
     startTransition(async () => {
-      const result = await action();
+      let result: CeremonyActionResult;
+      try {
+        result = await action();
+      } catch {
+        setError(NETWORK_ERROR);
+        if (options?.retry) setRetryField(options.retry);
+        return;
+      }
       if (!result.ok) {
         if (
           result.code === "SESSION_EXPIRED" ||
@@ -121,6 +236,7 @@ export function CeremonyShell({
           return;
         }
         setError(result.error);
+        if (options?.retry) setRetryField(options.retry);
         await refresh();
         return;
       }
@@ -130,453 +246,647 @@ export function CeremonyShell({
     });
   }
 
-  if (sessionEnded) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            This signing session is no longer active
-          </CardTitle>
-          <CardDescription>{sessionEnded}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Everything you already completed was saved. Reopen your Signing link
-            (or ask your agent to hand the device back) and confirm your
-            identity again to continue.
-          </p>
-        </CardContent>
-      </Card>
+  /** Terminal actions redirect on success, so only a failure ever returns here. */
+  function runTerminal(action: () => Promise<CeremonyActionResult>) {
+    setError(null);
+    setRetryField(null);
+    setNotice(null);
+    startTransition(async () => {
+      const result = await action();
+      if (result && !result.ok) {
+        setFinishConfirmOpen(false);
+        setDeclineOpen(false);
+        if (
+          result.code === "SESSION_EXPIRED" ||
+          result.code === "SESSION_SUPERSEDED" ||
+          result.code === "CEREMONY_FORBIDDEN"
+        ) {
+          setSessionEnded(result.error);
+          return;
+        }
+        setError(result.error);
+        await refresh();
+      }
+    });
+  }
+
+  /** Document navigation: free at any time, and counts as review activity. */
+  function goToField(field: CeremonyActionableField, guide: boolean) {
+    focusNonce.current += 1;
+    setCurrentDocumentId(field.revisionDocumentId);
+    setFocusRequest({ fieldId: field.fieldId, nonce: focusNonce.current, guide });
+    void noteCeremonyReviewActivityAction();
+  }
+
+  function guideToFirstRequiredField(source: CeremonyOverview) {
+    const first = firstRequiredField(source);
+    if (first) goToField(first, true);
+  }
+
+  function placeField(field: CeremonyActionableField) {
+    const clientRequestId = `${field.fieldId}:${field.placementId ?? "new"}`;
+    run(
+      () =>
+        placeCeremonyFieldAction({
+          signingFieldId: field.fieldId,
+          clientRequestId: `accept:${clientRequestId}:${Date.now()}`,
+        }),
+      {
+        retry: field,
+        // Runs only after the server accepted this mark.
+        onSuccess: () => {
+          const next = nextIncompleteCeremonyField(
+            overview.fields.map((candidate) =>
+              candidate.fieldId === field.fieldId
+                ? { ...candidate, placementId: candidate.placementId ?? "accepted" }
+                : candidate,
+            ),
+            overview.documents,
+            field.fieldId,
+            { requiredOnly: true },
+          );
+          if (next) {
+            goToField(next, true);
+          } else {
+            setFocusRequest(null);
+            focusFinishWhenReady.current = true;
+          }
+        },
+      },
     );
   }
 
-  if (finished || overview.participantStatus === "FINISHED") {
+  function removePlacement(field: CeremonyActionableField, clientRequestId: string) {
+    run(
+      () =>
+        removeCeremonyPlacementAction({
+          signingFieldId: field.fieldId,
+          clientRequestId: `remove:${clientRequestId}:${Date.now()}`,
+        }),
+      { onSuccess: () => goToField(field, false) },
+    );
+  }
+
+  function replacePlacement(field: CeremonyActionableField, clientRequestId: string) {
+    run(
+      () =>
+        replaceCeremonyPlacementAction({
+          signingFieldId: field.fieldId,
+          clientRequestId: `replace:${clientRequestId}:${Date.now()}`,
+        }),
+      { onSuccess: () => goToField(field, false) },
+    );
+  }
+
+  const leaveButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      disabled={pending}
+      title="Your completed work is saved. You can return with your Signing link."
+      onClick={() => runTerminal(() => exitCeremonyAction())}
+    >
+      Leave for now
+    </Button>
+  );
+
+  const declineButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className="text-destructive hover:text-destructive"
+      disabled={pending}
+      onClick={() => setDeclineOpen(true)}
+    >
+      Decline to sign
+    </Button>
+  );
+
+  const declineDialog = (
+    <ConfirmDialog
+      open={declineOpen}
+      title="Decline to sign?"
+      variant="destructive"
+      confirmLabel="Yes, decline to sign"
+      confirmingLabel="Declining…"
+      cancelLabel="Keep signing"
+      isConfirming={pending}
+      onCancel={() => setDeclineOpen(false)}
+      onConfirm={() =>
+        runTerminal(() =>
+          declineCeremonyAction({ confirmed: true, reason: declineReason }),
+        )
+      }
+    >
+      <div className="space-y-3 text-sm">
+        <p className="text-foreground">
+          Declining means you refuse to sign. It ends this Signing for everyone,
+          your agent will be notified, and it cannot be undone.
+        </p>
+        <p className="text-muted-foreground">
+          If you only need a break, choose Leave for now instead. Your work is
+          saved and you can return with your link.
+        </p>
+        <div className="space-y-2">
+          <Label htmlFor="decline-reason">Reason (optional)</Label>
+          <Textarea
+            id="decline-reason"
+            value={declineReason}
+            onChange={(event) => setDeclineReason(event.target.value)}
+          />
+        </div>
+      </div>
+    </ConfirmDialog>
+  );
+
+  if (sessionEnded) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">You finished signing</CardTitle>
-          <CardDescription>
-            Your signature and initials were recorded for {overview.signingTitle}
-            .
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Nothing else is needed from you. Your agent will send the completed
-            documents when every participant has finished.
-          </p>
+      <div className="mx-auto max-w-2xl px-4 py-10">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              This signing session is no longer active
+            </CardTitle>
+            <CardDescription>{sessionEnded}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Everything you already completed was saved. Reopen your Signing link
+              (or ask your agent to hand the device back) and confirm your
+              identity again to continue.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (finished) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-10">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">You have finished signing.</CardTitle>
+            <CardDescription>You may now close this browser.</CardDescription>
+          </CardHeader>
           {overview.inPersonCeremony ? (
-            <Button
-              type="button"
-              className="w-full"
-              onClick={() => window.location.replace("/sign/return-to-agent")}
-            >
-              Hand device back to your agent
-            </Button>
+            <CardContent>
+              <Button
+                type="button"
+                className="w-full"
+                onClick={() => window.location.replace("/sign/return-to-agent")}
+              >
+                Hand device back to your agent
+              </Button>
+            </CardContent>
           ) : null}
-        </CardContent>
-      </Card>
+        </Card>
+      </div>
     );
   }
 
   const consentSatisfied = overview.consent.satisfied;
   const disclosure = overview.consent.currentDisclosure;
-  const actionableFields = overview.fields.filter(
-    (field) => field.fieldType === "SIGNATURE" || field.fieldType === "INITIALS",
-  );
-  const needsSignature =
-    actionableFields.some((field) => field.fieldType === "SIGNATURE") &&
-    !overview.marks.signature;
-  const needsInitials =
-    actionableFields.some((field) => field.fieldType === "INITIALS") &&
-    !overview.marks.initials;
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-sm font-medium text-muted-foreground">
-          Harbaugh Forms
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-          {overview.signingTitle}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Signing as {overview.displayedName}
-        </p>
-      </div>
-
+  const representativeNote =
+    overview.capacityMode === "REPRESENTATIVE" ? (
+      <p className="text-xs text-muted-foreground">
+        Representing {overview.representedPartyName}. Execution wording is
+        prepared by the sending agent; Harbaugh Forms does not verify legal
+        authority.
+      </p>
+    ) : null;
+  const messages = (
+    <>
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-2 border-b border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
+          <span className="min-w-0 flex-1">{error}</span>
+          {retryField ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() => placeField(retryField)}
+            >
+              Try again
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       {notice ? (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="border-b px-3 py-2 text-sm text-muted-foreground">
           {notice}
         </p>
       ) : null}
+    </>
+  );
 
-      {!consentSatisfied ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{disclosure.title}</CardTitle>
-            <CardDescription>
-              {overview.consent.reason === "DISCLOSURE_CHANGED"
-                ? "This disclosure was updated since you last accepted it. Please review it again."
-                : "Please review this disclosure before signing electronically."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!disclosure.isProductionReady ? (
-              <Badge variant="secondary">Development disclosure copy</Badge>
-            ) : null}
-            <div className="max-h-72 overflow-y-auto rounded-md border border-input bg-card p-3 text-sm whitespace-pre-wrap">
-              {disclosure.bodyText}
-            </div>
-            <Button
-              type="button"
-              disabled={pending}
-              onClick={() =>
-                run(
-                  () =>
-                    acceptConsentAction({
-                      disclosureVersionId: disclosure.id,
-                    }),
-                  { successNotice: "Disclosure accepted." },
-                )
-              }
+  if (!consentSatisfied || needsMarkSetup(overview)) {
+    const kinds = new Set(
+      overview.fields.filter(isParticipantActionableField).map((field) => field.fieldType),
+    );
+    return (
+      <div className="mx-auto max-w-2xl space-y-4 px-4 py-8">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">Harbaugh Forms</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+            {overview.signingTitle}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Signing as {overview.displayedName}
+          </p>
+        </div>
+        {messages}
+        {!consentSatisfied ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{disclosure.title}</CardTitle>
+              <CardDescription>
+                {overview.consent.reason === "DISCLOSURE_CHANGED"
+                  ? "This disclosure was updated since you last accepted it. Please review it again."
+                  : "Please review this disclosure before signing electronically."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!disclosure.isProductionReady ? (
+                <Badge variant="secondary">Development disclosure copy</Badge>
+              ) : null}
+              <div className="max-h-72 overflow-y-auto rounded-md border border-input bg-card p-3 text-sm whitespace-pre-wrap">
+                {disclosure.bodyText}
+              </div>
+              <Button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  const skipSetup = !needsMarkSetup(overview);
+                  run(
+                    () =>
+                      acceptConsentAction({
+                        disclosureVersionId: disclosure.id,
+                      }),
+                    {
+                      successNotice: "Disclosure accepted.",
+                      onSuccess: () => {
+                        if (skipSetup) guideToFirstRequiredField(overview);
+                      },
+                    },
+                  );
+                }}
+              >
+                I agree to use electronic records and signatures
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Your signature and initials</CardTitle>
+              <CardDescription>
+                {overview.capacityMode === "REPRESENTATIVE"
+                  ? "Your signature is the execution wording prepared by your agent. Your initials come from your name on this Signing."
+                  : "These come from your name exactly as it appears on this Signing."}{" "}
+                They are placed only where you click to sign or initial.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                {kinds.has("SIGNATURE") ? (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Signature</p>
+                    <p
+                      data-testid="signature-preview"
+                      className="truncate rounded-md border border-input bg-muted/30 px-3 py-1 text-3xl"
+                      style={{ fontFamily: "HarbaughCaveat, cursive" }}
+                    >
+                      {overview.expectedTypedSignatureText || overview.displayedName}
+                    </p>
+                  </div>
+                ) : null}
+                {kinds.has("INITIALS") ? (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Initials</p>
+                    <p
+                      data-testid="initials-preview"
+                      className="rounded-md border border-input bg-muted/30 px-3 py-1 text-3xl"
+                      style={{ fontFamily: "HarbaughCaveat, cursive" }}
+                    >
+                      {overview.typedInitials}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+              <style>
+                {
+                  "@font-face{font-family:HarbaughCaveat;src:url(/fonts/Caveat-Regular.ttf) format('truetype');font-display:swap}"
+                }
+              </style>
+              <p className="text-xs text-muted-foreground">
+                These cannot be changed here. If your name is wrong, leave for now
+                and contact your agent before signing.
+              </p>
+              {representativeNote}
+              <Button
+                type="button"
+                disabled={pending}
+                onClick={() =>
+                  run(() => startCeremonySigningAction(), {
+                    onSuccess: () => guideToFirstRequiredField(overview),
+                  })
+                }
+              >
+                Start signing
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+        <div className="flex flex-wrap justify-end gap-2">
+          {leaveButton}
+          {declineButton}
+        </div>
+        {declineDialog}
+      </div>
+    );
+  }
+
+  const entries = ceremonyFieldListEntries(overview.fields, overview.documents);
+  const dateSignedBySignature = linkedDateSignedBySignatureField(overview.fields);
+  const requiredTotal = entries.filter((entry) => entry.field.isRequired).length;
+  const requiredDone = requiredTotal - overview.requiredRemaining;
+  const allRequiredComplete = overview.canFinish;
+
+  return (
+    <div
+      ref={setShellElement}
+      className="flex h-dvh flex-col overflow-x-clip"
+      data-fields-panel-mode={panelMode}
+    >
+      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-sm font-semibold text-foreground">
+            {overview.signingTitle}
+          </h1>
+          <p className="truncate text-xs text-muted-foreground">
+            Signing as {overview.displayedName}
+            {overview.capacityMode === "REPRESENTATIVE"
+              ? `, representing ${overview.representedPartyName}`
+              : ""}
+          </p>
+        </div>
+        {requiredTotal > 0 ? (
+          <div className="flex items-center gap-2" data-testid="ceremony-progress">
+            <div
+              className="h-1.5 w-20 overflow-hidden rounded-full bg-muted"
+              role="progressbar"
+              aria-label="Required fields complete"
+              aria-valuemin={0}
+              aria-valuemax={requiredTotal}
+              aria-valuenow={requiredDone}
             >
-              I agree to use electronic records and signatures
-            </Button>
-          </CardContent>
-        </Card>
+              <div
+                className="h-full bg-emerald-600 transition-all"
+                style={{ width: `${(requiredDone / requiredTotal) * 100}%` }}
+              />
+            </div>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {requiredDone} of {requiredTotal} required
+            </span>
+          </div>
+        ) : null}
+        {docked ? null : (
+          <Button
+            ref={fieldsToggleRef}
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-expanded={drawerOpen}
+            aria-controls="ceremony-your-fields"
+            onClick={() => (drawerOpen ? closeFieldsDrawer() : setFieldsPanelOpen(true))}
+          >
+            Your fields
+          </Button>
+        )}
+        <Button
+          ref={finishButtonRef}
+          type="button"
+          size="sm"
+          variant={allRequiredComplete ? "default" : "outline"}
+          disabled={pending || !allRequiredComplete}
+          onClick={() => setFinishConfirmOpen(true)}
+        >
+          Finish Signing
+        </Button>
+        {leaveButton}
+      </header>
+
+      {messages}
+      {allRequiredComplete ? (
+        <div
+          role="status"
+          data-testid="ceremony-ready"
+          className="shrink-0 border-b border-emerald-600/20 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-900"
+        >
+          <span className="font-medium">All required fields are complete.</span>{" "}
+          Click Finish Signing when you are done reviewing.
+        </div>
       ) : null}
 
-      {consentSatisfied && (needsSignature || needsInitials) ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Adopt your marks</CardTitle>
-            <CardDescription>
-              Type your name exactly as it appears on this Signing. Your
-              signature and initials are adopted separately.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {needsSignature ? (
-              <div className="space-y-2">
-                <Label htmlFor="typed-signature">
-                  Typed signature (must be {overview.displayedName})
-                </Label>
-                <Input
-                  id="typed-signature"
-                  value={typedSignature}
-                  autoComplete="off"
-                  onChange={(event) => setTypedSignature(event.target.value)}
-                />
-                <Button
-                  type="button"
-                  disabled={pending || !typedSignature.trim()}
-                  onClick={() =>
-                    run(
-                      () =>
-                        adoptCeremonyMarkAction({
-                          markKind: "SIGNATURE",
-                          representationType: "TYPED",
-                          typedText: typedSignature,
-                        }),
-                      { successNotice: "Signature adopted." },
-                    )
-                  }
-                >
-                  Adopt signature
-                </Button>
-              </div>
-            ) : null}
+      <div
+        className={cn(
+          "relative grid min-h-0 min-w-0 flex-1 overflow-hidden",
+          docked ? "grid-cols-[minmax(0,1fr)_20rem]" : "grid-cols-1",
+        )}
+      >
+        <div className="min-h-0 min-w-0">
+          <CeremonyDocumentViewer
+            documents={overview.documents}
+            fields={overview.fields}
+            currentDocumentId={currentDocumentId}
+            onSelectDocument={setCurrentDocumentId}
+            focusRequest={focusRequest}
+            signatureText={overview.marks.signature?.typedText ?? null}
+            initialsText={overview.marks.initials?.typedText ?? null}
+            canSign={Boolean(overview.marks.signature)}
+            canInitial={Boolean(overview.marks.initials)}
+            pending={pending}
+            onPlace={placeField}
+            onReviewActivity={() => {
+              void noteCeremonyReviewActivityAction();
+            }}
+          />
+        </div>
 
-            {needsInitials ? (
-              <div className="space-y-2">
-                <Label htmlFor="typed-initials">Typed initials</Label>
-                <Input
-                  id="typed-initials"
-                  value={typedInitials}
-                  autoComplete="off"
-                  onChange={(event) => setTypedInitials(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Suggested from your name — you may edit before first use. Not
-                  a legal verification.
-                </p>
+        <aside
+          id="ceremony-your-fields"
+          aria-label="Your fields"
+          data-mode={docked ? "docked" : drawerOpen ? "drawer-open" : "drawer-closed"}
+          className={cn(
+            "min-h-0 min-w-0 flex-col border-l bg-background",
+            docked
+              ? "flex"
+              : drawerOpen
+                ? "absolute inset-y-0 right-0 z-20 flex w-[min(22rem,100%)] shadow-xl"
+                : "hidden",
+          )}
+        >
+          <div className="shrink-0 space-y-1 border-b px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">Your fields</h2>
+              {docked ? null : (
                 <Button
+                  ref={fieldsCloseRef}
                   type="button"
-                  disabled={pending || !typedInitials.trim()}
-                  onClick={() =>
-                    run(
-                      () =>
-                        adoptCeremonyMarkAction({
-                          markKind: "INITIALS",
-                          representationType: "TYPED",
-                          typedText: typedInitials,
-                        }),
-                      { successNotice: "Initials adopted." },
-                    )
-                  }
+                  size="sm"
+                  variant="ghost"
+                  onClick={closeFieldsDrawer}
                 >
-                  Adopt initials
+                  Close
                 </Button>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {consentSatisfied ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Your documents</CardTitle>
-            <CardDescription>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground" aria-live="polite">
               {overview.requiredRemaining === 0
-                ? "Every required field is complete."
+                ? "All required fields are complete."
                 : overview.requiredRemaining === 1
                   ? "One required field still needs you."
                   : `${overview.requiredRemaining} required fields still need you.`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {overview.documents.map((document) => {
-              const documentFields = actionableFields.filter(
-                (field) =>
-                  field.revisionDocumentId === document.revisionDocumentId,
-              );
-              return (
-                <div
-                  key={document.revisionDocumentId}
-                  className="space-y-3 border-b border-border pb-5 last:border-b-0 last:pb-0"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="font-medium text-foreground">
-                        {document.displayName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {document.acceptedFieldCount} of{" "}
-                        {document.assignedFieldCount} of your fields complete
-                      </p>
-                    </div>
-                    <a
-                      className="text-sm text-primary underline-offset-4 hover:underline"
-                      href={`/sign/ceremony/document/${document.revisionDocumentId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={() => {
-                        void noteCeremonyReviewActivityAction();
-                      }}
-                    >
-                      Review document
-                    </a>
-                  </div>
+            </p>
+            {representativeNote}
+          </div>
 
-                  {documentFields.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No fields are assigned to you in this document.
-                    </p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {documentFields.map((field) => {
-                        const clientRequestId = `${field.fieldId}:${
-                          field.placementId ?? "new"
-                        }`;
-                        return (
-                          <li
-                            key={field.fieldId}
-                            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-input p-3"
-                          >
-                            <div className="text-sm">
-                              <span className="font-medium text-foreground">
-                                {field.fieldType === "SIGNATURE"
-                                  ? "Signature"
-                                  : "Initials"}
-                              </span>
-                              <span className="text-muted-foreground">
-                                {" "}
-                                · page {field.pageNumber}
-                                {field.isRequired ? " · required" : ""}
-                              </span>
-                              {field.placementId ? (
-                                <span className="block text-xs text-muted-foreground">
-                                  Applied
-                                  {field.renderedSenderLocalDate
-                                    ? ` · dated ${field.renderedSenderLocalDate}`
-                                    : ""}
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="flex gap-2">
-                              {field.placementId ? (
-                                <>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={pending}
-                                    onClick={() =>
-                                      run(() =>
-                                        replaceCeremonyPlacementAction({
-                                          signingFieldId: field.fieldId,
-                                          clientRequestId: `replace:${clientRequestId}:${Date.now()}`,
-                                        }),
-                                      )
-                                    }
-                                  >
-                                    Replace
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={pending}
-                                    onClick={() =>
-                                      run(() =>
-                                        removeCeremonyPlacementAction({
-                                          signingFieldId: field.fieldId,
-                                          clientRequestId: `remove:${clientRequestId}:${Date.now()}`,
-                                        }),
-                                      )
-                                    }
-                                  >
-                                    Remove
-                                  </Button>
-                                </>
-                              ) : (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={
-                                    pending ||
-                                    (field.fieldType === "SIGNATURE"
-                                      ? !overview.marks.signature
-                                      : !overview.marks.initials)
-                                  }
-                                  onClick={() =>
-                                    run(() =>
-                                      placeCeremonyFieldAction({
-                                        signingFieldId: field.fieldId,
-                                        clientRequestId: `accept:${clientRequestId}`,
-                                      }),
-                                    )
-                                  }
-                                >
-                                  {field.fieldType === "SIGNATURE"
-                                    ? "Sign here"
-                                    : "Initial here"}
-                                </Button>
-                              )}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Finish</CardTitle>
-          <CardDescription>
-            Finish when you are done. You can change your marks until you
-            finish.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            type="button"
-            className="w-full"
-            disabled={pending || !overview.canFinish || !consentSatisfied}
-            onClick={() =>
-              run(() => finishCeremonyAction(), {
-                onSuccess: (data) => {
-                  redirectAfterInPersonExit(data);
-                  setFinished(true);
-                },
-              })
-            }
-          >
-            Finish signing
-          </Button>
-
-          {declineOpen ? (
-            <div className="space-y-3 rounded-md border border-destructive/40 p-3">
-              <p className="text-sm text-foreground">
-                Declining ends this Signing for everyone. Your agent will be
-                notified.
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {entries.length === 0 ? (
+              <p className="p-2 text-sm text-muted-foreground">
+                No fields are assigned to you in this Signing.
               </p>
-              <div className="space-y-2">
-                <Label htmlFor="decline-reason">Reason (optional)</Label>
-                <Textarea
-                  id="decline-reason"
-                  value={declineReason}
-                  onChange={(event) => setDeclineReason(event.target.value)}
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={pending}
-                  onClick={() =>
-                    run(
-                      () =>
-                        declineCeremonyAction({
-                          confirmed: true,
-                          reason: declineReason,
-                        }),
-                      { onSuccess: redirectAfterInPersonExit },
-                    )
-                  }
-                >
-                  Confirm decline
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => setDeclineOpen(false)}
-                >
-                  Keep signing
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              disabled={pending}
-              onClick={() => setDeclineOpen(true)}
-            >
-              Decline to sign
-            </Button>
-          )}
+            ) : (
+              <ul className="space-y-1.5">
+                {entries.map((entry) => {
+                  const field = entry.field;
+                  const clientRequestId = `${field.fieldId}:${
+                    field.placementId ?? "new"
+                  }`;
+                  const completed = entry.status === "Completed";
+                  const where = [
+                    entry.documentName,
+                    `Page ${entry.pageNumber}`,
+                    entry.positionOnPage ? `${entry.positionOnPage} on page` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <li
+                      key={field.fieldId}
+                      data-ceremony-field-row={field.fieldId}
+                      data-status={completed ? "completed" : "remaining"}
+                      className={cn(
+                        "rounded-md border p-2",
+                        focusRequest?.fieldId === field.fieldId
+                          ? "border-sky-500 bg-sky-50/60"
+                          : "border-input",
+                      )}
+                    >
+                      <button
+                        type="button"
+                        className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                        aria-label={`Go to ${entry.kindLabel}, ${where}, ${completed ? "completed" : "remaining"}`}
+                        onClick={() => {
+                          goToField(field, !completed);
+                          setFieldsPanelOpen(false);
+                        }}
+                      >
+                        <span className="flex items-center justify-between gap-2 text-sm">
+                          <span className="font-medium text-foreground">
+                            {entry.kindLabel}
+                            {field.isRequired ? "" : (
+                              <span className="font-normal text-muted-foreground"> · optional</span>
+                            )}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-xs font-medium",
+                              completed ? "text-emerald-700" : "text-amber-700",
+                            )}
+                          >
+                            {entry.status}
+                          </span>
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {where}
+                        </span>
+                        {completed && dateSignedBySignature.has(field.fieldId) ? (
+                          <span className="block text-xs text-muted-foreground">
+                            Dated {dateSignedBySignature.get(field.fieldId)}
+                          </span>
+                        ) : null}
+                      </button>
+                      {completed ? (
+                        <div className="mt-1.5 flex gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7"
+                            disabled={pending}
+                            onClick={() => replacePlacement(field, clientRequestId)}
+                          >
+                            Replace
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7"
+                            disabled={pending}
+                            onClick={() => removePlacement(field, clientRequestId)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
 
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full"
-            disabled={pending}
-            onClick={() =>
-              run(() => exitCeremonyAction(), {
-                onSuccess: redirectAfterInPersonExit,
-              })
-            }
-          >
-            Exit signing
-          </Button>
-        </CardContent>
-      </Card>
+          <div className="shrink-0 border-t px-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Not going to sign? Declining ends this Signing for everyone.
+            </p>
+            <div className="-ml-3">{declineButton}</div>
+          </div>
+        </aside>
+      </div>
+
+      <ConfirmDialog
+        open={finishConfirmOpen}
+        title="Finish signing?"
+        confirmLabel="Yes, finish signing"
+        confirmingLabel="Finishing…"
+        cancelLabel="Keep reviewing"
+        isConfirming={pending}
+        onCancel={() => setFinishConfirmOpen(false)}
+        onConfirm={() => runTerminal(() => finishCeremonyAction())}
+      >
+        <div className="space-y-2 text-sm text-foreground">
+          <p>You are finishing your part of this Signing.</p>
+          <p>
+            After you finish, you cannot change your signature, initials, or any of
+            your fields.
+          </p>
+          <p className="text-muted-foreground">
+            The Signing may still be waiting for other participants or final
+            processing.
+          </p>
+        </div>
+      </ConfirmDialog>
+      {declineDialog}
     </div>
   );
 }

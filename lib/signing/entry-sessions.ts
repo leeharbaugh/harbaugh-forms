@@ -239,7 +239,7 @@ export async function validateSigningEntrySession(
       .maybeSingle(),
     admin
       .from("signings")
-      .select("id, title, lifecycle_state")
+      .select("id, title, lifecycle_state, archived_at")
       .eq("id", session.signing_id as string)
       .maybeSingle(),
     admin
@@ -260,6 +260,7 @@ export async function validateSigningEntrySession(
   if (!signing || signing.lifecycle_state !== "IN_PROGRESS") {
     return null;
   }
+  if (signing.archived_at) return null;
   if (!participant || participant.participant_status === "REMOVED") {
     return null;
   }

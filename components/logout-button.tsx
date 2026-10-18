@@ -10,7 +10,10 @@ export function LogoutButton() {
   const logout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/auth/login");
+    // replace + refresh: leave the authenticated tree and force a clean
+    // login page (avoids a cached LoginForm still showing "Logging in...").
+    router.replace("/auth/login");
+    router.refresh();
   };
 
   return (

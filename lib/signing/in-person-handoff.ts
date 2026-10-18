@@ -121,6 +121,12 @@ export async function createInPersonHandoffWithActor(
   if (!summary.canManage) {
     throw new SigningError("FORBIDDEN", "You cannot manage this Signing.");
   }
+  if (summary.archivedAt) {
+    throw new SigningError(
+      "CONFLICT",
+      "This Signing is archived. Unarchive it before starting in-person signing.",
+    );
+  }
   if (summary.lifecycleState !== "IN_PROGRESS") {
     throw new SigningError(
       "CONFLICT",
@@ -321,7 +327,7 @@ export async function validateInPersonHandoff(
   ] = await Promise.all([
     admin
       .from("signings")
-      .select("id, title, lifecycle_state")
+      .select("id, title, lifecycle_state, archived_at")
       .eq("id", handoff.signing_id as string)
       .maybeSingle(),
     admin
@@ -335,6 +341,7 @@ export async function validateInPersonHandoff(
   if (participantError) throw new Error(participantError.message);
 
   if (!signing || signing.lifecycle_state !== "IN_PROGRESS") return null;
+  if (signing.archived_at) return null;
   if (!participant || participant.participant_status === "REMOVED") return null;
 
   return {

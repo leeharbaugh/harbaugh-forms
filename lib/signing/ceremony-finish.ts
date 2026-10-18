@@ -16,6 +16,7 @@ import {
 } from "./browser-sessions";
 import { requireCeremonyWriteContext } from "./ceremony-context";
 import { appendCeremonyEvent } from "./ceremony-events";
+import { requireConsentSatisfied } from "./consent-disclosure";
 import { SigningError } from "./errors";
 import { countOutstandingRequiredFields } from "./placements";
 
@@ -74,6 +75,11 @@ export async function finishParticipantSigning(options: {
   }
 
   const context = await requireCeremonyWriteContext({ admin, session });
+  await requireConsentSatisfied({
+    admin,
+    signingId: session.signingId,
+    signingParticipantId: session.signingParticipantId,
+  });
 
   const outstanding = await countOutstandingRequiredFields({ admin, context });
   if (outstanding > 0) {

@@ -14,8 +14,9 @@ export const config = {
      * - favicon.ico (favicon file)
      * - images - .svg, .png, .jpg, .jpeg, .gif, .webp
      * - fonts / license text under public/ (e.g. Caveat .ttf, OFL.txt)
+     * - the pdf.js worker (signing participants have no workspace session)
      * Feel free to modify this pattern to include more paths.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ttf|otf|woff|woff2|txt)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|pdf\\.worker\\.min\\.mjs$|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ttf|otf|woff|woff2|txt)$).*)",
   ],
 };

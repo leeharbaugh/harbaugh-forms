@@ -7,6 +7,7 @@ import {
   buildParticipantInviteUrl,
   completedPackagePathname,
   FRAGMENT_SECRET_RE,
+  isParticipantSigningPath,
   isSigningCredentialPublicId,
   participantInvitePathname,
 } from "./bearer-transport";
@@ -92,6 +93,39 @@ describe("bearer transport", () => {
     assert.match(nextConfig, /connect-src 'self'/);
     assert.match(nextConfig, /base-uri 'none'/);
     assert.match(nextConfig, /frame-ancestors 'none'/);
+  });
+
+  it("allows eval in the /sign CSP only in development", async () => {
+    const { default: config } = await import("../../next.config");
+    const env = process.env as Record<string, string | undefined>;
+    const previous = env.NODE_ENV;
+    const signCsp = async (nodeEnv: string) => {
+      env.NODE_ENV = nodeEnv;
+      const rules = await config.headers!();
+      return rules
+        .find((rule) => rule.source === "/sign/:path*")!
+        .headers.find((header) => header.key === "Content-Security-Policy")!.value;
+    };
+    try {
+      assert.doesNotMatch(await signCsp("production"), /unsafe-eval/);
+      assert.match(await signCsp("development"), /script-src 'self' 'unsafe-inline' 'unsafe-eval'/);
+    } finally {
+      env.NODE_ENV = previous;
+    }
+  });
+
+  it("exempts participant routes, and only them, from the workspace login", () => {
+    for (const path of ["/sign", "/sign/abc", "/sign/continue", "/sign/ceremony", "/api/sign/entry-exchange"]) {
+      assert.equal(isParticipantSigningPath(path), true, path);
+    }
+    for (const path of ["/signings", "/signings/abc", "/signin", "/api/signings", "/api/sign", "/contacts"]) {
+      assert.equal(isParticipantSigningPath(path), false, path);
+    }
+    const proxy = readFileSync(join(process.cwd(), "lib/supabase/proxy.ts"), "utf8");
+    const exemption = proxy.indexOf("if (isParticipantSigningPath(path))");
+    assert.ok(exemption > proxy.indexOf("supabase.auth.getClaims()"));
+    assert.ok(exemption < proxy.indexOf('url.pathname = "/auth/login"'));
+    assert.ok(proxy.indexOf("isPathAllowedDuringDeviceHandoffLock(path)") < exemption);
   });
 
   it("documents in-person path-bearer as supervised residual", () => {

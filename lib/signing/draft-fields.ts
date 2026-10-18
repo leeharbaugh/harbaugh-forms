@@ -3,6 +3,7 @@ import { SigningError } from "./errors";
 import {
   requireManageableDraftSigning,
 } from "./manage";
+import { DATE_SIGNED_SOURCE_TYPES } from "./date-signed-link";
 import type { SigningActor } from "./types";
 import { isUuid } from "./types";
 
@@ -55,6 +56,11 @@ export async function upsertDraftSigningFieldWithActor(
     width: unknown;
     height: unknown;
     linkedSignatureDraftFieldId?: unknown;
+    /**
+     * AUTO_NEAREST: the editor chose the source by proximity, so it must be on
+     * this Date's page. Otherwise the source may be anywhere in the document.
+     */
+    dateLinkMode?: unknown;
   },
   admin: SupabaseClient,
 ): Promise<SigningDraftFieldRow> {
@@ -100,11 +106,18 @@ export async function upsertDraftSigningFieldWithActor(
   if (fieldType === "DATE_SIGNED" && !linkedSignatureDraftFieldId) {
     throw new SigningError(
       "INVALID_INPUT",
-      "DATE_SIGNED fields require a linked Signature field.",
+      "Date Signed must be linked to a Signature or Initials field.",
     );
   }
   if (fieldType !== "DATE_SIGNED") {
     linkedSignatureDraftFieldId = null;
+  }
+  if (
+    input.dateLinkMode !== undefined &&
+    input.dateLinkMode !== "AUTO_NEAREST" &&
+    input.dateLinkMode !== "EXPLICIT_SOURCE"
+  ) {
+    throw new SigningError("INVALID_INPUT", "Invalid Date Signed link mode.");
   }
 
   const { data: document, error: documentError } = await admin
@@ -138,21 +151,36 @@ export async function upsertDraftSigningFieldWithActor(
   if (linkedSignatureDraftFieldId) {
     const { data: linked, error: linkedError } = await admin
       .from("signing_draft_fields")
-      .select("id, field_type, signing_participant_id")
+      .select("id, field_type, signing_participant_id, signing_document_id, page_number")
       .eq("id", linkedSignatureDraftFieldId)
       .eq("signing_id", signing.id)
       .maybeSingle();
     if (linkedError) throw new Error(linkedError.message);
-    if (!linked || linked.field_type !== "SIGNATURE") {
+    if (
+      !linked ||
+      !DATE_SIGNED_SOURCE_TYPES.includes(linked.field_type as string)
+    ) {
       throw new SigningError(
         "INVALID_INPUT",
-        "DATE_SIGNED fields require a linked Signature field.",
+        "Date Signed must be linked to a Signature or Initials field.",
       );
     }
     if (linked.signing_participant_id !== input.signingParticipantId) {
       throw new SigningError(
         "INVALID_INPUT",
-        "DATE_SIGNED fields must link to a Signature field for the same participant.",
+        "Date Signed must link to a Signature or Initials field for the same participant.",
+      );
+    }
+    if (linked.signing_document_id !== input.signingDocumentId) {
+      throw new SigningError(
+        "INVALID_INPUT",
+        "Date Signed must link to a Signature or Initials on the same document.",
+      );
+    }
+    if (input.dateLinkMode === "AUTO_NEAREST" && linked.page_number !== pageNumber) {
+      throw new SigningError(
+        "INVALID_INPUT",
+        "An automatically linked Date Signed must be on the same page as its Signature or Initials.",
       );
     }
   }
@@ -175,6 +203,34 @@ export async function upsertDraftSigningFieldWithActor(
     if (!isUuid(input.fieldId)) {
       throw new SigningError("INVALID_INPUT", "Invalid draft field id.");
     }
+    const { data: current, error: currentError } = await admin
+      .from("signing_draft_fields")
+      .select("id, field_type")
+      .eq("id", input.fieldId)
+      .eq("signing_id", signing.id)
+      .maybeSingle();
+    if (currentError) throw new Error(currentError.message);
+    if (!current) {
+      throw new SigningError("NOT_FOUND", "Signing field not found.");
+    }
+
+    const { data: linkedDates, error: linkedDatesError } = await admin
+      .from("signing_draft_fields")
+      .select("id")
+      .eq("signing_id", signing.id)
+      .eq("linked_signature_draft_field_id", input.fieldId);
+    if (linkedDatesError) throw new Error(linkedDatesError.message);
+    const linkedDateIds = (linkedDates ?? []).map((row) => row.id as string);
+    if (
+      linkedDateIds.length > 0 &&
+      !DATE_SIGNED_SOURCE_TYPES.includes(fieldType)
+    ) {
+      throw new SigningError(
+        "INVALID_INPUT",
+        "Remove the linked Date Signed before changing this field's type.",
+      );
+    }
+
     const { data, error } = await admin
       .from("signing_draft_fields")
       .update(payload)
@@ -184,6 +240,16 @@ export async function upsertDraftSigningFieldWithActor(
       .single();
     if (error || !data) {
       throw new Error(error?.message ?? "Failed to update draft field.");
+    }
+
+    // A linked Date Signed always belongs to its source field's participant.
+    if (linkedDateIds.length > 0) {
+      const { error: followError } = await admin
+        .from("signing_draft_fields")
+        .update({ signing_participant_id: input.signingParticipantId })
+        .eq("signing_id", signing.id)
+        .in("id", linkedDateIds);
+      if (followError) throw new Error(followError.message);
     }
     return data as SigningDraftFieldRow;
   }
@@ -199,11 +265,16 @@ export async function upsertDraftSigningFieldWithActor(
   return data as SigningDraftFieldRow;
 }
 
+/**
+ * Remove a Draft field. Removing a Signature or Initials also removes any Date
+ * Signed linked to it so no unlinked Date Signed remains. Returns every removed
+ * field id for local reconciliation.
+ */
 export async function removeDraftSigningFieldWithActor(
   actor: SigningActor,
   input: { signingId: unknown; fieldId: unknown },
   admin: SupabaseClient,
-): Promise<void> {
+): Promise<{ removedFieldIds: string[] }> {
   const { signing } = await requireManageableDraftSigning(
     actor,
     input.signingId,
@@ -213,11 +284,24 @@ export async function removeDraftSigningFieldWithActor(
     throw new SigningError("INVALID_INPUT", "Invalid draft field id.");
   }
 
-  await admin
+  const { data: target, error: targetError } = await admin
     .from("signing_draft_fields")
-    .update({ linked_signature_draft_field_id: null })
+    .select("id")
+    .eq("id", input.fieldId)
     .eq("signing_id", signing.id)
-    .eq("linked_signature_draft_field_id", input.fieldId);
+    .maybeSingle();
+  if (targetError) throw new Error(targetError.message);
+  if (!target) {
+    return { removedFieldIds: [] };
+  }
+
+  const { data: linkedDates, error: linkedError } = await admin
+    .from("signing_draft_fields")
+    .delete()
+    .eq("signing_id", signing.id)
+    .eq("linked_signature_draft_field_id", input.fieldId)
+    .select("id");
+  if (linkedError) throw new Error(linkedError.message);
 
   const { error } = await admin
     .from("signing_draft_fields")
@@ -225,4 +309,11 @@ export async function removeDraftSigningFieldWithActor(
     .eq("id", input.fieldId)
     .eq("signing_id", signing.id);
   if (error) throw new Error(error.message);
+
+  return {
+    removedFieldIds: [
+      input.fieldId,
+      ...(linkedDates ?? []).map((row) => row.id as string),
+    ],
+  };
 }

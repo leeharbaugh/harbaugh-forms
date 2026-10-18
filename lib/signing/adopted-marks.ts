@@ -7,16 +7,19 @@
  * a Signature freezes the package revision globally but does not lock that
  * participant's unused Initials, and never touches another participant's marks.
  *
- * Typed personal Signatures are exact-match to the displayed name only.
- * Typed Initials are suggested from the display name but may be edited until
- * first use; there is no OCR or PDF-name matching. The agent remains
- * responsible for preparing the document with the intended signer name before
- * signing.
+ * Typed personal Signatures are exact-match to the displayed name.
+ * Representative Signatures are exact-match to frozen capacity_wording.
+ * Typed Initials are derived deterministically from the displayed name and are
+ * exact-match to that derivation; neither mark is free text. There is no OCR or
+ * PDF-name matching. The agent remains responsible for preparing the document
+ * with the intended signer name before signing.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CeremonyWriteContext } from "./ceremony-context";
 import { appendCeremonyEvent } from "./ceremony-events";
+import { requireConsentSatisfied } from "./consent-disclosure";
 import { SigningError } from "./errors";
+import { suggestTypedInitialsFromDisplayName } from "./initials-suggestion";
 
 export type AdoptedMarkKind = "SIGNATURE" | "INITIALS";
 export type MarkRepresentationType = "TYPED" | "DRAWN";
@@ -35,74 +38,7 @@ const MAX_TYPED_TEXT_LENGTH = 200;
 const MAX_TYPED_INITIALS_LENGTH = 40;
 const MAX_DRAWN_POINTS = 20_000;
 
-const NAME_PREFIX_TOKENS = new Set([
-  "mr",
-  "mrs",
-  "ms",
-  "miss",
-  "mx",
-  "dr",
-  "prof",
-  "sir",
-  "dame",
-]);
-
-const NAME_SUFFIX_TOKENS = new Set([
-  "jr",
-  "sr",
-  "ii",
-  "iii",
-  "iv",
-  "v",
-  "vi",
-  "vii",
-  "viii",
-  "ix",
-  "x",
-  "esq",
-  "phd",
-  "md",
-  "jd",
-]);
-
-function normalizeNameToken(token: string): string {
-  return token.replace(/\.$/, "").toLowerCase();
-}
-
-function firstUnicodeLetter(segment: string): string | null {
-  const match = segment.match(/\p{L}/u);
-  return match ? match[0]!.toUpperCase() : null;
-}
-
-/**
- * Suggested typed initials from the displayed Signing name (editable by the
- * participant; not validated for equality on adoption).
- */
-export function suggestTypedInitialsFromDisplayName(displayName: string): string {
-  try {
-    const collapsed = displayName.trim().replace(/\s+/g, " ");
-    if (!collapsed) return "";
-
-    const initials: string[] = [];
-    for (const token of collapsed.split(" ")) {
-      const trimmed = token.trim();
-      if (!trimmed) continue;
-
-      const normalized = normalizeNameToken(trimmed);
-      if (NAME_PREFIX_TOKENS.has(normalized)) continue;
-      if (NAME_SUFFIX_TOKENS.has(normalized)) continue;
-
-      const segments = trimmed.split("-");
-      for (const segment of segments) {
-        const letter = firstUnicodeLetter(segment);
-        if (letter) initials.push(letter);
-      }
-    }
-    return initials.join("");
-  } catch {
-    return "";
-  }
-}
+export { suggestTypedInitialsFromDisplayName };
 
 /** @deprecated Use suggestTypedInitialsFromDisplayName */
 export function deriveTypedInitialsFromDisplayName(displayName: string): string {
@@ -240,20 +176,41 @@ export async function adoptCeremonyMark(options: {
   const markKind = parseMarkKind(options.markKind);
   const representationType = parseRepresentationType(options.representationType);
 
+  await requireConsentSatisfied({
+    admin,
+    signingId: context.session.signingId,
+    signingParticipantId: context.session.signingParticipantId,
+  });
+
   let typedText: string | null = null;
 
   if (representationType === "TYPED") {
     if (markKind === "SIGNATURE") {
       typedText = parseTypedSignatureText(options.typedText);
-      const expected = context.displayedName.trim();
-      if (typedText !== expected) {
+      const expected = context.expectedTypedSignatureText.trim();
+      if (!expected || typedText !== expected) {
         throw new SigningError(
           "VALIDATION_FAILED",
-          `A typed signature must match your name on this Signing exactly: ${expected}`,
+          context.capacityMode === "REPRESENTATIVE"
+            ? `A typed signature must match the prepared execution wording exactly: ${expected || "(missing)"}`
+            : `A typed signature must match your name on this Signing exactly: ${expected || context.displayedName.trim()}`,
         );
       }
     } else {
       typedText = parseTypedInitialsText(options.typedText);
+      const expected = expectedTypedInitialsText(context);
+      if (!expected) {
+        throw new SigningError(
+          "VALIDATION_FAILED",
+          "Initials cannot be formed from your name on this Signing. Please contact the sending agent.",
+        );
+      }
+      if (typedText !== expected) {
+        throw new SigningError(
+          "VALIDATION_FAILED",
+          `Typed initials must match the initials of your name on this Signing exactly: ${expected}`,
+        );
+      }
     }
   } else {
     // Validate payload shape first so malformed DRAWN requests stay INVALID_INPUT,
@@ -340,12 +297,85 @@ export async function adoptCeremonyMark(options: {
     detailsJson: {
       markKind,
       representationType,
+      textSource:
+        markKind === "SIGNATURE"
+          ? context.capacityMode === "REPRESENTATIVE"
+            ? "FROZEN_CAPACITY_WORDING"
+            : "FROZEN_PARTICIPANT_NAME"
+          : "DERIVED_FROM_FROZEN_PARTICIPANT_NAME",
       replacedExistingMark: Boolean(existing),
       browserSessionId: context.session.sessionId,
     },
   });
 
   return { mark: toMarkView(row), updated: Boolean(existing) };
+}
+
+/** The only typed Initials this participant may use: derived from the Signing name. */
+export function expectedTypedInitialsText(
+  context: Pick<CeremonyWriteContext, "displayedName">,
+): string {
+  return suggestTypedInitialsFromDisplayName(context.displayedName);
+}
+
+export type PrepareCeremonyMarksResult = {
+  signature: AdoptedMarkView | null;
+  initials: AdoptedMarkView | null;
+};
+
+/**
+ * "Start signing": record the Signature and Initials this participant's fields
+ * need, from the Signing name only. The browser supplies no mark text.
+ *
+ * Idempotent: a mark that already holds the expected text, or that is locked
+ * by use, is left untouched, so a retry or double-submit records nothing new.
+ */
+export async function prepareCeremonyMarks(options: {
+  admin: SupabaseClient;
+  context: CeremonyWriteContext;
+}): Promise<PrepareCeremonyMarksResult> {
+  const { admin, context } = options;
+  const { data: fieldRows, error } = await admin
+    .from("signing_fields")
+    .select("field_type")
+    .eq("signing_id", context.session.signingId)
+    .eq("package_revision_id", context.packageRevisionId)
+    .eq("package_revision_participant_id", context.revisionParticipantId)
+    .in("field_type", ["SIGNATURE", "INITIALS"]);
+  if (error) throw new Error(error.message);
+  const kinds = new Set((fieldRows ?? []).map((row) => row.field_type as AdoptedMarkKind));
+
+  const result: PrepareCeremonyMarksResult = { signature: null, initials: null };
+  for (const markKind of ["SIGNATURE", "INITIALS"] as const) {
+    if (!kinds.has(markKind)) continue;
+    const expected =
+      markKind === "SIGNATURE"
+        ? context.expectedTypedSignatureText.trim()
+        : expectedTypedInitialsText(context);
+    const existing = await getAdoptedMarkForKind({
+      admin,
+      signingId: context.session.signingId,
+      signingParticipantId: context.session.signingParticipantId,
+      markKind,
+    });
+    const mark =
+      existing &&
+      (existing.lockedAt ||
+        (existing.representationType === "TYPED" && existing.typedText === expected))
+        ? existing
+        : (
+            await adoptCeremonyMark({
+              admin,
+              context,
+              markKind,
+              representationType: "TYPED",
+              typedText: expected,
+            })
+          ).mark;
+    if (markKind === "SIGNATURE") result.signature = mark;
+    else result.initials = mark;
+  }
+  return result;
 }
 
 /**
@@ -380,8 +410,8 @@ export async function requireAdoptedMarkForKind(options: {
     throw new SigningError(
       "VALIDATION_FAILED",
       options.markKind === "SIGNATURE"
-        ? "Adopt your signature before placing it."
-        : "Adopt your initials before placing them.",
+        ? "Choose Start signing before placing your signature."
+        : "Choose Start signing before placing your initials.",
     );
   }
   return mark;
