@@ -1,6 +1,12 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-17, late afternoon (PR #46 Draft participant role-display cleanup. Canonical roles now live only in `role_code` and labels are relationship-only, so displays like Buyer · Seller are gone. A manager's Draft role change sets the new `role_overridden_at` marker, which stops Packet role sync. Dev-only migration `20261017120000`; Native Signing inventory 32. PR #46 still open and unmerged, Gate A paused, production untouched. See "Draft participant role-display cleanup" below.
+**As of:** 2026-10-17, evening. [PR #46](https://github.com/leeharbaugh/harbaugh-forms/pull/46) (Native Signing manager QA, ceremony, archive, cancellation, and placement templates) is squash-merged into `main` with Lee's approval, after final validation of its last code head `554dab8` against unchanged `origin/main` `a15bbb5`.
+- Production is untouched: no production Supabase migration, Storage, Auth or env change, and Native Signing is still off in production.
+- No Vercel deployment was promoted. Custom domains stay on `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, and Auto-assign Custom Production Domains stays disabled.
+- Gate A is paused.
+- Next work starts from `main`. See "PR #46 merged" below.
+
+Earlier: 2026-10-17, late afternoon (PR #46 Draft participant role-display cleanup. Canonical roles now live only in `role_code` and labels are relationship-only, so displays like Buyer · Seller are gone. A manager's Draft role change sets the new `role_overridden_at` marker, which stops Packet role sync. Dev-only migration `20261017120000`; Native Signing inventory 32. PR #46 still open and unmerged, Gate A paused, production untouched. See "Draft participant role-display cleanup" below.
 
 Earlier: 2026-10-17, afternoon (PR #46 Placement Template QA follow-up. Packet roles now carry into Draft Signing roles: a direct role wins, and imported participants nobody edited follow later Packet role changes until Send. The template editor now shows the form version's mapped fields as on-by-default, pointer-free context. No migration. PR #46 still open and unmerged, Gate A paused, production untouched. See "Placement Template QA follow-up" below.
 
@@ -16,6 +22,75 @@ Earlier: 2026-10-14, evening (PR #46 Signing Placement Templates tranche impleme
 
 Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancellation in development now leaves the exact sandboxed email in `_audit_tmp/signing-email-sandbox/`. This needed a small dev-only code change; previously the sandbox discarded the body. No migration, production untouched, Gate A paused. See "Sandbox email inspection" below. Earlier: 2026-10-13, morning (PR #46 cancellation emails tranche implemented and browser-QA'd in development. Cancel Signing now asks for a required "Internal cancellation reason", which is saved in Signing history and never emailed, and an optional "Message to participants". It emails every invited participant after commit. Eligibility comes from invitation history, so finished, revoked-link, replaced-link and archived participants are included; Draft and in-person-only participants are not. The email has no link and makes no legal claim. Delivery uses the existing instruction / outbox / attempt architecture, is retried, never changes lifecycle, and sends at most one email per participant. New dev-only migration `20261013120000`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Cancellation emails tranche" below. Earlier: 2026-10-12, night (PR #46 Archive Signing tranche implemented and browser-QA'd in development. Archive is organizational state (`signings.archived_at`), not lifecycle. Any lifecycle state can be archived and unarchived. The Signings list hides archived Signings unless "Show archived" is selected. Archiving an In Progress Signing revokes every participant link, entry session, in-person handoff and open ceremony session in one transaction, and unarchiving never restores them (managers Replace links to resume). New dev-only migrations `20261012120000` and `20261012120100`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Archive Signing tranche" below. Earlier: 2026-10-12, evening (Stage 1 / Stage 2 npm scripts now run under `tsx`, and `participant-link-qa.test.ts` runs in the Stage 4 suite; all 54 `test:*` scripts pass on PR #46. Earlier the same afternoon: dependency-security PR #53 squash-merged to `main` as `a15bbb5`: Next.js 16.3.8, sharp 0.35.5, source-map-js 1.2.2, `npm audit --omit=dev` 0. PR #46 synced with patched `main` by a merge commit and fully revalidated; see "PR #46 synced with patched main" below. PR #46 still open and unmerged, Gate A paused, production untouched. Earlier: 2026-10-12, afternoon (PR #46 combined-package refresh tranche implemented and browser-QA'd in development. The combined signed package stays a post-Complete convenience artifact. An open manager dashboard now shows "Combined signed package — Preparing…" when it reaches Complete before the package exists, keeps refreshing every 20 s, and swaps in View / Download when the package is verified, with no reload or navigation. The watcher stops once completed artifacts settle. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Combined-package refresh tranche" below. Earlier: 2026-10-11, night (PR #46 completed-document access tranche implemented and browser-QA'd in development. On a Complete Signing, managers with existing Signing authority see "Completed documents" at the top of the dashboard: each signed document, the audit certificate and the combined package once generated, each with View (full-screen read-only viewer, Fit Width / Fit Page / zoom) and Download. Both serve the same immutable, re-hashed finalization artifact through one authorized server route. A fingerprint mismatch is refused, and Draft, In Progress, Declined and Cancelled show and serve nothing. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Completed-document access tranche" below. Earlier: 2026-10-11, evening (PR #46 ceremony-regression tranche implemented and browser-QA'd in development. Applied Initials, Date Signed and Signature show their full text inside the stored field box at every zoom, with no ellipsis, and the completed PDF uses the same fit. Your fields docks from one measured width (1024px and up) and is otherwise a keyboard-accessible drawer, with no dead zone and no horizontal scroll at any of 13 widths from 1440 to 390. A long-open manager Signing page now shows Declined (naming who declined), Cancelled and Complete without a reload: authorized polling every 20 s while In Progress, plus a refresh on tab focus or visibility. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony-regression tranche" below. Earlier: 2026-10-11, afternoon (PR #46 ceremony UX tranche implemented and browser-QA'd in development. Start signing records the read-only Signing name and derived, non-editable initials. The PDF fills the screen with Fit Width / Fit Page / zoom. Guidance goes to the first required field and, only after the server accepts each mark, to the next one or to Finish. Your fields navigates spatially. Finish and done wording separate the participant's part from Signing completion. Leave for now and Decline to sign are QA'd end to end. E-sign consent is now enforced on the server (security finding, fixed). No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony UX tranche" below. Earlier: 2026-10-10, afternoon (PR #46 toolbar tranche implemented and QA'd in development. The auto-add notice shows names, not "[object Object]", and stays one-time. Prepare Documents places with explicit one-shot tools (Signature, Initials, Date, Printed Name, Checkmark) instead of a Field type dropdown, and choosing a participant arms nothing. Link to is removed: Dates link to the nearest source at placement, a selected Date outlines its source, and relinking is delete-and-replace. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Toolbar tranche" below. Earlier the same day: PR #46 polish tranche implemented and QA'd in development. The "Added from the source Packet" notice now shows once and is acknowledged only after the browser displays it. Date Signed links automatically to the nearest Signature or Initials on the hovered page, with Link to as an explicit override. Send readiness updates from the server within about 2 seconds of each placement change, instead of after a 12–14 s reload. New dev-only migration `20261010120000`. PR still open and unmerged, Gate A paused, production untouched. See "Polish tranche" below. Earlier: 2026-10-09, evening (PR #46 Packet lifecycle cleanup implemented and QA'd in development. Packets are ACTIVE or DELETED only, and the unintended INACTIVE state is gone from the database constraint, types and UI. Dev Packet #12, the only INACTIVE Packet, was normalized to ACTIVE. New dev-only migration `20261009140000`. PR still open and unmerged, Gate A paused, production untouched. See "Packet lifecycle cleanup" below. Earlier the same day: PR #46 correctness tranche implemented and QA'd in development. Create Signing eligibility now comes from one server helper, and ineligible Packets show a disabled control with the reason. The Packets list and the selector agree: Inactive is listed, and only Deleted waits for Show deleted. Opening a Draft Signing completes Packet auto-add and identity sync before the first paint. Signing rename works in every lifecycle state and records a history event. New dev-only migration `20261009130000`. PR still open and unmerged, Gate A paused, production untouched. Next after Lee's approval: the separate dependency-advisory PR from `main`. See "Correctness tranche" below. Earlier: 2026-10-08, late (PR #46 Draft polish tranche implemented and QA'd in development: Packet parties auto-add while Draft with per-Signing removal suppression and Restore; linked participant identity live from Contact / profile / brokerage profile while Draft and canonized at activation, with Cancel + new Signing as the only post-activation correction; Date Signed click-to-link; Copy enters paste mode immediately; new fields anchor at the click's left edge. New dev-only migration `20261009120000`. PR still open and unmerged, Gate A paused, production untouched. See "Draft polish tranche" below. Earlier the same day: PR #46 Draft-preparation tranche implemented and QA'd in development: additive Add from Packet, participant roles, Include me / Include broker, Initials-linked Date Signed, click-anchored paste, Printed Name and Checkmark prepared content, Quick Fields removed; new dev-only migration `20261008120000`; PR still open and unmerged, Gate A paused, production untouched; see "Draft-preparation tranche" below. Earlier, 2026-10-05: PR #46 document-visible participant ceremony + read-only typed Signature implemented and browser-QA'd in development; ready for Lee's re-QA; PR still open and unmerged, Gate A paused, production untouched; new upstream `npm audit` advisories (source-map-js / postcss, braces) recorded for a separate dependency PR, see "Lee's manual QA findings and document-visible ceremony tranche" below. Earlier, 2026-10-02: PR #46 brought up to date with `main` `7733493` by merge commit `8769993` (Next.js 16.3.6, no conflicts left, full revalidation and ceremony browser regression pass); PR still open, awaiting Lee's manual re-QA, manager completed-document access is a pre-production blocker, see "PR #46 merged with current main" below; Native Signing participant ceremony QA complete on PR #46 at `3f92e48`: four ceremony defects fixed; packet Created/Updated timestamps fixed to Central time with CDT/CST, PR #52 squash-merged to `main` as `7733493`, live in production via hotfix `3e5eaa3` (= `c25e4c3` + PR #52 code only), deployment `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, rollback `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; dev-only `brace-expansion` advisories remediated by lockfile-only PR #51, squash-merged to `main` as `edfc5a7`, full lockfile audit clean, not deployed (dev-only, no production effect); admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 squash-merged to `main` as `c2a490a` on 2026-10-02; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j is live in production via hotfix `2a92d82` (= `a87b1aa` + dependency change only; deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`); PR #49 squash-merged to `main` as `9f00a80` on 2026-10-02. Earlier, 2026-09-30: Native Signing development and QA remain the active workstream; work paused briefly for the duplicate packet forms hotfix, now live in production. Resume Native Signing development/QA from the state recorded below. Production is running the isolated hotfix, not `main`; production Native Signing remains unavailable.)
 ## Current State
+
+### PR #46 merged (2026-10-17, evening)
+
+**Status:** [PR #46](https://github.com/leeharbaugh/harbaugh-forms/pull/46) is squash-merged into `main` (Lee approved). Its last code head was `554dab8`; the only later commit is this docs update. `origin/main` had not moved since the 2026-10-12 sync (`a15bbb5`, which includes the dependency-security patches from PR #53), so no sync merge was needed. GitHub reported MERGEABLE / CLEAN.
+
+**What `main` now contains (all development-validated):**
+- Native Signing manager QA, the participant ceremony and completed-document access;
+- the combined-package refresh;
+- Archive Signing;
+- cancellation emails;
+- development sandbox email inspection;
+- Signing Placement Templates, with the QA stabilization, the editor PDF-load coverage and mapped-field context;
+- Packet role → Draft role sync, with the explicit-override cleanup.
+
+All are complete. Copy-from-another-version manual QA is deferred and not blocking; the automated coverage is accepted.
+
+**Migrations added by PR #46 (development only; none applied to production)**, in order:
+1. `20260921200000_native_signing_representative_capacity`
+2. `20260923200000_native_signing_ad_hoc_documents`
+3. `20260928120000_native_signing_source_packet_selection`
+4. `20261008120000_native_signing_draft_prep_roles_prepared_content`
+5. `20261009120000_native_signing_draft_identity_sync`
+6. `20261009130000_native_signing_draft_auto_add_marker`
+7. `20261009140000_packets_active_deleted_only` (Packet schema, not Native Signing)
+8. `20261010120000_native_signing_auto_add_notice_ack`
+9. `20261012120000_native_signing_archive`
+10. `20261012120100_native_signing_archive_evidence_guard_fix`
+11. `20261013120000_native_signing_cancellation_notices`
+12. `20261014120000_native_signing_placement_templates`
+13. `20261016120000_packet_contact_role_agent` (Packet schema, not Native Signing)
+14. `20261017120000_native_signing_participant_role_override`
+
+The Native Signing inventory is now 32 (20 already on `main` before this merge, plus 12 here). The two Packet migrations are not counted. Production has none of the 32 Native Signing migrations; they and both Packet migrations roll out only in a separate, approved production rollout (`supabase db push --include-all` after a dry run, per the 2026-09-30 note). Development `ewxsxwzezhkeawnjvigx` matches the branch: every migration through `20261017120000` is recorded, and a dry run reports "Remote database is up to date".
+
+**Final validation (code head `554dab8`, run one stage at a time so validators and browser QA never overlapped):**
+- All 58 `test:*` suites and all 21 dev validators pass. Production-readiness (dev) is READY with inventory 32.
+- Browser QA passes for Placement Templates, Prepare Documents, Packet edit navigation, account switch, cancellation, archive, link ops and combined refresh, with zero runtime noise.
+- Ceremony QA: all 80 functional checks pass, including completed-document view and download, with the known dev-server baseline below.
+- tsc, ESLint on all 162 changed files, `git diff --check` and `build:validate` are clean. Audits unchanged: production 0; full 9 (7 high, 2 moderate, deferred dev/build).
+
+**Known dev-server baseline:**
+- The ceremony QA's final noise guard fails on one dev-server "⨯ Error: The destination stream closed early." line during the in-person handoff navigation, which the script already counts as INFO.
+- It reproduces on the untouched `096bfb3` code and has no console or page error. It is a streamed-response abort in the long-running `next dev`, not a product defect.
+
+**Known intermittent account-switch QA race (accepted by Lee for the merge):**
+- In 2 of about 25 runs, both right after another browser suite, the account-switch QA passed every functional check but failed its noise guard on one browser console error: `GET https://ewxsxwzezhkeawnjvigx.supabase.co/auth/v1/user` returned 403.
+- Cause: the script clicks Logout as soon as the Packets home page loads. `signOut()` revokes the session while `EnsureProfile` or the Packets list (250 ms debounce) still has a browser `getUser()` in flight, and Supabase answers 403 for the revoked session.
+- Both call sites are unchanged from `main`, so the race predates PR #46. It has no user-visible or security effect.
+- Left as is: no code or test change in the closure tranche.
+
+**Development data.**
+- No QA organization, form or profile residue.
+- The leftover `@example.com` auth users mostly come from the Stage 3/4/5 validators (plus some Placement QA ones). Most of today's are still referenced by append-only Signing rows or events, so validator cleanup cannot hard-delete them. This is expected evidence retention; nothing was deleted by hand.
+
+**Backlog (not started):**
+- Signing convenience: Copy / Duplicate Signing after Cancel or Decline.
+- Completed Signing: the copy-recipient Complete message; a broader pending/failed-work explanation.
+- Security / pre-production:
+  - legal disclosure;
+  - the optional non-identity amendment UI;
+  - participant completed-package re-hash consistency;
+  - an optional manager download audit;
+  - DAST R11;
+  - Gate A.
+- Production rollout:
+  - the full Native Signing migration rollout plus the two Packet migrations;
+  - production environment and config readiness;
+  - a controlled Vercel deployment validated on its unique URL;
+  - manual promotion only after Lee's approval.
 
 ### Draft participant role-display cleanup (2026-10-17, late afternoon; PR #46)
 
@@ -108,7 +183,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
   - The untouched `096bfb3` baseline (stashed) fails the same way, with the same 80/80, so this is the known dev-server streaming abort recurring, not this tranche.
 - Technical: tsc, changed-path ESLint, `git diff --check` and `build:validate` are clean. Audits unchanged: production 0; full 9 (7 high, 2 moderate).
 
-**Next step:** Lee finishes Placement Template manual QA. PR #46 merge, production migrations and Gate A remain separate decisions for Lee.
+**Next step (done; superseded by the PR #46 merge):** Lee finished Placement Template manual QA and approved the merge. Production migrations and Gate A remain separate decisions for Lee.
 
 ### Placement Template editor load blocker (2026-10-17; PR #46)
 
@@ -150,7 +225,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 - Account-switch QA: every cycle passed in all 8 runs. The one run that overlapped the validators failed its noise guard on a single browser "403" resource error, URL not captured. 7 reruns were clean, 4 of them tracing every response with zero 4xx/5xx. No auth code changed in this tranche.
 - tsc, changed-path ESLint, `git diff --check` and `build:validate` are clean. Audits unchanged: production 0; full 9 (7 high, 2 moderate).
 
-**Next step:** Lee resumes Placement Template manual QA, starting with Edit placements on Form #21 and on a Global Form. If Lee's dev server was started before 10:11 on 2026-10-17, restart it first. PR #46 merge, production migrations and Gate A remain separate decisions for Lee.
+**Next step (done; superseded by the PR #46 merge):** Lee resumed Placement Template manual QA. If the editor PDF ever shows "Could not load" again in development, restart `next dev`; if it persists, delete `.next/dev/cache`.
 
 ### Placement Template QA stabilization (2026-10-16; PR #46)
 
@@ -181,7 +256,7 @@ Native Signing migration inventory remains 31 (this migration is Packet schema, 
 - Browser: `qa-auth-account-switch-browser.ts` (A↔B cycles + history); `qa-packet-edit-nav-browser.ts` (Signing↔Edit, Agent, Back); `qa-signing-placement-templates-browser.ts` (Actions menu + prior path).
 - All `test:*` and listed validators; tsc, ESLint, `git diff --check`, `build:validate`; audits unchanged (production 0; full 9).
 
-**Next step:** Lee's revised manual QA checklist (below in the final report / end of this section after commit). PR #46 merge, production migrations and Gate A remain separate decisions for Lee.
+**Next step (done; superseded by the PR #46 merge):** Lee completed the revised manual QA checklist.
 
 ### Signing Placement Templates tranche (2026-10-14, evening; PR #46)
 
@@ -257,7 +332,7 @@ The Native Signing migration inventory is now 31.
   - DAST R11;
   - Gate A.
 
-**Next step:** Lee's manual QA of placement templates. PR #46 merge, production migrations (including `20261014120000`) and Gate A remain separate decisions for Lee.
+**Next step (done; superseded by the PR #46 merge):** Lee's manual QA of placement templates is complete. Production migrations (including `20261014120000`) and Gate A remain separate decisions for Lee.
 
 ### Sandbox email inspection (2026-10-14; PR #46)
 
