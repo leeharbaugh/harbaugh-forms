@@ -12,6 +12,24 @@ Each decision should include:
 
 ---
 
+## Every completed-artifact serve verifies the stored bytes
+
+**Date:** 2026-10-18 (participant completed-package integrity hardening)
+
+**Decision:** Every server path that serves an immutable completed Signing artifact (completed document, audit certificate, combined package) to anyone re-reads the bytes and verifies them before serving. Both the manager route and the participant completed-package route use the shared `readVerifiedArtifactBytes`. It requires:
+- the private `signing-artifacts` bucket;
+- a key under `signings/{signingId}/artifacts/`;
+- the Signing's frozen revision;
+- SHA-256 equal to the recorded `content_sha256`, and the byte count equal to `byte_size` when recorded.
+
+It runs on every request, with no cached result. Failure is closed: nothing is served, nothing is rewritten or regenerated, and lifecycle is unchanged. The verifier checks integrity only; each route authorizes first. The manager route keeps its 409. The participant route returns its existing generic unavailable response (503, no hash, key or bucket), the same as for any other failure. A participant download is logged as successful only after verification.
+
+**Reason:** The participant route was the one completed-artifact path that trusted stored bytes because finalization had verified them once.
+
+**Related:** `lib/signing/artifacts.ts` (`readVerifiedArtifactBytes`), `lib/signing/completed-documents.ts`, `app/sign/package/artifact/[artifactId]/route.ts`, `lib/signing/completed-documents.test.ts`, `scripts/validate-native-signing-completion-delivery-dev.ts`.
+
+---
+
 ## Packet roles carry into Draft Signing roles; untouched imports follow the Packet until Send
 
 **Date:** 2026-10-17 (Placement Template QA follow-up); refined the same day after Lee's contradictory-role finding
@@ -256,7 +274,7 @@ Managers had no way to see what was signed. Lee's QA flagged this as a pre-produ
 **Consequences:**
 * Manager access is not logged in `signing_completed_package_access_log`, which has no actor-user column. Adding one would need a migration and was out of scope.
 * A combined package produced after the first Complete refresh appears on the next dashboard load.
-* The participant completed-package route still serves without re-hashing (recorded, unchanged).
+* The participant completed-package route still serves without re-hashing (recorded, unchanged). *Closed 2026-10-18: see "Every completed-artifact serve verifies the stored bytes".*
 
 **Related:** `lib/signing/completed-documents.ts`, `app/signings/[signingId]/completed/[artifactId]/route.ts`, `lib/signing/dashboard.ts`, `components/signings/signing-completed-documents.tsx`, `components/signings/completed-document-viewer.tsx`, `components/signings/signing-dashboard-page.tsx`, `lib/signing/completed-documents.test.ts`, `scripts/validate-native-signing-completion-delivery-dev.ts`, `scripts/qa-signing-ceremony-browser.ts`.
 

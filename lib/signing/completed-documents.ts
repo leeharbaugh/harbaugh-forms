@@ -8,8 +8,7 @@
  * serve; a mismatch is never served.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createHash } from "node:crypto";
-import type { SigningArtifactCategory } from "./artifacts";
+import { readVerifiedArtifactBytes, type SigningArtifactCategory } from "./artifacts";
 import { canReadCompletedSigningArtifacts } from "./authority";
 import { loadSigningAuthorityBundle } from "./authority-context";
 import { SigningError } from "./errors";
@@ -333,21 +332,19 @@ export async function loadCompletedArtifactForActor(options: {
   ]);
   if (!artifact || !artifactBelongs(artifact, scope.signingId, revisionDocuments)) throw notFound();
 
-  const { data, error } = await options.admin.storage
-    .from(SIGNING_ARTIFACTS_BUCKET)
-    .download(artifact.storage_object_key);
-  if (error || !data) {
-    throw new SigningError("INTEGRITY_MISMATCH", "The completed document could not be read.");
-  }
-  const bytes = new Uint8Array(await data.arrayBuffer());
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  if (
-    sha256 !== artifact.content_sha256 ||
-    (artifact.byte_size != null && Number(artifact.byte_size) !== bytes.byteLength)
-  ) {
+  const verified = await readVerifiedArtifactBytes({
+    admin: options.admin,
+    signingId: scope.signingId,
+    frozenRevisionId: scope.frozenRevisionId,
+    artifact,
+  });
+  if (!verified.ok) {
+    if (verified.reason === "NOT_SERVABLE") throw notFound();
     throw new SigningError(
       "INTEGRITY_MISMATCH",
-      "This completed document failed its integrity check and was not served.",
+      verified.reason === "UNREADABLE"
+        ? "The completed document could not be read."
+        : "This completed document failed its integrity check and was not served.",
     );
   }
 
@@ -356,5 +353,9 @@ export async function loadCompletedArtifactForActor(options: {
     kind === "DOCUMENT"
       ? documentLabel(revisionDocuments.get(artifact.package_revision_document_id!))
       : "";
-  return { bytes, filename: completedArtifactFilename(kind, label), sha256 };
+  return {
+    bytes: verified.bytes,
+    filename: completedArtifactFilename(kind, label),
+    sha256: verified.sha256,
+  };
 }
