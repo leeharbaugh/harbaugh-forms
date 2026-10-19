@@ -1,5 +1,7 @@
 /**
- * Stream a verified completed-package artifact after session validation.
+ * Stream a completed-package artifact after session validation, only when its
+ * stored bytes still match the recorded fingerprint. Any failure, integrity
+ * included, returns the same unavailable response.
  */
 import { appendCompletedPackageAccessLog } from "@/lib/signing/completed-package-access";
 import { loadCompletedPackageArtifactForSession } from "@/lib/signing/completed-package-authority";
@@ -8,7 +10,7 @@ import {
   SIGNING_COMPLETED_PACKAGE_COOKIE_NAME,
   validateCompletedPackageSession,
 } from "@/lib/signing/completed-package-sessions";
-import { downloadArtifactBytes } from "@/lib/signing/artifacts";
+import { readVerifiedArtifactBytes } from "@/lib/signing/artifacts";
 import { SIGNING_EXTERNAL_ACCESS_UNAVAILABLE_MESSAGE } from "@/lib/signing/external-access";
 import { isNativeSigningEnabled } from "@/lib/signing/feature-gate";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -60,10 +62,22 @@ export async function GET(
     return unavailableResponse();
   }
 
-  const bytes = await downloadArtifactBytes({ admin, artifact });
-  if (!bytes) {
+  const verified = await readVerifiedArtifactBytes({
+    admin,
+    signingId: session.signingId,
+    frozenRevisionId: artifact.package_revision_id,
+    artifact,
+  });
+  if (!verified.ok) {
+    if (verified.reason === "INTEGRITY_MISMATCH") {
+      console.error(
+        "[native-signing-completion-delivery] completed artifact failed its integrity check and was not served:",
+        artifact.artifact_category,
+      );
+    }
     return unavailableResponse();
   }
+  const bytes = verified.bytes;
 
   try {
     await appendCompletedPackageAccessLog({

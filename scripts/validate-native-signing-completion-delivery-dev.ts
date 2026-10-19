@@ -9,6 +9,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { randomBytes, randomUUID } from "node:crypto";
+import { sha256Hex } from "../lib/signing/prepare-pdf.ts";
 import {
   decodePDFRawStream,
   PDFArray,
@@ -1159,6 +1160,130 @@ async function main() {
     }
     ok("artifact download mediation denies wrong Signing/artifact");
 
+    // --- Participant package route: bytes re-verified before every serve ----
+    const APP_ORIGIN = process.env.MANUAL_QA_ORIGIN?.trim() || "http://localhost:3000";
+    const packageGet = (artifactId: string, rawSessionToken: string | null = session.rawSessionToken) =>
+      fetch(`${APP_ORIGIN}/sign/package/artifact/${artifactId}`, {
+        headers: rawSessionToken
+          ? { cookie: `${SIGNING_COMPLETED_PACKAGE_COOKIE_NAME}=${rawSessionToken}` }
+          : {},
+        redirect: "manual",
+      });
+    const expectUnavailable = async (label: string, response: Response) => {
+      const body = Buffer.from(await response.arrayBuffer());
+      const text = body.toString("utf8");
+      if (
+        response.status !== 503 ||
+        text.includes("%PDF") ||
+        /[0-9a-f]{64}|signings\/|signing-artifacts|storage/i.test(text) ||
+        response.headers.get("cache-control") !== "no-store"
+      ) {
+        fail(`participant route ${label}: ${response.status} ${text.slice(0, 120)}`);
+      }
+    };
+    const successfulDownloads = async () => {
+      const { count, error } = await admin
+        .from("signing_completed_package_access_log")
+        .select("id", { count: "exact", head: true })
+        .eq("completed_package_session_id", session.sessionId)
+        .eq("access_kind", "ARTIFACT_DOWNLOADED")
+        .eq("outcome", "SUCCEEDED");
+      if (error) fail(`access log read failed: ${error.message}`);
+      return count ?? 0;
+    };
+    try {
+      await fetch(`${APP_ORIGIN}/auth/login`, { redirect: "manual" });
+    } catch {
+      fail(`participant package route checks need the dev server at ${APP_ORIGIN}`);
+    }
+    {
+      const { data: rows, error } = await admin
+        .from("signing_artifacts")
+        .select("id, artifact_category, storage_object_key, content_sha256, byte_size, frozen_filename, verified_at")
+        .in("id", listed.map((row) => row.artifactId));
+      if (error || !rows || rows.length !== listed.length) fail("listed artifacts missing");
+      const recordedBefore = JSON.stringify(
+        [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id))),
+      );
+      for (const row of rows) {
+        const response = await packageGet(row.id as string);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (
+          response.status !== 200 ||
+          sha256Hex(bytes) !== row.content_sha256 ||
+          bytes.byteLength !== Number(row.byte_size) ||
+          response.headers.get("content-disposition") !==
+            `attachment; filename="${String(row.frozen_filename).replace(/"/g, "")}"` ||
+          response.headers.get("cache-control") !== "no-store" ||
+          response.headers.get("referrer-policy") !== "no-referrer"
+        ) {
+          fail(`participant download of ${row.artifact_category} was not the recorded bytes/headers (${response.status})`);
+        }
+      }
+      ok(`participant route serves all ${rows.length} artifacts (documents, certificate) with bytes matching the recorded SHA-256 and byte size; headers unchanged`);
+
+      const target = rows.find((row) => row.artifact_category === "COMPLETED_DOCUMENT") ?? rows[0];
+      const key = target.storage_object_key as string;
+      const { data: originalBlob, error: originalError } = await admin.storage
+        .from(SIGNING_ARTIFACTS_BUCKET)
+        .download(key);
+      if (originalError || !originalBlob) fail("original artifact bytes unreadable");
+      const original = new Uint8Array(await originalBlob.arrayBuffer());
+      const { count: artifactsBefore } = await admin
+        .from("signing_artifacts")
+        .select("id", { count: "exact", head: true })
+        .eq("signing_id", primary.signingId);
+      const logsBefore = await successfulDownloads();
+      const { error: tamperError } = await admin.storage
+        .from(SIGNING_ARTIFACTS_BUCKET)
+        .upload(key, await makeFixturePdf("participant tampered"), { contentType: "application/pdf", upsert: true });
+      if (tamperError) fail(`participant tamper upload failed: ${tamperError.message}`);
+      try {
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          await expectUnavailable(`tampered attempt ${attempt}`, await packageGet(target.id as string));
+        }
+        const { data: rowsAfter } = await admin
+          .from("signing_artifacts")
+          .select("id, artifact_category, storage_object_key, content_sha256, byte_size, frozen_filename, verified_at")
+          .in("id", listed.map((row) => row.artifactId));
+        const recordedAfter = JSON.stringify(
+          [...(rowsAfter ?? [])].sort((a, b) => String(a.id).localeCompare(String(b.id))),
+        );
+        const { count: artifactsAfter } = await admin
+          .from("signing_artifacts")
+          .select("id", { count: "exact", head: true })
+          .eq("signing_id", primary.signingId);
+        const { data: lifecycle } = await admin
+          .from("signings")
+          .select("lifecycle_state")
+          .eq("id", primary.signingId)
+          .single();
+        if (recordedAfter !== recordedBefore) fail("a tampered serve rewrote an artifact row (hash, size or verification)");
+        if (artifactsAfter !== artifactsBefore) fail("a tampered serve generated or removed an artifact");
+        if (lifecycle?.lifecycle_state !== "COMPLETE") fail("a tampered serve changed the Signing lifecycle");
+        if ((await successfulDownloads()) !== logsBefore) fail("a refused serve was logged as a successful download");
+        ok("tampered participant artifact: 3 attempts all refused with the generic 503 (no PDF, hash or path), recorded hash/size untouched, no regeneration, still COMPLETE, no success logged");
+      } finally {
+        const { error: restoreError } = await admin.storage
+          .from(SIGNING_ARTIFACTS_BUCKET)
+          .upload(key, original, { contentType: "application/pdf", upsert: true });
+        if (restoreError) fail(`restore of the original artifact failed: ${restoreError.message}`);
+      }
+      const restored = await packageGet(target.id as string);
+      const restoredBytes = new Uint8Array(await restored.arrayBuffer());
+      if (restored.status !== 200 || sha256Hex(restoredBytes) !== target.content_sha256) {
+        fail("restored artifact was not served again");
+      }
+      if ((await successfulDownloads()) !== logsBefore + 1) fail("restored serve was not logged once");
+      ok("restoring the original bytes serves them again and logs one successful download");
+
+      await expectUnavailable("cross-Signing artifact", await packageGet(otherArtifactId));
+      await expectUnavailable("guessed artifact id", await packageGet(randomUUID()));
+      await expectUnavailable("no session cookie", await packageGet(target.id as string, null));
+      await expectUnavailable("forged session token", await packageGet(target.id as string, randomUUID()));
+      ok("participant route: another Signing's artifact, a guessed id, no cookie and a forged session all get the same 503");
+    }
+
     // --- Manager View / Download of completed artifacts ---------------------
     {
       const bad = (label: string) => fail(`manager completed documents: ${label}`);
@@ -1352,7 +1477,17 @@ async function main() {
       session.rawSessionToken,
     );
     if (afterRevoke) fail("session still valid after credential revoke");
-    ok("revoke/replace credential: old bearer denied, new bearer ok, session killed");
+    {
+      const revokedResponse = await fetch(
+        `${process.env.MANUAL_QA_ORIGIN?.trim() || "http://localhost:3000"}/sign/package/artifact/${listed[0]!.artifactId}`,
+        { headers: { cookie: `${SIGNING_COMPLETED_PACKAGE_COOKIE_NAME}=${session.rawSessionToken}` }, redirect: "manual" },
+      );
+      const revokedBody = Buffer.from(await revokedResponse.arrayBuffer()).toString("utf8");
+      if (revokedResponse.status !== 503 || revokedBody.includes("%PDF")) {
+        fail(`revoked session still downloaded through the participant route (${revokedResponse.status})`);
+      }
+    }
+    ok("revoke/replace credential: old bearer denied, new bearer ok, session killed (participant route 503)");
 
     await replaceCompletedPackageCredentialWithActor(
       agent,

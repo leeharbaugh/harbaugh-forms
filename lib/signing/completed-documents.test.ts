@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { readVerifiedArtifactBytes, type ServableArtifactRecord } from "./artifacts";
 import { canReadCompletedSigningArtifacts, evaluateSigningAuthority } from "./authority";
 import {
   completedArtifactContentDisposition,
   completedArtifactFilename,
 } from "./completed-documents";
+import { sha256Hex } from "./prepare-pdf";
+import { SIGNING_ARTIFACTS_BUCKET } from "./stage1-schema";
 
 const root = process.cwd();
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -140,14 +144,13 @@ describe("Completed documents: server boundary", () => {
 
   it("module gates on authority + Complete, binds to the Signing and re-hashes every serve", () => {
     const gateAt = serverModule.indexOf("canReadCompletedSigningArtifacts(");
-    const downloadAt = serverModule.indexOf(".download(");
-    assert.ok(gateAt > 0 && downloadAt > gateAt, "authority gate must precede storage download");
+    const verifyAt = serverModule.indexOf("readVerifiedArtifactBytes({");
+    assert.ok(gateAt > 0 && verifyAt > gateAt, "authority gate must precede the verified read");
     assert.match(serverModule, /storage_bucket !== SIGNING_ARTIFACTS_BUCKET/);
     assert.match(serverModule, /startsWith\(`signings\/\$\{signingId\}\/artifacts\/`\)/);
     assert.match(serverModule, /\.eq\("package_revision_id", frozenRevisionId\)/);
     assert.match(serverModule, /\.not\("verified_at", "is", null\)/);
-    assert.match(serverModule, /createHash\("sha256"\)/);
-    assert.match(serverModule, /sha256 !== artifact\.content_sha256/);
+    assert.doesNotMatch(serverModule, /\.download\(|createHash/);
     assert.match(serverModule, /INTEGRITY_MISMATCH/);
   });
 
@@ -156,6 +159,121 @@ describe("Completed documents: server boundary", () => {
       assert.doesNotMatch(source, /renderCompleted|\.upload\(|\.insert\(|\.upsert\(|\.delete\(|\.remove\(|\)\s*\.update\(\{/);
       assert.doesNotMatch(source, /isGlobalAdmin|GLOBAL_ADMIN|is_global_admin/);
     }
+  });
+});
+
+describe("Completed artifacts: shared integrity verifier", () => {
+  const SIGNING = "11111111-1111-4111-8111-111111111111";
+  const REVISION = "22222222-2222-4222-8222-222222222222";
+  const KEY = `signings/${SIGNING}/artifacts/combined/a.pdf`;
+  const stored = new TextEncoder().encode("%PDF-1.7 completed package");
+
+  /** Storage that can only download: any write would throw. */
+  function storageOf(objects: Record<string, Uint8Array>) {
+    const reads: string[] = [];
+    const admin = {
+      storage: {
+        from(bucket: string) {
+          return {
+            async download(key: string) {
+              reads.push(`${bucket}/${key}`);
+              const bytes = objects[`${bucket}/${key}`];
+              return bytes
+                ? { data: new Blob([bytes]), error: null }
+                : { data: null, error: { message: "not found" } };
+            },
+          };
+        },
+      },
+    } as unknown as SupabaseClient;
+    return { admin, reads };
+  }
+
+  const record = (extra: Partial<ServableArtifactRecord> = {}): ServableArtifactRecord => ({
+    storage_bucket: SIGNING_ARTIFACTS_BUCKET,
+    storage_object_key: KEY,
+    content_sha256: sha256Hex(stored),
+    byte_size: stored.byteLength,
+    signing_id: SIGNING,
+    package_revision_id: REVISION,
+    ...extra,
+  });
+
+  const verify = (
+    admin: SupabaseClient,
+    artifact: ServableArtifactRecord,
+    scope = { signingId: SIGNING, frozenRevisionId: REVISION },
+  ) => readVerifiedArtifactBytes({ admin, artifact, ...scope });
+
+  it("serves bytes only when SHA-256 and byte size match, and re-reads every call", async () => {
+    const { admin, reads } = storageOf({ [`${SIGNING_ARTIFACTS_BUCKET}/${KEY}`]: stored });
+    const artifact = record();
+    const first = await verify(admin, artifact);
+    const second = await verify(admin, artifact);
+    assert.equal(first.ok && second.ok, true);
+    assert.deepEqual(first.ok ? [...first.bytes] : [], [...stored]);
+    assert.equal(first.ok ? first.sha256 : "", sha256Hex(stored));
+    assert.equal(reads.length, 2);
+  });
+
+  it("refuses tampered bytes and a byte-size mismatch without touching the record", async () => {
+    const tampered = new TextEncoder().encode("%PDF-1.7 tampered package!");
+    const artifact = record();
+    const before = JSON.stringify(artifact);
+    const { admin } = storageOf({ [`${SIGNING_ARTIFACTS_BUCKET}/${KEY}`]: tampered });
+    assert.deepEqual(await verify(admin, artifact), { ok: false, reason: "INTEGRITY_MISMATCH" });
+    const { admin: sameBytes } = storageOf({ [`${SIGNING_ARTIFACTS_BUCKET}/${KEY}`]: stored });
+    assert.deepEqual(await verify(sameBytes, record({ byte_size: stored.byteLength + 1 })), {
+      ok: false,
+      reason: "INTEGRITY_MISMATCH",
+    });
+    assert.equal(JSON.stringify(artifact), before, "the recorded fingerprint is never rewritten");
+  });
+
+  it("never reads outside this Signing's private artifact prefix, Signing or revision", async () => {
+    const { admin, reads } = storageOf({ [`${SIGNING_ARTIFACTS_BUCKET}/${KEY}`]: stored });
+    for (const artifact of [
+      record({ storage_bucket: "form-templates" }),
+      record({ storage_object_key: `signings/${REVISION}/artifacts/combined/a.pdf` }),
+      record({ storage_object_key: `signings/${SIGNING}/prepared/a.pdf` }),
+      record({ signing_id: REVISION }),
+      record({ package_revision_id: SIGNING }),
+      record({ content_sha256: null }),
+    ]) {
+      assert.deepEqual(await verify(admin, artifact), { ok: false, reason: "NOT_SERVABLE" });
+    }
+    assert.deepEqual(
+      await verify(admin, record(), { signingId: REVISION, frozenRevisionId: REVISION }),
+      { ok: false, reason: "NOT_SERVABLE" },
+    );
+    assert.equal(reads.length, 0, "a refused record never reaches Storage");
+  });
+
+  it("reports a missing object as unreadable", async () => {
+    const { admin } = storageOf({});
+    assert.deepEqual(await verify(admin, record()), { ok: false, reason: "UNREADABLE" });
+  });
+});
+
+describe("Completed artifacts: participant package route", () => {
+  const participantRoute = read("app/sign/package/artifact/[artifactId]/route.ts");
+
+  it("verifies bytes after the session and artifact binding, and logs success only after", () => {
+    const sessionAt = participantRoute.indexOf("validateCompletedPackageSession(admin, rawSessionToken)");
+    const bindAt = participantRoute.indexOf("loadCompletedPackageArtifactForSession({");
+    const verifyAt = participantRoute.indexOf("readVerifiedArtifactBytes({");
+    const logAt = participantRoute.indexOf("appendCompletedPackageAccessLog({");
+    const serveAt = participantRoute.indexOf("new NextResponse(Buffer.from(bytes)");
+    assert.ok(sessionAt > 0 && bindAt > sessionAt && verifyAt > bindAt && logAt > verifyAt && serveAt > logAt);
+    assert.match(participantRoute, /signingId: session\.signingId/);
+    assert.doesNotMatch(participantRoute, /downloadArtifactBytes/);
+  });
+
+  it("fails closed with the same unavailable response and exposes no fingerprint or location", () => {
+    assert.match(participantRoute, /if \(!verified\.ok\) \{[\s\S]{0,400}return unavailableResponse\(\);/);
+    assert.doesNotMatch(participantRoute, /SHA256|content_sha256|storage_object_key|storage_bucket|status: 409/);
+    assert.match(participantRoute, /"Cache-Control": "no-store"/);
+    assert.match(participantRoute, /"Referrer-Policy": "no-referrer"/);
   });
 });
 

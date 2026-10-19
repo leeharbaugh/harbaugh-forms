@@ -309,7 +309,7 @@ describe("Native Signing completion delivery", () => {
     assert.match(packagePage, /validateCompletedPackageSession/);
     assert.match(packagePage, /listCompletedPackageArtifactsForSession/);
     assert.doesNotMatch(packagePage, /AppNav|MainNav|WorkspaceNav/);
-    assert.match(artifactRoute, /downloadArtifactBytes/);
+    assert.match(artifactRoute, /readVerifiedArtifactBytes/);
     assert.match(artifactRoute, /Content-Disposition/);
     assert.match(artifactRoute, /appendCompletedPackageAccessLog/);
   });

@@ -124,6 +124,62 @@ export async function downloadArtifactBytes(options: {
   return new Uint8Array(await data.arrayBuffer());
 }
 
+/** The recorded location and fingerprint of a completed artifact. */
+export type ServableArtifactRecord = Pick<
+  SigningArtifactRow,
+  "storage_bucket" | "storage_object_key" | "content_sha256" | "byte_size"
+> & {
+  signing_id?: string;
+  package_revision_id?: string;
+};
+
+export type VerifiedArtifactBytes =
+  | { ok: true; bytes: Uint8Array; sha256: string }
+  | { ok: false; reason: "NOT_SERVABLE" | "UNREADABLE" | "INTEGRITY_MISMATCH" };
+
+/**
+ * Bytes of a completed artifact, served only when they still match the
+ * recorded fingerprint. Callers authorize first; this checks location and
+ * integrity only:
+ * - the private Signing artifacts bucket and this Signing's artifact prefix;
+ * - the Signing and frozen revision when the record carries them;
+ * - SHA-256 of the downloaded bytes against `content_sha256`, and the byte
+ *   count against `byte_size` when recorded.
+ * Read-only: it never rewrites the recorded fingerprint or the artifact, and
+ * re-reads and re-hashes on every call.
+ */
+export async function readVerifiedArtifactBytes(options: {
+  admin: SupabaseClient;
+  signingId: string;
+  frozenRevisionId: string;
+  artifact: ServableArtifactRecord;
+}): Promise<VerifiedArtifactBytes> {
+  const { artifact, signingId, frozenRevisionId } = options;
+  if (
+    artifact.storage_bucket !== SIGNING_ARTIFACTS_BUCKET ||
+    !artifact.storage_object_key.startsWith(`signings/${signingId}/artifacts/`) ||
+    !artifact.content_sha256 ||
+    (artifact.signing_id !== undefined && artifact.signing_id !== signingId) ||
+    (artifact.package_revision_id !== undefined &&
+      artifact.package_revision_id !== frozenRevisionId)
+  ) {
+    return { ok: false, reason: "NOT_SERVABLE" };
+  }
+  const { data, error } = await options.admin.storage
+    .from(SIGNING_ARTIFACTS_BUCKET)
+    .download(artifact.storage_object_key);
+  if (error || !data) return { ok: false, reason: "UNREADABLE" };
+  const bytes = new Uint8Array(await data.arrayBuffer());
+  const sha256 = sha256Hex(bytes);
+  if (
+    sha256 !== artifact.content_sha256 ||
+    (artifact.byte_size != null && Number(artifact.byte_size) !== bytes.byteLength)
+  ) {
+    return { ok: false, reason: "INTEGRITY_MISMATCH" };
+  }
+  return { ok: true, bytes, sha256 };
+}
+
 /**
  * Readback-verify stored bytes against the expected fingerprint.
  * Never rewrites content_sha256 on mismatch.
