@@ -51,6 +51,7 @@ import {
 import { buildCompletedPackageUrl } from "../lib/signing/bearer-transport.ts";
 import { requireCeremonyWriteContext } from "../lib/signing/ceremony-context.ts";
 import { loadRawCompletedPackageToken } from "../lib/signing/completed-package-credentials.ts";
+import { disclosureDownloadFilename, disclosureDownloadText } from "../lib/signing/consent-disclosure-view.ts";
 import { addCopyRecipientWithActor } from "../lib/signing/copy-recipients.ts";
 import { addDraftSigningDocumentWithActor } from "../lib/signing/draft-documents.ts";
 import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
@@ -95,6 +96,9 @@ function note(message: string) {
   console.log(`NOTE: ${message}`);
 }
 
+/** Version key of the current disclosure, once loaded; every consent screen must show exactly it. */
+let currentDisclosureVersionKey: string | null = null;
+
 /**
  * Electronic records consent through the real UI: the checkbox starts
  * unchecked, Continue is disabled until it is checked, then consent is sent.
@@ -105,8 +109,10 @@ async function consentInUi(page: Page, label: string) {
   await checkbox.waitFor({ timeout: 30000 });
   if ((await checkbox.getAttribute("aria-checked")) !== "false") fail(`${label}: consent checkbox is pre-checked`);
   if (!(await proceed.isDisabled())) fail(`${label}: Continue is enabled before consent`);
-  if (!(await page.getByTestId("disclosure-version").innerText()).includes("esign-disclosure-")) {
-    fail(`${label}: disclosure version not shown`);
+  const shownVersion = (await page.getByTestId("disclosure-version").innerText()).trim();
+  if (!shownVersion.includes("esign-disclosure-")) fail(`${label}: disclosure version not shown`);
+  if (currentDisclosureVersionKey && shownVersion !== `Version ${currentDisclosureVersionKey}`) {
+    fail(`${label}: shows "${shownVersion}", not the current version ${currentDisclosureVersionKey}`);
   }
   if ((await page.getByTestId("disclosure-download").count()) !== 1 || (await page.getByTestId("disclosure-print").count()) !== 1) {
     fail(`${label}: disclosure download/print missing`);
@@ -793,6 +799,7 @@ async function main() {
       .select("id, version_key, title, body_text, content_sha256, is_production_ready, published_at")
       .is("superseded_at", null)
       .single();
+    currentDisclosureVersionKey = disclosure!.version_key as string;
     await s1.getByRole("heading", { name: disclosure!.title as string, level: 2 }).waitFor({ timeout: 30000 });
     const consentText = await s1.locator("body").innerText();
     if (!consentText.includes((disclosure!.body_text as string).slice(0, 60))) fail("disclosure body not shown");
@@ -838,6 +845,33 @@ async function main() {
       }
       const bodyText = await s1.getByTestId("disclosure-body").innerText();
       if (/TREC[- ]approved|complies with all|legally binding|notariz/i.test(bodyText)) fail("disclosure makes an unsupported claim");
+      for (const paragraph of String(disclosure!.body_text).split("\n").filter((line) => line.length > 60)) {
+        if (!bodyText.includes(paragraph.replace(/^- /, ""))) fail(`displayed disclosure is missing stored text: ${paragraph.slice(0, 60)}…`);
+      }
+      const expectedRecord = disclosureDownloadText({
+        title: disclosure!.title as string,
+        versionKey: disclosure!.version_key as string,
+        contentSha256: disclosure!.content_sha256 as string,
+        bodyText: disclosure!.body_text as string,
+      });
+      const [disclosureDownload] = await Promise.all([
+        s1.waitForEvent("download"),
+        s1.getByTestId("disclosure-download").click(),
+      ]);
+      if (disclosureDownload.suggestedFilename() !== disclosureDownloadFilename(disclosure!.version_key as string)) {
+        fail(`disclosure Download filename: ${disclosureDownload.suggestedFilename()}`);
+      }
+      if (readFileSync((await disclosureDownload.path())!, "utf8") !== expectedRecord) {
+        fail("disclosure Download is not the displayed version's exact stored text");
+      }
+      const [printPopup] = await Promise.all([
+        s1.context().waitForEvent("page"),
+        s1.getByTestId("disclosure-print").click(),
+      ]);
+      const printed = await printPopup.evaluate(() => document.querySelector("pre")?.textContent ?? "");
+      if (printed !== expectedRecord) fail("disclosure Print does not show the displayed version's exact stored text");
+      await printPopup.close();
+      ok(`disclosure Download (${disclosureDownload.suggestedFilename()}) and Print both carry the displayed version's exact text, version ${disclosure!.version_key} and SHA-256`);
       await shot(s1, "p1-02-consent");
       const viewport = s1.viewportSize();
       await s1.setViewportSize({ width: 390, height: 844 });

@@ -75,13 +75,25 @@ export class NativeSigningProductionDisclosureError extends Error {
 }
 
 /**
+ * Whether a disclosure version may be presented or relied on in this runtime.
+ * Production accepts only versions marked production-ready, whether the
+ * version is current or one a participant accepted earlier.
+ */
+export function isDisclosureEligibleForRuntime(
+  disclosure: { isProductionReady: boolean },
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return !isSigningProductionRuntime(env) || disclosure.isProductionReady;
+}
+
+/**
  * Fail closed in production when the current disclosure is not counsel-ready.
  */
 export function assertProductionDisclosureReady(
   disclosure: { isProductionReady: boolean },
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  if (isSigningProductionRuntime(env) && !disclosure.isProductionReady) {
+  if (!isDisclosureEligibleForRuntime(disclosure, env)) {
     throw new NativeSigningProductionDisclosureError();
   }
 }

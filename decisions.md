@@ -12,6 +12,25 @@ Each decision should include:
 
 ---
 
+## Consent evidence is immutable; production eligibility is decided separately
+
+**Date:** 2026-10-19, afternoon (PR #55 completion; Lee's approved production-safety principle)
+
+**Decision:**
+1. **Two different questions.** Consent evidence (the participant's `consent_*` columns and the append-only `CONSENT_ACCEPTED` event: version id, version key, SHA-256) records what a participant accepted and is never rewritten, relabelled or migrated. Whether that acceptance may authorize Signing actions is decided at each check for the current runtime.
+2. **Production eligibility.** In production (`VERCEL_ENV=production`) only a disclosure version marked `is_production_ready` is eligible, whether it is the current version being presented or the version a participant accepted earlier. One rule, `isDisclosureEligibleForRuntime`, serves both. Development and preview accept any verified version.
+3. **Fail closed.** With no eligible current version, production refuses to present a disclosure, record consent or start a ceremony. An acceptance of an ineligible version does not satisfy consent (`ACCEPTANCE_NOT_ELIGIBLE`): marks, placements, Start signing and Finish fail with CONSENT_REQUIRED, and the ineligible version is never presented as the accepted one. A valid fingerprint is necessary for evidence integrity and is never by itself enough for production eligibility.
+4. **What the participant sees.** After an ineligible acceptance, the participant is shown the eligible current disclosure as a first-time review and must accept it affirmatively. That is a new acceptance of wording they saw: it appends a new `CONSENT_ACCEPTED` event and repoints `consent_*`, while the earlier event stays as it was. Eligible acceptances keep the no-forced-re-consent rule, including after a newer approved version. No general re-consent policy, withdrawal workflow or amendment UI is added.
+5. **Approval is forward-only.** Counsel-approved copy should be published as a new version row with `is_production_ready = true`, not by flipping readiness on a row that already has non-production acceptances. Readiness carries no timestamp, so a flip would make those acceptances eligible.
+
+**Forward-only disclosure revision.** Lee's approved wording for Paper copies, the email line of What you need, and Keeping your records is published as `esign-disclosure-2026-10-19-revised` by data-only migration `20261019150000_native_signing_esign_disclosure_revision.sql`, with `is_production_ready = false`. It supersedes `esign-disclosure-2026-10-19`; every other section is carried over verbatim. The earlier migration, its stored text and fingerprint, and every acceptance and event are unchanged. The migration strips carriage returns so the stored text and fingerprint (`f1270f27b1291cff1225ef45fa5cf41b2c4de1184d00bc5caaa81239feb3d45d`) do not depend on checkout line endings. The wording is approved product wording, not counsel-approved.
+
+**Reason:** Production readiness was asserted only for the current version, so an older non-ready acceptance would have become usable once an approved version was published. The delivery audit showed the earlier Paper copies and Keeping your records wording overstated email delivery and pointed returning participants to the invitation link, which is refused after Complete.
+
+**Related:** `lib/signing/feature-gate.ts` (`isDisclosureEligibleForRuntime`), `lib/signing/consent-disclosure.ts` (`checkConsentSatisfied`), `lib/signing/adopted-marks.ts` (`prepareCeremonyMarks`), `lib/signing/consent-eligibility.test.ts`, `lib/signing/consent-disclosure-copy.test.ts`, `supabase/migrations/20261019150000_native_signing_esign_disclosure_revision.sql`, `scripts/validate-native-signing-ceremony-dev.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
 ## Electronic records consent: published disclosure, bound to the version accepted
 
 **Date:** 2026-10-19 (electronic consent disclosure tranche; Lee's decisions)

@@ -335,6 +335,13 @@ export async function prepareCeremonyMarks(options: {
   context: CeremonyWriteContext;
 }): Promise<PrepareCeremonyMarksResult> {
   const { admin, context } = options;
+  // Reusing existing marks skips adoptCeremonyMark, so Start signing checks
+  // consent itself.
+  await requireConsentSatisfied({
+    admin,
+    signingId: context.session.signingId,
+    signingParticipantId: context.session.signingParticipantId,
+  });
   const { data: fieldRows, error } = await admin
     .from("signing_fields")
     .select("field_type")

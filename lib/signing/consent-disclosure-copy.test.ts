@@ -110,6 +110,125 @@ describe("Electronic records disclosure 2026-10-19: publication", () => {
   });
 });
 
+const REVISION_MIGRATION = read(
+  "supabase/migrations/20261019150000_native_signing_esign_disclosure_revision.sql",
+);
+const REVISED_BODY =
+  REVISION_MIGRATION.match(/\$disclosure\$([\s\S]*?)\$disclosure\$/)?.[1] ?? "";
+const PREVIOUS_FINGERPRINT =
+  "fd149012b5788e8f3d95c4c4b848928a620b17756745fa8d6c788bb1c883e3bc";
+const REVISED_FINGERPRINT =
+  "f1270f27b1291cff1225ef45fa5cf41b2c4de1184d00bc5caaa81239feb3d45d";
+
+const APPROVED_PAPER_COPIES = [
+  "After everyone has finished and the Signing is complete, Harbaugh Forms emails a personal link to the completed documents to each signer who has an email address on this Signing. If you don't receive the email, contact the sender. From that link, you can download, save, and print the completed documents.",
+  "If you signed in person without an email address, or need another copy, contact the sender. Harbaugh Forms charges no fee for downloading completed documents. To request a paper copy, contact the sender. Harbaugh Forms does not mail paper copies.",
+];
+const APPROVED_EMAIL_REQUIREMENT =
+  "If you're signing remotely, access to the email address where your Signing invitation was sent. If you have an email address on this Signing, your completed-documents link is sent there too.";
+const APPROVED_KEEPING_RECORDS =
+  "Download and save your completed documents when you receive the link. Your original Signing invitation link cannot be used to access completed documents. The completed-documents link may stop working if the sender replaces or revokes it, or access is otherwise restricted. Keep your own copy for your records.";
+
+describe("Electronic records disclosure 2026-10-19-revised: copy", () => {
+  const blocks = parseDisclosureBlocks(REVISED_BODY);
+  const section = (heading: string) => blocks.find((block) => block.heading === heading);
+
+  it("pins the repository (LF) text fingerprints of both versions", () => {
+    assert.equal(consentDisclosureFingerprint(BODY), PREVIOUS_FINGERPRINT);
+    assert.equal(consentDisclosureFingerprint(REVISED_BODY), REVISED_FINGERPRINT);
+  });
+
+  it("carries the approved wording verbatim in the three revised sections", () => {
+    assert.deepEqual(section("Paper copies"), {
+      heading: "Paper copies",
+      paragraphs: APPROVED_PAPER_COPIES,
+      bullets: [],
+    });
+    const needs = section("What you need");
+    assert.equal(needs?.bullets.length, 5);
+    assert.equal(needs?.bullets[3], APPROVED_EMAIL_REQUIREMENT);
+    assert.deepEqual(section("Keeping your records"), {
+      heading: "Keeping your records",
+      paragraphs: [APPROVED_KEEPING_RECORDS],
+      bullets: [],
+    });
+  });
+
+  it("changes nothing outside the three approved sections", () => {
+    const previous = parseDisclosureBlocks(BODY);
+    assert.deepEqual(
+      blocks.map((block) => block.heading),
+      previous.map((block) => block.heading),
+    );
+    for (const [index, block] of blocks.entries()) {
+      const before = previous[index];
+      if (block.heading === "Paper copies" || block.heading === "Keeping your records") continue;
+      if (block.heading === "What you need") {
+        assert.deepEqual(
+          block.bullets.filter((_, bulletIndex) => bulletIndex !== 3),
+          before.bullets.filter((_, bulletIndex) => bulletIndex !== 3),
+        );
+        assert.deepEqual(block.paragraphs, before.paragraphs);
+        continue;
+      }
+      assert.deepEqual(block, before, `${block.heading ?? "introduction"} is unchanged`);
+    }
+  });
+
+  it("matches the completed-delivery behavior and makes no unsupported claim", () => {
+    assert.match(REVISED_BODY, /original Signing invitation link cannot be used to access completed documents/);
+    assert.doesNotMatch(REVISED_BODY, /access them again through your Signing link/);
+    assert.doesNotMatch(REVISED_BODY, /Remote signers with an email address/);
+    assert.doesNotMatch(REVISED_BODY, /will receive/);
+    for (const claim of [
+      /TREC/i,
+      /approv/i,
+      /complies? with/i,
+      /legally binding/i,
+      /notar/i,
+      /verif(y|ied|ies) (your )?identity/i,
+      /forever|indefinite|permanent|guarantee/i,
+      /we will (mail|provide paper)/i,
+      /waive/i,
+    ]) {
+      assert.doesNotMatch(REVISED_BODY, claim);
+    }
+  });
+
+  it("downloads and prints the revised version's own text and fingerprint", () => {
+    const text = disclosureDownloadText({
+      title: "Electronic records and signatures",
+      versionKey: "esign-disclosure-2026-10-19-revised",
+      contentSha256: REVISED_FINGERPRINT,
+      bodyText: REVISED_BODY,
+    });
+    assert.ok(text.includes(REVISED_BODY));
+    assert.ok(text.includes("Version: esign-disclosure-2026-10-19-revised"));
+    assert.ok(text.includes(`SHA-256: ${REVISED_FINGERPRINT}`));
+    assert.ok(!text.includes(PREVIOUS_FINGERPRINT));
+    assert.equal(
+      disclosureDownloadFilename("esign-disclosure-2026-10-19-revised"),
+      "esign-disclosure-2026-10-19-revised.txt",
+    );
+  });
+});
+
+describe("Electronic records disclosure 2026-10-19-revised: publication", () => {
+  it("publishes forward-only after the previous version and stays non-production", () => {
+    assert.match(REVISION_MIGRATION, /'esign-disclosure-2026-10-19-revised'/);
+    assert.match(REVISION_MIGRATION, /v_body constant text := replace\(\$disclosure\$/);
+    assert.match(REVISION_MIGRATION, /\$disclosure\$, chr\(13\), ''\);/);
+    assert.match(REVISION_MIGRATION, /encode\(sha256\(convert_to\(v_body, 'UTF8'\)\), 'hex'\)/);
+    assert.match(REVISION_MIGRATION, /set superseded_at = now\(\)\s+where superseded_at is null/);
+    assert.match(REVISION_MIGRATION, /v_body,\s+encode\(sha256[^)]+\)\), 'hex'\),\s+false\s*\)/);
+    assert.match(REVISION_MIGRATION, /expected exactly one current disclosure version/);
+    assert.doesNotMatch(REVISION_MIGRATION, /is_production_ready\s*=\s*true/);
+    assert.doesNotMatch(REVISION_MIGRATION, /set (body_text|content_sha256|is_production_ready|version_key)/);
+    assert.doesNotMatch(REVISION_MIGRATION, /signing_participants|signing_events/);
+    assert.doesNotMatch(REVISION_MIGRATION, /\b(alter|create|drop) (table|function|trigger|policy)/i);
+  });
+});
+
 describe("Electronic records disclosure: ceremony UI", () => {
   const card = read("components/sign/consent-disclosure.tsx");
   const shell = read("components/sign/ceremony-shell.tsx");

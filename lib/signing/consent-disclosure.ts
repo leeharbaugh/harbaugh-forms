@@ -24,6 +24,7 @@ import { appendCeremonyEvent } from "./ceremony-events";
 import { SigningError } from "./errors";
 import {
   assertProductionDisclosureReady,
+  isDisclosureEligibleForRuntime,
   isSigningProductionRuntime,
 } from "./feature-gate";
 
@@ -70,6 +71,7 @@ function verifiedDisclosure(row: Record<string, unknown>): ConsentDisclosure | n
 
 export async function loadCurrentConsentDisclosure(
   admin: SupabaseClient,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<ConsentDisclosure> {
   const { data, error } = await admin
     .from("signing_consent_disclosure_versions")
@@ -92,7 +94,7 @@ export async function loadCurrentConsentDisclosure(
     );
   }
 
-  assertProductionDisclosureReady(disclosure);
+  assertProductionDisclosureReady(disclosure, env);
   return disclosure;
 }
 
@@ -114,9 +116,13 @@ export { isSigningProductionRuntime };
 
 export type ConsentState = {
   satisfied: boolean;
-  reason: "SATISFIED" | "NEVER_ACCEPTED" | "ACCEPTANCE_UNVERIFIABLE";
+  reason:
+    | "SATISFIED"
+    | "NEVER_ACCEPTED"
+    | "ACCEPTANCE_UNVERIFIABLE"
+    | "ACCEPTANCE_NOT_ELIGIBLE";
   currentDisclosure: ConsentDisclosure;
-  /** The exact version this participant accepted, when it verifies. */
+  /** The exact version this participant accepted, when it verifies and is eligible here. */
   acceptedDisclosure: ConsentDisclosure | null;
   acceptedAt: string | null;
   acceptedDisclosureVersionId: string | null;
@@ -126,17 +132,22 @@ export type ConsentState = {
 /**
  * Consent is satisfied when this participant accepted a disclosure version
  * (current or since superseded) whose stored body still reproduces both the
- * version's fingerprint and the fingerprint recorded at acceptance.
+ * version's fingerprint and the fingerprint recorded at acceptance, and that
+ * version is eligible in this runtime. A verified fingerprint proves which
+ * text was accepted; in production only a production-ready version may
+ * authorize signing. An ineligible acceptance is left untouched as evidence.
  */
 export async function checkConsentSatisfied(options: {
   admin: SupabaseClient;
   signingId: string;
   signingParticipantId: string;
   currentDisclosure?: ConsentDisclosure;
+  env?: NodeJS.ProcessEnv;
 }): Promise<ConsentState> {
+  const env = options.env ?? process.env;
   const currentDisclosure =
     options.currentDisclosure ??
-    (await loadCurrentConsentDisclosure(options.admin));
+    (await loadCurrentConsentDisclosure(options.admin, env));
 
   const { data, error } = await options.admin
     .from("signing_participants")
@@ -172,12 +183,20 @@ export async function checkConsentSatisfied(options: {
       : await loadVerifiedDisclosureVersion(options.admin, acceptedDisclosureVersionId);
   const verified =
     acceptedDisclosure !== null && acceptedDisclosure.contentSha256 === acceptedContentSha256;
+  const eligible =
+    verified &&
+    acceptedDisclosure !== null &&
+    isDisclosureEligibleForRuntime(acceptedDisclosure, env);
 
   return {
-    satisfied: verified,
-    reason: verified ? "SATISFIED" : "ACCEPTANCE_UNVERIFIABLE",
+    satisfied: eligible,
+    reason: !verified
+      ? "ACCEPTANCE_UNVERIFIABLE"
+      : eligible
+        ? "SATISFIED"
+        : "ACCEPTANCE_NOT_ELIGIBLE",
     currentDisclosure,
-    acceptedDisclosure: verified ? acceptedDisclosure : null,
+    acceptedDisclosure: eligible ? acceptedDisclosure : null,
     acceptedAt,
     acceptedDisclosureVersionId,
     acceptedContentSha256,
@@ -188,6 +207,7 @@ export async function requireConsentSatisfied(options: {
   admin: SupabaseClient;
   signingId: string;
   signingParticipantId: string;
+  env?: NodeJS.ProcessEnv;
 }): Promise<ConsentState> {
   const state = await checkConsentSatisfied(options);
   if (!state.satisfied) {
@@ -218,12 +238,14 @@ export async function acceptConsent(options: {
   context: CeremonyWriteContext;
   /** Echoed back from the rendered disclosure to catch a stale form. */
   disclosureVersionId: unknown;
+  env?: NodeJS.ProcessEnv;
 }): Promise<AcceptConsentResult> {
   const { admin, context } = options;
   const state = await checkConsentSatisfied({
     admin,
     signingId: context.session.signingId,
     signingParticipantId: context.session.signingParticipantId,
+    env: options.env,
   });
   const current = state.currentDisclosure;
 

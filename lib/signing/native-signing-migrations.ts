@@ -38,6 +38,7 @@ export const NATIVE_SIGNING_ALL_MIGRATIONS = [
   "20261014120000_native_signing_placement_templates",
   "20261017120000_native_signing_participant_role_override",
   "20261019120000_native_signing_esign_disclosure_2026_10_19",
+  "20261019150000_native_signing_esign_disclosure_revision",
 ] as const;
 
 export function listNativeSigningMigrationFilesFromDisk(

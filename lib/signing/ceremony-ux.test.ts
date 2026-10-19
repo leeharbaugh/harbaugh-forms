@@ -124,6 +124,12 @@ describe("Ceremony marks come from the Signing identity", () => {
       functionBody(adoptedMarks, "export async function adoptCeremonyMark("),
       /await requireConsentSatisfied\(/,
     );
+    const start = functionBody(adoptedMarks, "export async function prepareCeremonyMarks(");
+    assert.ok(
+      start.indexOf("await requireConsentSatisfied(") > 0 &&
+        start.indexOf("await requireConsentSatisfied(") < start.indexOf('.from("signing_fields")'),
+      "Start signing checks consent before reading or reusing marks",
+    );
     for (const name of ["acceptFieldPlacement", "replaceFieldPlacement"]) {
       const body = functionBody(placements, `export async function ${name}(`);
       const consentAt = body.indexOf("await requireConsentSatisfied(");
