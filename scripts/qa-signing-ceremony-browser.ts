@@ -95,6 +95,30 @@ function note(message: string) {
   console.log(`NOTE: ${message}`);
 }
 
+/**
+ * Electronic records consent through the real UI: the checkbox starts
+ * unchecked, Continue is disabled until it is checked, then consent is sent.
+ */
+async function consentInUi(page: Page, label: string) {
+  const checkbox = page.getByTestId("consent-acknowledge");
+  const proceed = page.getByTestId("consent-continue");
+  await checkbox.waitFor({ timeout: 30000 });
+  if ((await checkbox.getAttribute("aria-checked")) !== "false") fail(`${label}: consent checkbox is pre-checked`);
+  if (!(await proceed.isDisabled())) fail(`${label}: Continue is enabled before consent`);
+  if (!(await page.getByTestId("disclosure-version").innerText()).includes("esign-disclosure-")) {
+    fail(`${label}: disclosure version not shown`);
+  }
+  if ((await page.getByTestId("disclosure-download").count()) !== 1 || (await page.getByTestId("disclosure-print").count()) !== 1) {
+    fail(`${label}: disclosure download/print missing`);
+  }
+  await checkbox.click();
+  if ((await checkbox.getAttribute("aria-checked")) !== "true" || (await proceed.isDisabled())) {
+    fail(`${label}: checking the consent box did not enable Continue`);
+  }
+  await proceed.click();
+  await page.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
+}
+
 async function shot(page: Page, name: string) {
   mkdirSync(OUT_DIR, { recursive: true });
   await page.screenshot({ path: path.join(OUT_DIR, `${name}.png`), fullPage: true });
@@ -767,10 +791,9 @@ async function main() {
     const { data: disclosure } = await admin
       .from("signing_consent_disclosure_versions")
       .select("id, version_key, title, body_text, content_sha256, is_production_ready, published_at")
-      .order("published_at", { ascending: false })
-      .limit(1)
+      .is("superseded_at", null)
       .single();
-    await s1.getByText(disclosure!.title as string).waitFor({ timeout: 30000 });
+    await s1.getByRole("heading", { name: disclosure!.title as string, level: 2 }).waitFor({ timeout: 30000 });
     const consentText = await s1.locator("body").innerText();
     if (!consentText.includes((disclosure!.body_text as string).slice(0, 60))) fail("disclosure body not shown");
     if (!disclosure!.is_production_ready && !consentText.includes("Development disclosure copy")) fail("dev disclosure badge missing");
@@ -795,18 +818,46 @@ async function main() {
       ok("server refuses a mark and a placement before consent (CONSENT_REQUIRED), not only the UI");
     }
     await s1.reload({ waitUntil: "networkidle" });
-    await s1.getByRole("button", { name: "I agree to use electronic records and signatures" }).waitFor();
+    await s1.getByTestId("consent-continue").waitFor();
     if ((await participantRow(a.signingId, P1)).consent_accepted_at) fail("consent recorded without acceptance");
-    await shot(s1, "p1-02-consent");
-    await s1.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
-    await s1.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
+    {
+      const headings = await s1.getByTestId("disclosure-body").locator("h3").allInnerTexts();
+      for (const section of [
+        "Your choice",
+        "What your consent covers",
+        "Stopping before you finish",
+        "Paper copies",
+        "Your contact information",
+        "What you need",
+        "Keeping your records",
+      ]) {
+        if (!headings.includes(section)) fail(`disclosure section missing: ${section}`);
+      }
+      if ((await s1.getByRole("button", { name: "Leave for now" }).count()) !== 1 || (await s1.getByRole("button", { name: "Decline to sign" }).count()) !== 1) {
+        fail("Leave for now / Decline to sign must be available before consent");
+      }
+      const bodyText = await s1.getByTestId("disclosure-body").innerText();
+      if (/TREC[- ]approved|complies with all|legally binding|notariz/i.test(bodyText)) fail("disclosure makes an unsupported claim");
+      await shot(s1, "p1-02-consent");
+      const viewport = s1.viewportSize();
+      await s1.setViewportSize({ width: 390, height: 844 });
+      await s1.waitForTimeout(400);
+      const overflow = await s1.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      if (overflow > 1) fail(`consent screen scrolls horizontally at 390px (${overflow}px)`);
+      await s1.getByTestId("consent-acknowledge").scrollIntoViewIfNeeded();
+      if (!(await s1.getByTestId("consent-acknowledge").isVisible())) fail("consent checkbox not reachable at 390px");
+      await shot(s1, "p1-02-consent-phone");
+      if (viewport) await s1.setViewportSize(viewport);
+      ok("disclosure: all seven sections, version shown, download/print offered, Leave for now and Decline available, no unsupported claims; phone width (390px) readable with no horizontal scroll");
+    }
+    await consentInUi(s1, "P1");
     p1Row = await participantRow(a.signingId, P1);
     if (p1Row.consent_disclosure_version_id !== disclosure!.id || p1Row.consent_content_sha256 !== disclosure!.content_sha256) {
       fail("consent evidence does not reference the shown disclosure version/fingerprint");
     }
     if (sha256(Buffer.from(disclosure!.body_text as string, "utf8")) !== disclosure!.content_sha256) fail("disclosure fingerprint mismatch");
     await s1.reload({ waitUntil: "networkidle" });
-    if ((await s1.getByRole("button", { name: "I agree to use electronic records and signatures" }).count()) !== 0) fail("consent re-prompted after reload");
+    if ((await s1.getByTestId("consent-continue").count()) !== 0) fail("consent re-prompted after reload");
     ok(`consent: "${disclosure!.title}" (version ${disclosure!.version_key}, sha256 ${String(disclosure!.content_sha256).slice(0, 12)}…, dev copy badge) shown; no marks/Finish before acceptance; reload keeps it unaccepted; acceptance records version id + fingerprint; reload does not re-prompt`);
 
     // ---------- Signature and Initials from the Signing identity ----------
@@ -1391,8 +1442,7 @@ async function main() {
     let { context: c2, page: s2 } = await enter(linkP2, P2, "p2");
     if ((await s2.getByRole("button", { name: `I am ${P1}` }).count()) !== 0) fail("P2 offered P1 affirmation");
     await affirm(s2, P2);
-    await s2.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
-    await s2.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
+    await consentInUi(s2, "s2");
     await startSigning(s2, P2, "BR", "P2");
     await pageCanvas(s2, 1).waitFor({ timeout: 60000 });
     await guidance(s2).filter({ hasText: "Click here to sign" }).waitFor({ timeout: 60000 });
@@ -1474,7 +1524,7 @@ async function main() {
     if ((await s2.getByRole("button", { name: `I am ${P2}` }).count()) !== 1) fail("resume did not ask P2 to confirm identity again");
     await affirm(s2, P2);
     await fieldsHeading(s2).waitFor({ timeout: 60000 });
-    if ((await s2.getByRole("button", { name: "I agree to use electronic records and signatures" }).count()) !== 0) fail("P2 re-prompted for consent after Exit");
+    if ((await s2.getByTestId("consent-continue").count()) !== 0) fail("P2 re-prompted for consent after Exit");
     if ((await s2.getByRole("button", { name: "Start signing" }).count()) !== 0) fail("P2 marks lost after Exit");
     await row(s2, "Signature", true).getByText(`Dated ${today}`).waitFor({ timeout: 30000 });
     await s2.getByText("Document 2 of 2 · 1 page").waitFor({ timeout: 60000 });
@@ -1735,7 +1785,16 @@ async function main() {
     const creds = packageCreds ?? [];
     const copyCreds = creds.filter((cred) => cred.signing_copy_recipient_id);
     if (creds.filter((cred) => cred.signing_participant_id).length !== 2 || copyCreds.length !== 1) fail(`completed-package credentials: ${JSON.stringify(creds.map((cred) => Boolean(cred.signing_copy_recipient_id)))}`);
-    if (creds.some((cred) => new Date(cred.create_date) < new Date(complete.completed_at!))) fail("completed-package credential issued before Complete");
+    {
+      // `completed_at` is stamped by the app server's clock and credential
+      // `create_date` by the database's, so allow for clock skew between them.
+      // "No credential before Complete" by state is asserted at Send above.
+      const CLOCK_SKEW_TOLERANCE_MS = 2_000;
+      const completedAtMs = new Date(complete.completed_at!).getTime();
+      if (creds.some((cred) => new Date(cred.create_date).getTime() < completedAtMs - CLOCK_SKEW_TOLERANCE_MS)) {
+        fail("completed-package credential issued before Complete");
+      }
+    }
     ok("completed-package credentials issued after Complete for both participants and the copy recipient");
     const p1Cred = creds.find((cred) => cred.signing_participant_id === p1.id)!;
     const packageToken = await loadRawCompletedPackageToken({ admin, signingId: a.signingId, credentialId: p1Cred.id });
@@ -2014,8 +2073,7 @@ async function main() {
       if (crossSigning !== 404) fail(`P3's Signing B session read Signing A's document (${crossSigning})`);
       ok("cross-Signing: a Signing B ceremony session requesting a Signing A document id gets 404");
     }
-    await s3.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
-    await s3.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
+    await consentInUi(s3, "s3");
     await startSigning(s3, P3, null, "P3");
     await pageCanvas(s3, 1).waitFor({ timeout: 60000 });
     const p3SigField = (await revisionFields(b.signingId)).find((field) => field.signing_participant_id === p3.id && field.field_type === "SIGNATURE")!;
@@ -2223,8 +2281,7 @@ async function main() {
     console.log(`INFO: dev-server "destination stream closed early" lines logged during the in-person handoff navigation: ${streamClosedLines() - streamClosedBeforeHandoff}`);
     if (!(await managerContext.cookies()).some((cookie) => cookie.name === DEVICE_HANDOFF_LOCK_COOKIE_NAME)) fail("device-handoff lock not set at handoff");
     await affirm(manager, P5);
-    await manager.getByRole("button", { name: "I agree to use electronic records and signatures" }).click();
-    await manager.getByText("Disclosure accepted.").waitFor({ timeout: 30000 });
+    await consentInUi(manager, "manager");
     await startSigning(manager, P5, "EI", "P5 in person");
     await pageCanvas(manager, 1).waitFor({ timeout: 60000 });
     {

@@ -1,6 +1,5 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,6 +12,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { CeremonyFocusRequest } from "@/components/sign/ceremony-document-viewer";
+import {
+  ConsentDisclosureCard,
+  DisclosureReviewButton,
+} from "@/components/sign/consent-disclosure";
 import {
   acceptConsentAction,
   ceremonyHeartbeatAction,
@@ -503,45 +506,26 @@ export function CeremonyShell({
         </div>
         {messages}
         {!consentSatisfied ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{disclosure.title}</CardTitle>
-              <CardDescription>
-                {overview.consent.reason === "DISCLOSURE_CHANGED"
-                  ? "This disclosure was updated since you last accepted it. Please review it again."
-                  : "Please review this disclosure before signing electronically."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!disclosure.isProductionReady ? (
-                <Badge variant="secondary">Development disclosure copy</Badge>
-              ) : null}
-              <div className="max-h-72 overflow-y-auto rounded-md border border-input bg-card p-3 text-sm whitespace-pre-wrap">
-                {disclosure.bodyText}
-              </div>
-              <Button
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  const skipSetup = !needsMarkSetup(overview);
-                  run(
-                    () =>
-                      acceptConsentAction({
-                        disclosureVersionId: disclosure.id,
-                      }),
-                    {
-                      successNotice: "Disclosure accepted.",
-                      onSuccess: () => {
-                        if (skipSetup) guideToFirstRequiredField(overview);
-                      },
-                    },
-                  );
-                }}
-              >
-                I agree to use electronic records and signatures
-              </Button>
-            </CardContent>
-          </Card>
+          <ConsentDisclosureCard
+            disclosure={disclosure}
+            reconsent={overview.consent.reason === "ACCEPTANCE_UNVERIFIABLE"}
+            pending={pending}
+            onConsent={() => {
+              const skipSetup = !needsMarkSetup(overview);
+              run(
+                () =>
+                  acceptConsentAction({
+                    disclosureVersionId: disclosure.id,
+                  }),
+                {
+                  successNotice: "Disclosure accepted.",
+                  onSuccess: () => {
+                    if (skipSetup) guideToFirstRequiredField(overview);
+                  },
+                },
+              );
+            }}
+          />
         ) : (
           <Card>
             <CardHeader>
@@ -680,6 +664,9 @@ export function CeremonyShell({
         >
           Finish Signing
         </Button>
+        {overview.consent.acceptedDisclosure ? (
+          <DisclosureReviewButton disclosure={overview.consent.acceptedDisclosure} />
+        ) : null}
         {leaveButton}
       </header>
 

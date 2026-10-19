@@ -5,12 +5,14 @@
  * acceptance records the disclosure version id and the SHA-256 content
  * fingerprint alongside `consent_accepted_at`. Disclosure text is never
  * rewritten in place: publishing new copy inserts a new version row and
- * supersedes the old one, and an acceptance that no longer matches the current
- * version means fresh consent is required rather than silently binding the
- * participant to changed text.
+ * supersedes the old one. An acceptance stays bound to the exact version the
+ * participant accepted: a newer version applies only to participants who have
+ * not yet consented, and never silently re-binds or re-prompts someone who
+ * already accepted. An acceptance whose version row cannot reproduce the
+ * recorded fingerprint fails closed.
  *
- * A browser-session timeout does not re-require consent while the accepted
- * disclosure is unchanged; identity affirmation repeats instead.
+ * A browser-session timeout does not re-require consent; identity affirmation
+ * repeats instead.
  *
  * The seeded development disclosure is explicitly marked non-production:
  * production enablement still requires Texas legal review of final language.
@@ -47,14 +49,31 @@ export function consentDisclosureFingerprint(bodyText: string): string {
  * text would be worthless, so a mismatch fails closed instead of being
  * accepted or silently repaired.
  */
+const DISCLOSURE_SELECT =
+  "id, version_key, title, body_text, content_sha256, is_production_ready, published_at";
+
+/** A stored version whose body still reproduces its recorded fingerprint. */
+function verifiedDisclosure(row: Record<string, unknown>): ConsentDisclosure | null {
+  const bodyText = row.body_text as string;
+  const contentSha256 = row.content_sha256 as string;
+  if (consentDisclosureFingerprint(bodyText) !== contentSha256) return null;
+  return {
+    id: row.id as string,
+    versionKey: row.version_key as string,
+    title: row.title as string,
+    bodyText,
+    contentSha256,
+    isProductionReady: row.is_production_ready === true,
+    publishedAt: row.published_at as string,
+  };
+}
+
 export async function loadCurrentConsentDisclosure(
   admin: SupabaseClient,
 ): Promise<ConsentDisclosure> {
   const { data, error } = await admin
     .from("signing_consent_disclosure_versions")
-    .select(
-      "id, version_key, title, body_text, content_sha256, is_production_ready, published_at",
-    )
+    .select(DISCLOSURE_SELECT)
     .is("superseded_at", null)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -65,43 +84,49 @@ export async function loadCurrentConsentDisclosure(
     );
   }
 
-  const bodyText = data.body_text as string;
-  const contentSha256 = data.content_sha256 as string;
-  if (consentDisclosureFingerprint(bodyText) !== contentSha256) {
+  const disclosure = verifiedDisclosure(data);
+  if (!disclosure) {
     throw new SigningError(
       "INTEGRITY_MISMATCH",
       "The electronic-signing disclosure failed its integrity check.",
     );
   }
 
-  const disclosure: ConsentDisclosure = {
-    id: data.id as string,
-    versionKey: data.version_key as string,
-    title: data.title as string,
-    bodyText,
-    contentSha256,
-    isProductionReady: data.is_production_ready === true,
-    publishedAt: data.published_at as string,
-  };
-
   assertProductionDisclosureReady(disclosure);
   return disclosure;
+}
+
+/** One stored version by id, only when its body reproduces its fingerprint. */
+async function loadVerifiedDisclosureVersion(
+  admin: SupabaseClient,
+  versionId: string,
+): Promise<ConsentDisclosure | null> {
+  const { data, error } = await admin
+    .from("signing_consent_disclosure_versions")
+    .select(DISCLOSURE_SELECT)
+    .eq("id", versionId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? verifiedDisclosure(data) : null;
 }
 
 export { isSigningProductionRuntime };
 
 export type ConsentState = {
   satisfied: boolean;
-  reason: "SATISFIED" | "NEVER_ACCEPTED" | "DISCLOSURE_CHANGED";
+  reason: "SATISFIED" | "NEVER_ACCEPTED" | "ACCEPTANCE_UNVERIFIABLE";
   currentDisclosure: ConsentDisclosure;
+  /** The exact version this participant accepted, when it verifies. */
+  acceptedDisclosure: ConsentDisclosure | null;
   acceptedAt: string | null;
   acceptedDisclosureVersionId: string | null;
   acceptedContentSha256: string | null;
 };
 
 /**
- * Consent is satisfied only when the stored acceptance matches both the current
- * disclosure version and its content fingerprint.
+ * Consent is satisfied when this participant accepted a disclosure version
+ * (current or since superseded) whose stored body still reproduces both the
+ * version's fingerprint and the fingerprint recorded at acceptance.
  */
 export async function checkConsentSatisfied(options: {
   admin: SupabaseClient;
@@ -134,20 +159,25 @@ export async function checkConsentSatisfied(options: {
       satisfied: false,
       reason: "NEVER_ACCEPTED",
       currentDisclosure,
+      acceptedDisclosure: null,
       acceptedAt,
       acceptedDisclosureVersionId,
       acceptedContentSha256,
     };
   }
 
-  const matches =
-    acceptedDisclosureVersionId === currentDisclosure.id &&
-    acceptedContentSha256 === currentDisclosure.contentSha256;
+  const acceptedDisclosure =
+    acceptedDisclosureVersionId === currentDisclosure.id
+      ? currentDisclosure
+      : await loadVerifiedDisclosureVersion(options.admin, acceptedDisclosureVersionId);
+  const verified =
+    acceptedDisclosure !== null && acceptedDisclosure.contentSha256 === acceptedContentSha256;
 
   return {
-    satisfied: matches,
-    reason: matches ? "SATISFIED" : "DISCLOSURE_CHANGED",
+    satisfied: verified,
+    reason: verified ? "SATISFIED" : "ACCEPTANCE_UNVERIFIABLE",
     currentDisclosure,
+    acceptedDisclosure: verified ? acceptedDisclosure : null,
     acceptedAt,
     acceptedDisclosureVersionId,
     acceptedContentSha256,
@@ -207,10 +237,10 @@ export async function acceptConsent(options: {
     );
   }
 
-  if (state.satisfied && state.acceptedAt) {
+  if (state.satisfied && state.acceptedAt && state.acceptedDisclosure) {
     return {
-      disclosureVersionId: current.id,
-      contentSha256: current.contentSha256,
+      disclosureVersionId: state.acceptedDisclosure.id,
+      contentSha256: state.acceptedDisclosure.contentSha256,
       acceptedAt: state.acceptedAt,
       replayed: true,
     };

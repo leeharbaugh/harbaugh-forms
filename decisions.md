@@ -12,6 +12,32 @@ Each decision should include:
 
 ---
 
+## Electronic records consent: published disclosure, bound to the version accepted
+
+**Date:** 2026-10-19 (electronic consent disclosure tranche; Lee's decisions)
+
+**Decision:**
+1. **Copy.** Disclosure `esign-disclosure-2026-10-19` ("Electronic records and signatures") replaces the development placeholder. It is published as a new immutable `signing_consent_disclosure_versions` row with `is_production_ready = false`, and the placeholder is superseded. It covers, in plain language:
+   - that using electronic records and signatures is a choice;
+   - that consent applies to this Signing only;
+   - how to stop: Leave for now ends the session only, while Decline to sign withdraws from electronic signing and ends the Signing for everyone;
+   - no Harbaugh Forms fee;
+   - paper copies through the sender; Harbaugh Forms provides no paper signing process and does not mail paper copies;
+   - name and email are fixed by the sender: if wrong, stop and contact the sender, who sends a new Signing;
+   - the device, browser and PDF requirements;
+   - keeping records: save the downloads, because the link works until replaced or revoked.
+
+   It makes no claim of TREC approval, legal compliance, binding effect, notarization or identity verification. Counsel review is still required before it, or a successor, is marked production-ready; production keeps failing closed until then.
+2. **Consent is affirmative and server-recorded.** The participant reviews the disclosure (sectioned, readable on a phone, downloadable as its exact stored text with version and SHA-256, and printable). They check an unchecked box stating they have read it, can view it on this device and agree to electronic records and signatures for this Signing; Continue stays disabled until then. The server records consent (`consent_*` columns plus the append-only `CONSENT_ACCEPTED` event with version and fingerprint). Every mark, placement, Start signing and Finish still requires it (`requireConsentSatisfied`). The accepted disclosure can be reopened later in the ceremony.
+3. **Bound to the version accepted.** An acceptance stays valid for the version accepted, current or superseded, as long as that version's stored text still reproduces both its fingerprint and the recorded one; otherwise it fails closed. A newer version applies only to participants who have not yet consented and never silently re-binds or re-prompts. This resolves the earlier tension between the 2026-09-14 and 2026-09-17 entries in favour of 2026-09-14. A version that must re-prompt (for example a material hardware or software change under E-SIGN §7001(c)(1)(D)) would need an explicit flag, which is not built; add it with that version.
+4. **Withdrawal.** There is no separate withdraw action. Before finishing, Decline to sign is how a participant withdraws from electronic signing, with its stated consequence. Leave for now and closing the tab are not withdrawal and record nothing. Declining before consent records no consent.
+5. **Scope and isolation.** Consent is per participant and per Signing. Each in-person participant consents on the handed-over device for themselves. Consent is not revision-scoped: no post-activation amendment exists today, so any future amendment flow must reset consent explicitly.
+6. **Law.** E-SIGN §7001(c) applies directly only where another law requires information to be given to a consumer in writing and an electronic record is used for it. That depends on the document, so the disclosure follows §7001(c) as a conservative standard without claiming compliance. Texas UETA (Bus. & Com. Code ch. 322) supports agreement from context (§322.005), retainable records that are never print- or save-inhibited (§322.008), attribution by the person's act (§322.009) and accurate, accessible retention (§322.012).
+
+**Related:** `supabase/migrations/20261019120000_native_signing_esign_disclosure_2026_10_19.sql`, `lib/signing/consent-disclosure.ts`, `lib/signing/consent-disclosure-view.ts`, `components/sign/consent-disclosure.tsx`, `components/sign/ceremony-shell.tsx`, `lib/signing/consent-disclosure-copy.test.ts`, `scripts/validate-native-signing-ceremony-dev.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
 ## Every completed-artifact serve verifies the stored bytes
 
 **Date:** 2026-10-18 (participant completed-package integrity hardening)
@@ -1825,7 +1851,7 @@ Separating presence heartbeat from ceremony inactivity prevents abandoned tabs f
 **Date:** 2026-09-17
 
 **Decision:**
-If consent was already validly accepted for the applicable disclosure version, a browser-session timeout does not require consent again. Identity affirmation repeats; consent remains valid; accepted marks and placements remain valid. If consent was never completed, the participant resumes at consent. If the applicable disclosure version later changes through an approved process, fresh consent may be required; an existing acceptance must not silently bind to changed disclosure text. This timeout rule is distinct from a permitted pre-signature package amendment, which may require ceremony review to restart under existing amendment decisions.
+If consent was already validly accepted for the applicable disclosure version, a browser-session timeout does not require consent again. Identity affirmation repeats; consent remains valid; accepted marks and placements remain valid. If consent was never completed, the participant resumes at consent. If the applicable disclosure version later changes through an approved process, fresh consent may be required; an existing acceptance must not silently bind to changed disclosure text. *Refined 2026-10-19: an acceptance stays bound to the version accepted, and a newer version re-prompts only if explicitly flagged (see "Electronic records consent: published disclosure, bound to the version accepted").* This timeout rule is distinct from a permitted pre-signature package amendment, which may require ceremony review to restart under existing amendment decisions.
 
 **Reason:**
 Repeating identity affirmation after inactivity preserves the attestation boundary without forcing redundant disclosure clicks when the accepted disclosure is unchanged.
