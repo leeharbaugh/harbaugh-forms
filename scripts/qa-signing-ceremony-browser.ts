@@ -51,7 +51,11 @@ import {
 import { buildCompletedPackageUrl } from "../lib/signing/bearer-transport.ts";
 import { requireCeremonyWriteContext } from "../lib/signing/ceremony-context.ts";
 import { loadRawCompletedPackageToken } from "../lib/signing/completed-package-credentials.ts";
-import { disclosureDownloadFilename, disclosureDownloadText } from "../lib/signing/consent-disclosure-view.ts";
+import {
+  CONSENT_ACKNOWLEDGEMENT,
+  disclosureDownloadFilename,
+  disclosureDownloadText,
+} from "../lib/signing/consent-disclosure-view.ts";
 import { addCopyRecipientWithActor } from "../lib/signing/copy-recipients.ts";
 import { addDraftSigningDocumentWithActor } from "../lib/signing/draft-documents.ts";
 import { addDraftSigningParticipantWithActor } from "../lib/signing/draft-participants.ts";
@@ -116,6 +120,9 @@ async function consentInUi(page: Page, label: string) {
   }
   if ((await page.getByTestId("disclosure-download").count()) !== 1 || (await page.getByTestId("disclosure-print").count()) !== 1) {
     fail(`${label}: disclosure download/print missing`);
+  }
+  if ((await page.getByTestId("consent-disclosure").getByText(CONSENT_ACKNOWLEDGEMENT, { exact: true }).count()) !== 1) {
+    fail(`${label}: consent checkbox wording is not the approved statement`);
   }
   await checkbox.click();
   if ((await checkbox.getAttribute("aria-checked")) !== "true" || (await proceed.isDisabled())) {

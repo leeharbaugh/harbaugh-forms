@@ -12,6 +12,38 @@ Each decision should include:
 
 ---
 
+## PR #55 merge boundary: noise classification and evidence checks
+
+**Date:** 2026-10-21 (PR #55 merge-boundary validation)
+
+**Decision:**
+1. **"The destination stream closed early" is development-environment noise, not waived.** It is React's server-component stream cancel handler, raised when a browser closes an RSC response before it finishes. In ceremony QA it appears only at the in-person handoff, where a cookie-setting server action is followed immediately by `window.location.replace`, abandoning the in-flight page refresh. The handoff and in-person ceremony pass every functional check, and the code is unchanged by PR #55, so it does not block the merge. The browser QA's strict runtime-noise check keeps failing on it; it is not added to an allow-list, so a new or more frequent occurrence stays visible.
+2. **Transient dev-service failures are diagnosed before rerunning.** A QA failure is rerun only after its dev-server log shows an environmental cause (here, a dev Supabase `fetch failed` that stalled one render for 50 s), and both the failure and the rerun are recorded.
+3. **Consent evidence preservation is checked row by row.** Validator cleanup leaves fixture participants behind, so whole-table digests change between runs. The merge check compares every pre-existing disclosure version, participant consent row and `CONSENT_ACCEPTED` event by value against a snapshot taken before validation; added fixture rows are reported separately.
+4. **Lint gate.** Merge-boundary ESLint covers every PR-changed file and tracked source directories. Pre-existing errors in untouched files (mostly the vendored `public/pdf.worker.min.mjs`) are reported, not fixed in a feature PR. `npm run lint` currently also walks untracked `.next` and `_audit_tmp` output because `eslint.config.mjs` has no ignores; fixing that is a separate change.
+
+**Reason:** The merge decision needs failures separated into defects and environment, with evidence for each, and needs proof that historical consent evidence is unchanged even though dev fixtures accumulate.
+
+**Related:** `scripts/qa-signing-ceremony-browser.ts`, `components/signings/signing-dashboard-page.tsx` (`startHandoff`), `lib/signing/ceremony-agent-actions.ts` (`startInPersonHandoffAction`), `scripts/validate-native-signing-ceremony-dev.ts`, `eslint.config.mjs`.
+
+---
+
+## Disclosure esign-disclosure-2026-10-20: reviewed wording, not production-ready
+
+**Date:** 2026-10-20 (PR #55; Lee-approved product wording, not counsel-approved)
+
+**Decision:**
+1. **New immutable version.** The participant-facing text of `_audit_tmp/esign-disclosure-proposed-revision-for-review.md`, verbatim, is published as `esign-disclosure-2026-10-20` ("Electronic records and signatures") by data-only, forward-only migration `20261020120000_native_signing_esign_disclosure_2026_10_20.sql`. It supersedes `esign-disclosure-2026-10-19-revised` and is current with `is_production_ready = false`. Fingerprint `ac7de88cd2e003ed4c12d7887966288f273ea3a97db631e42193810ae99e9d9b` (UTF-8, LF, no trailing newline), verified independently against the document and enforced by the migration, which aborts if the stored text hashes differently. Prior disclosure rows, migrations, fingerprints, consent records and events are unchanged.
+2. **Checkbox wording.** The consent statement is exactly "I have read this disclosure, can view it on this device, and can view and keep PDF documents by saving or printing them. I agree to use electronic records and electronic signatures for this Signing." It stays unchecked by default with Continue disabled until checked. It is UI text shared by every ceremony; consent evidence continues to bind to the disclosure version id and fingerprint.
+3. **Unchanged safeguards.** Acceptances stay bound to the version accepted (a `-revised` acceptance remains valid in development and is never re-bound). In production only production-ready versions are eligible, so this version cannot be presented or accepted there, and acceptances of it would be `ACCEPTANCE_NOT_ELIGIBLE` beside a future approved version.
+4. **Not built.** The document's review notes are recorded as open issues, not implemented: a sender-side mechanism for post-Finish withdrawal of consent to future electronic records; a definite sender paper-copy fee policy (§7001(c)(1)(B)(iv)); a PDF access demonstration beyond the checkbox (§7001(c)(1)(C)(ii)); notice and re-consent for hardware/software changes (§7001(c)(1)(D)). Each needs resolution, and counsel review of the wording, before affected live use and before any version is marked production-ready.
+
+**Reason:** Lee approved revised product wording that separates finishing from Signing completion, addresses post-Finish withdrawal and paper-copy fees honestly, covers contact errors after finishing, and asks participants to confirm they can view and keep PDFs. Publishing it as a new version keeps every earlier acceptance reproducible.
+
+**Related:** `supabase/migrations/20261020120000_native_signing_esign_disclosure_2026_10_20.sql`, `lib/signing/consent-disclosure-view.ts` (`CONSENT_ACKNOWLEDGEMENT`), `lib/signing/native-signing-migrations.ts`, `lib/signing/consent-disclosure-copy.test.ts`, `lib/signing/consent-eligibility.test.ts`, `lib/signing/production-readiness.test.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
 ## Consent evidence is immutable; production eligibility is decided separately
 
 **Date:** 2026-10-19, afternoon (PR #55 completion; Lee's approved production-safety principle)

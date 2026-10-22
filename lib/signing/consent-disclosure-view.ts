@@ -63,4 +63,4 @@ export function disclosureDownloadFilename(versionKey: string): string {
 
 /** The affirmative consent statement shown next to the (unchecked) checkbox. */
 export const CONSENT_ACKNOWLEDGEMENT =
-  "I have read this disclosure, I can view it on this device, and I agree to use electronic records and electronic signatures for this Signing.";
+  "I have read this disclosure, can view it on this device, and can view and keep PDF documents by saving or printing them. I agree to use electronic records and electronic signatures for this Signing.";

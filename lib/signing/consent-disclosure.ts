@@ -42,14 +42,6 @@ export function consentDisclosureFingerprint(bodyText: string): string {
   return createHash("sha256").update(bodyText, "utf8").digest("hex");
 }
 
-/**
- * The one current (not superseded) disclosure version.
- *
- * The recorded fingerprint is verified against the stored body on every load:
- * consent evidence that cites a fingerprint which cannot reproduce the accepted
- * text would be worthless, so a mismatch fails closed instead of being
- * accepted or silently repaired.
- */
 const DISCLOSURE_SELECT =
   "id, version_key, title, body_text, content_sha256, is_production_ready, published_at";
 
@@ -69,6 +61,14 @@ function verifiedDisclosure(row: Record<string, unknown>): ConsentDisclosure | n
   };
 }
 
+/**
+ * The one current (not superseded) disclosure version.
+ *
+ * The recorded fingerprint is verified against the stored body on every load:
+ * consent evidence that cites a fingerprint which cannot reproduce the accepted
+ * text would be worthless, so a mismatch fails closed instead of being
+ * accepted or silently repaired.
+ */
 export async function loadCurrentConsentDisclosure(
   admin: SupabaseClient,
   env: NodeJS.ProcessEnv = process.env,

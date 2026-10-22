@@ -93,7 +93,7 @@ describe("Electronic records disclosure 2026-10-19: copy", () => {
   });
 
   it("asks for affirmative consent to this Signing and confirms access", () => {
-    assert.match(CONSENT_ACKNOWLEDGEMENT, /I can view it on this device/);
+    assert.match(CONSENT_ACKNOWLEDGEMENT, /can view it on this device/);
     assert.match(CONSENT_ACKNOWLEDGEMENT, /electronic records and electronic signatures for this Signing/);
   });
 });
@@ -226,6 +226,86 @@ describe("Electronic records disclosure 2026-10-19-revised: publication", () => 
     assert.doesNotMatch(REVISION_MIGRATION, /set (body_text|content_sha256|is_production_ready|version_key)/);
     assert.doesNotMatch(REVISION_MIGRATION, /signing_participants|signing_events/);
     assert.doesNotMatch(REVISION_MIGRATION, /\b(alter|create|drop) (table|function|trigger|policy)/i);
+  });
+});
+
+const OCT20_MIGRATION = read(
+  "supabase/migrations/20261020120000_native_signing_esign_disclosure_2026_10_20.sql",
+);
+const OCT20_BODY = OCT20_MIGRATION.match(/\$disclosure\$([\s\S]*?)\$disclosure\$/)?.[1] ?? "";
+const OCT20_FINGERPRINT =
+  "ac7de88cd2e003ed4c12d7887966288f273ea3a97db631e42193810ae99e9d9b";
+const OCT20_ACKNOWLEDGEMENT =
+  "I have read this disclosure, can view it on this device, and can view and keep PDF documents by saving or printing them. I agree to use electronic records and electronic signatures for this Signing.";
+
+describe("Electronic records disclosure 2026-10-20: copy", () => {
+  const blocks = parseDisclosureBlocks(OCT20_BODY);
+  const section = (heading: string) => blocks.find((block) => block.heading === heading);
+
+  it("pins the reviewed fingerprint and leaves earlier versions' fingerprints unchanged", () => {
+    assert.equal(consentDisclosureFingerprint(OCT20_BODY), OCT20_FINGERPRINT);
+    assert.equal(consentDisclosureFingerprint(BODY), PREVIOUS_FINGERPRINT);
+    assert.equal(consentDisclosureFingerprint(REVISED_BODY), REVISED_FINGERPRINT);
+    assert.ok(!OCT20_BODY.includes("\r"));
+    assert.ok(!OCT20_BODY.endsWith("\n"));
+  });
+
+  it("lays out the same seven sections with the reviewed additions", () => {
+    assert.deepEqual(
+      blocks.map((block) => block.heading),
+      parseDisclosureBlocks(REVISED_BODY).map((block) => block.heading),
+    );
+    const stopping = section("Stopping before you finish");
+    assert.equal(stopping?.bullets.length, 2);
+    assert.equal(stopping?.paragraphs.length, 2);
+    assert.match(stopping?.paragraphs[0] ?? "", /^Harbaugh Forms charges no fee for leaving or declining\. Finishing your part does not mean the entire Signing is complete\./);
+    assert.match(stopping?.paragraphs[1] ?? "", /Harbaugh Forms does not offer a separate withdrawal control after you finish\./);
+    const needs = section("What you need");
+    assert.equal(needs?.bullets.length, 5);
+    assert.equal(needs?.bullets[4], "Storage space to save PDF files, or access to a printer, if you want to keep a copy.");
+    assert.deepEqual(needs?.paragraphs, [
+      'If you cannot view PDF documents or have no way to save or print copies, choose "Leave for now" and contact the sender before continuing.',
+    ]);
+    assert.match(section("Paper copies")?.paragraphs[1] ?? "", /whether the sender charges a fee for preparing or providing it/);
+    assert.match(section("Your contact information")?.paragraphs[0] ?? "", /Finishing does not let you change the contact information recorded for this Signing\.$/);
+    assert.deepEqual(section("Keeping your records"), parseDisclosureBlocks(REVISED_BODY).find((block) => block.heading === "Keeping your records"));
+  });
+
+  it("makes no claim the product cannot support", () => {
+    for (const claim of [
+      /TREC/i,
+      /approv/i,
+      /complies? with/i,
+      /legally binding/i,
+      /notar/i,
+      /verif(y|ied|ies) (your )?identity/i,
+      /forever|indefinite|permanent|guarantee/i,
+      /we will (mail|provide paper)/i,
+      /waive/i,
+    ]) {
+      assert.doesNotMatch(OCT20_BODY, claim);
+    }
+  });
+
+  it("shows the reviewed consent checkbox wording exactly", () => {
+    assert.equal(CONSENT_ACKNOWLEDGEMENT, OCT20_ACKNOWLEDGEMENT);
+  });
+});
+
+describe("Electronic records disclosure 2026-10-20: publication", () => {
+  it("publishes forward-only after the revised version, checks the fingerprint and stays non-production", () => {
+    assert.match(OCT20_MIGRATION, /'esign-disclosure-2026-10-20'/);
+    assert.match(OCT20_MIGRATION, /v_body constant text := replace\(\$disclosure\$/);
+    assert.match(OCT20_MIGRATION, /\$disclosure\$, chr\(13\), ''\);/);
+    assert.match(OCT20_MIGRATION, new RegExp(`v_expected_sha256 constant text :=\\s+'${OCT20_FINGERPRINT}'`));
+    assert.match(OCT20_MIGRATION, /if encode\(sha256\(convert_to\(v_body, 'UTF8'\)\), 'hex'\) <> v_expected_sha256 then\s+raise exception/);
+    assert.match(OCT20_MIGRATION, /set superseded_at = now\(\)\s+where superseded_at is null/);
+    assert.match(OCT20_MIGRATION, /v_body,\s+encode\(sha256[^)]+\)\), 'hex'\),\s+false\s*\)/);
+    assert.match(OCT20_MIGRATION, /expected exactly one current disclosure version/);
+    assert.doesNotMatch(OCT20_MIGRATION, /is_production_ready\s*=\s*true/);
+    assert.doesNotMatch(OCT20_MIGRATION, /set (body_text|content_sha256|is_production_ready|version_key)/);
+    assert.doesNotMatch(OCT20_MIGRATION, /signing_participants|signing_events/);
+    assert.doesNotMatch(OCT20_MIGRATION, /\b(alter|create|drop) (table|function|trigger|policy)/i);
   });
 });
 
