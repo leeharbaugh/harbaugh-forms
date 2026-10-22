@@ -74,7 +74,10 @@ import {
   validateSigningEntrySession,
 } from "../lib/signing/entry-sessions.ts";
 import { SigningError } from "../lib/signing/errors.ts";
-import { NativeSigningDisabledError } from "../lib/signing/feature-gate.ts";
+import {
+  NativeSigningDisabledError,
+  NativeSigningProductionDisclosureError,
+} from "../lib/signing/feature-gate.ts";
 import { validateDeviceHandoffLock } from "../lib/signing/device-handoff-lock.ts";
 import { createInPersonHandoffWithActor } from "../lib/signing/in-person-handoff.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
@@ -725,6 +728,150 @@ async function main() {
     }
     ok("consent records version + fingerprint and is idempotent");
 
+    // 4b. Consent is per participant, bound to the accepted version, and
+    //     fails closed when the recorded fingerprint cannot be reproduced.
+    {
+      const samState = await checkConsentSatisfied({
+        admin,
+        signingId: signingA.signingId,
+        signingParticipantId: samId,
+      });
+      if (samState.satisfied) fail("one participant's consent satisfied another participant");
+      const crossSigning = await checkConsentSatisfied({
+        admin,
+        signingId: randomUUID(),
+        signingParticipantId: janeId,
+      });
+      if (crossSigning.satisfied) fail("a participant's consent satisfied a different Signing");
+      ok("consent belongs to one participant of one Signing: another participant and another Signing are not satisfied");
+
+      const { data: superseded } = await admin
+        .from("signing_consent_disclosure_versions")
+        .select("id, version_key, content_sha256")
+        .not("superseded_at", "is", null)
+        .order("published_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!superseded) fail("no superseded disclosure version to test the accepted-version rule");
+      const { data: janeBefore } = await admin
+        .from("signing_participants")
+        .select("consent_accepted_at, consent_disclosure_version_id, consent_content_sha256")
+        .eq("id", janeId)
+        .single();
+      const setJaneConsent = async (values: Record<string, unknown>) => {
+        const { error } = await admin.from("signing_participants").update(values).eq("id", janeId);
+        if (error) fail(error.message);
+      };
+      try {
+        await setJaneConsent({
+          consent_disclosure_version_id: superseded.id,
+          consent_content_sha256: superseded.content_sha256,
+        });
+        const olderState = await checkConsentSatisfied({
+          admin,
+          signingId: signingA.signingId,
+          signingParticipantId: janeId,
+        });
+        if (!olderState.satisfied || olderState.acceptedDisclosure?.versionKey !== superseded.version_key) {
+          fail("an acceptance of a since-superseded version must stay valid and identify that version");
+        }
+        const olderReplay = await acceptConsent({ admin, context: consentContext, disclosureVersionId: disclosure.id });
+        if (!olderReplay.replayed || olderReplay.disclosureVersionId !== superseded.id) {
+          fail("re-accepting after a newer version must replay the original acceptance, not rebind it");
+        }
+        ok(`an acceptance of superseded "${superseded.version_key}" stays valid after "${disclosure.versionKey}" is current; re-accept replays without rebinding`);
+
+        // Production eligibility, evaluated in-process against these real rows;
+        // nothing is marked production-ready.
+        const production = { VERCEL_ENV: "production" } as NodeJS.ProcessEnv;
+        const refusedInProduction = async (label: string, run: () => Promise<unknown>) => {
+          try {
+            await run();
+          } catch (error) {
+            if (error instanceof NativeSigningProductionDisclosureError) return;
+            throw error;
+          }
+          fail(`${label} was allowed in production with a non-production-ready disclosure`);
+        };
+        await refusedInProduction("loading the current disclosure", () => loadCurrentConsentDisclosure(admin, production));
+        await refusedInProduction("checking consent", () =>
+          checkConsentSatisfied({ admin, signingId: signingA.signingId, signingParticipantId: janeId, env: production }),
+        );
+        await refusedInProduction("recording new consent", () =>
+          acceptConsent({ admin, context: consentContext, disclosureVersionId: disclosure.id, env: production }),
+        );
+        const approvedCurrent = { ...disclosure, isProductionReady: true };
+        const ineligible = await checkConsentSatisfied({
+          admin,
+          signingId: signingA.signingId,
+          signingParticipantId: janeId,
+          currentDisclosure: approvedCurrent,
+          env: production,
+        });
+        if (ineligible.satisfied || ineligible.reason !== "ACCEPTANCE_NOT_ELIGIBLE" || ineligible.acceptedDisclosure) {
+          fail("an acceptance of a non-production-ready version must not satisfy production consent");
+        }
+        const { data: janeAfterProduction } = await admin
+          .from("signing_participants")
+          .select("consent_disclosure_version_id, consent_content_sha256")
+          .eq("id", janeId)
+          .single();
+        if (
+          janeAfterProduction?.consent_disclosure_version_id !== superseded.id ||
+          janeAfterProduction?.consent_content_sha256 !== superseded.content_sha256
+        ) {
+          fail("production eligibility checks rewrote the recorded acceptance");
+        }
+        ok(`production fails closed on a non-ready current disclosure (load, consent check, new consent), and a "${superseded.version_key}" acceptance is ACCEPTANCE_NOT_ELIGIBLE even beside an approved current version; the recorded acceptance is unchanged`);
+
+        await setJaneConsent({ consent_content_sha256: "0".repeat(64) });
+        const forged = await checkConsentSatisfied({
+          admin,
+          signingId: signingA.signingId,
+          signingParticipantId: janeId,
+        });
+        if (forged.satisfied || forged.reason !== "ACCEPTANCE_UNVERIFIABLE") {
+          fail("an acceptance whose fingerprint does not reproduce must fail closed");
+        }
+        await expectSigningError(
+          "a mark under an unverifiable acceptance",
+          "CONSENT_REQUIRED",
+          async () =>
+            adoptCeremonyMark({
+              admin,
+              context: await writeContext(janeSession),
+              markKind: "SIGNATURE",
+              representationType: "TYPED",
+              typedText: "Jane Q Public",
+            }),
+        );
+        ok("an acceptance whose recorded fingerprint does not match its version fails closed (CONSENT_REQUIRED)");
+      } finally {
+        await setJaneConsent({
+          consent_accepted_at: janeBefore?.consent_accepted_at,
+          consent_disclosure_version_id: janeBefore?.consent_disclosure_version_id,
+          consent_content_sha256: janeBefore?.consent_content_sha256,
+        });
+      }
+
+      const browserVersions = await browser
+        .from("signing_consent_disclosure_versions")
+        .update({ body_text: "rewritten" })
+        .eq("id", disclosure.id)
+        .select("id");
+      const browserConsent = await browser
+        .from("signing_participants")
+        .update({ consent_accepted_at: new Date().toISOString() })
+        .eq("id", samId)
+        .select("id");
+      if ((browserVersions.data ?? []).length > 0 || (browserConsent.data ?? []).length > 0) {
+        fail("a browser client wrote disclosure text or consent evidence");
+      }
+      const stillCurrent = await loadCurrentConsentDisclosure(admin);
+      if (stillCurrent.contentSha256 !== disclosure.contentSha256) fail("disclosure text changed");
+      ok("browser clients cannot rewrite disclosure text or write consent evidence");
+    }
+
     // 5. Typed marks are exact-match, and adopt independently.
     await expectSigningError(
       "typed signature that does not match the displayed name",
@@ -1339,6 +1486,17 @@ async function main() {
       fail("inactivity expiry did not release presence");
     }
     ok("inactivity expiry is server-authoritative and releases presence");
+    {
+      const { data: stillOpen } = await admin
+        .from("signings")
+        .select("lifecycle_state")
+        .eq("id", signingB.signingId)
+        .single();
+      if (stillOpen?.lifecycle_state !== "IN_PROGRESS") {
+        fail("leaving without consenting must not decline or end the Signing");
+      }
+      ok("a participant who leaves without consenting does not decline: the Signing stays In Progress");
+    }
 
     // 16. Decline requires confirmation and ends everything.
     const danaEntryAgain = await mintEntrySession(signingB.signingId, danaId);
@@ -1409,6 +1567,22 @@ async function main() {
       fail("Decline did not release presence");
     }
     ok("Decline requires confirmation and ends every session and lease");
+    {
+      const { data: danaConsent } = await admin
+        .from("signing_participants")
+        .select("consent_accepted_at")
+        .eq("id", danaId)
+        .single();
+      const { count: consentEvents } = await admin
+        .from("signing_events")
+        .select("id", { count: "exact", head: true })
+        .eq("signing_id", signingB.signingId)
+        .eq("event_type", "CONSENT_ACCEPTED");
+      if (danaConsent?.consent_accepted_at || (consentEvents ?? 0) !== 0) {
+        fail("declining before consent recorded consent");
+      }
+      ok("declining before consent records no consent and no CONSENT_ACCEPTED event");
+    }
     {
       const afterDecline = await resolveCeremonyBrowserSession(admin, danaReaffirmed.cookie.value);
       if (afterDecline.ok) fail("the declined participant's ceremony session still resolves for document reads");

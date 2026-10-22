@@ -236,13 +236,12 @@ describe("Native Signing ceremony sessions, presence, and consent", () => {
     // Load-time verification: a fingerprint that cannot reproduce the accepted
     // text fails closed instead of being trusted.
     assert.match(consent, /INTEGRITY_MISMATCH/);
+    // An acceptance is bound to the version accepted (current or superseded),
+    // and must reproduce both that version's and the recorded fingerprint.
+    assert.match(consent, /loadVerifiedDisclosureVersion\(options\.admin, acceptedDisclosureVersionId\)/);
     assert.match(
       consent,
-      /acceptedDisclosureVersionId === currentDisclosure\.id/,
-    );
-    assert.match(
-      consent,
-      /acceptedContentSha256 === currentDisclosure\.contentSha256/,
+      /acceptedDisclosure !== null && acceptedDisclosure\.contentSha256 === acceptedContentSha256/,
     );
 
     assert.match(
@@ -258,7 +257,8 @@ describe("Native Signing ceremony sessions, presence, and consent", () => {
   it("does not re-require consent after a session timeout when unchanged", () => {
     assert.match(consent, /"SATISFIED"/);
     assert.match(consent, /"NEVER_ACCEPTED"/);
-    assert.match(consent, /"DISCLOSURE_CHANGED"/);
+    assert.match(consent, /"ACCEPTANCE_UNVERIFIABLE"/);
+    assert.doesNotMatch(consent, /"DISCLOSURE_CHANGED"/);
     const context = read("lib/signing/ceremony-context.ts");
     assert.match(context, /nextStep = "CONSENT"/);
     assert.match(context, /!consent\.satisfied/);

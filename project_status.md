@@ -1,6 +1,18 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-18 (pre-production hardening branch `security/signing-participant-package-rehash` from `main` `889e138`). Participant completed-package downloads now re-verify the stored artifact bytes (SHA-256 and byte size) before serving, matching the manager route. No migration. Production untouched, Native Signing off in production, Gate A paused. See "Participant completed-package integrity" below.
+**As of:** 2026-10-21, night (PR #55 merge-boundary validation on `feat/signing-electronic-consent-disclosure`; `origin/main` still `444fd98`).
+- PR #55 is ready for Lee's merge review. All merge-boundary validation passes, with two environment findings recorded below and nothing waived.
+- Disclosure `esign-disclosure-2026-10-20` (fingerprint `ac7de88cd2e003ed4c12d7887966288f273ea3a97db631e42193810ae99e9d9b`) is current in development and **not production-ready**; the wording is Lee-approved, **not counsel-approved**.
+- Historical disclosure rows, consent records and events are unchanged. Production untouched (no database access, no deployment, both production domains still on `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`), Native Signing off in production, Gate A paused, PR #55 open and unmerged.
+- See "PR #55 merge-boundary validation" below.
+
+Earlier: 2026-10-20, morning (PR #55 continued from `ee3c2c2`). Disclosure `esign-disclosure-2026-10-20` was published to development by data-only migration `20261020120000`, current but not production-ready, and the consent checkbox now reads the reviewed wording exactly. See "Electronic consent disclosure 2026-10-20" below.
+
+Earlier: 2026-10-19, afternoon (PR #55 completion). The revised disclosure `esign-disclosure-2026-10-19-revised` (Lee's approved Paper copies, What you need email line, and Keeping your records wording) was published to development by data-only migration `20261019150000`, not production-ready. Production now treats consent to any non-production-ready version as ineligible. See "Electronic consent disclosure revision and production eligibility" below.
+
+Earlier: 2026-10-19 (branch `feat/signing-electronic-consent-disclosure` from `main` `444fd98`). The electronic records and signatures disclosure `esign-disclosure-2026-10-19` replaces the development placeholder. Consent is now an unchecked checkbox with Continue disabled until checked, with download, print and reopen-later, and it stays bound to the version accepted. Dev-only data migration `20261019120000`, published not production-ready pending counsel review. Production untouched, Native Signing off in production, Gate A paused. PR #54 (participant package re-hash) is merged as `444fd98`. See "Electronic records consent disclosure" below.
+
+Earlier: 2026-10-18 (pre-production hardening branch `security/signing-participant-package-rehash` from `main` `889e138`). Participant completed-package downloads now re-verify the stored artifact bytes (SHA-256 and byte size) before serving, matching the manager route. No migration. Production untouched, Native Signing off in production, Gate A paused. See "Participant completed-package integrity" below.
 
 Earlier: 2026-10-17, evening. [PR #46](https://github.com/leeharbaugh/harbaugh-forms/pull/46) (Native Signing manager QA, ceremony, archive, cancellation, and placement templates) is squash-merged into `main` with Lee's approval, after final validation of its last code head `554dab8` against unchanged `origin/main` `a15bbb5`.
 - Production is untouched: no production Supabase migration, Storage, Auth or env change, and Native Signing is still off in production.
@@ -24,6 +36,202 @@ Earlier: 2026-10-14, evening (PR #46 Signing Placement Templates tranche impleme
 
 Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancellation in development now leaves the exact sandboxed email in `_audit_tmp/signing-email-sandbox/`. This needed a small dev-only code change; previously the sandbox discarded the body. No migration, production untouched, Gate A paused. See "Sandbox email inspection" below. Earlier: 2026-10-13, morning (PR #46 cancellation emails tranche implemented and browser-QA'd in development. Cancel Signing now asks for a required "Internal cancellation reason", which is saved in Signing history and never emailed, and an optional "Message to participants". It emails every invited participant after commit. Eligibility comes from invitation history, so finished, revoked-link, replaced-link and archived participants are included; Draft and in-person-only participants are not. The email has no link and makes no legal claim. Delivery uses the existing instruction / outbox / attempt architecture, is retried, never changes lifecycle, and sends at most one email per participant. New dev-only migration `20261013120000`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Cancellation emails tranche" below. Earlier: 2026-10-12, night (PR #46 Archive Signing tranche implemented and browser-QA'd in development. Archive is organizational state (`signings.archived_at`), not lifecycle. Any lifecycle state can be archived and unarchived. The Signings list hides archived Signings unless "Show archived" is selected. Archiving an In Progress Signing revokes every participant link, entry session, in-person handoff and open ceremony session in one transaction, and unarchiving never restores them (managers Replace links to resume). New dev-only migrations `20261012120000` and `20261012120100`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Archive Signing tranche" below. Earlier: 2026-10-12, evening (Stage 1 / Stage 2 npm scripts now run under `tsx`, and `participant-link-qa.test.ts` runs in the Stage 4 suite; all 54 `test:*` scripts pass on PR #46. Earlier the same afternoon: dependency-security PR #53 squash-merged to `main` as `a15bbb5`: Next.js 16.3.8, sharp 0.35.5, source-map-js 1.2.2, `npm audit --omit=dev` 0. PR #46 synced with patched `main` by a merge commit and fully revalidated; see "PR #46 synced with patched main" below. PR #46 still open and unmerged, Gate A paused, production untouched. Earlier: 2026-10-12, afternoon (PR #46 combined-package refresh tranche implemented and browser-QA'd in development. The combined signed package stays a post-Complete convenience artifact. An open manager dashboard now shows "Combined signed package — Preparing…" when it reaches Complete before the package exists, keeps refreshing every 20 s, and swaps in View / Download when the package is verified, with no reload or navigation. The watcher stops once completed artifacts settle. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Combined-package refresh tranche" below. Earlier: 2026-10-11, night (PR #46 completed-document access tranche implemented and browser-QA'd in development. On a Complete Signing, managers with existing Signing authority see "Completed documents" at the top of the dashboard: each signed document, the audit certificate and the combined package once generated, each with View (full-screen read-only viewer, Fit Width / Fit Page / zoom) and Download. Both serve the same immutable, re-hashed finalization artifact through one authorized server route. A fingerprint mismatch is refused, and Draft, In Progress, Declined and Cancelled show and serve nothing. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Completed-document access tranche" below. Earlier: 2026-10-11, evening (PR #46 ceremony-regression tranche implemented and browser-QA'd in development. Applied Initials, Date Signed and Signature show their full text inside the stored field box at every zoom, with no ellipsis, and the completed PDF uses the same fit. Your fields docks from one measured width (1024px and up) and is otherwise a keyboard-accessible drawer, with no dead zone and no horizontal scroll at any of 13 widths from 1440 to 390. A long-open manager Signing page now shows Declined (naming who declined), Cancelled and Complete without a reload: authorized polling every 20 s while In Progress, plus a refresh on tab focus or visibility. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony-regression tranche" below. Earlier: 2026-10-11, afternoon (PR #46 ceremony UX tranche implemented and browser-QA'd in development. Start signing records the read-only Signing name and derived, non-editable initials. The PDF fills the screen with Fit Width / Fit Page / zoom. Guidance goes to the first required field and, only after the server accepts each mark, to the next one or to Finish. Your fields navigates spatially. Finish and done wording separate the participant's part from Signing completion. Leave for now and Decline to sign are QA'd end to end. E-sign consent is now enforced on the server (security finding, fixed). No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony UX tranche" below. Earlier: 2026-10-10, afternoon (PR #46 toolbar tranche implemented and QA'd in development. The auto-add notice shows names, not "[object Object]", and stays one-time. Prepare Documents places with explicit one-shot tools (Signature, Initials, Date, Printed Name, Checkmark) instead of a Field type dropdown, and choosing a participant arms nothing. Link to is removed: Dates link to the nearest source at placement, a selected Date outlines its source, and relinking is delete-and-replace. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Toolbar tranche" below. Earlier the same day: PR #46 polish tranche implemented and QA'd in development. The "Added from the source Packet" notice now shows once and is acknowledged only after the browser displays it. Date Signed links automatically to the nearest Signature or Initials on the hovered page, with Link to as an explicit override. Send readiness updates from the server within about 2 seconds of each placement change, instead of after a 12–14 s reload. New dev-only migration `20261010120000`. PR still open and unmerged, Gate A paused, production untouched. See "Polish tranche" below. Earlier: 2026-10-09, evening (PR #46 Packet lifecycle cleanup implemented and QA'd in development. Packets are ACTIVE or DELETED only, and the unintended INACTIVE state is gone from the database constraint, types and UI. Dev Packet #12, the only INACTIVE Packet, was normalized to ACTIVE. New dev-only migration `20261009140000`. PR still open and unmerged, Gate A paused, production untouched. See "Packet lifecycle cleanup" below. Earlier the same day: PR #46 correctness tranche implemented and QA'd in development. Create Signing eligibility now comes from one server helper, and ineligible Packets show a disabled control with the reason. The Packets list and the selector agree: Inactive is listed, and only Deleted waits for Show deleted. Opening a Draft Signing completes Packet auto-add and identity sync before the first paint. Signing rename works in every lifecycle state and records a history event. New dev-only migration `20261009130000`. PR still open and unmerged, Gate A paused, production untouched. Next after Lee's approval: the separate dependency-advisory PR from `main`. See "Correctness tranche" below. Earlier: 2026-10-08, late (PR #46 Draft polish tranche implemented and QA'd in development: Packet parties auto-add while Draft with per-Signing removal suppression and Restore; linked participant identity live from Contact / profile / brokerage profile while Draft and canonized at activation, with Cancel + new Signing as the only post-activation correction; Date Signed click-to-link; Copy enters paste mode immediately; new fields anchor at the click's left edge. New dev-only migration `20261009120000`. PR still open and unmerged, Gate A paused, production untouched. See "Draft polish tranche" below. Earlier the same day: PR #46 Draft-preparation tranche implemented and QA'd in development: additive Add from Packet, participant roles, Include me / Include broker, Initials-linked Date Signed, click-anchored paste, Printed Name and Checkmark prepared content, Quick Fields removed; new dev-only migration `20261008120000`; PR still open and unmerged, Gate A paused, production untouched; see "Draft-preparation tranche" below. Earlier, 2026-10-05: PR #46 document-visible participant ceremony + read-only typed Signature implemented and browser-QA'd in development; ready for Lee's re-QA; PR still open and unmerged, Gate A paused, production untouched; new upstream `npm audit` advisories (source-map-js / postcss, braces) recorded for a separate dependency PR, see "Lee's manual QA findings and document-visible ceremony tranche" below. Earlier, 2026-10-02: PR #46 brought up to date with `main` `7733493` by merge commit `8769993` (Next.js 16.3.6, no conflicts left, full revalidation and ceremony browser regression pass); PR still open, awaiting Lee's manual re-QA, manager completed-document access is a pre-production blocker, see "PR #46 merged with current main" below; Native Signing participant ceremony QA complete on PR #46 at `3f92e48`: four ceremony defects fixed; packet Created/Updated timestamps fixed to Central time with CDT/CST, PR #52 squash-merged to `main` as `7733493`, live in production via hotfix `3e5eaa3` (= `c25e4c3` + PR #52 code only), deployment `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, rollback `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; dev-only `brace-expansion` advisories remediated by lockfile-only PR #51, squash-merged to `main` as `edfc5a7`, full lockfile audit clean, not deployed (dev-only, no production effect); admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 squash-merged to `main` as `c2a490a` on 2026-10-02; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j is live in production via hotfix `2a92d82` (= `a87b1aa` + dependency change only; deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`); PR #49 squash-merged to `main` as `9f00a80` on 2026-10-02. Earlier, 2026-09-30: Native Signing development and QA remain the active workstream; work paused briefly for the duplicate packet forms hotfix, now live in production. Resume Native Signing development/QA from the state recorded below. Production is running the isolated hotfix, not `main`; production Native Signing remains unavailable.)
 ## Current State
+
+### PR #55 merge-boundary validation (2026-10-21, night)
+
+**Status:** [PR #55](https://github.com/leeharbaugh/harbaugh-forms/pull/55) open, not merged, not deployed. `origin/main` has not moved from the merge base `444fd98`, so no sync merge is needed. Development only. See the 2026-10-21 decision "PR #55 merge boundary: noise classification and evidence checks".
+
+**Diff review** (`origin/main...HEAD` plus the 2026-10-20 work): three forward-only data migrations (`20261019120000`, `20261019150000`, `20261020120000`), none rewriting an earlier row; consent bound to the accepted version with fail-closed fingerprint verification; one production-eligibility rule for presented and accepted versions; Start signing checks consent; the consent card and reopen-later dialog; the exact checkbox wording; and the test, validator and QA updates. No unintended changes. One finding fixed: the `loadCurrentConsentDisclosure` doc comment had drifted above the `DISCLOSURE_SELECT` constant and is back on its function. `package-lock.json` is unchanged; `package.json` only adds the two consent test files to `test:native-signing-ceremony`.
+
+**Validation.**
+- All 58 `test:*` suites pass (ceremony 158, production-readiness 56 with inventory 35).
+- All 21 `validate:*-dev` validators pass. `completion-delivery-dev` first failed only because its participant-route checks need a running dev server; on the restarted server it passed, including byte-verified participant artifact serving.
+- `tsc --noEmit` clean. ESLint: every PR-changed file is clean. Tracked-source ESLint has 1,483 errors, all pre-existing in files the PR does not touch (1,477 in the vendored `public/pdf.worker.min.mjs`, 6 in `components/ui/dropdown-menu.tsx`, `lib/types/form-lifecycle.test.ts`, `scripts/copy-approved-storage.ts`, `scripts/copy-pdf-worker.js` and `tailwind.config.ts`). `npm run lint` with no ignores also walks untracked `.next` and `_audit_tmp` output (56,965 problems), so it is not a usable gate.
+- `npm audit --omit=dev` 0; full audit 9 (7 high, 2 moderate, dev tooling), unchanged. No secrets in the diff.
+- `build:validate` passes (safe local target: development `ewxsxwzezhkeawnjvigx`; 53 static pages).
+- Browser QA on a restarted dev server: ceremony 83/83 **fully clean** (zero console, page or server noise; 0 "destination stream closed early" lines), with every consent screen showing `esign-disclosure-2026-10-20` and the exact checkbox wording. Archive 39, cancellation 31, link-ops 28, account switch 10, combined refresh 10 and Prepare Documents 90 pass. Placement templates passed 44/44 on rerun (first-run finding below).
+- `git diff --check` clean.
+
+**Findings (classified, none waived):**
+- *"The destination stream closed early" (ceremony QA, in-person handoff).* Source-confirmed mechanism: it is React's server-component stream cancel handler (`react-server-dom-turbopack` `pipe()` → `destination.on("close")`), raised when the browser closes an RSC response before it finishes. At handoff, `startInPersonHandoffAction` sets the device-lock cookies (which makes the action response carry a re-render of the current page) and the client then calls `window.location.replace(handoffPath)`, abandoning that in-flight response (or the page's 20 s refresh). The handoff, lock cookie and in-person ceremony pass every functional check. Intermittent: 1 line in each of two 2026-10-20 runs on a fresh server, 0 today. The handoff code is unchanged by PR #55. Classified as established development-environment noise, not a defect; the QA's strict noise check still fails on it rather than ignoring it. A future change could navigate without racing the action's refresh if this line matters in production logs.
+- *Placement-templates first run timeout.* After Create Signing, the Draft page render took 50 s because a server-side request to dev Supabase failed at the network layer (`[native-signing-stage4] unexpected error: TypeError: fetch failed`), and the QA's 30 s wait for `#participant-name` expired. Rerun passed 44/44 with no errors. Transient dev Supabase network failure; that page and path are unchanged by PR #55. Separate, non-blocking observation: Supabase requests have no client-side timeout, so a network stall holds a render until the platform gives up.
+- *Validator fixture residue (pre-existing, unchanged from `main`).* `validate-native-signing-ceremony-dev` cleanup is best-effort and leaves fixture Signings `IN_PROGRESS`, with participant rows that keep `consent_accepted_at` after their version and fingerprint are nulled (110 such dev rows before this PR; validation runs add more). Fixture-only; no pre-existing evidence is touched. Because of it, whole-table consent digests change across validator runs, so evidence preservation was checked row by row instead.
+
+**Historical consent evidence.** Per-row snapshot before and after all validation (`_audit_tmp/merge-2026-10-21/consent-rows-start.json`): 4/4 disclosure versions, 232/232 participant consent rows and 24/24 `CONSENT_ACCEPTED` events are byte-identical; only fixture rows were added (5 participants, 2 events). The only current version is `esign-disclosure-2026-10-20`, `is_production_ready = false`, fingerprint `ac7de88c…d9b`.
+
+**Production unchanged.** No production credentials or `.env.ops.production` were loaded and no production database was accessed; `supabase/.temp/project-ref` and `supabase projects list` show only dev (`ewxsxwzezhkeawnjvigx`) linked. Vercel (read-only): the newest production-target deployments are 3–4 days old (the PR #46 and #54 `main` builds, not promoted), and `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` both inspect to `dpl_E9HTxf45epr8ckKifivWCPNgpFAU` (2026-10-02). PR #55 is OPEN with `mergedAt` null.
+
+**Merge readiness.** Ready for Lee's merge review. Merging adds three non-production-ready disclosure migrations to the Native Signing inventory (35). Production keeps failing closed on disclosure until counsel-approved copy is published as its own production-ready version. Remaining blockers before production use (not merge): counsel review; sender-side post-Finish withdrawal; definite sender paper-copy fee policy; PDF access demonstration; hardware/software change notice and re-consent; disclosure immutability trigger and readiness timestamp.
+
+### Electronic consent disclosure 2026-10-20 (2026-10-20, morning; PR #55)
+
+**Status:** PR #55 open, not merged, continued from `ee3c2c2`. Development only. Production untouched: no production migration, no disclosure row marked production-ready, no env change, Native Signing off in production, no Vercel deployment or promotion. Gate A paused. See the 2026-10-20 decision "Disclosure esign-disclosure-2026-10-20: reviewed wording, not production-ready".
+
+**Source.** `_audit_tmp/esign-disclosure-proposed-revision-for-review.md` (local), Lee-approved product wording, **not counsel-approved**. Only the participant-facing text between the fences and the consent checkbox statement were used; the review notes were not.
+- Fingerprint verified independently: the fenced text, UTF-8 with LF line endings and no trailing newline, hashes to `ac7de88cd2e003ed4c12d7887966288f273ea3a97db631e42193810ae99e9d9b`, matching the expected value. The migration body and the checkbox constant were compared byte for byte against the document.
+
+**Migration.** `supabase/migrations/20261020120000_native_signing_esign_disclosure_2026_10_20.sql`, data only and forward-only:
+- inserts `esign-disclosure-2026-10-20` ("Electronic records and signatures"), `is_production_ready = false`, and supersedes `esign-disclosure-2026-10-19-revised`;
+- strips `\r`, computes the fingerprint in SQL and aborts unless it equals the reviewed fingerprint;
+- is idempotent and verifies exactly one current version and that every row still matches its fingerprint;
+- no schema, participant or event writes. Native Signing migration inventory is now 35.
+
+**Copy changes from `-revised`** (same seven sections): Stopping before you finish separates finishing your part from Signing completion and adds a paragraph on withdrawing consent to future electronic records after finishing (contact the sender; no separate control); Paper copies says to ask the sender how to obtain a paper copy and whether the sender charges a fee; Your contact information covers errors discovered after finishing; What you need says "access to a printer" and adds a paragraph to Leave for now if PDFs can't be viewed, saved or printed. Introduction, Your choice, What your consent covers and Keeping your records are unchanged.
+
+**Checkbox.** `CONSENT_ACKNOWLEDGEMENT` now reads exactly: "I have read this disclosure, can view it on this device, and can view and keep PDF documents by saving or printing them. I agree to use electronic records and electronic signatures for this Signing." Unchecked by default, Continue disabled until checked. Consent evidence still binds to disclosure version id and fingerprint; the checkbox wording is UI text, not part of the fingerprint.
+
+**Dev migration and historical consent.** `supabase projects list` showed `ewxsxwzezhkeawnjvigx` (harbaugh-forms-dev) as the linked project and production `eetonalyyyssvkyfdoxh` unlinked; `supabase db push --dry-run` listed only `20261020120000`; then `supabase db push` applied it.
+- Snapshots `_audit_tmp/disclosure-snapshot-2026-10-20-{before,after}.json`: `dev-placeholder-2026-09-17`, `esign-disclosure-2026-10-19` and `esign-disclosure-2026-10-19-revised` keep their ids, fingerprints and non-ready status; `-revised` is now superseded.
+- `esign-disclosure-2026-10-20` is the only current version, stored fingerprint `ac7de88c…d9b` (dev and LF repository text agree), not production-ready, 0 acceptances at publication.
+- Participant consent records (230) and `CONSENT_ACCEPTED` events (24) are byte-identical by digest before and after.
+
+**Validation (focused; comprehensive regression reserved for the merge boundary).**
+- `test:native-signing-ceremony` 158/158: new copy tests (pinned fingerprint, all three earlier fingerprints unchanged, section layout and the reviewed additions, no unsupported claims, exact checkbox wording), publication-shape test (fingerprint guard, never ready, no schema / participant / event writes), and two consent-eligibility tests (a `-revised` acceptance stays bound and replays after 2026-10-20 is current; new consent binds to 2026-10-20 with its fingerprint; production refuses the non-ready 2026-10-20 for load and new consent with no write).
+- `test:native-signing-production-readiness` 56/56 (inventory 35).
+- `validate:native-signing-ceremony-dev` passes against real dev rows with `esign-disclosure-2026-10-20` current, including the superseded-acceptance, production fail-closed and browser-write checks. `validate:native-signing-production-readiness --target=dev` passes (inventory 35, dev disclosure non-ready).
+- Ceremony browser QA (`scripts/qa-signing-ceremony-browser.ts`, now also asserting the exact checkbox wording on every consent screen), two runs on a fresh dev server: every functional check passed (83 and 82 OK lines; the second run's combined package was already ready at the first Complete refresh, so the timing-dependent "Preparing…" transition had nothing to observe). Every consent screen (remote P1/P2, Signing C, in person) showed exactly `esign-disclosure-2026-10-20` with the approved checkbox wording; Download (`esign-disclosure-2026-10-20.txt`) and Print carried the exact stored text, version and SHA-256; consent evidence recorded version id and `ac7de88c…`. Both runs still exited non-zero on the strict runtime-noise check, solely for the documented baseline dev-server "destination stream closed early" line at the in-person handoff navigation (1 per run), unrelated to the disclosure. A fully clean ceremony run remains for the merge-boundary regression pass.
+- `tsc --noEmit`, ESLint on changed files and `git diff --check` are clean.
+
+**Remaining limitations and blockers (from the document's review notes; none implemented here):**
+- Counsel review of this wording before any version is production-ready; approved copy must be published as a new production-ready row, not by flipping this one.
+- Post-Finish withdrawal of consent to future electronic records/notices: the text directs participants to the sender, but no sender-side mechanism is established to stop future electronic delivery or honor the request where E-SIGN §7001(c) applies.
+- Paper-copy fees: no sender fee policy is configured; telling participants to ask the sender may not satisfy §7001(c)(1)(B)(iv) where it applies. A definite sender fee policy (for example a verified zero-fee pilot policy) is needed before affected live transactions.
+- PDF access: the checkbox is not necessarily the electronic-access demonstration under §7001(c)(1)(C)(ii); a sample-PDF or access-test flow would be a separate decision.
+- Hardware/software change notice and re-consent (§7001(c)(1)(D)) still unresolved; no re-consent flag exists.
+- Contact corrections after activation remain Cancel + new Signing; no post-activation identity edit.
+- Previously deferred items still open: disclosure immutability trigger and readiness timestamp (schema); completed-package retry cap; `COMPLETED_PACKAGE_SENT` summary wording; Decline response after a post-commit failure.
+
+### Electronic consent disclosure revision and production eligibility (2026-10-19, afternoon; PR #55)
+
+**Status:** PR #55 open, not merged. Development only. Production untouched: no production migration, no disclosure row changed or marked production-ready, no env change, Native Signing off in production, no Vercel promotion. Custom domains stay on `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, and Auto-assign Custom Production Domains stays disabled. Gate A paused. See the 2026-10-19 afternoon decision "Consent evidence is immutable; production eligibility is decided separately".
+
+**Revised disclosure.**
+- Version `esign-disclosure-2026-10-19-revised`, published by `supabase/migrations/20261019150000_native_signing_esign_disclosure_revision.sql`. The migration is data only and forward-only. It supersedes `esign-disclosure-2026-10-19` and sets `is_production_ready = false`. Native Signing migration inventory is now 34.
+- Only the three approved sections change, verified line by line against the previous stored text:
+  - Paper copies: two paragraphs, email to each signer with an email address after Complete, contact the sender if it doesn't arrive or if you signed in person without email;
+  - the email bullet of What you need;
+  - Keeping your records: the invitation link can't open completed documents, and the completed-documents link can stop working.
+- Every other section is carried over verbatim. Lee's earlier local draft had dropped two sentences from "Stopping before you finish"; they are in the published text and were not among the approved changes, so they stay.
+- Fingerprint: `f1270f27b1291cff1225ef45fa5cf41b2c4de1184d00bc5caaa81239feb3d45d`, identical in dev and in the LF repository text. The migration strips `\r`, because this Windows checkout (`core.autocrlf=true`) otherwise stores CRLF bytes. The previous version shows the effect: it is `ce41ed9a…` in dev (CRLF) but `fd149012…` as LF text. The previous migration was not edited.
+- Readable draft: `_audit_tmp/esign-disclosure-draft-2026-10-19-revised.md` (local). Its fenced text equals the stored text byte for byte, with review notes outside it. The earlier draft is marked historical.
+- Consistent with the completed-delivery audit:
+  - fan-out happens after Complete to every finished participant with a valid frozen email, remote or in person, asynchronously, and provider acceptance is not inbox delivery;
+  - with no email, contact the sender;
+  - the invitation link is refused after Complete, and the completed-documents link is a separate credential that can be replaced or revoked;
+  - downloads are PDFs verified by PR #54.
+
+**Dev migration and historical consent.** Applied to dev `ewxsxwzezhkeawnjvigx` only, using `supabase db push` after the linked ref was checked.
+- Before and after snapshots: the placeholder and `esign-disclosure-2026-10-19` rows keep their ids, fingerprints and non-ready status.
+- Participant consent records (223) and `CONSENT_ACCEPTED` events (24) are byte-identical by digest.
+- The revised version is the only current version, with 0 acceptances at publication.
+
+**Production-eligibility audit.**
+- Production could not present, or record new consent to, a non-ready current version. `loadCurrentConsentDisclosure` asserts readiness, and it runs before identity affirmation, the ceremony overview and `acceptConsent`.
+- Gap: `checkConsentSatisfied` loaded an earlier accepted version and verified only fingerprints, never readiness. Once a production-ready version became current, an older non-ready acceptance (placeholder, 2026-10-19 or the revised dev version) would have authorized marks, placements, Start signing and Finish.
+- Production runtime cannot write such an acceptance. One would have to come from a non-production runtime or script against the production project, a data copy, or a direct service-role write. It was not exploitable today: production has no Native Signing tables and the feature is off.
+- Publishing a newer approved version did not change an older acceptance's evidence, but it did make the acceptance usable. Version plus fingerprint established integrity, not eligibility.
+
+**Fix (no schema change).**
+- `isDisclosureEligibleForRuntime` (feature-gate): in production only production-ready versions are eligible. `assertProductionDisclosureReady` uses it for the current version, and `checkConsentSatisfied` uses it for the accepted version.
+- An ineligible acceptance returns `ACCEPTANCE_NOT_ELIGIBLE`, unsatisfied, and is never shown as the accepted disclosure. Its evidence is left untouched. The participant reviews the eligible current disclosure and must accept it, which appends a new event.
+- `prepareCeremonyMarks` (Start signing) now checks consent itself. Reusing existing marks used to skip the check in `adoptCeremonyMark`.
+- Eligible acceptances still never re-prompt, including after a newer approved version.
+- Optional `env` injection on the consent functions supports tests; callers use `process.env`.
+
+**Validation.**
+- New `lib/signing/consent-eligibility.test.ts` (13): in-memory Supabase stub with the environment injected. Covers:
+  - dev acceptance recording version and fingerprint, with replay;
+  - a historical acceptance kept after a newer version;
+  - production refusing a non-ready current version (load, check, new consent, with no write);
+  - production refusing a non-ready acceptance beside an approved current version (check, Start signing, mark, placement and replace, with no write and no field read);
+  - a fresh acceptance appending a new event and leaving the old one;
+  - an approved acceptance satisfied with no re-prompt;
+  - mismatched, malformed, tampered and missing fingerprints failing closed;
+  - no cross-participant or cross-Signing reuse;
+  - a returning session not asked again;
+  - browser-role revokes.
+- Copy tests: the three sections verbatim, nothing else changed, pinned fingerprints, no unsupported claims (including "guarantee"), Download/Print text and filename, and migration shape (no schema, no participant or event writes, never ready, CR stripping).
+- `ceremony-ux` asserts Start signing checks consent first.
+- Ceremony suite 151/151; production-readiness 56/56 (inventory 34); all 58 `test:*` scripts pass.
+- All 21 `validate:*-dev` validators pass. The ceremony validator adds production checks against real dev rows: non-ready current refused for load, check and new consent; a `esign-disclosure-2026-10-19` acceptance is `ACCEPTANCE_NOT_ELIGIBLE` beside an in-memory approved current version; the recorded acceptance is unchanged. Production-readiness `--target=dev` passes.
+- Browser QA:
+  - Ceremony 83/83, zero console, page or server noise on the passing run. Every consent screen (remote P1/P2, Signing C, in person) shows exactly `esign-disclosure-2026-10-19-revised`. Download (`esign-disclosure-2026-10-19-revised.txt`) and the Print window both carry the exact stored text, version and SHA-256, and the displayed body contains every stored line. Leave for now keeps consent, Decline stays separate, participants are isolated, and completed-package access works.
+  - Archive 39, cancellation 31, link-ops 28, account switch 10, combined refresh 10, placement templates 44, Prepare Documents 90: all pass.
+- Ceremony QA took four runs:
+  - Two runs on a five-hour-old dev server passed all functional checks but hit the documented baseline "destination stream closed early" line at the in-person handoff.
+  - After a dev server restart, one run hit a transient dev Supabase "Gateway Timeout" in `declineCeremonyAction`. The decline committed, but the participant saw "session no longer active" instead of the declined landing.
+  - The next run was fully clean.
+- tsc, changed-path ESLint, `git diff --check` and `build:validate` are clean. `npm audit --omit=dev` 0; full audit 9 (7 high, 2 moderate), unchanged.
+
+**Open / deferred:**
+- counsel review of the copy before any version is production-ready (publish approved copy as a new row);
+- re-consent flag (§7001(c)(1)(D));
+- disclosure immutability trigger and readiness timestamp (schema);
+- completed-package delivery retries every 15 minutes with no attempt cap (future reliability review);
+- the internal `COMPLETED_PACKAGE_SENT` event summary says "delivered" when the provider only accepted the email (future cleanup; historical events unchanged);
+- a Decline whose response fails after commit shows "session no longer active" rather than the declined landing (observed once under a dev gateway timeout).
+
+### Electronic records consent disclosure (2026-10-19; pre-production hardening)
+
+**Status:** Branch `feat/signing-electronic-consent-disclosure` from `main` `444fd98`; PR open, not merged. Development only. Production untouched, Native Signing off in production, Gate A paused. See the 2026-10-19 consent decision.
+
+**Sources reviewed:**
+- 15 U.S.C. § 7001 (official GovInfo U.S. Code; Cornell LII cross-check), especially (c);
+- Texas Business & Commerce Code ch. 322, Texas UETA (statutes.capitol.texas.gov);
+- the TREC FAQ and Contracts pages, which say nothing on e-signatures; license holders must use adopted forms and may add only factual or business details.
+
+The disclosure is ceremony UI. It is never inserted into a form, and makes no TREC claim.
+
+**Existing ceremony (before).**
+- Sequence: link exchange, then the HttpOnly entry session, then "I am …", then a ceremony session, then consent, then the Signature/Initials card and Start signing, then document review and signing, then Finish.
+- Consent was one "I agree to use electronic records and signatures" button under a scrolling box showing the development placeholder. There was no download or print.
+- Consent evidence: `signing_participants.consent_*` (version id + SHA-256) and the append-only `CONSENT_ACCEPTED` event (revision id, version key, fingerprint).
+- Server enforcement already blocked marks, placements, Start signing and Finish before consent (R32).
+- Gap: the code re-prompted whenever a newer version became current, which contradicted the 2026-09-14 decision.
+
+**Lee's decisions:**
+- publish by data migration, not production-ready;
+- bind acceptances to the accepted version;
+- Decline to sign is how to withdraw;
+- an unchecked checkbox, plus download, print and reopen-later.
+
+**Implemented.**
+- Migration `20261019120000_native_signing_esign_disclosure_2026_10_19.sql`, dev only and data only:
+  - supersedes the placeholder;
+  - inserts `esign-disclosure-2026-10-19` with `is_production_ready = false` and the fingerprint computed in SQL;
+  - is idempotent and verifies exactly one current version.
+
+  Native Signing inventory is now 33.
+- Copy, in seven sections: Your choice; What your consent covers (this Signing only); Stopping before you finish (Leave for now vs Decline to sign); Paper copies (no fee, contact the sender, no mailing); Your contact information (fixed by the sender, new Signing if wrong); What you need; Keeping your records (the link works until replaced or revoked). Draft in `_audit_tmp/esign-disclosure-draft-2026-10-19.md`.
+- `checkConsentSatisfied` accepts the participant's accepted version (current or superseded) only when its stored text reproduces both fingerprints, and otherwise returns `ACCEPTANCE_UNVERIFIABLE` (fail closed). `acceptConsent` replays the original acceptance.
+- UI:
+  - `ConsentDisclosureCard`: sectioned text, version, Download (exact text + version + SHA-256) and Print, an unchecked labelled checkbox, Continue disabled until checked;
+  - `DisclosureReviewButton` in the signing header reopens the accepted disclosure;
+  - Leave for now and Decline to sign stay on the consent screen.
+- No schema change, no new event type, no change to identity affirmation, Start signing, Decline, Exit or in-person handoff.
+
+**Validation.**
+- Ceremony suite 132/132, with 9 new tests (copy anchors, banned claims, section parsing, download text, migration shape, UI wiring). Production-readiness 56/56 (inventory 33).
+- Ceremony dev validator, new checks:
+  - consent does not cross participants or Signings;
+  - a superseded-version acceptance stays valid and replays without rebinding;
+  - a forged fingerprint fails closed (CONSENT_REQUIRED on a mark);
+  - a browser client cannot rewrite disclosure text or consent;
+  - leaving without consent leaves the Signing In Progress;
+  - declining before consent records no consent or event.
+- Ceremony browser QA (83 checks, zero noise):
+  - all seven sections, version, download and print, unchecked box, Continue disabled;
+  - 390px phone width with no horizontal scroll;
+  - consent evidence matches the shown version;
+  - no re-prompt after reload or Leave for now;
+  - each participant (remote P1/P2, Signing C, in-person on the handed-over device) consents independently;
+  - completed-package downloads.
+- Harness fix: the ceremony QA compared app-clock `completed_at` with database-clock credential `create_date`. It failed whenever this machine's clock ran ahead (a credential appeared 92 ms "before" Complete). Code order guarantees credentials come after Complete. The check now allows 2 s of skew; "no credential before Complete" is still asserted by state at Send.
+- Not run in the browser: a revision change, since no post-activation amendment exists.
+
+**Open:** counsel review of the copy before marking any version production-ready. Backlog: a re-consent flag (if ever needed) and a database immutability trigger on accepted disclosure versions, both needing schema migrations.
+
+**Next pre-production item:** DAST R11, then the optional manager download audit.
 
 ### Participant completed-package integrity (2026-10-18; pre-production hardening)
 

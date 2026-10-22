@@ -12,6 +12,83 @@ Each decision should include:
 
 ---
 
+## PR #55 merge boundary: noise classification and evidence checks
+
+**Date:** 2026-10-21 (PR #55 merge-boundary validation)
+
+**Decision:**
+1. **"The destination stream closed early" is development-environment noise, not waived.** It is React's server-component stream cancel handler, raised when a browser closes an RSC response before it finishes. In ceremony QA it appears only at the in-person handoff, where a cookie-setting server action is followed immediately by `window.location.replace`, abandoning the in-flight page refresh. The handoff and in-person ceremony pass every functional check, and the code is unchanged by PR #55, so it does not block the merge. The browser QA's strict runtime-noise check keeps failing on it; it is not added to an allow-list, so a new or more frequent occurrence stays visible.
+2. **Transient dev-service failures are diagnosed before rerunning.** A QA failure is rerun only after its dev-server log shows an environmental cause (here, a dev Supabase `fetch failed` that stalled one render for 50 s), and both the failure and the rerun are recorded.
+3. **Consent evidence preservation is checked row by row.** Validator cleanup leaves fixture participants behind, so whole-table digests change between runs. The merge check compares every pre-existing disclosure version, participant consent row and `CONSENT_ACCEPTED` event by value against a snapshot taken before validation; added fixture rows are reported separately.
+4. **Lint gate.** Merge-boundary ESLint covers every PR-changed file and tracked source directories. Pre-existing errors in untouched files (mostly the vendored `public/pdf.worker.min.mjs`) are reported, not fixed in a feature PR. `npm run lint` currently also walks untracked `.next` and `_audit_tmp` output because `eslint.config.mjs` has no ignores; fixing that is a separate change.
+
+**Reason:** The merge decision needs failures separated into defects and environment, with evidence for each, and needs proof that historical consent evidence is unchanged even though dev fixtures accumulate.
+
+**Related:** `scripts/qa-signing-ceremony-browser.ts`, `components/signings/signing-dashboard-page.tsx` (`startHandoff`), `lib/signing/ceremony-agent-actions.ts` (`startInPersonHandoffAction`), `scripts/validate-native-signing-ceremony-dev.ts`, `eslint.config.mjs`.
+
+---
+
+## Disclosure esign-disclosure-2026-10-20: reviewed wording, not production-ready
+
+**Date:** 2026-10-20 (PR #55; Lee-approved product wording, not counsel-approved)
+
+**Decision:**
+1. **New immutable version.** The participant-facing text of `_audit_tmp/esign-disclosure-proposed-revision-for-review.md`, verbatim, is published as `esign-disclosure-2026-10-20` ("Electronic records and signatures") by data-only, forward-only migration `20261020120000_native_signing_esign_disclosure_2026_10_20.sql`. It supersedes `esign-disclosure-2026-10-19-revised` and is current with `is_production_ready = false`. Fingerprint `ac7de88cd2e003ed4c12d7887966288f273ea3a97db631e42193810ae99e9d9b` (UTF-8, LF, no trailing newline), verified independently against the document and enforced by the migration, which aborts if the stored text hashes differently. Prior disclosure rows, migrations, fingerprints, consent records and events are unchanged.
+2. **Checkbox wording.** The consent statement is exactly "I have read this disclosure, can view it on this device, and can view and keep PDF documents by saving or printing them. I agree to use electronic records and electronic signatures for this Signing." It stays unchecked by default with Continue disabled until checked. It is UI text shared by every ceremony; consent evidence continues to bind to the disclosure version id and fingerprint.
+3. **Unchanged safeguards.** Acceptances stay bound to the version accepted (a `-revised` acceptance remains valid in development and is never re-bound). In production only production-ready versions are eligible, so this version cannot be presented or accepted there, and acceptances of it would be `ACCEPTANCE_NOT_ELIGIBLE` beside a future approved version.
+4. **Not built.** The document's review notes are recorded as open issues, not implemented: a sender-side mechanism for post-Finish withdrawal of consent to future electronic records; a definite sender paper-copy fee policy (§7001(c)(1)(B)(iv)); a PDF access demonstration beyond the checkbox (§7001(c)(1)(C)(ii)); notice and re-consent for hardware/software changes (§7001(c)(1)(D)). Each needs resolution, and counsel review of the wording, before affected live use and before any version is marked production-ready.
+
+**Reason:** Lee approved revised product wording that separates finishing from Signing completion, addresses post-Finish withdrawal and paper-copy fees honestly, covers contact errors after finishing, and asks participants to confirm they can view and keep PDFs. Publishing it as a new version keeps every earlier acceptance reproducible.
+
+**Related:** `supabase/migrations/20261020120000_native_signing_esign_disclosure_2026_10_20.sql`, `lib/signing/consent-disclosure-view.ts` (`CONSENT_ACKNOWLEDGEMENT`), `lib/signing/native-signing-migrations.ts`, `lib/signing/consent-disclosure-copy.test.ts`, `lib/signing/consent-eligibility.test.ts`, `lib/signing/production-readiness.test.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
+## Consent evidence is immutable; production eligibility is decided separately
+
+**Date:** 2026-10-19, afternoon (PR #55 completion; Lee's approved production-safety principle)
+
+**Decision:**
+1. **Two different questions.** Consent evidence (the participant's `consent_*` columns and the append-only `CONSENT_ACCEPTED` event: version id, version key, SHA-256) records what a participant accepted and is never rewritten, relabelled or migrated. Whether that acceptance may authorize Signing actions is decided at each check for the current runtime.
+2. **Production eligibility.** In production (`VERCEL_ENV=production`) only a disclosure version marked `is_production_ready` is eligible, whether it is the current version being presented or the version a participant accepted earlier. One rule, `isDisclosureEligibleForRuntime`, serves both. Development and preview accept any verified version.
+3. **Fail closed.** With no eligible current version, production refuses to present a disclosure, record consent or start a ceremony. An acceptance of an ineligible version does not satisfy consent (`ACCEPTANCE_NOT_ELIGIBLE`): marks, placements, Start signing and Finish fail with CONSENT_REQUIRED, and the ineligible version is never presented as the accepted one. A valid fingerprint is necessary for evidence integrity and is never by itself enough for production eligibility.
+4. **What the participant sees.** After an ineligible acceptance, the participant is shown the eligible current disclosure as a first-time review and must accept it affirmatively. That is a new acceptance of wording they saw: it appends a new `CONSENT_ACCEPTED` event and repoints `consent_*`, while the earlier event stays as it was. Eligible acceptances keep the no-forced-re-consent rule, including after a newer approved version. No general re-consent policy, withdrawal workflow or amendment UI is added.
+5. **Approval is forward-only.** Counsel-approved copy should be published as a new version row with `is_production_ready = true`, not by flipping readiness on a row that already has non-production acceptances. Readiness carries no timestamp, so a flip would make those acceptances eligible.
+
+**Forward-only disclosure revision.** Lee's approved wording for Paper copies, the email line of What you need, and Keeping your records is published as `esign-disclosure-2026-10-19-revised` by data-only migration `20261019150000_native_signing_esign_disclosure_revision.sql`, with `is_production_ready = false`. It supersedes `esign-disclosure-2026-10-19`; every other section is carried over verbatim. The earlier migration, its stored text and fingerprint, and every acceptance and event are unchanged. The migration strips carriage returns so the stored text and fingerprint (`f1270f27b1291cff1225ef45fa5cf41b2c4de1184d00bc5caaa81239feb3d45d`) do not depend on checkout line endings. The wording is approved product wording, not counsel-approved.
+
+**Reason:** Production readiness was asserted only for the current version, so an older non-ready acceptance would have become usable once an approved version was published. The delivery audit showed the earlier Paper copies and Keeping your records wording overstated email delivery and pointed returning participants to the invitation link, which is refused after Complete.
+
+**Related:** `lib/signing/feature-gate.ts` (`isDisclosureEligibleForRuntime`), `lib/signing/consent-disclosure.ts` (`checkConsentSatisfied`), `lib/signing/adopted-marks.ts` (`prepareCeremonyMarks`), `lib/signing/consent-eligibility.test.ts`, `lib/signing/consent-disclosure-copy.test.ts`, `supabase/migrations/20261019150000_native_signing_esign_disclosure_revision.sql`, `scripts/validate-native-signing-ceremony-dev.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
+## Electronic records consent: published disclosure, bound to the version accepted
+
+**Date:** 2026-10-19 (electronic consent disclosure tranche; Lee's decisions)
+
+**Decision:**
+1. **Copy.** Disclosure `esign-disclosure-2026-10-19` ("Electronic records and signatures") replaces the development placeholder. It is published as a new immutable `signing_consent_disclosure_versions` row with `is_production_ready = false`, and the placeholder is superseded. It covers, in plain language:
+   - that using electronic records and signatures is a choice;
+   - that consent applies to this Signing only;
+   - how to stop: Leave for now ends the session only, while Decline to sign withdraws from electronic signing and ends the Signing for everyone;
+   - no Harbaugh Forms fee;
+   - paper copies through the sender; Harbaugh Forms provides no paper signing process and does not mail paper copies;
+   - name and email are fixed by the sender: if wrong, stop and contact the sender, who sends a new Signing;
+   - the device, browser and PDF requirements;
+   - keeping records: save the downloads, because the link works until replaced or revoked.
+
+   It makes no claim of TREC approval, legal compliance, binding effect, notarization or identity verification. Counsel review is still required before it, or a successor, is marked production-ready; production keeps failing closed until then.
+2. **Consent is affirmative and server-recorded.** The participant reviews the disclosure (sectioned, readable on a phone, downloadable as its exact stored text with version and SHA-256, and printable). They check an unchecked box stating they have read it, can view it on this device and agree to electronic records and signatures for this Signing; Continue stays disabled until then. The server records consent (`consent_*` columns plus the append-only `CONSENT_ACCEPTED` event with version and fingerprint). Every mark, placement, Start signing and Finish still requires it (`requireConsentSatisfied`). The accepted disclosure can be reopened later in the ceremony.
+3. **Bound to the version accepted.** An acceptance stays valid for the version accepted, current or superseded, as long as that version's stored text still reproduces both its fingerprint and the recorded one; otherwise it fails closed. A newer version applies only to participants who have not yet consented and never silently re-binds or re-prompts. This resolves the earlier tension between the 2026-09-14 and 2026-09-17 entries in favour of 2026-09-14. A version that must re-prompt (for example a material hardware or software change under E-SIGN §7001(c)(1)(D)) would need an explicit flag, which is not built; add it with that version.
+4. **Withdrawal.** There is no separate withdraw action. Before finishing, Decline to sign is how a participant withdraws from electronic signing, with its stated consequence. Leave for now and closing the tab are not withdrawal and record nothing. Declining before consent records no consent.
+5. **Scope and isolation.** Consent is per participant and per Signing. Each in-person participant consents on the handed-over device for themselves. Consent is not revision-scoped: no post-activation amendment exists today, so any future amendment flow must reset consent explicitly.
+6. **Law.** E-SIGN §7001(c) applies directly only where another law requires information to be given to a consumer in writing and an electronic record is used for it. That depends on the document, so the disclosure follows §7001(c) as a conservative standard without claiming compliance. Texas UETA (Bus. & Com. Code ch. 322) supports agreement from context (§322.005), retainable records that are never print- or save-inhibited (§322.008), attribution by the person's act (§322.009) and accurate, accessible retention (§322.012).
+
+**Related:** `supabase/migrations/20261019120000_native_signing_esign_disclosure_2026_10_19.sql`, `lib/signing/consent-disclosure.ts`, `lib/signing/consent-disclosure-view.ts`, `components/sign/consent-disclosure.tsx`, `components/sign/ceremony-shell.tsx`, `lib/signing/consent-disclosure-copy.test.ts`, `scripts/validate-native-signing-ceremony-dev.ts`, `scripts/qa-signing-ceremony-browser.ts`.
+
+---
+
 ## Every completed-artifact serve verifies the stored bytes
 
 **Date:** 2026-10-18 (participant completed-package integrity hardening)
@@ -1825,7 +1902,7 @@ Separating presence heartbeat from ceremony inactivity prevents abandoned tabs f
 **Date:** 2026-09-17
 
 **Decision:**
-If consent was already validly accepted for the applicable disclosure version, a browser-session timeout does not require consent again. Identity affirmation repeats; consent remains valid; accepted marks and placements remain valid. If consent was never completed, the participant resumes at consent. If the applicable disclosure version later changes through an approved process, fresh consent may be required; an existing acceptance must not silently bind to changed disclosure text. This timeout rule is distinct from a permitted pre-signature package amendment, which may require ceremony review to restart under existing amendment decisions.
+If consent was already validly accepted for the applicable disclosure version, a browser-session timeout does not require consent again. Identity affirmation repeats; consent remains valid; accepted marks and placements remain valid. If consent was never completed, the participant resumes at consent. If the applicable disclosure version later changes through an approved process, fresh consent may be required; an existing acceptance must not silently bind to changed disclosure text. *Refined 2026-10-19: an acceptance stays bound to the version accepted, and a newer version re-prompts only if explicitly flagged (see "Electronic records consent: published disclosure, bound to the version accepted").* This timeout rule is distinct from a permitted pre-signature package amendment, which may require ceremony review to restart under existing amendment decisions.
 
 **Reason:**
 Repeating identity affirmation after inactivity preserves the attestation boundary without forcing redundant disclosure clicks when the accepted disclosure is unchanged.
