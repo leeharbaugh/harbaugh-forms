@@ -1,10 +1,12 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-21, night (PR #55 merge-boundary validation on `feat/signing-electronic-consent-disclosure`; `origin/main` still `444fd98`).
-- PR #55 is ready for Lee's merge review. All merge-boundary validation passes, with two environment findings recorded below and nothing waived.
-- Disclosure `esign-disclosure-2026-10-20` (fingerprint `ac7de88cd2e003ed4c12d7887966288f273ea3a97db631e42193810ae99e9d9b`) is current in development and **not production-ready**; the wording is Lee-approved, **not counsel-approved**.
-- Historical disclosure rows, consent records and events are unchanged. Production untouched (no database access, no deployment, both production domains still on `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`), Native Signing off in production, Gate A paused, PR #55 open and unmerged.
-- See "PR #55 merge-boundary validation" below.
+**As of:** 2026-10-22, afternoon. [PR #55](https://github.com/leeharbaugh/harbaugh-forms/pull/55) (Native Signing electronic consent disclosure) is squash-merged into `main` as `2c4c270f7bcb256882abb70da83554e32ff53e0f`, with Lee's approval.
+- The merge was pinned to the validated head `dbeabb37d7cb8cc5ea0a3151e0294c4f48044646`. Both GitHub checks passed and `main` had not moved from `444fd98`. The squash commit's tree (`c9954d4`) is identical to `dbeabb3`.
+- `main` now carries three non-production-ready disclosure migrations (`20261019120000`, `20261019150000`, `20261020120000`; Native Signing inventory 35). `esign-disclosure-2026-10-20` (fingerprint `ac7de88c…d9b`, Lee-approved, not counsel-approved) is current in development only.
+- Production is untouched. No production migration was applied, Native Signing is still off, no deployment was promoted, and no production configuration changed. Vercel `autoAssignCustomDomains` is `false`, and both production domains still serve `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`. Gate A paused.
+- Next work starts from `main`. The production blockers in "PR #55 merge-boundary validation" below still apply.
+
+Earlier: 2026-10-21, night (PR #55 merge-boundary validation). All merge-boundary validation passed, with environment findings classified and none waived. See "PR #55 merge-boundary validation" below.
 
 Earlier: 2026-10-20, morning (PR #55 continued from `ee3c2c2`). Disclosure `esign-disclosure-2026-10-20` was published to development by data-only migration `20261020120000`, current but not production-ready, and the consent checkbox now reads the reviewed wording exactly. See "Electronic consent disclosure 2026-10-20" below.
 
@@ -39,7 +41,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 
 ### PR #55 merge-boundary validation (2026-10-21, night)
 
-**Status:** [PR #55](https://github.com/leeharbaugh/harbaugh-forms/pull/55) open, not merged, not deployed. `origin/main` has not moved from the merge base `444fd98`, so no sync merge is needed. Development only. See the 2026-10-21 decision "PR #55 merge boundary: noise classification and evidence checks".
+**Status:** [PR #55](https://github.com/leeharbaugh/harbaugh-forms/pull/55) squash-merged into `main` as `2c4c270` on 2026-10-22 (pushed head `dbeabb3`; Vercel Preview `dpl_AnAVcFQtfd6Cdzwu3YCSKMBQDt6s` Ready, not promoted). At validation time `origin/main` had not moved from the merge base `444fd98`, so no sync merge was needed. Development only. See the 2026-10-21 decision "PR #55 merge boundary: noise classification and evidence checks".
 
 **Diff review** (`origin/main...HEAD` plus the 2026-10-20 work): three forward-only data migrations (`20261019120000`, `20261019150000`, `20261020120000`), none rewriting an earlier row; consent bound to the accepted version with fail-closed fingerprint verification; one production-eligibility rule for presented and accepted versions; Start signing checks consent; the consent card and reopen-later dialog; the exact checkbox wording; and the test, validator and QA updates. No unintended changes. One finding fixed: the `loadCurrentConsentDisclosure` doc comment had drifted above the `DISCLOSURE_SELECT` constant and is back on its function. `package-lock.json` is unchanged; `package.json` only adds the two consent test files to `test:native-signing-ceremony`.
 
