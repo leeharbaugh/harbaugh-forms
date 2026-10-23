@@ -3,7 +3,7 @@
 **As of:** 2026-10-23, evening. Next.js 16.4.1 security update (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r).
 - Production runs `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr` from hotfix `614cfe6` (`hotfix/next-16.4.1-prod` = production `3e5eaa3` + dependency change only): Next.js 16.4.1, Sharp 0.35.5, React server-component runtime `19.3.0-canary-278794d7-20261002`. Promoted 2026-10-23 21:38 UTC with Lee's approval; both domains verified; `autoAssignCustomDomains` still `false`; rollback `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`.
 - **Corrected history:** before this hotfix production ran Next.js 16.3.6 / Sharp 0.35.4 / `source-map-js` 1.2.1 (`3e5eaa3`), not 16.3.8. PR #53's versions were never deployed on their own. A 2026-10-22 note on the PR #56 branch that says `next@16.3.8` was in production is wrong.
-- `main` gets the same Next.js 16.4.1 lockfile entries on branch `security/next-16.4.1` (PR open, not merged). Native Signing is still off in production; no production Supabase, migration, env or Signing change. PR #56 is untouched and needs a sync with patched `main` plus its own merge-boundary validation. See "Next.js 16.4.1 security hotfix" below.
+- `main` has the same Next.js 16.4.1 lockfile entries: [PR #57](https://github.com/leeharbaugh/harbaugh-forms/pull/57) (`security/next-16.4.1`, pinned to reviewed head `7c4fc0e`) squash-merged into `main` as `d638e42` on 2026-10-23 23:23 UTC with Lee's approval; squash tree identical to `7c4fc0e`. Vercel's automatic Git build of `main` (`dpl_H3CSvU8TNTcgGtkCndXHWAfocPRe`) was not promoted; both domains stay on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`. Native Signing is still off in production; no production Supabase, migration, env or Signing change. PR #56 is untouched and needs a sync with patched `main` plus its own merge-boundary validation. See "Next.js 16.4.1 security hotfix" below.
 
 Earlier: 2026-10-22, afternoon. [PR #55](https://github.com/leeharbaugh/harbaugh-forms/pull/55) (Native Signing electronic consent disclosure) is squash-merged into `main` as `2c4c270f7bcb256882abb70da83554e32ff53e0f`, with Lee's approval.
 - The merge was pinned to the validated head `dbeabb37d7cb8cc5ea0a3151e0294c4f48044646`. Both GitHub checks passed and `main` had not moved from `444fd98`. The squash commit's tree (`c9954d4`) is identical to `dbeabb3`.
@@ -46,7 +46,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 
 ### Next.js 16.4.1 security hotfix (2026-10-23)
 
-**Status:** Live in production since 2026-10-23 21:38 UTC (Lee approved) as `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr` from `hotfix/next-16.4.1-prod` `614cfe6`. The same update for `main` is on `security/next-16.4.1` (PR open, not merged). Native Signing is not in the hotfix lineage and stays off in production. Per the "security patches ship independently" decision.
+**Status:** Live in production since 2026-10-23 21:38 UTC (Lee approved) as `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr` from `hotfix/next-16.4.1-prod` `614cfe6`. The same update reached `main` through [PR #57](https://github.com/leeharbaugh/harbaugh-forms/pull/57), squash-merged as `d638e42` (2026-10-23); `main` now pins the versions production runs. Native Signing is not in the hotfix lineage and stays off in production. Per the "security patches ship independently" decision.
 
 **Advisories** (checked 2026-10-23 against the GitHub Advisory Database, the vercel/next.js repository advisories and the v16.4.1 release notes, a security-only release):
 
@@ -77,7 +77,7 @@ The production baseline also carried the six advisories PR #53 fixed on `main` (
 | Side note | `--skip-domain` still moves the SSO-protected team alias `harbaugh-forms-lee-harbaugh-s-projects.vercel.app` to the new production-target deployment; project domains are not assigned |
 | Rollback | `dpl_E9HTxf45epr8ckKifivWCPNgpFAU` retained, Ready (`vercel promote dpl_E9HTxf45epr8ckKifivWCPNgpFAU`) |
 
-**`main` update (`security/next-16.4.1` from `main` `744384e`).** `package.json` `next` `^16.3.8` → `^16.4.1`; the lockfile changes only `next`, `@next/env` and the eight `@next/swc-*` binaries (16.3.8 → 16.4.1). Sharp 0.35.5 and `source-map-js` 1.2.2 were already on `main`. All 47 framework-related lockfile entries (Next, SWC, Sharp and `@img/*`, `source-map-js`, React, `postcss`, `styled-jsx`, `@swc/helpers`) are identical to `614cfe6`, including `resolved` and `integrity`.
+**`main` update ([PR #57](https://github.com/leeharbaugh/harbaugh-forms/pull/57), `security/next-16.4.1` from `main` `744384e`; squash-merged as `d638e42`, tree identical to the reviewed head `7c4fc0e`, both GitHub checks passed, `main` had not moved; the automatic Git build `dpl_H3CSvU8TNTcgGtkCndXHWAfocPRe` was not promoted).** `package.json` `next` `^16.3.8` → `^16.4.1`; the lockfile changes only `next`, `@next/env` and the eight `@next/swc-*` binaries (16.3.8 → 16.4.1). Sharp 0.35.5 and `source-map-js` 1.2.2 were already on `main`. All 47 framework-related lockfile entries (Next, SWC, Sharp and `@img/*`, `source-map-js`, React, `postcss`, `styled-jsx`, `@swc/helpers`) are identical to `614cfe6`, including `resolved` and `integrity`.
 
 | Item | Result |
 |------|--------|
