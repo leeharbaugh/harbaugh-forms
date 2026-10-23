@@ -19,6 +19,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadSigningAuthorityBundle } from "./authority-context";
 import { supersedeActiveCeremonySessions } from "./browser-sessions";
+import { CONSENT_WITHDRAWN_MANAGER_MESSAGE } from "./consent-withdrawal";
 import { createDeviceHandoffLock } from "./device-handoff-lock";
 import {
   buildResponsibleContextMetadata,
@@ -147,13 +148,16 @@ export async function createInPersonHandoffWithActor(
 
   const { data: participant, error: participantError } = await admin
     .from("signing_participants")
-    .select("id, full_name, participant_status")
+    .select("id, full_name, participant_status, consent_withdrawn_at")
     .eq("id", input.signingParticipantId)
     .eq("signing_id", summary.id)
     .maybeSingle();
   if (participantError) throw new Error(participantError.message);
   if (!participant || participant.participant_status === "REMOVED") {
     throw new SigningError("NOT_FOUND", "Participant not found.");
+  }
+  if (participant.consent_withdrawn_at) {
+    throw new SigningError("CONFLICT", CONSENT_WITHDRAWN_MANAGER_MESSAGE);
   }
   if (participant.participant_status === "FINISHED") {
     throw new SigningError(

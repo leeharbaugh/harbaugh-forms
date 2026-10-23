@@ -21,6 +21,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CeremonyWriteContext } from "./ceremony-context";
 import { appendCeremonyEvent } from "./ceremony-events";
+import { CONSENT_WITHDRAWN_PARTICIPANT_MESSAGE } from "./consent-disclosure-view";
 import { SigningError } from "./errors";
 import {
   assertProductionDisclosureReady,
@@ -120,13 +121,16 @@ export type ConsentState = {
     | "SATISFIED"
     | "NEVER_ACCEPTED"
     | "ACCEPTANCE_UNVERIFIABLE"
-    | "ACCEPTANCE_NOT_ELIGIBLE";
+    | "ACCEPTANCE_NOT_ELIGIBLE"
+    | "CONSENT_WITHDRAWN";
   currentDisclosure: ConsentDisclosure;
   /** The exact version this participant accepted, when it verifies and is eligible here. */
   acceptedDisclosure: ConsentDisclosure | null;
   acceptedAt: string | null;
   acceptedDisclosureVersionId: string | null;
   acceptedContentSha256: string | null;
+  /** When a manager recorded this participant's withdrawal of consent. */
+  withdrawnAt: string | null;
 };
 
 /**
@@ -136,6 +140,7 @@ export type ConsentState = {
  * version is eligible in this runtime. A verified fingerprint proves which
  * text was accepted; in production only a production-ready version may
  * authorize signing. An ineligible acceptance is left untouched as evidence.
+ * A recorded withdrawal makes the acceptance unusable, whatever it verifies to.
  */
 export async function checkConsentSatisfied(options: {
   admin: SupabaseClient;
@@ -152,7 +157,7 @@ export async function checkConsentSatisfied(options: {
   const { data, error } = await options.admin
     .from("signing_participants")
     .select(
-      "consent_accepted_at, consent_disclosure_version_id, consent_content_sha256",
+      "consent_accepted_at, consent_disclosure_version_id, consent_content_sha256, consent_withdrawn_at",
     )
     .eq("id", options.signingParticipantId)
     .eq("signing_id", options.signingId)
@@ -164,6 +169,20 @@ export async function checkConsentSatisfied(options: {
     (data?.consent_disclosure_version_id as string | null) ?? null;
   const acceptedContentSha256 =
     (data?.consent_content_sha256 as string | null) ?? null;
+  const withdrawnAt = (data?.consent_withdrawn_at as string | null) ?? null;
+
+  if (withdrawnAt) {
+    return {
+      satisfied: false,
+      reason: "CONSENT_WITHDRAWN",
+      currentDisclosure,
+      acceptedDisclosure: null,
+      acceptedAt,
+      acceptedDisclosureVersionId,
+      acceptedContentSha256,
+      withdrawnAt,
+    };
+  }
 
   if (!acceptedAt || !acceptedDisclosureVersionId || !acceptedContentSha256) {
     return {
@@ -174,6 +193,7 @@ export async function checkConsentSatisfied(options: {
       acceptedAt,
       acceptedDisclosureVersionId,
       acceptedContentSha256,
+      withdrawnAt,
     };
   }
 
@@ -200,6 +220,7 @@ export async function checkConsentSatisfied(options: {
     acceptedAt,
     acceptedDisclosureVersionId,
     acceptedContentSha256,
+    withdrawnAt,
   };
 }
 
@@ -213,7 +234,9 @@ export async function requireConsentSatisfied(options: {
   if (!state.satisfied) {
     throw new SigningError(
       "CONSENT_REQUIRED",
-      "Please review and accept the electronic records and signatures disclosure first.",
+      state.reason === "CONSENT_WITHDRAWN"
+        ? CONSENT_WITHDRAWN_PARTICIPANT_MESSAGE
+        : "Please review and accept the electronic records and signatures disclosure first.",
     );
   }
   return state;
@@ -249,6 +272,10 @@ export async function acceptConsent(options: {
   });
   const current = state.currentDisclosure;
 
+  if (state.reason === "CONSENT_WITHDRAWN") {
+    throw new SigningError("CEREMONY_FORBIDDEN", CONSENT_WITHDRAWN_PARTICIPANT_MESSAGE);
+  }
+
   if (
     typeof options.disclosureVersionId !== "string" ||
     options.disclosureVersionId !== current.id
@@ -279,6 +306,7 @@ export async function acceptConsent(options: {
     .eq("id", context.session.signingParticipantId)
     .eq("signing_id", context.session.signingId)
     .neq("participant_status", "REMOVED")
+    .is("consent_withdrawn_at", null)
     .select("consent_accepted_at")
     .maybeSingle();
   if (error) throw new Error(error.message);

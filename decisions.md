@@ -12,6 +12,67 @@ Each decision should include:
 
 ---
 
+## Disclosure esign-disclosure-2026-10-22: withdrawal and paper-copy policy, not production-ready
+
+**Date:** 2026-10-22 (Lee-approved product wording; not counsel-approved)
+
+**Decision:**
+1. **Version.** `esign-disclosure-2026-10-22` ("Electronic records and signatures") is published to development by data-only, forward-only migration `20261022130000_native_signing_esign_disclosure_2026_10_22.sql`, supersedes `esign-disclosure-2026-10-20`, and is current with `is_production_ready = false`. Fingerprint `902d216bdececa5f6b7d2e54bc7698bce6dadbeb46619c41ba14efbf9f8a1617` (UTF-8, LF, no trailing newline); the migration aborts if the stored text hashes differently. Earlier versions, acceptances and events are unchanged (only the previous current row's `superseded_at` is set).
+2. **Wording.** Relative to `esign-disclosure-2026-10-20`: a new "Withdrawing your consent" section, with the exact paragraph Lee approved (participants request withdrawal from the sender; once it is recorded there is no electronic signing and no further invitations, cancellation notices or completed-document emails; recorded actions stay; an existing completed-documents link keeps working; re-consent needs a new Signing). The post-Finish "contact the sender" paragraph is removed. Paper copies now says the completed-documents email is not sent after withdrawal, and that "The sender handles paper-copy requests directly and does not charge for paper copies." The consent checkbox is unchanged, and no PDF access test is added. The wording matches the implemented withdrawal behavior.
+3. **Paper-copy policy.** For Lee's initial use, the sending agent handles paper-copy requests manually and does not charge. The statement is accurate only while Lee is the only sender; publish a new version before any other sender uses Native Signing.
+4. **Still deferred.** Human legal review of the disclosure and workflow, and any PDF-access demonstration beyond the checkbox. Nothing here records E-SIGN or UETA compliance.
+
+**Related:** `supabase/migrations/20261022130000_native_signing_esign_disclosure_2026_10_22.sql`, `lib/signing/consent-disclosure-copy.test.ts`, `scripts/qa-signing-ceremony-browser.ts`, `_audit_tmp/esign-disclosure-2026-10-22-draft-for-review.md` (local).
+
+---
+
+## Participant consent withdrawal is manager-recorded, enforced on the server, and preserves evidence
+
+**Date:** 2026-10-22 (Lee's scope; branch `feat/signing-consent-withdrawal`)
+
+**Decision:**
+1. **Who and when.** "Record consent withdrawal" is a manager control on the Signing's participant list, available once the participant has accepted consent, while In Progress (active managers) and after Complete (completed-operations managers: active Primary/Co-agent, active TC, originating ORG_ADMIN), including after the participant finishes. Draft, Declined and Cancelled Signings, read-only viewers and participants who never consented are refused. It also works on an archived Signing. There is no participant-facing withdrawal control; the ceremony only shows a "consent withdrawn" notice.
+2. **Record.** Migration `20261022120000_native_signing_consent_withdrawal.sql` (additive) adds `signing_participants.consent_withdrawn_at`. The trusted server sets it once and appends an attributable `CONSENT_WITHDRAWN` event (manager actor type and user id, accepted version id and fingerprint, lifecycle), with one idempotency key so a repeat is a replay. A database trigger refuses clearing or changing the withdrawal and any change to the accepted consent columns afterwards; a check requires a prior acceptance.
+3. **Enforcement.** `checkConsentSatisfied` returns `CONSENT_WITHDRAWN` (unsatisfied), so marks, placements, Start signing and Finish are refused, and `acceptConsent` refuses re-consent in the same Signing (a new Signing is the path). Resend/Replace signing link, the development copy-link helper, in-person handoff, and completed-package Resend and Replace-with-resend are refused. Revoke stays available.
+4. **Suppression.** The invitation, completed-package and cancellation-notice workers recheck withdrawal immediately before sending. A suppressed email records a `SUPPRESSED` attempt, a `SUPPRESSED` instruction (new allowed value for both) and a `DELIVERY_SUPPRESSED_CONSENT_WITHDRAWN` system event, and its work item is settled. The post-Complete fan-out records a suppressed instruction instead of queuing.
+5. **Not Decline.** Lifecycle, participant status, finalization, signatures, placements, documents, artifacts, existing events and completed-document links and sessions are untouched. A withdrawal before Finish leaves the Signing unable to complete; the manager may Cancel it. A withdrawal recorded before Complete appears in the audit certificate chronology. One recorded after Complete is in Signing history, not in the already-generated certificate.
+6. **Manager visibility.** The participant list shows "Consent withdrawn" with the recorded time. Suppressed emails read "Invitation not sent: consent withdrawn", "Cancellation email not sent: consent withdrawn" and, in the completed-package panel, "Not sent: consent withdrawn". There, Resend Package and Replace Link are hidden for that participant and Revoke Link stays, so manual follow-up is clear.
+
+**Reason:** Lee's approved safeguard: stop electronic activity that relies on withdrawn consent without changing what was already recorded.
+
+**Related:** `lib/signing/consent-withdrawal.ts`, `lib/signing/consent-disclosure.ts`, `lib/signing/delivery.ts`, `lib/signing/completed-package-delivery.ts`, `lib/signing/cancellation-notices.ts`, `lib/signing/participant-credential-recovery.ts`, `lib/signing/in-person-handoff.ts`, `lib/signing/dashboard.ts`, `components/signings/signing-dashboard-page.tsx`, `components/sign/ceremony-shell.tsx`, `lib/signing/consent-withdrawal.test.ts`, `scripts/validate-native-signing-ceremony-dev.ts`, `scripts/validate-native-signing-completion-delivery-dev.ts`.
+
+---
+
+## Production rollout: INACTIVE Packets become ACTIVE (approved)
+
+**Date:** 2026-10-22 (Lee's explicit approval)
+
+**Decision:** Lee approves the pending production migration `20261009140000_packets_active_deleted_only`, which converts existing `INACTIVE` Packets to `ACTIVE` and limits Packets to `ACTIVE` / `DELETED`. It is no longer a rollout blocker and needs no separate packet-status fix. The production migration still gets normal preflight: a dry run, a before/after inventory of affected Packets and a data-integrity comparison.
+
+**Related:** `supabase/migrations/20261009140000_packets_active_deleted_only.sql`; decision "Packets use ACTIVE and DELETED only".
+
+---
+
+## Native Signing production rollout policy (Lee-only, legal review deferred)
+
+**Date:** 2026-10-22 (Lee's decisions; read-only production preflight)
+
+**Decision:**
+1. **Environment.** Native Signing rolls out in the existing production environment (`eetonalyyyssvkyfdoxh`, current Vercel project) for Lee's own real transactions. No staging or pilot infrastructure is created. The Gate A–E sequence still applies, with a stop and Lee's explicit approval at each gate.
+2. **Legal review deferred, not completed.** Human legal review of the disclosure and consent workflow is deferred. Nothing here records E-SIGN or UETA compliance; the open issues listed under the 2026-10-20 disclosure decision remain open. A disclosure version becomes `is_production_ready = true` only by publishing a new row after Lee approves its final text. That marks Lee's product approval for this rollout, not legal approval.
+3. **Paper copies.** The sending agent handles paper-copy requests manually, outside the application. Lee approved no charge for his initial use, and `esign-disclosure-2026-10-22` states it.
+4. **PDF access.** The existing consent checkbox stays. No PDF challenge or access test is added.
+5. **Consent withdrawal.** The participant asks the sender, and an authorized manager records it ("Record consent withdrawal"; see the 2026-10-22 withdrawal decision). There is no participant-facing control. After withdrawal, nothing that relies on that consent proceeds for that participant: no further ceremony actions and no further electronic invitations, completed-copy emails or notices. Historical signing evidence, events and completed artifacts are never changed. The successor disclosure describes this.
+6. **Re-consent.** When fresh consent is needed (after withdrawal or a material change), the sender creates a new Signing. No re-consent flag is built.
+7. **Technical-access changes.** A release that materially changes what participants need (browser, PDF, email or retention requirements) must, before deploy: publish a new disclosure version describing the change; leave existing acceptances bound to the version accepted; and have the sender cancel and re-send any in-progress Signing whose accepted disclosure would become inaccurate. This is a documented release check, not an automated system.
+
+**Reason:** Lee chose the smallest safe path to real use for his own transactions. Production keeps failing closed until a Lee-approved, production-ready version is published.
+
+**Related:** `project_status.md` "Production rollout preflight (2026-10-22)"; decisions "Disclosure esign-disclosure-2026-10-20" and "Native Signing production rollout gates (2026-09-21)".
+
+---
+
 ## PR #55 merge boundary: noise classification and evidence checks
 
 **Date:** 2026-10-21 (PR #55 merge-boundary validation)

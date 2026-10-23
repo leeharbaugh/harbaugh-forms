@@ -21,6 +21,11 @@ import {
   buildCompletedPackageUrl,
   buildParticipantInviteUrl,
 } from "./bearer-transport";
+import {
+  CONSENT_WITHDRAWN_DELIVERY_DETAIL,
+  isParticipantConsentWithdrawn,
+  recordSuppressedDelivery,
+} from "./consent-withdrawal";
 import { loadRawParticipantCredentialToken } from "./credentials";
 import { SigningError } from "./errors";
 import { getSigningExternalAccessState } from "./external-access";
@@ -294,7 +299,7 @@ async function nextAttemptNumber(
 export type ProcessInvitationResult = {
   workItemId: string;
   deliveryInstructionId: string;
-  outcome: "ACCEPTED" | "FAILED";
+  outcome: "ACCEPTED" | "FAILED" | "SUPPRESSED";
   failureDetailSafe: string | null;
 };
 
@@ -500,6 +505,41 @@ export async function processParticipantInvitationWorkItem(options: {
       deliveryInstructionId,
       outcome: "FAILED",
       failureDetailSafe: detail,
+    };
+  }
+
+  const participantId = (instruction.signing_participant_id as string | null) ?? null;
+  if (
+    participantId &&
+    (await isParticipantConsentWithdrawn(
+      options.admin,
+      workItem.signing_id as string,
+      participantId,
+    ))
+  ) {
+    await recordSuppressedDelivery({
+      admin: options.admin,
+      signingId: workItem.signing_id as string,
+      deliveryInstructionId,
+      signingParticipantId: participantId,
+      purpose: "INVITATION",
+    });
+    await options.admin
+      .from("signing_work_items")
+      .update({
+        processing_state: "SUCCEEDED",
+        completed_at: new Date().toISOString(),
+        last_error_safe: CONSENT_WITHDRAWN_DELIVERY_DETAIL,
+        next_attempt_at: null,
+        claimed_by: null,
+        claimed_until: null,
+      })
+      .eq("id", options.workItemId);
+    return {
+      workItemId: options.workItemId,
+      deliveryInstructionId,
+      outcome: "SUPPRESSED",
+      failureDetailSafe: CONSENT_WITHDRAWN_DELIVERY_DETAIL,
     };
   }
 

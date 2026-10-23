@@ -309,6 +309,106 @@ describe("Electronic records disclosure 2026-10-20: publication", () => {
   });
 });
 
+const OCT22_MIGRATION = read(
+  "supabase/migrations/20261022130000_native_signing_esign_disclosure_2026_10_22.sql",
+);
+const OCT22_BODY = OCT22_MIGRATION.match(/\$disclosure\$([\s\S]*?)\$disclosure\$/)?.[1] ?? "";
+const OCT22_FINGERPRINT =
+  "902d216bdececa5f6b7d2e54bc7698bce6dadbeb46619c41ba14efbf9f8a1617";
+const APPROVED_WITHDRAWAL =
+  "You can request withdrawal of your consent to electronic records for this Signing, before or after you finish your part, by contacting the sender. The sender records your withdrawal. Once recorded, you cannot sign electronically in this Signing, and Harbaugh Forms will not send you additional signing invitations, cancellation notices, or completed-document emails for this Signing. Withdrawing does not erase signing actions already recorded, and a completed-documents link you already received keeps working. To sign electronically again, the sender must send a new Signing.";
+const OCT22_PAPER_COPIES = [
+  "After everyone has finished and the Signing is complete, Harbaugh Forms emails a personal link to the completed documents to each signer who has an email address on this Signing, unless that signer has withdrawn consent. If you don't receive the email, contact the sender. From that link, you can download, save, and print the completed documents.",
+  "If you signed in person without an email address, withdrew your consent, or need another copy, contact the sender. Harbaugh Forms charges no fee for downloading completed documents. The sender handles paper-copy requests directly and does not charge for paper copies. Harbaugh Forms does not mail paper copies.",
+];
+
+describe("Electronic records disclosure 2026-10-22: copy", () => {
+  const blocks = parseDisclosureBlocks(OCT22_BODY);
+  const previous = parseDisclosureBlocks(OCT20_BODY);
+  const section = (heading: string) => blocks.find((block) => block.heading === heading);
+
+  it("pins the approved fingerprint and leaves every earlier fingerprint unchanged", () => {
+    assert.equal(consentDisclosureFingerprint(OCT22_BODY), OCT22_FINGERPRINT);
+    assert.equal(consentDisclosureFingerprint(OCT20_BODY), OCT20_FINGERPRINT);
+    assert.equal(consentDisclosureFingerprint(REVISED_BODY), REVISED_FINGERPRINT);
+    assert.equal(consentDisclosureFingerprint(BODY), PREVIOUS_FINGERPRINT);
+    assert.ok(!OCT22_BODY.includes("\r"));
+    assert.ok(!OCT22_BODY.endsWith("\n"));
+  });
+
+  it("adds Withdrawing your consent with the approved paragraph and the no-charge paper-copy policy", () => {
+    assert.deepEqual(
+      blocks.map((block) => block.heading),
+      [
+        null,
+        "Your choice",
+        "What your consent covers",
+        "Stopping before you finish",
+        "Withdrawing your consent",
+        "Paper copies",
+        "Your contact information",
+        "What you need",
+        "Keeping your records",
+      ],
+    );
+    assert.deepEqual(section("Withdrawing your consent"), {
+      heading: "Withdrawing your consent",
+      paragraphs: [APPROVED_WITHDRAWAL],
+      bullets: [],
+    });
+    assert.deepEqual(section("Paper copies")?.paragraphs, OCT22_PAPER_COPIES);
+    assert.doesNotMatch(OCT22_BODY, /does not offer a separate withdrawal control/);
+    assert.doesNotMatch(OCT22_BODY, /whether the sender charges a fee/);
+  });
+
+  it("changes nothing else from esign-disclosure-2026-10-20", () => {
+    for (const block of blocks) {
+      if (block.heading === "Withdrawing your consent" || block.heading === "Paper copies") continue;
+      const before = previous.find((candidate) => candidate.heading === block.heading);
+      if (block.heading === "Stopping before you finish") {
+        assert.deepEqual(block.bullets, before?.bullets);
+        assert.deepEqual(block.paragraphs, before?.paragraphs.slice(0, 1), "only the post-Finish withdrawal paragraph is removed");
+        continue;
+      }
+      assert.deepEqual(block, before, `${block.heading ?? "introduction"} is unchanged`);
+    }
+    assert.equal(CONSENT_ACKNOWLEDGEMENT, OCT20_ACKNOWLEDGEMENT, "the consent checkbox is unchanged");
+  });
+
+  it("makes no claim the product cannot support", () => {
+    for (const claim of [
+      /TREC/i,
+      /approv/i,
+      /complies? with/i,
+      /legally binding/i,
+      /notar/i,
+      /verif(y|ied|ies) (your )?identity/i,
+      /forever|indefinite|permanent|guarantee/i,
+      /we will (mail|provide paper)/i,
+      /waive/i,
+    ]) {
+      assert.doesNotMatch(OCT22_BODY, claim);
+    }
+  });
+});
+
+describe("Electronic records disclosure 2026-10-22: publication", () => {
+  it("publishes forward-only after 2026-10-20, checks the fingerprint and stays non-production", () => {
+    assert.match(OCT22_MIGRATION, /'esign-disclosure-2026-10-22'/);
+    assert.match(OCT22_MIGRATION, /v_body constant text := replace\(\$disclosure\$/);
+    assert.match(OCT22_MIGRATION, /\$disclosure\$, chr\(13\), ''\);/);
+    assert.match(OCT22_MIGRATION, new RegExp(`v_expected_sha256 constant text :=\\s+'${OCT22_FINGERPRINT}'`));
+    assert.match(OCT22_MIGRATION, /if encode\(sha256\(convert_to\(v_body, 'UTF8'\)\), 'hex'\) <> v_expected_sha256 then\s+raise exception/);
+    assert.match(OCT22_MIGRATION, /set superseded_at = now\(\)\s+where superseded_at is null/);
+    assert.match(OCT22_MIGRATION, /v_body,\s+encode\(sha256[^)]+\)\), 'hex'\),\s+false\s*\)/);
+    assert.match(OCT22_MIGRATION, /expected exactly one current disclosure version/);
+    assert.doesNotMatch(OCT22_MIGRATION, /is_production_ready\s*=\s*true/);
+    assert.doesNotMatch(OCT22_MIGRATION, /set (body_text|content_sha256|is_production_ready|version_key)/);
+    assert.doesNotMatch(OCT22_MIGRATION, /signing_participants|signing_events/);
+    assert.doesNotMatch(OCT22_MIGRATION, /\b(alter|create|drop) (table|function|trigger|policy)/i);
+  });
+});
+
 describe("Electronic records disclosure: ceremony UI", () => {
   const card = read("components/sign/consent-disclosure.tsx");
   const shell = read("components/sign/ceremony-shell.tsx");

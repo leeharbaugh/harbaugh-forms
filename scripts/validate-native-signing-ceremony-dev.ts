@@ -79,6 +79,16 @@ import {
   NativeSigningProductionDisclosureError,
 } from "../lib/signing/feature-gate.ts";
 import { validateDeviceHandoffLock } from "../lib/signing/device-handoff-lock.ts";
+import { recordConsentWithdrawalWithActor } from "../lib/signing/consent-withdrawal.ts";
+import {
+  PARTICIPANT_INVITATION_WORK_TYPE,
+  processParticipantInvitationWorkItem,
+} from "../lib/signing/delivery.ts";
+import { recordConsentWithdrawalWithActor } from "../lib/signing/consent-withdrawal.ts";
+import {
+  PARTICIPANT_INVITATION_WORK_TYPE,
+  processParticipantInvitationWorkItem,
+} from "../lib/signing/delivery.ts";
 import { createInPersonHandoffWithActor } from "../lib/signing/in-person-handoff.ts";
 import { createDraftSigningWithActor } from "../lib/signing/operations.ts";
 import {
@@ -1429,6 +1439,178 @@ async function main() {
       fail("the last Finish did not enqueue exactly one FINALIZE_SIGNING item");
     }
     ok("the last Finish readies finalization and never completes the Signing");
+
+    // 14b. A recorded consent withdrawal keeps every piece of evidence and
+    // stops automated email to that participant.
+    {
+      const evidenceColumns =
+        "participant_status, finished_at, consent_accepted_at, consent_disclosure_version_id, consent_content_sha256";
+      const { data: samBefore } = await admin
+        .from("signing_participants")
+        .select(evidenceColumns)
+        .eq("id", samId)
+        .single();
+      const { count: placementsBefore } = await admin
+        .from("signing_field_placements")
+        .select("id", { count: "exact", head: true })
+        .eq("signing_id", signingA.signingId);
+
+      const withdrawal = await recordConsentWithdrawalWithActor(
+        agent,
+        { signingId: signingA.signingId, participantId: samId },
+        admin,
+      );
+      const withdrawalReplay = await recordConsentWithdrawalWithActor(
+        agent,
+        { signingId: signingA.signingId, participantId: samId },
+        admin,
+      );
+      if (withdrawal.replayed || !withdrawalReplay.replayed) {
+        fail("recording a withdrawal twice must record it once and replay the second time");
+      }
+      if (withdrawalReplay.consentWithdrawnAt !== withdrawal.consentWithdrawnAt) {
+        fail("a replayed withdrawal changed the recorded time");
+      }
+
+      const { data: samAfter } = await admin
+        .from("signing_participants")
+        .select(`${evidenceColumns}, consent_withdrawn_at`)
+        .eq("id", samId)
+        .single();
+      for (const column of evidenceColumns.split(", ")) {
+        const key = column as keyof typeof samBefore;
+        if (samAfter?.[key] !== samBefore?.[key]) {
+          fail(`withdrawal changed recorded evidence (${column})`);
+        }
+      }
+      if (!samAfter?.consent_withdrawn_at) fail("withdrawal time was not recorded");
+      const { count: placementsAfter } = await admin
+        .from("signing_field_placements")
+        .select("id", { count: "exact", head: true })
+        .eq("signing_id", signingA.signingId);
+      if (placementsAfter !== placementsBefore) fail("withdrawal changed placements");
+      const { data: signingAfterWithdrawal } = await admin
+        .from("signings")
+        .select("lifecycle_state, finalization_condition")
+        .eq("id", signingA.signingId)
+        .single();
+      if (
+        signingAfterWithdrawal?.lifecycle_state !== "IN_PROGRESS" ||
+        signingAfterWithdrawal?.finalization_condition !== "READY"
+      ) {
+        fail("withdrawal changed the Signing lifecycle or finalization");
+      }
+
+      const { data: withdrawalEvents } = await admin
+        .from("signing_events")
+        .select("actor_type, actor_user_id, details_json")
+        .eq("signing_id", signingA.signingId)
+        .eq("event_type", "CONSENT_WITHDRAWN");
+      const withdrawalEvent = withdrawalEvents?.[0];
+      if (
+        (withdrawalEvents ?? []).length !== 1 ||
+        withdrawalEvent?.actor_type !== "PRIMARY_AGENT" ||
+        withdrawalEvent?.actor_user_id !== agentUserId ||
+        (withdrawalEvent?.details_json as Record<string, unknown> | null)?.signingParticipantId !== samId
+      ) {
+        fail("withdrawal must append exactly one attributable CONSENT_WITHDRAWN event");
+      }
+
+      const withdrawnState = await checkConsentSatisfied({
+        admin,
+        signingId: signingA.signingId,
+        signingParticipantId: samId,
+      });
+      if (withdrawnState.satisfied || withdrawnState.reason !== "CONSENT_WITHDRAWN") {
+        fail("a withdrawn acceptance must not satisfy consent");
+      }
+
+      const { error: clearError } = await admin
+        .from("signing_participants")
+        .update({ consent_withdrawn_at: null })
+        .eq("id", samId);
+      if (!clearError) fail("the database allowed clearing a recorded withdrawal");
+      const { error: rewriteError } = await admin
+        .from("signing_participants")
+        .update({ consent_accepted_at: new Date().toISOString() })
+        .eq("id", samId);
+      if (!rewriteError) fail("the database allowed rewriting consent after withdrawal");
+      const browserWithdrawal = await browser
+        .from("signing_participants")
+        .update({ consent_withdrawn_at: null })
+        .eq("id", samId)
+        .select("id");
+      if ((browserWithdrawal.data ?? []).length > 0) {
+        fail("a browser client changed a consent withdrawal");
+      }
+
+      const { data: queuedInstruction, error: queuedInstructionError } = await admin
+        .from("signing_delivery_instructions")
+        .insert({
+          signing_id: signingA.signingId,
+          signing_participant_id: samId,
+          purpose: "INVITATION",
+          recipient_email_snapshot: `sam-${stamp}@example.com`,
+          recipient_name_snapshot: "Sam Second",
+          delivery_state: "QUEUED",
+        })
+        .select("id")
+        .single();
+      if (queuedInstructionError || !queuedInstruction) {
+        fail(queuedInstructionError?.message ?? "could not queue a test invitation");
+      }
+      const { data: queuedWork, error: queuedWorkError } = await admin
+        .from("signing_work_items")
+        .insert({
+          signing_id: signingA.signingId,
+          work_type: PARTICIPANT_INVITATION_WORK_TYPE,
+          idempotency_key: `withdrawal-check:${queuedInstruction.id}`,
+          reference_json: {
+            deliveryInstructionId: queuedInstruction.id,
+            signingParticipantId: samId,
+          },
+          processing_state: "PENDING",
+        })
+        .select("id")
+        .single();
+      if (queuedWorkError || !queuedWork) {
+        fail(queuedWorkError?.message ?? "could not queue a test invitation work item");
+      }
+      const suppressed = await processParticipantInvitationWorkItem({
+        admin,
+        workItemId: queuedWork.id as string,
+      });
+      const { data: suppressedAttempts } = await admin
+        .from("signing_delivery_attempts")
+        .select("outcome")
+        .eq("delivery_instruction_id", queuedInstruction.id);
+      const { data: suppressedInstruction } = await admin
+        .from("signing_delivery_instructions")
+        .select("delivery_state")
+        .eq("id", queuedInstruction.id)
+        .single();
+      const { data: settledWork } = await admin
+        .from("signing_work_items")
+        .select("processing_state")
+        .eq("id", queuedWork.id)
+        .single();
+      const { count: suppressedEvents } = await admin
+        .from("signing_events")
+        .select("id", { count: "exact", head: true })
+        .eq("signing_id", signingA.signingId)
+        .eq("event_type", "DELIVERY_SUPPRESSED_CONSENT_WITHDRAWN");
+      if (
+        suppressed.outcome !== "SUPPRESSED" ||
+        (suppressedAttempts ?? []).length !== 1 ||
+        suppressedAttempts?.[0]?.outcome !== "SUPPRESSED" ||
+        suppressedInstruction?.delivery_state !== "SUPPRESSED" ||
+        settledWork?.processing_state !== "SUCCEEDED" ||
+        suppressedEvents !== 1
+      ) {
+        fail("a queued invitation to a withdrawn participant must be recorded as SUPPRESSED, not sent");
+      }
+      ok("consent withdrawal: recorded once with an attributable event; consent, Finish and placements unchanged; database refuses to clear it or rewrite consent; browser cannot write it; consent no longer satisfied; a queued invitation is SUPPRESSED, not sent");
+    }
 
     // ---------------------------------------------------------------------
     // Signing B: inactivity expiry and Decline.

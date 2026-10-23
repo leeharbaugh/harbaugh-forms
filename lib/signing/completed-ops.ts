@@ -14,6 +14,7 @@ export type DeliveryStatusLabel =
   | "Processing"
   | "Provider Accepted"
   | "Failed"
+  | "Not sent: consent withdrawn"
   | "Unknown";
 
 export function mapDeliveryStateToLabel(
@@ -28,6 +29,8 @@ export function mapDeliveryStateToLabel(
       return "Provider Accepted";
     case "FAILED":
       return "Failed";
+    case "SUPPRESSED":
+      return "Not sent: consent withdrawn";
     default:
       return deliveryState ? "Unknown" : "Pending";
   }
@@ -44,6 +47,8 @@ export type CompletedPackageDeliveryRow = {
   deliveryState: string | null;
   deliveryLabel: DeliveryStatusLabel;
   lastFailureSafe: string | null;
+  /** Participant rows only: a manager recorded this participant's consent withdrawal. */
+  consentWithdrawn: boolean;
 };
 
 export type CompletedOpsSnapshot = {
@@ -160,16 +165,20 @@ export async function loadCompletedOpsSnapshotForActor(
     .map((row) => row.signing_copy_recipient_id as string | null)
     .filter((id): id is string => Boolean(id));
 
-  const participantName = new Map<string, { name: string; email: string }>();
+  const participantName = new Map<
+    string,
+    { name: string; email: string; consentWithdrawn: boolean }
+  >();
   if (participantIds.length > 0) {
     const { data } = await admin
       .from("signing_participants")
-      .select("id, full_name, email")
+      .select("id, full_name, email, consent_withdrawn_at")
       .in("id", participantIds);
     for (const row of data ?? []) {
       participantName.set(row.id as string, {
         name: row.full_name as string,
         email: row.email as string,
+        consentWithdrawn: Boolean(row.consent_withdrawn_at),
       });
     }
   }
@@ -213,6 +222,7 @@ export async function loadCompletedOpsSnapshotForActor(
         lastFailureSafe: instruction
           ? failureByInstruction.get(instruction.id) ?? null
           : null,
+        consentWithdrawn: info?.consentWithdrawn ?? false,
       });
     } else if (copyRecipientId) {
       const info = copyName.get(copyRecipientId);
@@ -229,6 +239,7 @@ export async function loadCompletedOpsSnapshotForActor(
         lastFailureSafe: instruction
           ? failureByInstruction.get(instruction.id) ?? null
           : null,
+        consentWithdrawn: false,
       });
     }
   }
