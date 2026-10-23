@@ -988,6 +988,10 @@ GHSA-vcvr-r3jv-pc5j (Next.js `next/og` `ImageResponse` RCE, critical, patched in
 * Production rollout requires Lee's explicit approval and follows the explicit-promotion flow: deploy candidate without domain assignment, validate the unique Vercel deployment URL, manually promote the custom domains, verify automatic custom-domain assignment remains disabled.
 * Rolled out 2026-10-01 from `hotfix/next-16.3.6-prod` (`2a92d82` = `a87b1aa` + the dependency change) as `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; rollback target `dpl_4eXrZwG8hJC3UgmPKgRVGDHMpMWX`.
 * For CLI production builds use `vercel deploy --prod --skip-domain` (from a clean checkout of the exact commit) followed by `vercel promote` after unique-URL validation; `vercel redeploy` has no skip-domain option and assigns domains when Ready.
+* `--skip-domain` keeps the project domains (`forms.harbaughrealestate.com`, `harbaugh-forms.vercel.app`) and the production target unchanged, but Vercel still moves the SSO-protected team alias `harbaugh-forms-lee-harbaugh-s-projects.vercel.app` to the new deployment. Verify the project domains, not that alias.
+* App Router runs React's server-component runtime vendored inside `next` (`next/dist/compiled/react*`, `react-server-dom-*`), not the app's `react` / `react-dom`. `npm audit` on `react` does not cover it; check the vendored version and the matching Next.js advisories.
+* The hotfix candidate is verified against the live deployment itself (uploaded file hashes, build log, lockfile), not assumed from branch history.
+* Rolled out 2026-10-23 from `hotfix/next-16.4.1-prod` (`614cfe6` = `3e5eaa3` + Next.js 16.4.1, Sharp 0.35.5, `source-map-js` 1.2.2) as `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`; rollback target `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`.
 * Dev-only advisories (e.g. `brace-expansion` in ESLint tooling) are reviewed and fixed in separate small PRs rather than folded into a production security patch.
 
 **Related files:** `package.json`, `package-lock.json`
