@@ -1,6 +1,12 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-23, night. [PR #56](https://github.com/leeharbaugh/harbaugh-forms/pull/56) (`feat/signing-consent-withdrawal`) synchronized with patched `main` `da5f011` (Next.js 16.4.1) by merge commit `0b7ea67` (no rebase or squash). Only `project_status.md` conflicted; both histories are kept.
+**As of:** 2026-10-23, late night. [PR #56](https://github.com/leeharbaugh/harbaugh-forms/pull/56) (manager-recorded participant consent withdrawal and disclosure 2026-10-22) is squash-merged into `main` as `a267cb2b7cfa68f6524a85cfdc254de5e1fc84da` (2026-10-24 01:44 UTC), with Lee's approval.
+- The merge was pinned to the validated head `38a7579`. Both GitHub checks passed and `main` had not moved from `da5f011`. The squash commit's tree (`bb15045`) is identical to `38a7579`.
+- `main` now carries dev-only migrations `20261022120000` (withdrawal) and `20261022130000` (disclosure publication), unchanged and last in order; Native Signing inventory 37. `esign-disclosure-2026-10-22` (fingerprint `902d216b…1617`) is current in development and not production-ready.
+- Production is untouched. No production migration, secret, env or Supabase change; Native Signing still off. Vercel's automatic Git build of `main` (`dpl_556kJmTwiD4haw9KESFsDNvzrUkE`) was not promoted; `autoAssignCustomDomains` is `false`, and both production domains still serve `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`. Gate A paused.
+- Next work starts from `main`. Production rollout gates A–E in "Production rollout preflight" still apply.
+
+Earlier: 2026-10-23, night. [PR #56](https://github.com/leeharbaugh/harbaugh-forms/pull/56) (`feat/signing-consent-withdrawal`) synchronized with patched `main` `da5f011` (Next.js 16.4.1) by merge commit `0b7ea67` (no rebase or squash). Only `project_status.md` conflicted; both histories are kept.
 - Full merge-boundary revalidation on Next.js 16.4.1 passed with no findings: all 58 unit suites, all 21 dev validators, withdrawal and all established Signing browser QA, `tsc`, targeted ESLint, `build:validate` (flag on and off), audit, `git diff --check`. See "Merge-boundary revalidation on Next.js 16.4.1" under "Participant consent withdrawal (2026-10-22)" below.
 - Historical consent evidence unchanged (5 disclosure versions, 243 consent records, 26 `CONSENT_ACCEPTED` events). `esign-disclosure-2026-10-22` (fingerprint `902d216b…1617`) is current in development and not production-ready; migrations `20261022120000` / `20261022130000` unchanged.
 - Production untouched: both domains on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`, `autoAssignCustomDomains=false`, Native Signing off, no migration, env or Supabase change. PR #56 is ready for Lee's squash-merge decision; not merged.
@@ -60,7 +66,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 
 ### Participant consent withdrawal (2026-10-22)
 
-**Status:** Branch `feat/signing-consent-withdrawal`, [PR #56](https://github.com/leeharbaugh/harbaugh-forms/pull/56) open for merge review, not merged; development only. Synchronized with patched `main` `da5f011` (Next.js 16.4.1) by merge commit `0b7ea67` on 2026-10-23 and fully revalidated (see "Merge-boundary revalidation on Next.js 16.4.1" below). Production untouched: no production migration, deployment or configuration change, and Native Signing off. See the 2026-10-22 decisions "Disclosure esign-disclosure-2026-10-22" and "Participant consent withdrawal is manager-recorded, enforced on the server, and preserves evidence".
+**Status:** [PR #56](https://github.com/leeharbaugh/harbaugh-forms/pull/56) (`feat/signing-consent-withdrawal`) squash-merged into `main` as `a267cb2` on 2026-10-24 (Lee approved; pinned to `38a7579`, tree identical); development only. Synchronized with patched `main` `da5f011` (Next.js 16.4.1) by merge commit `0b7ea67` on 2026-10-23 and fully revalidated (see "Merge-boundary revalidation on Next.js 16.4.1" below). Production untouched: no production migration, deployment or configuration change, and Native Signing off. See the 2026-10-22 decisions "Disclosure esign-disclosure-2026-10-22" and "Participant consent withdrawal is manager-recorded, enforced on the server, and preserves evidence".
 
 **Implemented.**
 - "Record consent withdrawal" on the Signing's participant list, after consent, for In Progress and Complete managers, behind a confirmation dialog. It is recorded by `lib/signing/consent-withdrawal.ts` with an attributable `CONSENT_WITHDRAWN` event.
