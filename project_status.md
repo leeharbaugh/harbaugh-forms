@@ -1,10 +1,17 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-22, late night (branch `feat/signing-consent-withdrawal` from `main` `744384e`; PR opened for merge review, not merged).
+**As of:** 2026-10-23, night. [PR #56](https://github.com/leeharbaugh/harbaugh-forms/pull/56) (`feat/signing-consent-withdrawal`) synchronized with patched `main` `da5f011` (Next.js 16.4.1) by a merge commit (no rebase or squash). Only `project_status.md` conflicted; both histories are kept. Merge-boundary revalidation on Next.js 16.4.1 is recorded in "Participant consent withdrawal (2026-10-22)" below.
+
+Earlier: 2026-10-23, evening. Next.js 16.4.1 security update (GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r).
+- Production runs `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr` from hotfix `614cfe6` (`hotfix/next-16.4.1-prod` = production `3e5eaa3` + dependency change only): Next.js 16.4.1, Sharp 0.35.5, React server-component runtime `19.3.0-canary-278794d7-20261002`. Promoted 2026-10-23 21:38 UTC with Lee's approval; both domains verified; `autoAssignCustomDomains` still `false`; rollback `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`.
+- **Corrected history:** before this hotfix production ran Next.js 16.3.6 / Sharp 0.35.4 / `source-map-js` 1.2.1 (`3e5eaa3`), not 16.3.8. PR #53's versions were never deployed on their own. A 2026-10-22 note on the PR #56 branch that says `next@16.3.8` was in production is wrong.
+- `main` has the same Next.js 16.4.1 lockfile entries: [PR #57](https://github.com/leeharbaugh/harbaugh-forms/pull/57) (`security/next-16.4.1`, pinned to reviewed head `7c4fc0e`) squash-merged into `main` as `d638e42` on 2026-10-23 23:23 UTC with Lee's approval; squash tree identical to `7c4fc0e`. Vercel's automatic Git build of `main` (`dpl_H3CSvU8TNTcgGtkCndXHWAfocPRe`) was not promoted; both domains stay on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`. Native Signing is still off in production; no production Supabase, migration, env or Signing change. PR #56 is untouched and needs a sync with patched `main` plus its own merge-boundary validation. See "Next.js 16.4.1 security hotfix" below.
+
+Earlier: 2026-10-22, late night (branch `feat/signing-consent-withdrawal` from `main` `744384e`; PR opened for merge review, not merged).
 - Manager-recorded participant consent withdrawal is complete and passed merge-boundary validation in development.
 - Disclosure `esign-disclosure-2026-10-22` (fingerprint `902d216bdececa5f6b7d2e54bc7698bce6dadbeb46619c41ba14efbf9f8a1617`, Lee-approved, not counsel-approved) is current in development and not production-ready.
 - Dev-only migrations `20261022120000` and `20261022130000`; Native Signing inventory 37.
-- **Urgent separate finding:** `next@16.3.8` (on `main` and in production) is affected by critical advisories published 2026-10-22 (fixed in 16.4.1). It needs its own security PR and production hotfix decision; it is not part of this PR.
+- **Separate finding (resolved 2026-10-23):** critical Next.js advisories published 2026-10-22 (fixed in 16.4.1) affected `main` (16.3.8) and production. Production actually ran 16.3.6, not 16.3.8 as this note first said. Fixed by the 16.4.1 production hotfix and PR #57; not part of this PR.
 - Production untouched, Native Signing off in production. See "Participant consent withdrawal (2026-10-22)" below.
 
 Earlier: 2026-10-22, evening (read-only production rollout preflight on `main` `744384e`; nothing applied, deployed or configured). Production is not ready for real Signing. See "Production rollout preflight (2026-10-22)" below and the 2026-10-22 rollout-policy decision.
@@ -75,7 +82,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 - `tsc --noEmit` clean, ESLint clean on all 23 changed TypeScript files, `build:validate` passes (safe dev target, 53 pages), `git diff --check` clean, secret scan clean.
 - Evidence: per-row snapshot before and after all validation, with 5 disclosure versions, 240 consent records and 26 `CONSENT_ACCEPTED` events byte-identical; only fixture rows added.
 
-**Security finding (not introduced by this PR; separate work).** `npm audit --omit=dev` now reports `next@16.3.8` as critical: GHSA-2464-fhr4-w9xw (Image Optimization RCE with SVG), GHSA-673q-mjm6-r5xr (`use cache` typed-array RCE) and GHSA-p3m5-59mp-jv5r (Server Actions DoS), all published 2026-10-22 and fixed in 16.4.1. `main` and the live production deployment are affected. The app enables `cacheComponents` and uses Server Actions; applicability of the two RCEs needs review. Per the "security patches ship independently" decision, this needs its own PR from `main` and a production hotfix decision. Full audit 10 (1 critical, 7 high, 2 moderate); `package-lock.json` is unchanged by this PR.
+**Security finding (not introduced by this PR; resolved 2026-10-23).** `npm audit --omit=dev` reported `next@16.3.8` on `main` as critical: GHSA-2464-fhr4-w9xw (Image Optimization RCE with SVG), GHSA-673q-mjm6-r5xr (`use cache` typed-array RCE) and GHSA-p3m5-59mp-jv5r (Server Actions DoS), all published 2026-10-22 and fixed in 16.4.1. Production was affected too; it ran 16.3.6, not 16.3.8 as first recorded here. Resolved separately per the "security patches ship independently" decision: production hotfix `614cfe6` / `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr` and PR #57 on `main` (see "Next.js 16.4.1 security hotfix" below). This branch takes the fix only through the `main` sync; its own diff never changed `package-lock.json`.
 
 **Open.**
 - The no-charge statement is accurate only while Lee is the only sender.
@@ -96,7 +103,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 - The live deployment predates the Packet `INACTIVE` removal; deploy promptly after migrating.
 
 **Configuration.**
-- Vercel: Pro; `autoAssignCustomDomains=false`; production target and both domains on `dpl_E9HTxf45epr8ckKifivWCPNgpFAU` (defines no Cron). Production env has only `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`. Missing: `SIGNING_EVENT_CHAIN_KEY(_ID)`, `SIGNING_CREDENTIAL_WRAP_KEY(_ID)`, the completed-package wrap key and id, `SIGNING_WORKER_SECRET`, `CRON_SECRET`, `RESEND_API_KEY`, `SIGNING_EMAIL_FROM`. `NATIVE_SIGNING_ENABLED`, `SIGNING_WORK_SUSPENDED` and `SIGNING_ACCESS_SUSPENDED` are unset (feature off).
+- Vercel: Pro; `autoAssignCustomDomains=false`; production target and both domains on `dpl_E9HTxf45epr8ckKifivWCPNgpFAU` (defines no Cron). Update 2026-10-23: production is now `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr` (Next.js 16.4.1 hotfix of the same `3e5eaa3` lineage; still no Cron, no Signing code); no production environment variable was changed. Production env has only `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`. Missing: `SIGNING_EVENT_CHAIN_KEY(_ID)`, `SIGNING_CREDENTIAL_WRAP_KEY(_ID)`, the completed-package wrap key and id, `SIGNING_WORKER_SECRET`, `CRON_SECRET`, `RESEND_API_KEY`, `SIGNING_EMAIL_FROM`. `NATIVE_SIGNING_ENABLED`, `SIGNING_WORK_SUSPENDED` and `SIGNING_ACCESS_SUSPENDED` are unset (feature off).
 - Promoting current `main` activates the `*/2` Signing Cron; install `CRON_SECRET` first.
 - Email: no Resend key, no verified sending domain, and the sender display identity is still undecided.
 - Supabase backups: `pitr_enabled=false` and no listed backups. No restorable platform backup exists, so a manual database dump plus Storage inventory/copy is required before any migration.
@@ -107,6 +114,52 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 **Consent safeguards (minimum changes).** (1) Successor disclosure version (new row; never flip an existing row): state that the sender handles paper copies manually at no charge, and describe the withdrawal control. Publish `is_production_ready=true` only after Lee approves its final text. (2) Checkbox unchanged. (3) Withdrawal (built as manager-recorded; see "Participant consent withdrawal" above): additive `signing_participants.consent_withdrawn_at`, append-only `CONSENT_WITHDRAWN` event (event types are free text), `checkConsentSatisfied` unsatisfied and re-acceptance refused after withdrawal, and invitation, completed-package and cancellation emails to that participant suppressed with a recorded reason. Historical evidence and finalization are unchanged. A request between Finish and Complete goes to the sender. (4) Re-consent: new Signing; no flag. (5) Technical-access changes: release policy (decision), no code.
 
 **Sequence.** A: preflight (production migration dry run, `INACTIVE` Packets, active users, buckets) and a verified backup; stop. B: `--include-all` push, then immediate work/access suspension and epoch bump; verify, feature off; stop. C: install secrets, verify the Resend domain and From, deploy `main` to a unique URL with the feature off, verify Cron `DENIED`/`FEATURE_DISABLED`, promote manually; stop. D: Lee-approved production-ready disclosure live, feature on while suspended, then resume access and work together for one synthetic Lee-owned Signing through Complete and delivery; stop. E: first real Signing with Lee's explicit approval.
+
+### Next.js 16.4.1 security hotfix (2026-10-23)
+
+**Status:** Live in production since 2026-10-23 21:38 UTC (Lee approved) as `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr` from `hotfix/next-16.4.1-prod` `614cfe6`. The same update reached `main` through [PR #57](https://github.com/leeharbaugh/harbaugh-forms/pull/57), squash-merged as `d638e42` (2026-10-23); `main` now pins the versions production runs. Native Signing is not in the hotfix lineage and stays off in production. Per the "security patches ship independently" decision.
+
+**Advisories** (checked 2026-10-23 against the GitHub Advisory Database, the vercel/next.js repository advisories and the v16.4.1 release notes, a security-only release):
+
+| Advisory | Severity | Affected → patched | Relevance here |
+|----------|----------|--------------------|----------------|
+| GHSA-2464-fhr4-w9xw: RCE in Image Optimization with SVG (libvips/librsvg on glibc Linux) | Critical | `next` `>= 16.0.0, <= 16.4.0` → 16.4.1; fix is `sharp >= 0.35.5` | No `next/image`, SVG assets or remote image patterns, but the optimizer endpoint and Sharp ship |
+| GHSA-673q-mjm6-r5xr: RCE in `use cache` functions returning typed arrays | Critical | `next` `>= 16.0.0, <= 16.4.0` → 16.4.1 | `cacheComponents` is on; no `"use cache"` functions; no workaround, so patched |
+| GHSA-p3m5-59mp-jv5r: App Router Server Actions DoS | High | `next` `>= 16.0.0, <= 16.4.0` → 16.4.1 | Applies directly: seven `"use server"` files (login, admin, forms) |
+
+The production baseline also carried the six advisories PR #53 fixed on `main` (fixed from 16.3.8), GHSA-h694-7cp9-m8p3 (fixed from 16.3.8), Sharp GHSA-wq5f-xc86-pv6w and `source-map-js` GHSA-68fv-2mgg-jv7q.
+
+**React server-component runtime.** App Router renders with React vendored inside `next` (`next/dist/compiled/react*`, `react-server-dom-turbopack`), not the app's `react` / `react-dom` 19.2.7. Next.js 16.4.1 vendors `19.3.0-canary-278794d7-20261002` (the old production served `19.3.0-canary-cbb046ab-20260731`); the served client chunks embed it. Every React server-components advisory has a Next.js counterpart (newest patched in 16.2.11), no Next.js advisory range includes 16.4.1, and the GHSA-fv66-9v8q-g76r RCE fix commit is an ancestor of `278794d7`.
+
+**Production rollout (2026-10-23, Lee approved):**
+
+| Item | Result |
+|------|--------|
+| Baseline | Verified, not assumed: both domains and the project production target were on `dpl_E9HTxf45epr8ckKifivWCPNgpFAU` (`3e5eaa3`); its 635 uploaded source files match `3e5eaa3` byte for byte (CRLF-normalized); build log "Next.js 16.3.6"; lockfile Next.js 16.3.6, React 19.2.7, Sharp 0.35.4 |
+| Hotfix | `614cfe6` = `3e5eaa3` + `package.json` (`next` `^16.4.1`) + lockfile: `next`, `@next/env`, `@next/swc-*` 16.3.6 → 16.4.1; `sharp` and `@img/*` 0.35.4 → 0.35.5 (libvips 1.3.3 → 1.3.4); `source-map-js` 1.2.1 → 1.2.2 (in range). React unchanged. Branch pushed and retained |
+| Audit | `npm audit --omit=dev` 3 (1 critical, 2 high) → 0. Full audit: dev-only `brace-expansion` (fixed on `main` by PR #51, intentionally not in the hotfix) and the Tailwind 3 `postcss-selector-parser` chain |
+| Validation | Clean `npm ci`; `tsc` pass; 19 targeted suites 354/354; `build:validate` pass (37 routes, identical to production); local production server (`TZ=UTC`, browser Chicago) admin hydration QA pass and an 86-check smoke (Server Action login incl. wrong password, Packets, Fill Form PDF, Forms, admin, client nav, back/forward) identical line for line to a 16.3.6 control build of `3e5eaa3`; 5 pdf.js `TT:` font warnings on one dev Fill Form occur identically on 16.3.6 (PDF content, not a regression) |
+| New build warning | `cacheComponents` without `partialPrefetching`. Unset behaves like `false` (the previous prefetch behavior), so no config change in the hotfix |
+| Candidate | `vercel deploy --prod --skip-domain` from a clean detached checkout of `614cfe6`: `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`, "Detected Next.js version: 16.4.1"; uploaded files identical to `614cfe6`; output entry names identical to production, none for Signing. The build cache came from the unpromoted `main` build `744384e`; `npm install` reconciled exactly the lockfile difference (5 packages) |
+| Candidate smoke | Unique URL, read-only, as the production admin via a one-time link (session revoked): 73/73, 0 console / hydration / page errors, 0 5xx; runtime logs 0 error / warning / fatal |
+| Promotion | `vercel promote dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr` at 21:38:32 UTC; `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` both inspect to it (HTTPS 200, HSTS); project production target `614cfe6` |
+| Post-verify | Same smoke plus Fill Form on FINAL packet form #57 on both domains, run sequentially: 77/77 each, 0 console / hydration / page errors, 0 5xx; runtime logs since promotion 0 error / warning / fatal / 5xx |
+| Settings / data | `autoAssignCustomDomains=false` before deploy, after deploy, before and after promotion. No Supabase, migration, env or Signing change. Writes limited to smoke sign-in sessions (revoked) and the app's own re-save of the admin's table column widths on list pages (`user_preferences.update_date`; values unchanged) |
+| Side note | `--skip-domain` still moves the SSO-protected team alias `harbaugh-forms-lee-harbaugh-s-projects.vercel.app` to the new production-target deployment; project domains are not assigned |
+| Rollback | `dpl_E9HTxf45epr8ckKifivWCPNgpFAU` retained, Ready (`vercel promote dpl_E9HTxf45epr8ckKifivWCPNgpFAU`) |
+
+**`main` update ([PR #57](https://github.com/leeharbaugh/harbaugh-forms/pull/57), `security/next-16.4.1` from `main` `744384e`; squash-merged as `d638e42`, tree identical to the reviewed head `7c4fc0e`, both GitHub checks passed, `main` had not moved; the automatic Git build `dpl_H3CSvU8TNTcgGtkCndXHWAfocPRe` was not promoted).** `package.json` `next` `^16.3.8` → `^16.4.1`; the lockfile changes only `next`, `@next/env` and the eight `@next/swc-*` binaries (16.3.8 → 16.4.1). Sharp 0.35.5 and `source-map-js` 1.2.2 were already on `main`. All 47 framework-related lockfile entries (Next, SWC, Sharp and `@img/*`, `source-map-js`, React, `postcss`, `styled-jsx`, `@swc/helpers`) are identical to `614cfe6`, including `resolved` and `integrity`.
+
+| Item | Result |
+|------|--------|
+| Audit | `npm audit --omit=dev` 1 critical (`next`) → 0. Full audit 4 (1 critical, 3 moderate) → 3 moderate (Tailwind 3 `postcss-selector-parser` chain; needs the Tailwind 4 migration) |
+| Type check / lint | `tsc --noEmit` pass; ESLint `--max-warnings=0` clean on 17 framework touchpoints (`next.config.ts`, `proxy.ts`, Supabase clients and proxy, root layout, auth and admin Server Actions, `/auth/confirm`, Signing feature gate, `app/sign` route files); `git diff --check` clean |
+| Tests | All 43 non-Signing `test:*` suites plus `test:native-signing-production-readiness`: 902 tests, 0 failures (production-readiness 56, Signing migration inventory 35 unchanged). The comprehensive Signing suites are reserved for PR #56's merge boundary |
+| Build | `build:validate` pass on Next.js 16.4.1 with `NATIVE_SIGNING_ENABLED` unset (53 static pages, as on 16.3.8); only the new `partialPrefetching` notice |
+| Local smoke | Production server, flag unset: 85 checks pass (Server Action login, Packets, Fill Form PDF, Forms, admin, client nav). Signing off by default: `/sign/<id>` renders "Signing access is currently unavailable" with the strict CSP; `/sign/ceremony`, `/continue`, `/package` go to `/sign/unavailable` (designed 503); `/signings` and `/admin/signing-controls` redirect to login. Only the known pdf.js `TT:` font warnings |
+| Signing scope | Diff is `package.json`, `package-lock.json` and these status notes; no Signing code, migration, configuration or flag change |
+
+**Follow-ups.** Sync PR #56 with patched `main` and run its merge-boundary validation there. Decide separately whether to set `partialPrefetching` explicitly.
 
 ### PR #55 merge-boundary validation (2026-10-21, night)
 
@@ -839,7 +892,7 @@ The Native Signing migration inventory is now 29.
 
 ### Production dependency advisories remediated (2026-10-12)
 
-**Status:** PR #53 (`security/dependency-advisories-2026-10` from `main` `7733493`) squash-merged to `main` as `a15bbb5` on 2026-10-12; not deployed. Dependency-only (`package.json` + `package-lock.json`); no application code, config, migration, Supabase, env, or Native Signing change. Production untouched.
+**Status:** PR #53 (`security/dependency-advisories-2026-10` from `main` `7733493`) squash-merged to `main` as `a15bbb5` on 2026-10-12; never deployed on its own. Production stayed on Next.js 16.3.6 / Sharp 0.35.4 / `source-map-js` 1.2.1 (`3e5eaa3`, `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`) until the 2026-10-23 Next.js 16.4.1 hotfix, which also carried Sharp 0.35.5 and `source-map-js` 1.2.2 (see "Next.js 16.4.1 security hotfix" above). Dependency-only (`package.json` + `package-lock.json`); no application code, config, migration, Supabase, env, or Native Signing change. Production untouched.
 
 | Package | Before → after | Advisories (GitHub Advisory Database) | Relevance here |
 |---------|----------------|----------------------------------------|----------------|
@@ -856,7 +909,7 @@ No overrides, no `npm audit fix`, no packages added or removed; Node engine requ
 | Regression | Clean `npm ci`; `tsc` pass; `git diff --check` clean; all 52 `test:*` scripts pass (same counts as `main`); `build:validate` pass with Native Signing off, route table identical to `main` on 16.3.6 |
 | Dev smoke | Auth redirects, login, dashboard, Packets list/detail, Contacts, Collections, Forms, Settings, Fill Form PDF rendering, Admin pages, client navigation: pass, results identical to `main` on 16.3.6; 0 server errors/warnings |
 
-**Next step:** production rollout separately with Lee's approval. PR #46 has been synced with the patched `main` (see below).
+**Next step:** superseded. These versions reached production only through the 2026-10-23 Next.js 16.4.1 hotfix. PR #46 has been synced with the patched `main` (see below).
 
 ### Combined-package refresh tranche (2026-10-12; PR #46)
 
