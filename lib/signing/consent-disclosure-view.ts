@@ -61,6 +61,10 @@ export function disclosureDownloadFilename(versionKey: string): string {
   return `${versionKey.replace(/[^\w.-]+/g, "-")}.txt`;
 }
 
+/** Shown to a participant after a manager recorded their consent withdrawal. */
+export const CONSENT_WITHDRAWN_PARTICIPANT_MESSAGE =
+  "Electronic consent for this Signing was withdrawn, so you cannot sign electronically here. Please contact the sender.";
+
 /** The affirmative consent statement shown next to the (unchecked) checkbox. */
 export const CONSENT_ACKNOWLEDGEMENT =
   "I have read this disclosure, can view it on this device, and can view and keep PDF documents by saving or printing them. I agree to use electronic records and electronic signatures for this Signing.";

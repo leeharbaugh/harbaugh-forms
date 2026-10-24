@@ -98,7 +98,9 @@ import {
   enqueueCompletedPackageDelivery,
   processNextCompletedPackageDeliveryWorkItem,
   replaceCompletedPackageCredentialWithActor,
+  resendCompletedPackageWithActor,
 } from "../lib/signing/completed-package-delivery.ts";
+import { recordConsentWithdrawalWithActor } from "../lib/signing/consent-withdrawal.ts";
 import { addCopyRecipientWithActor } from "../lib/signing/copy-recipients.ts";
 import {
   processSigningWorkBatch,
@@ -1489,7 +1491,7 @@ async function main() {
     }
     ok("revoke/replace credential: old bearer denied, new bearer ok, session killed (participant route 503)");
 
-    await replaceCompletedPackageCredentialWithActor(
+    const managerReplaced = await replaceCompletedPackageCredentialWithActor(
       agent,
       {
         signingId: primary.signingId,
@@ -1515,6 +1517,101 @@ async function main() {
         signingId: primary.signingId,
       });
       if ("outcome" in next && next.outcome === "NO_WORK") break;
+    }
+
+    // --- Consent withdrawal after Complete: the delivered link keeps working,
+    // further email is suppressed, and nothing else changes ---
+    {
+      const keptRaw = managerReplaced.issued.rawToken;
+      const keptCredential = await validateCompletedPackageCredential(admin, keptRaw);
+      if (!keptCredential) fail("the current participant package link did not validate before withdrawal");
+      const keptSession = await createCompletedPackageSession({ admin, credential: keptCredential });
+      const { count: artifactsBefore } = await admin
+        .from("signing_artifacts")
+        .select("id", { count: "exact", head: true })
+        .eq("signing_id", primary.signingId);
+
+      const withdrawal = await recordConsentWithdrawalWithActor(
+        agent,
+        { signingId: primary.signingId, participantId: primary.participantId },
+        admin,
+      );
+      if (withdrawal.replayed) fail("the first withdrawal after Complete was reported as a replay");
+      if (!(await validateCompletedPackageCredential(admin, keptRaw))) {
+        fail("withdrawal revoked the completed-documents link");
+      }
+      if (!(await validateCompletedPackageSession(admin, keptSession.rawSessionToken))) {
+        fail("withdrawal ended the completed-documents session");
+      }
+
+      await expectSigningError("resending the completed package to a withdrawn participant", ["CONFLICT"], () =>
+        resendCompletedPackageWithActor(
+          agent,
+          { signingId: primary.signingId, credentialId: keptCredential.credentialId },
+          admin,
+        ),
+      );
+      await expectSigningError("replacing and resending a withdrawn participant's link", ["CONFLICT"], () =>
+        replaceCompletedPackageCredentialWithActor(
+          agent,
+          { signingId: primary.signingId, credentialId: keptCredential.credentialId, resend: true },
+          admin,
+        ),
+      );
+      if (!(await validateCompletedPackageCredential(admin, keptRaw))) {
+        fail("a refused Replace still revoked the completed-documents link");
+      }
+
+      const queued = await enqueueCompletedPackageDelivery({
+        admin,
+        signingId: primary.signingId,
+        credentialId: keptCredential.credentialId,
+        signingParticipantId: primary.participantId,
+        recipientEmail: `pat-${stamp}@example.com`,
+        recipientName: "Pat Participant",
+        initiatedByUserId: agentUserId,
+      });
+      let queuedOutcome: string | null = null;
+      for (let i = 0; i < 4; i += 1) {
+        const next = await processNextCompletedPackageDeliveryWorkItem({
+          admin,
+          signingId: primary.signingId,
+        });
+        if ("outcome" in next && next.outcome === "NO_WORK") break;
+        if ("deliveryInstructionId" in next && next.deliveryInstructionId === queued.deliveryInstructionId) {
+          queuedOutcome = next.outcome;
+        }
+      }
+      const { data: queuedInstruction } = await admin
+        .from("signing_delivery_instructions")
+        .select("delivery_state")
+        .eq("id", queued.deliveryInstructionId)
+        .single();
+      const { data: queuedAttempts } = await admin
+        .from("signing_delivery_attempts")
+        .select("outcome")
+        .eq("delivery_instruction_id", queued.deliveryInstructionId);
+      if (
+        queuedOutcome !== "SUPPRESSED" ||
+        queuedInstruction?.delivery_state !== "SUPPRESSED" ||
+        (queuedAttempts ?? []).map((row) => row.outcome).join(",") !== "SUPPRESSED"
+      ) {
+        fail("a queued completed-package email to a withdrawn participant must be SUPPRESSED, not sent");
+      }
+
+      const { data: signingAfter } = await admin
+        .from("signings")
+        .select("lifecycle_state")
+        .eq("id", primary.signingId)
+        .single();
+      const { count: artifactsAfter } = await admin
+        .from("signing_artifacts")
+        .select("id", { count: "exact", head: true })
+        .eq("signing_id", primary.signingId);
+      if (signingAfter?.lifecycle_state !== "COMPLETE" || artifactsAfter !== artifactsBefore) {
+        fail("withdrawal after Complete changed lifecycle or artifacts");
+      }
+      ok("consent withdrawal after Complete: recorded; existing completed-documents link and session still work; Resend and Replace+resend refused without revoking; queued completed-package email SUPPRESSED; lifecycle and artifacts unchanged");
     }
 
     // Manage-helper smoke (PRIMARY on COMPLETE).

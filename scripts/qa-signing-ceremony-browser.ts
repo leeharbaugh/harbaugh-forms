@@ -840,6 +840,7 @@ async function main() {
         "Your choice",
         "What your consent covers",
         "Stopping before you finish",
+        "Withdrawing your consent",
         "Paper copies",
         "Your contact information",
         "What you need",
@@ -889,7 +890,7 @@ async function main() {
       if (!(await s1.getByTestId("consent-acknowledge").isVisible())) fail("consent checkbox not reachable at 390px");
       await shot(s1, "p1-02-consent-phone");
       if (viewport) await s1.setViewportSize(viewport);
-      ok("disclosure: all seven sections, version shown, download/print offered, Leave for now and Decline available, no unsupported claims; phone width (390px) readable with no horizontal scroll");
+      ok("disclosure: all eight sections, version shown, download/print offered, Leave for now and Decline available, no unsupported claims; phone width (390px) readable with no horizontal scroll");
     }
     await consentInUi(s1, "P1");
     p1Row = await participantRow(a.signingId, P1);

@@ -35,6 +35,7 @@ import {
 } from "./draft-participant-sync";
 import { requireManageableDraftSigning } from "./manage";
 import { loadSigningAuthorityBundle } from "./authority-context";
+import { canRecordConsentWithdrawal } from "./consent-withdrawal";
 import { canRenameSigning } from "./rename";
 import {
   completedArtifactsSettled,
@@ -101,6 +102,8 @@ export type SigningDashboardParticipant = {
   identitySource: ParticipantIdentitySourceKind;
   /** Cancelled Signings only: this participant's cancellation email, if one was owed. */
   cancellationEmail: CancellationEmailStatus | null;
+  consentAcceptedAt: string | null;
+  consentWithdrawnAt: string | null;
 };
 
 export type CancellationEmailStatus = {
@@ -129,6 +132,8 @@ export type SigningDashboard = {
   canRename: boolean;
   /** May archive / unarchive; same people who may rename. */
   canArchive: boolean;
+  /** In Progress or Complete managers may record a participant's consent withdrawal. */
+  canRecordConsentWithdrawal: boolean;
   signing: SigningSummary & {
     activationMode: string | null;
     activatedAt: string | null;
@@ -457,9 +462,13 @@ export async function loadSigningDashboardForActor(
     }),
     cancellationEmail:
       cancellationState?.emailByParticipantId.get(row.id as string) ?? null,
+    consentAcceptedAt: (row.consent_accepted_at as string | null) ?? null,
+    consentWithdrawnAt: (row.consent_withdrawn_at as string | null) ?? null,
   }));
 
   let canRename = summary.canManage;
+  let canRecordWithdrawal =
+    summary.lifecycleState === "IN_PROGRESS" && summary.canManage;
   if (!isDraft && summary.lifecycleState !== "IN_PROGRESS") {
     const bundle = await loadSigningAuthorityBundle(admin, actor, summary.id);
     canRename =
@@ -470,6 +479,9 @@ export async function loadSigningDashboardForActor(
         originatingOrganizationId: bundle.signing.originating_organization_id,
         memberships: actor.memberships,
       });
+    canRecordWithdrawal =
+      bundle != null &&
+      canRecordConsentWithdrawal(bundle.authority, bundle.signing.lifecycle_state);
   }
 
   const completedState =
@@ -484,6 +496,7 @@ export async function loadSigningDashboardForActor(
     draftPrep: await draftPrepLoad,
     canRename,
     canArchive: canRename,
+    canRecordConsentWithdrawal: canRecordWithdrawal,
     signing: {
       ...summary,
       activationMode: (activation?.activation_mode as string | null) ?? null,

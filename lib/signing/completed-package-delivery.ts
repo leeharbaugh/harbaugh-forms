@@ -8,6 +8,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadSigningAuthorityBundle } from "./authority-context";
 import { canManageCompletedSigningOperations } from "./completed-package-authority";
 import {
+  assertParticipantConsentNotWithdrawn,
+  CONSENT_WITHDRAWN_DELIVERY_DETAIL,
+  isParticipantConsentWithdrawn,
+  recordSuppressedDelivery,
+} from "./consent-withdrawal";
+import {
   ensureCompletedPackageCredential,
   loadRawCompletedPackageToken,
   replaceCompletedPackageCredential,
@@ -197,7 +203,7 @@ export async function enqueueInitialCompletedPackageFanOut(
 
   const { data: participants, error: participantsError } = await admin
     .from("signing_participants")
-    .select("id, full_name, email, participant_status")
+    .select("id, full_name, email, participant_status, consent_withdrawn_at")
     .eq("signing_id", signingId)
     .eq("participant_status", "FINISHED");
   if (participantsError) throw new Error(participantsError.message);
@@ -236,6 +242,35 @@ export async function enqueueInitialCompletedPackageFanOut(
         signingId,
         target: { signingParticipantId: participantId },
       });
+
+      if (participant.consent_withdrawn_at) {
+        const { data: instruction, error: instructionError } = await admin
+          .from("signing_delivery_instructions")
+          .insert({
+            signing_id: signingId,
+            signing_participant_id: participantId,
+            purpose: "COMPLETED_PACKAGE",
+            recipient_email_snapshot: email || "(missing)",
+            recipient_name_snapshot: name,
+            completed_package_credential_id: ensured.credentialId,
+            package_revision_id: frozenRevisionId,
+            delivery_channel: "LINK",
+            delivery_state: "QUEUED",
+          })
+          .select("id")
+          .single();
+        if (instructionError || !instruction) {
+          throw new Error(instructionError?.message ?? "Failed to record delivery instruction.");
+        }
+        await recordSuppressedDelivery({
+          admin,
+          signingId,
+          deliveryInstructionId: instruction.id as string,
+          signingParticipantId: participantId,
+          purpose: "COMPLETED_PACKAGE",
+        });
+        continue;
+      }
 
       if (!isValidDeliveryEmail(email)) {
         const { data: instruction } = await admin
@@ -360,7 +395,7 @@ export async function enqueueInitialCopyRecipientFanOut(
 export type ProcessCompletedPackageDeliveryResult = {
   workItemId: string;
   deliveryInstructionId: string;
-  outcome: "ACCEPTED" | "FAILED" | "SUSPENDED" | "SKIPPED";
+  outcome: "ACCEPTED" | "FAILED" | "SUSPENDED" | "SKIPPED" | "SUPPRESSED";
   failureDetailSafe: string | null;
 };
 
@@ -537,6 +572,36 @@ export async function processCompletedPackageDeliveryWorkItem(options: {
         failureDetailSafe: "Copy recipient is no longer active.",
       };
     }
+  }
+
+  const participantId =
+    (instruction.signing_participant_id as string | null) ?? null;
+  if (
+    participantId &&
+    (await isParticipantConsentWithdrawn(
+      options.admin,
+      workItem.signing_id as string,
+      participantId,
+    ))
+  ) {
+    await recordSuppressedDelivery({
+      admin: options.admin,
+      signingId: workItem.signing_id as string,
+      deliveryInstructionId,
+      signingParticipantId: participantId,
+      purpose: "COMPLETED_PACKAGE",
+    });
+    await completeWorkItem({
+      admin: options.admin,
+      workItemId: options.workItemId,
+      workerId: options.workerId,
+    });
+    return {
+      workItemId: options.workItemId,
+      deliveryInstructionId,
+      outcome: "SUPPRESSED",
+      failureDetailSafe: CONSENT_WITHDRAWN_DELIVERY_DETAIL,
+    };
   }
 
   const recipientEmail = String(
@@ -748,6 +813,11 @@ export async function resendCompletedPackageWithActor(
   let recipientName = "Recipient";
 
   if (credential.signing_participant_id) {
+    await assertParticipantConsentNotWithdrawn(
+      admin,
+      bundle.signing.id,
+      credential.signing_participant_id as string,
+    );
     const frozenRevisionId = bundle.signing.frozen_package_revision_id;
     if (frozenRevisionId) {
       const { data: frozen } = await admin
@@ -864,6 +934,21 @@ export async function replaceCompletedPackageCredentialWithActor(
   );
   if (!isUuid(input.credentialId)) {
     throw new SigningError("INVALID_INPUT", "Invalid credential id.");
+  }
+
+  if (input.resend !== false) {
+    const { data: prior, error: priorError } = await admin
+      .from("signing_completed_package_credentials")
+      .select("signing_participant_id")
+      .eq("id", input.credentialId)
+      .eq("signing_id", bundle.signing.id)
+      .maybeSingle();
+    if (priorError) throw new Error(priorError.message);
+    await assertParticipantConsentNotWithdrawn(
+      admin,
+      bundle.signing.id,
+      (prior?.signing_participant_id as string | null) ?? null,
+    );
   }
 
   await revokeCompletedPackageSessionsForCredential({

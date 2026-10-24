@@ -17,6 +17,11 @@ import {
   type SigningEmailMessage,
   type SigningEmailSendResult,
 } from "./delivery";
+import {
+  CONSENT_WITHDRAWN_DELIVERY_DETAIL,
+  isParticipantConsentWithdrawn,
+  recordSuppressedDelivery,
+} from "./consent-withdrawal";
 import { SigningError } from "./errors";
 import { getSigningExternalAccessState } from "./external-access";
 import { appendSigningEvent } from "./signing-events";
@@ -166,7 +171,7 @@ async function nextAttemptNumber(
 export type ProcessCancellationNoticeResult = {
   workItemId: string;
   deliveryInstructionId: string;
-  outcome: "ACCEPTED" | "FAILED" | "TERMINAL_FAILURE" | "SUSPENDED" | "SKIPPED";
+  outcome: "ACCEPTED" | "FAILED" | "TERMINAL_FAILURE" | "SUSPENDED" | "SKIPPED" | "SUPPRESSED";
   failureDetailSafe: string | null;
 };
 
@@ -226,6 +231,24 @@ export async function processCancellationNoticeWorkItem(options: {
   if (instruction.delivery_state === "ACCEPTED") {
     await completeWorkItem({ admin, workItemId, workerId });
     return { workItemId, deliveryInstructionId, outcome: "SKIPPED", failureDetailSafe: null };
+  }
+
+  const participantId = (instruction.signing_participant_id as string | null) ?? null;
+  if (await isParticipantConsentWithdrawn(admin, signingId, participantId)) {
+    await recordSuppressedDelivery({
+      admin,
+      signingId,
+      deliveryInstructionId,
+      signingParticipantId: participantId as string,
+      purpose: "CANCELLATION",
+    });
+    await completeWorkItem({ admin, workItemId, workerId });
+    return {
+      workItemId,
+      deliveryInstructionId,
+      outcome: "SUPPRESSED",
+      failureDetailSafe: CONSENT_WITHDRAWN_DELIVERY_DETAIL,
+    };
   }
 
   const signing = await loadNoticeSigning(admin, signingId);
@@ -292,7 +315,6 @@ export async function processCancellationNoticeWorkItem(options: {
     .eq("id", deliveryInstructionId)
     .eq("signing_id", signingId);
 
-  const participantId = (instruction.signing_participant_id as string | null) ?? null;
   if (result.ok) {
     await appendSigningEvent(admin, {
       signingId,

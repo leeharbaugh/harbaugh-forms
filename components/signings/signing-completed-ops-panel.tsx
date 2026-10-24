@@ -161,6 +161,8 @@ export function SigningCompletedOpsPanel({
                 snapshot.deliveries.map((row) => (
                   <div
                     key={row.credentialId}
+                    data-testid="completed-delivery-row"
+                    data-recipient-id={row.recipientId}
                     className="flex flex-col gap-2 rounded-lg border border-border p-3"
                   >
                     <div className="flex flex-wrap items-center gap-2">
@@ -186,6 +188,9 @@ export function SigningCompletedOpsPanel({
                       {!row.isCurrent || row.revokedAt ? (
                         <Badge variant="secondary">Revoked</Badge>
                       ) : null}
+                      {row.consentWithdrawn ? (
+                        <Badge variant="destructive">Consent withdrawn</Badge>
+                      ) : null}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {row.recipientEmail}
@@ -195,36 +200,48 @@ export function SigningCompletedOpsPanel({
                         {row.lastFailureSafe}
                       </p>
                     ) : null}
+                    {row.consentWithdrawn ? (
+                      <p className="text-xs text-muted-foreground" data-testid="completed-delivery-consent-withdrawn">
+                        This participant withdrew electronic consent, so the
+                        completed package is not emailed to them. Any link they
+                        already have keeps working; provide copies another way if
+                        they ask.
+                      </p>
+                    ) : null}
                     {row.isCurrent && !row.revokedAt ? (
                       <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() =>
-                            setConfirm({
-                              type: "resend",
-                              credentialId: row.credentialId,
-                            })
-                          }
-                        >
-                          Resend Package
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() =>
-                            setConfirm({
-                              type: "replace",
-                              credentialId: row.credentialId,
-                            })
-                          }
-                        >
-                          Replace Link
-                        </Button>
+                        {row.consentWithdrawn ? null : (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                setConfirm({
+                                  type: "resend",
+                                  credentialId: row.credentialId,
+                                })
+                              }
+                            >
+                              Resend Package
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                setConfirm({
+                                  type: "replace",
+                                  credentialId: row.credentialId,
+                                })
+                              }
+                            >
+                              Replace Link
+                            </Button>
+                          </>
+                        )}
                         <Button
                           type="button"
                           size="sm"

@@ -41,6 +41,7 @@ import {
   ceremonyFieldsPanelMode,
   type CeremonyFieldsPanelMode,
 } from "@/lib/signing/ceremony-layout";
+import { CONSENT_WITHDRAWN_PARTICIPANT_MESSAGE } from "@/lib/signing/consent-disclosure-view";
 import { SIGNING_PRESENCE_HEARTBEAT_SECONDS } from "@/lib/signing/presence";
 import { cn } from "@/lib/utils";
 import dynamic from "next/dynamic";
@@ -505,7 +506,14 @@ export function CeremonyShell({
           </p>
         </div>
         {messages}
-        {!consentSatisfied ? (
+        {overview.consent.reason === "CONSENT_WITHDRAWN" ? (
+          <Card data-testid="consent-withdrawn">
+            <CardHeader>
+              <CardTitle className="text-base">Electronic consent withdrawn</CardTitle>
+              <CardDescription>{CONSENT_WITHDRAWN_PARTICIPANT_MESSAGE}</CardDescription>
+            </CardHeader>
+          </Card>
+        ) : !consentSatisfied ? (
           <ConsentDisclosureCard
             disclosure={disclosure}
             reconsent={overview.consent.reason === "ACCEPTANCE_UNVERIFIABLE"}

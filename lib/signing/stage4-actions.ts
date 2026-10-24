@@ -4,6 +4,7 @@ import "server-only";
 
 import { requireSigningActor } from "@/lib/signing/actor";
 import { activateSigningWithActor } from "@/lib/signing/activation";
+import { recordConsentWithdrawalWithActor } from "@/lib/signing/consent-withdrawal";
 import { loadSigningDashboardForActor } from "@/lib/signing/dashboard";
 import { SigningError } from "@/lib/signing/errors";
 import { NativeSigningDisabledError } from "@/lib/signing/feature-gate";
@@ -142,6 +143,19 @@ export async function getParticipantSigningLinkForQaAction(input: {
 }): Promise<SigningStage4ActionResult> {
   return withAuthorizedAdmin((actor, admin) =>
     getParticipantSigningLinkForQaWithActor(actor, input, admin),
+  );
+}
+
+/**
+ * Record that a participant withdrew electronic consent (In Progress or
+ * Complete). Stops later signing and email for them; keeps all evidence.
+ */
+export async function recordParticipantConsentWithdrawalAction(input: {
+  signingId: unknown;
+  participantId: unknown;
+}): Promise<SigningStage4ActionResult> {
+  return withAuthorizedAdmin((actor, admin) =>
+    recordConsentWithdrawalWithActor(actor, input, admin),
   );
 }
 

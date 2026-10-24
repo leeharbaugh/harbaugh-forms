@@ -16,6 +16,7 @@ import {
   signingEmailSandboxed,
   type EnqueuedParticipantInvitation,
 } from "./delivery";
+import { assertParticipantConsentNotWithdrawn } from "./consent-withdrawal";
 import { SigningError } from "./errors";
 import { requireSigningEventActorType } from "./event-actor";
 import { buildParticipantInviteUrl } from "./bearer-transport";
@@ -166,6 +167,7 @@ export async function resendParticipantInvitationWithActor(
     participantId: input.participantId,
     admin,
   });
+  await assertParticipantConsentNotWithdrawn(admin, ctx.signingId, ctx.participantId);
 
   const credentialId = await loadCurrentCredentialId({
     admin,
@@ -453,6 +455,7 @@ export async function replaceParticipantInvitationWithActor(
     participantId: input.participantId,
     admin,
   });
+  await assertParticipantConsentNotWithdrawn(admin, ctx.signingId, ctx.participantId);
   const priorCredentialId = await loadCurrentCredentialId({
     admin,
     signingId: ctx.signingId,
@@ -511,6 +514,7 @@ export async function getParticipantSigningLinkForQaWithActor(
     participantId: input.participantId,
     admin,
   });
+  await assertParticipantConsentNotWithdrawn(admin, ctx.signingId, ctx.participantId);
   const credentialId = await loadCurrentCredentialId({
     admin,
     signingId: ctx.signingId,

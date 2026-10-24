@@ -122,6 +122,8 @@ export function invitationStatusLabel(status: ParticipantAccessStatus): string {
         : "Invitation accepted by the email service";
     case "FAILED":
       return "Invitation delivery failed";
+    case "SUPPRESSED":
+      return "Invitation not sent: consent withdrawn";
     default:
       return "Invitation status unknown";
   }

@@ -35,6 +35,7 @@ import {
   getSigningDashboardAction,
   keepCurrentDraftSourceAction,
   getParticipantSigningLinkForQaAction,
+  recordParticipantConsentWithdrawalAction,
   replaceParticipantInvitationAction,
   resendParticipantInvitationAction,
   revokeParticipantInvitationAction,
@@ -107,6 +108,8 @@ function cancellationEmailLabel(
         : "Cancellation email accepted by the email service";
     case "FAILED":
       return "Cancellation email failed";
+    case "SUPPRESSED":
+      return "Cancellation email not sent: consent withdrawn";
     default:
       return "Cancellation email queued";
   }
@@ -164,6 +167,16 @@ export function SigningDashboardPage({
     participantId: string;
     tone: "success" | "error";
     lines: string[];
+  } | null>(null);
+  const [pendingWithdrawal, setPendingWithdrawal] = useState<{
+    participantId: string;
+    fullName: string;
+  } | null>(null);
+  const [recordingWithdrawal, setRecordingWithdrawal] = useState(false);
+  const [withdrawalStatus, setWithdrawalStatus] = useState<{
+    participantId: string;
+    tone: "success" | "error";
+    message: string;
   } | null>(null);
   const [pendingActivation, setPendingActivation] = useState<{
     mode: ActivationMode;
@@ -498,6 +511,28 @@ export function SigningDashboardPage({
     const { participantId, op } = pendingLinkOp;
     await runInvitationOp(participantId, op);
     setPendingLinkOp(null);
+  }
+
+  async function confirmConsentWithdrawal() {
+    if (!pendingWithdrawal) return;
+    const { participantId } = pendingWithdrawal;
+    setRecordingWithdrawal(true);
+    setError(null);
+    setNotice(null);
+    setWithdrawalStatus(null);
+    const result = await recordParticipantConsentWithdrawalAction({ signingId, participantId });
+    if (!result.ok) {
+      setWithdrawalStatus({ participantId, tone: "error", message: result.error });
+    } else {
+      setWithdrawalStatus({
+        participantId,
+        tone: "success",
+        message: "Consent withdrawal recorded. No further signing or emails rely on this participant's consent.",
+      });
+      await reload();
+    }
+    setRecordingWithdrawal(false);
+    setPendingWithdrawal(null);
   }
   if (!dashboard) {
     return (
@@ -902,6 +937,8 @@ export function SigningDashboardPage({
                 return (
                   <div
                     key={participant.id}
+                    data-testid="participant-access-row"
+                    data-participant-id={participant.id}
                     className="space-y-2 rounded-lg border border-border p-3"
                   >
                     <div className="flex flex-wrap items-center gap-2">
@@ -991,32 +1028,42 @@ export function SigningDashboardPage({
                         {participant.lastDeliveryFailureSafe}
                       </p>
                     ) : null}
+                    {!finished && participant.consentWithdrawnAt ? (
+                      <p className="text-xs text-muted-foreground">
+                        Electronic consent was withdrawn, so no signing links
+                        are sent to this participant.
+                      </p>
+                    ) : null}
                     {!finished ? (
                       <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={
-                            busy || !participant.hasActiveInvitationLink
-                          }
-                          onClick={() =>
-                            void runInvitationOp(participant.id, "resend")
-                          }
-                        >
-                          Resend signing link
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() =>
-                            setPendingLinkOp({ participantId: participant.id, op: "replace" })
-                          }
-                        >
-                          Replace signing link
-                        </Button>
+                        {participant.consentWithdrawnAt ? null : (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={
+                                busy || !participant.hasActiveInvitationLink
+                              }
+                              onClick={() =>
+                                void runInvitationOp(participant.id, "resend")
+                              }
+                            >
+                              Resend signing link
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                setPendingLinkOp({ participantId: participant.id, op: "replace" })
+                              }
+                            >
+                              Replace signing link
+                            </Button>
+                          </>
+                        )}
                         <Button
                           type="button"
                           size="sm"
@@ -1097,6 +1144,8 @@ export function SigningDashboardPage({
               dashboard.participants.map((participant) => (
                 <div
                   key={participant.id}
+                  data-testid="participant-row"
+                  data-participant-id={participant.id}
                   className="flex flex-col gap-1 rounded-lg border border-border p-3"
                 >
                   <div className="flex flex-wrap items-center gap-2">
@@ -1150,10 +1199,58 @@ export function SigningDashboardPage({
                         {cancellationEmailLabel(participant.cancellationEmail)}
                       </Badge>
                     ) : null}
+                    {participant.consentWithdrawnAt ? (
+                      <Badge variant="destructive" data-testid="participant-consent-withdrawn">
+                        Consent withdrawn
+                      </Badge>
+                    ) : null}
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {participant.email}
                   </p>
+                  {participant.consentWithdrawnAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Consent withdrawal recorded{" "}
+                      {formatWhen(participant.consentWithdrawnAt)}. No further
+                      signing or emails rely on this participant&rsquo;s consent;
+                      existing signatures and documents are unchanged.
+                    </p>
+                  ) : null}
+                  {withdrawalStatus?.participantId === participant.id ? (
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      data-testid="participant-withdrawal-status"
+                      className={
+                        withdrawalStatus.tone === "error"
+                          ? "text-xs text-destructive"
+                          : "text-xs text-emerald-900"
+                      }
+                    >
+                      {withdrawalStatus.message}
+                    </p>
+                  ) : null}
+                  {dashboard.canRecordConsentWithdrawal &&
+                  participant.consentAcceptedAt &&
+                  !participant.consentWithdrawnAt ? (
+                    <div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        data-testid="record-consent-withdrawal"
+                        disabled={recordingWithdrawal}
+                        onClick={() =>
+                          setPendingWithdrawal({
+                            participantId: participant.id,
+                            fullName: participant.fullName,
+                          })
+                        }
+                      >
+                        Record consent withdrawal
+                      </Button>
+                    </div>
+                  ) : null}
                   {isDraft && !participant.hasSignatureOrInitialsField ? (
                     <p className="text-xs text-warning-foreground">
                       Needs at least one Signature or Initials field.
@@ -1171,7 +1268,8 @@ export function SigningDashboardPage({
                   ) : null}
                   {canStartHandoff &&
                   participant.participantStatus !== "FINISHED" &&
-                  participant.participantStatus !== "DECLINED" ? (
+                  participant.participantStatus !== "DECLINED" &&
+                  !participant.consentWithdrawnAt ? (
                     <div className="mt-1 space-y-2">
                       <Button
                         type="button"
@@ -1242,6 +1340,24 @@ export function SigningDashboardPage({
         onConfirm={() => void confirmLinkOp()}
         onCancel={() => {
           if (!busyParticipantId) setPendingLinkOp(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingWithdrawal !== null}
+        title="Record consent withdrawal?"
+        message={
+          pendingWithdrawal
+            ? `Record that ${pendingWithdrawal.fullName} withdrew electronic consent for this Signing. They will not be able to sign electronically here, and no further signing links or emails will be sent to them. Their existing signatures, documents and completed-document links are kept. This cannot be undone in this Signing; use a new Signing if they consent again.`
+            : ""
+        }
+        confirmLabel="Record withdrawal"
+        confirmingLabel="Recording…"
+        variant="destructive"
+        isConfirming={recordingWithdrawal}
+        onConfirm={() => void confirmConsentWithdrawal()}
+        onCancel={() => {
+          if (!recordingWithdrawal) setPendingWithdrawal(null);
         }}
       />
 
