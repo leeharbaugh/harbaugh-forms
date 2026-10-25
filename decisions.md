@@ -12,6 +12,27 @@ Each decision should include:
 
 ---
 
+## Internal Signing worker routes bypass workspace login; Signing emails carry a configurable Reply-To
+
+**Date:** 2026-10-25 (Gate C fixes; Lee approved)
+
+**Decision:**
+1. **Worker routes.** `/api/internal/cron/signing-worker` (Vercel Cron, `CRON_SECRET` bearer) and `/api/internal/signing-worker` (`SIGNING_WORKER_SECRET` header) are machine endpoints.
+   - The workspace-login proxy passes exactly these two paths through, with no session or cookie handling, and their own constant-time secret checks are the only gate.
+   - No other route is exempted. Prefix, sub-path and trailing-slash variants still require login.
+   - A missing, wrong or misplaced secret gets 401, never a redirect. The worker still refuses while the feature is off or work is suspended.
+2. **Reply-To.** `SIGNING_EMAIL_REPLY_TO` is an optional single plain address, added as `reply_to` by the shared Signing email sender, so it covers every Native Signing email.
+   - Unset sends without one. A malformed value blocks sending with a safe, retryable failure rather than sending without it.
+   - `SIGNING_EMAIL_FROM` stays a sending-only identity. The planned production value is `lee@harbaughbrothers.com`.
+
+**Reason:** The Gate C candidate showed Vercel Cron could never reach the worker through the login redirect. Signing email comes from a sending-only domain with no mailbox, so replies were lost.
+
+**Consequences:** After merge, Gate C sets `SIGNING_EMAIL_REPLY_TO` in Vercel Production and re-verifies the Cron route with the real secret on a rebuilt candidate. Supabase Auth SMTP and non-Signing email are unaffected.
+
+**Related:** `lib/signing/internal-worker-routes.ts`, `lib/supabase/proxy.ts`, `app/api/internal/cron/signing-worker/route.ts`, `app/api/internal/signing-worker/route.ts`, `lib/signing/email-reply-to.ts`, `lib/signing/delivery.ts`, `lib/signing/production-readiness.ts`, and their tests.
+
+---
+
 ## Disclosure esign-disclosure-2026-10-22: withdrawal and paper-copy policy, not production-ready
 
 **Date:** 2026-10-22 (Lee-approved product wording; not counsel-approved)
