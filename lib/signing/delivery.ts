@@ -27,6 +27,7 @@ import {
   recordSuppressedDelivery,
 } from "./consent-withdrawal";
 import { loadRawParticipantCredentialToken } from "./credentials";
+import { resolveSigningEmailReplyTo } from "./email-reply-to";
 import { SigningError } from "./errors";
 import { getSigningExternalAccessState } from "./external-access";
 import {
@@ -190,6 +191,15 @@ export async function sendSigningEmail(
     };
   }
 
+  const replyTo = resolveSigningEmailReplyTo();
+  if (!replyTo.ok) {
+    return {
+      ok: false,
+      failureDetailSafe:
+        "Signing email reply-to address is invalid; message was not sent.",
+    };
+  }
+
   try {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -202,6 +212,7 @@ export async function sendSigningEmail(
         to: [message.to],
         subject: message.subject,
         text: message.textBody,
+        ...(replyTo.replyTo ? { reply_to: replyTo.replyTo } : {}),
       }),
     });
 
