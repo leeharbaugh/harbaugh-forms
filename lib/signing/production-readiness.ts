@@ -20,6 +20,10 @@ import {
   COMPLETED_PACKAGE_WRAP_PREVIOUS_KEYS_ENV,
 } from "./completed-package-wrap";
 import { SIGNING_WORKER_SECRET_ENV } from "./signing-worker-dispatch";
+import {
+  resolveSigningEmailReplyTo,
+  SIGNING_EMAIL_REPLY_TO_ENV,
+} from "./email-reply-to";
 import { SIGNING_ACCESS_SUSPENDED_ENV } from "./external-access";
 import {
   NATIVE_SIGNING_PRODUCTION_SITE_URL,
@@ -413,6 +417,12 @@ export function evaluateEnvPresence(
       present: Boolean(env.SIGNING_EMAIL_FROM?.trim()),
       formatOk: Boolean(env.SIGNING_EMAIL_FROM?.trim()),
       publicValue: env.SIGNING_EMAIL_FROM?.trim() || "(unset)",
+    },
+    {
+      name: SIGNING_EMAIL_REPLY_TO_ENV,
+      present: Boolean(env[SIGNING_EMAIL_REPLY_TO_ENV]?.trim()),
+      formatOk: resolveSigningEmailReplyTo(env).ok,
+      publicValue: env[SIGNING_EMAIL_REPLY_TO_ENV]?.trim() || "(unset)",
     },
     {
       name: "SIGNING_EMAIL_SANDBOX",

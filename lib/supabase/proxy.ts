@@ -3,6 +3,7 @@ import {
   isPathAllowedDuringDeviceHandoffLock,
 } from "@/lib/signing/device-handoff-lock";
 import { isParticipantSigningPath } from "@/lib/signing/bearer-transport";
+import { isInternalSigningWorkerPath } from "@/lib/signing/internal-worker-routes";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
@@ -13,6 +14,11 @@ export async function updateSession(request: NextRequest) {
   });
 
   const path = request.nextUrl.pathname;
+  // Secret-authenticated machine endpoints: the handler is the only gate.
+  if (isInternalSigningWorkerPath(path)) {
+    return supabaseResponse;
+  }
+
   const deviceLockCookie = request.cookies.get(DEVICE_HANDOFF_LOCK_COOKIE_NAME);
   if (
     deviceLockCookie?.value &&
