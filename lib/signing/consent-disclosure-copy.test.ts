@@ -531,6 +531,58 @@ describe("Electronic records disclosure 2026-10-25: publication", () => {
   });
 });
 
+const OCT25_READY_MIGRATION = read(
+  "supabase/migrations/20261025130000_native_signing_esign_disclosure_2026_10_25_production_ready.sql",
+);
+const OCT25_READY_BODY =
+  OCT25_READY_MIGRATION.match(/\$disclosure\$([\s\S]*?)\$disclosure\$/)?.[1] ?? "";
+
+describe("Electronic records disclosure 2026-10-25-production-ready: publication", () => {
+  it("republishes the reviewed 2026-10-25 text byte for byte under its pinned fingerprint", () => {
+    assert.equal(OCT25_READY_BODY, OCT25_BODY);
+    assert.equal(consentDisclosureFingerprint(OCT25_READY_BODY), OCT25_FINGERPRINT);
+    assert.match(OCT25_READY_MIGRATION, new RegExp(`v_expected_sha256 constant text :=\\s+'${OCT25_FINGERPRINT}'`));
+    assert.match(OCT25_READY_MIGRATION, /\$disclosure\$, chr\(13\), ''\);/);
+    assert.match(OCT25_READY_MIGRATION, /if encode\(sha256\(convert_to\(v_body, 'UTF8'\)\), 'hex'\) <> v_expected_sha256 then\s+raise exception/);
+  });
+
+  it("requires the reviewed version to be current with the same text and fingerprint", () => {
+    assert.match(
+      OCT25_READY_MIGRATION,
+      /if not exists \(\s+select 1\s+from public\.signing_consent_disclosure_versions\s+where version_key = 'esign-disclosure-2026-10-25'\s+and superseded_at is null\s+and body_text = v_body\s+and content_sha256 = v_expected_sha256\s+\) then\s+raise exception/,
+    );
+  });
+
+  it("inserts a new production-ready row and changes no existing row except superseded_at", () => {
+    assert.match(OCT25_READY_MIGRATION, /where version_key = 'esign-disclosure-2026-10-25-production-ready'\s+\) then\s+return;/);
+    assert.match(
+      OCT25_READY_MIGRATION,
+      /values \(\s+'esign-disclosure-2026-10-25-production-ready',\s+'Electronic records and signatures',\s+v_body,\s+encode\(sha256[^)]+\)\), 'hex'\),\s+true\s*\)/,
+    );
+    assert.equal(OCT25_READY_MIGRATION.match(/\bupdate public\./g)?.length, 1, "the only update supersedes the current row");
+    assert.match(OCT25_READY_MIGRATION, /update public\.signing_consent_disclosure_versions\s+set superseded_at = now\(\)\s+where superseded_at is null;/);
+    assert.doesNotMatch(OCT25_READY_MIGRATION, /set (body_text|content_sha256|is_production_ready|version_key)/);
+    assert.doesNotMatch(OCT25_READY_MIGRATION, /is_production_ready\s*=\s*true/);
+    assert.doesNotMatch(OCT25_READY_MIGRATION, /signing_participants|signing_events/);
+    assert.doesNotMatch(OCT25_READY_MIGRATION, /\b(alter|create|drop) (table|function|trigger|policy)/i);
+    assert.doesNotMatch(OCT25_READY_MIGRATION, /\bdelete\b/i);
+    assert.doesNotMatch(OCT25_READY_MIGRATION, /current_setting|VERCEL_ENV|current_database|inet_server/i, "no environment-dependent branch");
+  });
+
+  it("leaves exactly one current version, which is production-ready, with every fingerprint intact", () => {
+    assert.match(OCT25_READY_MIGRATION, /expected exactly one current disclosure version/);
+    assert.match(OCT25_READY_MIGRATION, /if current_ready is not true then\s+raise exception 'the current disclosure version is not production-ready'/);
+    assert.match(OCT25_READY_MIGRATION, /disclosure version\(s\) do not match their fingerprint/);
+  });
+
+  it("keeps every earlier disclosure migration non-production and its key unused", () => {
+    for (const earlier of [MIGRATION, REVISION_MIGRATION, OCT20_MIGRATION, OCT22_MIGRATION, OCT25_MIGRATION]) {
+      assert.match(earlier, /v_body,\s+encode\(sha256[^)]+\)\), 'hex'\),\s+false\s*\)/);
+      assert.doesNotMatch(earlier, /esign-disclosure-2026-10-25-production-ready/);
+    }
+  });
+});
+
 describe("Electronic records disclosure: ceremony UI", () => {
   const card = read("components/sign/consent-disclosure.tsx");
   const shell = read("components/sign/ceremony-shell.tsx");

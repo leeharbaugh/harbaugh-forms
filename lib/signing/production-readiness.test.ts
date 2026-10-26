@@ -119,6 +119,28 @@ describe("production readiness helpers", () => {
     );
   });
 
+  it("reports the disclosure READY only when the current version itself is production-ready", () => {
+    const base = { target: "prod" as const, schemaPresent: true, productionReadyCount: 1, fingerprintValid: true };
+    assert.equal(evaluateDisclosure({ ...base, currentIsProductionReady: true }).severity, "READY");
+    for (const current of [false, null, undefined]) {
+      const check = evaluateDisclosure({ ...base, currentIsProductionReady: current });
+      assert.equal(check.severity, "BLOCKED", `current readiness ${String(current)}`);
+      assert.match(check.message, /PRODUCTION_DISCLOSURE_NOT_READY/);
+    }
+    assert.equal(
+      evaluateDisclosure({ ...base, fingerprintValid: false, currentIsProductionReady: true }).severity,
+      "UNSAFE",
+    );
+    assert.equal(
+      evaluateDisclosure({ ...base, productionReadyCount: 0, currentIsProductionReady: false }).severity,
+      "BLOCKED",
+    );
+    assert.equal(
+      evaluateDisclosure({ target: "dev", schemaPresent: true, productionReadyCount: 1, fingerprintValid: true, currentIsProductionReady: true }).severity,
+      "INFO",
+    );
+  });
+
   it("flags feature unexpectedly ON during rollout", () => {
     assert.equal(
       evaluateFeatureFlag({
@@ -144,10 +166,10 @@ describe("production readiness helpers", () => {
     assert.equal(worker?.publicValue, undefined);
   });
 
-  it("matches migration inventory on disk (38 Native Signing migrations)", () => {
+  it("matches migration inventory on disk (39 Native Signing migrations)", () => {
     const inventory = assertNativeSigningMigrationInventoryMatchesDisk();
     assert.equal(inventory.ok, true);
-    assert.equal(NATIVE_SIGNING_ALL_MIGRATIONS.length, 38);
+    assert.equal(NATIVE_SIGNING_ALL_MIGRATIONS.length, 39);
   });
 
   it("detects Cron route, vercel.json, and worker feature-off posture", () => {

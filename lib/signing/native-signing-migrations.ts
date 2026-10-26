@@ -43,6 +43,7 @@ export const NATIVE_SIGNING_ALL_MIGRATIONS = [
   "20261022120000_native_signing_consent_withdrawal",
   "20261022130000_native_signing_esign_disclosure_2026_10_22",
   "20261025120000_native_signing_esign_disclosure_2026_10_25",
+  "20261025130000_native_signing_esign_disclosure_2026_10_25_production_ready",
 ] as const;
 
 export function listNativeSigningMigrationFilesFromDisk(

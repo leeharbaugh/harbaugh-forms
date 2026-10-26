@@ -75,6 +75,7 @@ import {
 } from "../lib/signing/entry-sessions.ts";
 import { SigningError } from "../lib/signing/errors.ts";
 import {
+  assertProductionDisclosureReady,
   NativeSigningDisabledError,
   NativeSigningProductionDisclosureError,
 } from "../lib/signing/feature-gate.ts";
@@ -552,10 +553,11 @@ async function main() {
     });
 
     const disclosure = await loadCurrentConsentDisclosure(admin);
-    if (disclosure.isProductionReady) {
-      fail("the development disclosure is marked production ready");
-    }
-    ok(`current consent disclosure loaded and verified (${disclosure.versionKey})`);
+    ok(
+      `current consent disclosure loaded and verified (${disclosure.versionKey}, ${
+        disclosure.isProductionReady ? "production-ready" : "not production-ready"
+      })`,
+    );
 
     // ---------------------------------------------------------------------
     // Signing A: the full participant ceremony.
@@ -757,8 +759,9 @@ async function main() {
 
       const { data: superseded } = await admin
         .from("signing_consent_disclosure_versions")
-        .select("id, version_key, content_sha256")
+        .select("id, version_key, content_sha256, is_production_ready")
         .not("superseded_at", "is", null)
+        .eq("is_production_ready", false)
         .order("published_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -791,8 +794,10 @@ async function main() {
         }
         ok(`an acceptance of superseded "${superseded.version_key}" stays valid after "${disclosure.versionKey}" is current; re-accept replays without rebinding`);
 
-        // Production eligibility, evaluated in-process against these real rows;
-        // nothing is marked production-ready.
+        // Production eligibility, evaluated in-process against these real rows.
+        // A non-ready current version must be refused outright; a ready one must
+        // load, while every non-ready version stays refused as current and as
+        // the version a participant accepted.
         const production = { VERCEL_ENV: "production" } as NodeJS.ProcessEnv;
         const refusedInProduction = async (label: string, run: () => Promise<unknown>) => {
           try {
@@ -803,12 +808,22 @@ async function main() {
           }
           fail(`${label} was allowed in production with a non-production-ready disclosure`);
         };
-        await refusedInProduction("loading the current disclosure", () => loadCurrentConsentDisclosure(admin, production));
-        await refusedInProduction("checking consent", () =>
-          checkConsentSatisfied({ admin, signingId: signingA.signingId, signingParticipantId: janeId, env: production }),
-        );
-        await refusedInProduction("recording new consent", () =>
-          acceptConsent({ admin, context: consentContext, disclosureVersionId: disclosure.id, env: production }),
+        if (disclosure.isProductionReady) {
+          const productionCurrent = await loadCurrentConsentDisclosure(admin, production);
+          if (productionCurrent.id !== disclosure.id || productionCurrent.contentSha256 !== disclosure.contentSha256) {
+            fail("production did not load the production-ready current disclosure");
+          }
+        } else {
+          await refusedInProduction("loading the current disclosure", () => loadCurrentConsentDisclosure(admin, production));
+          await refusedInProduction("checking consent", () =>
+            checkConsentSatisfied({ admin, signingId: signingA.signingId, signingParticipantId: janeId, env: production }),
+          );
+          await refusedInProduction("recording new consent", () =>
+            acceptConsent({ admin, context: consentContext, disclosureVersionId: disclosure.id, env: production }),
+          );
+        }
+        await refusedInProduction(`presenting non-ready "${superseded.version_key}" as current`, async () =>
+          assertProductionDisclosureReady({ isProductionReady: superseded.is_production_ready === true }, production),
         );
         const approvedCurrent = { ...disclosure, isProductionReady: true };
         const ineligible = await checkConsentSatisfied({
@@ -832,7 +847,13 @@ async function main() {
         ) {
           fail("production eligibility checks rewrote the recorded acceptance");
         }
-        ok(`production fails closed on a non-ready current disclosure (load, consent check, new consent), and a "${superseded.version_key}" acceptance is ACCEPTANCE_NOT_ELIGIBLE even beside an approved current version; the recorded acceptance is unchanged`);
+        ok(
+          `${
+            disclosure.isProductionReady
+              ? `production loads production-ready current "${disclosure.versionKey}"`
+              : "production fails closed on a non-ready current disclosure (load, consent check, new consent)"
+          }; non-ready "${superseded.version_key}" is refused as current, and an acceptance of it is ACCEPTANCE_NOT_ELIGIBLE beside an approved current version; the recorded acceptance is unchanged`,
+        );
 
         await setJaneConsent({ consent_content_sha256: "0".repeat(64) });
         const forged = await checkConsentSatisfied({
