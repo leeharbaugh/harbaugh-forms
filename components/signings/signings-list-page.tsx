@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useHistoryRestoreRefresh } from "@/components/signings/use-history-restore-refresh";
+import { formatTimestamp } from "@/lib/format-timestamp";
 import {
   createDraftSigningAction,
   listSigningsAction,
@@ -171,7 +172,7 @@ export function SigningsListPage({
               <div className="min-w-0 space-y-1">
                 <p className="truncate text-sm font-medium">{signing.title}</p>
                 <p className="text-xs text-muted-foreground">
-                  Updated {new Date(signing.updateDate).toLocaleString()}
+                  Updated {formatTimestamp(signing.updateDate)}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">

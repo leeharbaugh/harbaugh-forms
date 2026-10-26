@@ -62,6 +62,34 @@ describe("admin components render deterministic timestamps", () => {
   });
 });
 
+describe("signing manager components render deterministic timestamps", () => {
+  const signingsDir = join(root, "components/signings");
+  const files = readdirSync(signingsDir).filter((name) => name.endsWith(".tsx"));
+  // Rendered only from client state after the manager starts an in-person
+  // handoff, so it is never part of the server-rendered hydration tree.
+  const clientOnly = "new Date(handoff.expiresAt).toLocaleTimeString()";
+
+  it("never format server-rendered dates with the runtime locale or time zone", () => {
+    assert.ok(files.length > 0);
+    for (const name of files) {
+      const source = readFileSync(join(signingsDir, name), "utf8").split(clientOnly).join("");
+      assert.ok(
+        !/\.toLocale(?:Date|Time)?String\(/.test(source),
+        `${name} must use formatTimestamp() from lib/format-timestamp.ts`,
+      );
+    }
+  });
+
+  it("formats the dashboard and list timestamps with formatTimestamp()", () => {
+    const dashboard = readFileSync(join(signingsDir, "signing-dashboard-page.tsx"), "utf8");
+    const list = readFileSync(join(signingsDir, "signings-list-page.tsx"), "utf8");
+    assert.match(dashboard, /function formatWhen\(value: string \| null\): string \| null \{\s+return value \? formatTimestamp\(value\) : null;/);
+    assert.match(dashboard, /` on \$\{formatTimestamp\(dashboard\.signing\.activatedAt\)\}`/);
+    assert.match(list, /Updated \{formatTimestamp\(signing\.updateDate\)\}/);
+    assert.equal(formatTimestamp("2026-10-26T15:46:00Z"), "10/26/2026, 10:46:00 AM CDT");
+  });
+});
+
 describe("packet timestamps render in a fixed time zone", () => {
   const sources = [
     "lib/types/packet.ts",
