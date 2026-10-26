@@ -409,6 +409,128 @@ describe("Electronic records disclosure 2026-10-22: publication", () => {
   });
 });
 
+const OCT25_MIGRATION = read(
+  "supabase/migrations/20261025120000_native_signing_esign_disclosure_2026_10_25.sql",
+);
+const OCT25_BODY = OCT25_MIGRATION.match(/\$disclosure\$([\s\S]*?)\$disclosure\$/)?.[1] ?? "";
+const OCT25_FINGERPRINT =
+  "802ad62180563777d229749ec6988036a42ee92824dbf41f07033e43a672da98";
+const APPROVED_WITHDRAWAL_FEE =
+  "There is no fee for requesting or withdrawing your consent to electronic records for this Signing.";
+const APPROVED_TECHNICAL_CHANGE =
+  "If the technical requirements materially change in a way that could prevent you from accessing or keeping your electronic records, the sender will inform you of the new requirements and your options. You may withdraw your consent without a fee. You may need to review updated requirements and give consent again before continuing electronically.";
+const OCT22_PDF_FALLBACK =
+  'If you cannot view PDF documents or have no way to save or print copies, choose "Leave for now" and contact the sender before continuing.';
+
+describe("Electronic records disclosure 2026-10-25: copy", () => {
+  const blocks = parseDisclosureBlocks(OCT25_BODY);
+  const previous = parseDisclosureBlocks(OCT22_BODY);
+  const section = (heading: string) => blocks.find((block) => block.heading === heading);
+
+  it("pins the approved fingerprint and leaves every earlier fingerprint unchanged", () => {
+    assert.equal(consentDisclosureFingerprint(OCT25_BODY), OCT25_FINGERPRINT);
+    assert.equal(consentDisclosureFingerprint(OCT22_BODY), OCT22_FINGERPRINT);
+    assert.equal(consentDisclosureFingerprint(OCT20_BODY), OCT20_FINGERPRINT);
+    assert.equal(consentDisclosureFingerprint(REVISED_BODY), REVISED_FINGERPRINT);
+    assert.equal(consentDisclosureFingerprint(BODY), PREVIOUS_FINGERPRINT);
+    assert.ok(!OCT25_BODY.includes("\r"));
+    assert.ok(!OCT25_BODY.endsWith("\n"));
+  });
+
+  it("is the 2026-10-22 text with exactly the two approved lines added", () => {
+    const expected = OCT22_BODY.split("\n");
+    expected.splice(expected.indexOf(APPROVED_WITHDRAWAL) + 1, 0, APPROVED_WITHDRAWAL_FEE);
+    expected.splice(expected.indexOf(OCT22_PDF_FALLBACK) + 1, 0, APPROVED_TECHNICAL_CHANGE);
+    assert.equal(OCT25_BODY, expected.join("\n"));
+    assert.equal(OCT25_BODY.split("\n").length, OCT22_BODY.split("\n").length + 2);
+  });
+
+  it("ends Withdrawing your consent with the no-fee sentence and What you need with the technical-change notice", () => {
+    assert.deepEqual(
+      blocks.map((block) => block.heading),
+      previous.map((block) => block.heading),
+    );
+    assert.deepEqual(section("Withdrawing your consent"), {
+      heading: "Withdrawing your consent",
+      paragraphs: [APPROVED_WITHDRAWAL, APPROVED_WITHDRAWAL_FEE],
+      bullets: [],
+    });
+    const needs = section("What you need");
+    const needsBefore = previous.find((block) => block.heading === "What you need");
+    assert.deepEqual(needs?.bullets, needsBefore?.bullets);
+    assert.deepEqual(needs?.paragraphs, [OCT22_PDF_FALLBACK, APPROVED_TECHNICAL_CHANGE]);
+  });
+
+  it("keeps Paper copies, every other section and the consent checkbox unchanged", () => {
+    assert.deepEqual(section("Paper copies")?.paragraphs, OCT22_PAPER_COPIES);
+    assert.match(
+      OCT25_BODY,
+      /The sender handles paper-copy requests directly and does not charge for paper copies\./,
+    );
+    for (const block of blocks) {
+      if (block.heading === "Withdrawing your consent" || block.heading === "What you need") continue;
+      const before = previous.find((candidate) => candidate.heading === block.heading);
+      assert.deepEqual(block, before, `${block.heading ?? "introduction"} is unchanged`);
+    }
+    assert.equal(CONSENT_ACKNOWLEDGEMENT, OCT20_ACKNOWLEDGEMENT, "the consent checkbox is unchanged");
+  });
+
+  it("makes no claim the product cannot support", () => {
+    for (const claim of [
+      /TREC/i,
+      /approv/i,
+      /complies? with/i,
+      /legally binding/i,
+      /notar/i,
+      /verif(y|ied|ies) (your )?identity/i,
+      /forever|indefinite|permanent|guarantee/i,
+      /we will (mail|provide paper)/i,
+      /waive/i,
+    ]) {
+      assert.doesNotMatch(OCT25_BODY, claim);
+    }
+  });
+
+  it("downloads and prints the 2026-10-25 version's own text and fingerprint", () => {
+    const text = disclosureDownloadText({
+      title: "Electronic records and signatures",
+      versionKey: "esign-disclosure-2026-10-25",
+      contentSha256: OCT25_FINGERPRINT,
+      bodyText: OCT25_BODY,
+    });
+    assert.ok(text.includes(OCT25_BODY));
+    assert.ok(text.includes("Version: esign-disclosure-2026-10-25"));
+    assert.ok(text.includes(`SHA-256: ${OCT25_FINGERPRINT}`));
+    assert.ok(!text.includes(OCT22_FINGERPRINT));
+  });
+});
+
+describe("Electronic records disclosure 2026-10-25: publication", () => {
+  it("publishes forward-only after 2026-10-22, checks the fingerprint and stays non-production", () => {
+    assert.match(OCT25_MIGRATION, /'esign-disclosure-2026-10-25'/);
+    assert.match(OCT25_MIGRATION, /v_body constant text := replace\(\$disclosure\$/);
+    assert.match(OCT25_MIGRATION, /\$disclosure\$, chr\(13\), ''\);/);
+    assert.match(OCT25_MIGRATION, new RegExp(`v_expected_sha256 constant text :=\\s+'${OCT25_FINGERPRINT}'`));
+    assert.match(OCT25_MIGRATION, /if encode\(sha256\(convert_to\(v_body, 'UTF8'\)\), 'hex'\) <> v_expected_sha256 then\s+raise exception/);
+    assert.match(OCT25_MIGRATION, /where version_key = 'esign-disclosure-2026-10-25'\s+\) then\s+return;/);
+    assert.match(OCT25_MIGRATION, /set superseded_at = now\(\)\s+where superseded_at is null/);
+    assert.match(OCT25_MIGRATION, /v_body,\s+encode\(sha256[^)]+\)\), 'hex'\),\s+false\s*\)/);
+    assert.match(OCT25_MIGRATION, /expected exactly one current disclosure version/);
+    assert.doesNotMatch(OCT25_MIGRATION, /is_production_ready\s*=\s*true/);
+    assert.doesNotMatch(OCT25_MIGRATION, /set (body_text|content_sha256|is_production_ready|version_key)/);
+    assert.doesNotMatch(OCT25_MIGRATION, /signing_participants|signing_events/);
+    assert.doesNotMatch(OCT25_MIGRATION, /\b(alter|create|drop) (table|function|trigger|policy)/i);
+    assert.doesNotMatch(OCT25_MIGRATION, /\bdelete\b/i);
+    assert.equal(OCT25_MIGRATION.match(/\bupdate public\./g)?.length, 1, "the only update supersedes the current row");
+  });
+
+  it("uses a version key no earlier migration published", () => {
+    for (const earlier of [MIGRATION, REVISION_MIGRATION, OCT20_MIGRATION, OCT22_MIGRATION]) {
+      assert.doesNotMatch(earlier, /esign-disclosure-2026-10-25/);
+    }
+  });
+});
+
 describe("Electronic records disclosure: ceremony UI", () => {
   const card = read("components/sign/consent-disclosure.tsx");
   const shell = read("components/sign/ceremony-shell.tsx");

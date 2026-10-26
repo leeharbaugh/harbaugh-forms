@@ -55,6 +55,7 @@ import {
   CONSENT_ACKNOWLEDGEMENT,
   disclosureDownloadFilename,
   disclosureDownloadText,
+  parseDisclosureBlocks,
 } from "../lib/signing/consent-disclosure-view.ts";
 import { addCopyRecipientWithActor } from "../lib/signing/copy-recipients.ts";
 import { addDraftSigningDocumentWithActor } from "../lib/signing/draft-documents.ts";
@@ -808,8 +809,13 @@ async function main() {
       .single();
     currentDisclosureVersionKey = disclosure!.version_key as string;
     await s1.getByRole("heading", { name: disclosure!.title as string, level: 2 }).waitFor({ timeout: 30000 });
-    const consentText = await s1.locator("body").innerText();
-    if (!consentText.includes((disclosure!.body_text as string).slice(0, 60))) fail("disclosure body not shown");
+    const consentText = await s1.getByTestId("consent-disclosure").innerText();
+    const renderedBody = await s1.getByTestId("disclosure-body").innerText();
+    for (const block of parseDisclosureBlocks(disclosure!.body_text as string)) {
+      for (const line of [block.heading, ...block.paragraphs, ...block.bullets]) {
+        if (line && !renderedBody.includes(line)) fail(`disclosure text not shown: "${line.slice(0, 60)}"`);
+      }
+    }
     if (!disclosure!.is_production_ready && !consentText.includes("Development disclosure copy")) fail("dev disclosure badge missing");
     if ((await s1.getByRole("button", { name: /Sign here|Initial here|Start signing|Finish Signing/ }).count()) !== 0) fail("marks or Finish offered before consent");
     {

@@ -125,9 +125,18 @@ const OCT20_BODY = migrationBody(
   "supabase/migrations/20261020120000_native_signing_esign_disclosure_2026_10_20.sql",
 );
 
+const OCT22_BODY = migrationBody(
+  "supabase/migrations/20261022130000_native_signing_esign_disclosure_2026_10_22.sql",
+);
+const OCT25_BODY = migrationBody(
+  "supabase/migrations/20261025120000_native_signing_esign_disclosure_2026_10_25.sql",
+);
+
 const V_PREVIOUS = "d0000000-0000-4000-8000-000000000001";
 const V_REVISED = "d0000000-0000-4000-8000-000000000002";
 const V_OCT20 = "d0000000-0000-4000-8000-000000000005";
+const V_OCT22 = "d0000000-0000-4000-8000-000000000006";
+const V_OCT25 = "d0000000-0000-4000-8000-000000000007";
 /** Synthetic, test-only stand-ins for a future counsel-approved version. */
 const V_APPROVED = "d0000000-0000-4000-8000-000000000003";
 const V_APPROVED_NEXT = "d0000000-0000-4000-8000-000000000004";
@@ -282,6 +291,74 @@ describe("Consent eligibility: esign-disclosure-2026-10-20", () => {
       () => acceptConsent({ admin: db.admin, context: writeContext(SIGNING_A, P1), disclosureVersionId: V_OCT20, env: PROD }),
       (error: unknown) => error instanceof NativeSigningProductionDisclosureError,
     );
+    assert.equal(db.writes.length, 0);
+  });
+});
+
+describe("Consent eligibility: esign-disclosure-2026-10-25", () => {
+  const oct22Superseded = () =>
+    disclosureRow({ id: V_OCT22, versionKey: "esign-disclosure-2026-10-22", bodyText: OCT22_BODY, ready: false, superseded: true });
+  const oct25 = (ready = false) =>
+    disclosureRow({ id: V_OCT25, versionKey: "esign-disclosure-2026-10-25", bodyText: OCT25_BODY, ready });
+
+  it("binds new development consent to 2026-10-25 and leaves a 2026-10-22 acceptance bound to its own version", async () => {
+    const oct22 = oct22Superseded();
+    const db = fakeAdmin({
+      signing_consent_disclosure_versions: [oct22, oct25()],
+      signing_participants: [
+        participantRow({ id: P1, signingId: SIGNING_A, acceptedVersion: oct22 }),
+        participantRow({ id: P2, signingId: SIGNING_A }),
+      ],
+    });
+    const before = { ...db.tables.signing_participants[0] };
+
+    const kept = await checkConsentSatisfied({ admin: db.admin, signingId: SIGNING_A, signingParticipantId: P1, env: DEV });
+    assert.equal(kept.reason, "SATISFIED");
+    assert.equal(kept.currentDisclosure.id, V_OCT25);
+    assert.equal(kept.acceptedDisclosure?.id, V_OCT22);
+    assert.equal(kept.acceptedDisclosure?.contentSha256, "902d216bdececa5f6b7d2e54bc7698bce6dadbeb46619c41ba14efbf9f8a1617");
+    const replay = await acceptConsent({ admin: db.admin, context: writeContext(SIGNING_A, P1), disclosureVersionId: V_OCT25, env: DEV });
+    assert.equal(replay.replayed, true);
+    assert.equal(replay.disclosureVersionId, V_OCT22, "never re-bound to the newer version");
+    assert.deepEqual(db.tables.signing_participants[0], before);
+
+    const accepted = await acceptConsent({ admin: db.admin, context: writeContext(SIGNING_A, P2), disclosureVersionId: V_OCT25, env: DEV });
+    assert.equal(accepted.replayed, false);
+    assert.equal(accepted.contentSha256, "802ad62180563777d229749ec6988036a42ee92824dbf41f07033e43a672da98");
+    const details = db.tables.signing_events?.[0]?.details_json as Row;
+    assert.equal(details.disclosureVersionKey, "esign-disclosure-2026-10-25");
+    assert.equal(details.contentSha256, accepted.contentSha256);
+  });
+
+  it("is refused in production because it is not production-ready, and records nothing", async () => {
+    const db = fakeAdmin({
+      signing_consent_disclosure_versions: [oct22Superseded(), oct25()],
+      signing_participants: [participantRow({ id: P1, signingId: SIGNING_A })],
+    });
+    await assert.rejects(
+      () => loadCurrentConsentDisclosure(db.admin, PROD),
+      (error: unknown) => error instanceof NativeSigningProductionDisclosureError,
+    );
+    await assert.rejects(
+      () => acceptConsent({ admin: db.admin, context: writeContext(SIGNING_A, P1), disclosureVersionId: V_OCT25, env: PROD }),
+      (error: unknown) => error instanceof NativeSigningProductionDisclosureError,
+    );
+    assert.equal(db.writes.length, 0);
+  });
+
+  it("does not let a non-ready 2026-10-25 acceptance authorize production signing beside an approved version", async () => {
+    const accepted = { ...oct25(), superseded_at: "2026-10-25T15:00:00.000Z" };
+    const approved = disclosureRow({ id: V_APPROVED, versionKey: "test-approved", bodyText: `${OCT25_BODY}\n\nTest-only approved copy.`, ready: true });
+    const db = fakeAdmin({
+      signing_consent_disclosure_versions: [accepted, approved],
+      signing_participants: [participantRow({ id: P1, signingId: SIGNING_A, acceptedVersion: accepted })],
+    });
+    const before = { ...db.tables.signing_participants[0] };
+    const state = await checkConsentSatisfied({ admin: db.admin, signingId: SIGNING_A, signingParticipantId: P1, env: PROD });
+    assert.equal(state.satisfied, false);
+    assert.equal(state.reason, "ACCEPTANCE_NOT_ELIGIBLE");
+    assert.equal(state.acceptedDisclosure, null);
+    assert.deepEqual(db.tables.signing_participants[0], before, "evidence is not rewritten");
     assert.equal(db.writes.length, 0);
   });
 });
