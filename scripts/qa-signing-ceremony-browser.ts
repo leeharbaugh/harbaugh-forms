@@ -55,6 +55,7 @@ import {
   CONSENT_ACKNOWLEDGEMENT,
   disclosureDownloadFilename,
   disclosureDownloadText,
+  parseDisclosureBlocks,
 } from "../lib/signing/consent-disclosure-view.ts";
 import { addCopyRecipientWithActor } from "../lib/signing/copy-recipients.ts";
 import { addDraftSigningDocumentWithActor } from "../lib/signing/draft-documents.ts";
@@ -808,9 +809,15 @@ async function main() {
       .single();
     currentDisclosureVersionKey = disclosure!.version_key as string;
     await s1.getByRole("heading", { name: disclosure!.title as string, level: 2 }).waitFor({ timeout: 30000 });
-    const consentText = await s1.locator("body").innerText();
-    if (!consentText.includes((disclosure!.body_text as string).slice(0, 60))) fail("disclosure body not shown");
+    const consentText = await s1.getByTestId("consent-disclosure").innerText();
+    const renderedBody = await s1.getByTestId("disclosure-body").innerText();
+    for (const block of parseDisclosureBlocks(disclosure!.body_text as string)) {
+      for (const line of [block.heading, ...block.paragraphs, ...block.bullets]) {
+        if (line && !renderedBody.includes(line)) fail(`disclosure text not shown: "${line.slice(0, 60)}"`);
+      }
+    }
     if (!disclosure!.is_production_ready && !consentText.includes("Development disclosure copy")) fail("dev disclosure badge missing");
+    if (disclosure!.is_production_ready && consentText.includes("Development disclosure copy")) fail("dev disclosure badge shown on a production-ready version");
     if ((await s1.getByRole("button", { name: /Sign here|Initial here|Start signing|Finish Signing/ }).count()) !== 0) fail("marks or Finish offered before consent");
     {
       const probe = await ceremonyContextFor(c1);
@@ -900,7 +907,7 @@ async function main() {
     if (sha256(Buffer.from(disclosure!.body_text as string, "utf8")) !== disclosure!.content_sha256) fail("disclosure fingerprint mismatch");
     await s1.reload({ waitUntil: "networkidle" });
     if ((await s1.getByTestId("consent-continue").count()) !== 0) fail("consent re-prompted after reload");
-    ok(`consent: "${disclosure!.title}" (version ${disclosure!.version_key}, sha256 ${String(disclosure!.content_sha256).slice(0, 12)}…, dev copy badge) shown; no marks/Finish before acceptance; reload keeps it unaccepted; acceptance records version id + fingerprint; reload does not re-prompt`);
+    ok(`consent: "${disclosure!.title}" (version ${disclosure!.version_key}, sha256 ${String(disclosure!.content_sha256).slice(0, 12)}…, ${disclosure!.is_production_ready ? "production-ready, no dev copy badge" : "dev copy badge"}) shown; no marks/Finish before acceptance; reload keeps it unaccepted; acceptance records version id + fingerprint; reload does not re-prompt`);
 
     // ---------- Signature and Initials from the Signing identity ----------
     await expectMarkPreview(s1, P1, "AJS", "P1");

@@ -204,11 +204,16 @@ async function main() {
       .from("signing_consent_disclosure_versions")
       .select("id, body_text, content_sha256, is_production_ready")
       .eq("is_production_ready", true);
-    if (disclosureError) {
+    const { data: currentDisclosure, error: currentDisclosureError } = await admin
+      .from("signing_consent_disclosure_versions")
+      .select("id, is_production_ready")
+      .is("superseded_at", null)
+      .maybeSingle();
+    if (disclosureError || currentDisclosureError) {
       checks.push({
         id: "disclosure",
         severity: "BLOCKED",
-        message: `Disclosure query failed: ${disclosureError.message}`,
+        message: `Disclosure query failed: ${(disclosureError ?? currentDisclosureError)?.message}`,
       });
     } else {
       const rows = disclosures ?? [];
@@ -227,6 +232,7 @@ async function main() {
           schemaPresent: true,
           productionReadyCount: rows.length,
           fingerprintValid,
+          currentIsProductionReady: currentDisclosure ? currentDisclosure.is_production_ready === true : null,
         }),
       );
     }

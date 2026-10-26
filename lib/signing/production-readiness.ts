@@ -265,6 +265,8 @@ export function evaluateDisclosure(options: {
   productionReadyCount: number | null;
   fingerprintValid: boolean | null;
   schemaPresent: boolean;
+  /** Readiness of the one current (not superseded) version; runtime presents only that one. */
+  currentIsProductionReady?: boolean | null;
 }): ReadinessCheck {
   if (!options.schemaPresent) {
     return {
@@ -294,10 +296,17 @@ export function evaluateDisclosure(options: {
       message: "Production-ready disclosure fingerprint does not match body.",
     };
   }
+  if (options.currentIsProductionReady !== true) {
+    return {
+      id: "disclosure",
+      severity: "BLOCKED",
+      message: "BLOCKED: PRODUCTION_DISCLOSURE_NOT_READY (the current version is not production-ready)",
+    };
+  }
   return {
     id: "disclosure",
     severity: "READY",
-    message: "Production-ready disclosure present with valid fingerprint.",
+    message: "Current disclosure is production-ready with a valid fingerprint.",
   };
 }
 
