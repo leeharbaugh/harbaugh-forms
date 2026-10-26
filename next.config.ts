@@ -17,6 +17,18 @@ const nextConfig: NextConfig = {
     const devEval = process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
     return [
       {
+        // Every response: no MIME sniffing and no framing by any origin. The app
+        // never frames its own pages (PDFs render with pdf.js, not iframes).
+        // Must stay first: a later rule that sets Content-Security-Policy (the
+        // /sign rule) replaces this one, since the last matching rule wins per key.
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+      {
         // Signing entry/package bootstrap pages: path holds nonsecret public ids
         // only. Fragment secrets never appear in request path/query.
         source: "/sign/:path*",
