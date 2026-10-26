@@ -27,6 +27,7 @@ import {
   renameSigningAction,
   unarchiveSigningAction,
 } from "@/lib/signing/actions";
+import { formatTimestamp } from "@/lib/format-timestamp";
 import { SIGNING_TITLE_MAX_LENGTH } from "@/lib/signing/types";
 import type { SigningDashboard } from "@/lib/signing/dashboard";
 import { invitationStatusLabel } from "@/lib/signing/participant-access-status";
@@ -116,7 +117,7 @@ function cancellationEmailLabel(
 }
 
 function formatWhen(value: string | null): string | null {
-  return value ? new Date(value).toLocaleString() : null;
+  return value ? formatTimestamp(value) : null;
 }
 
 type LinkOp = "resend" | "replace" | "revoke";
@@ -599,9 +600,7 @@ export function SigningDashboardPage({
                   ? "Sent for remote signing"
                   : "In-person signing"}
                 {dashboard.signing.activatedAt
-                  ? ` on ${new Date(
-                      dashboard.signing.activatedAt,
-                    ).toLocaleString()}`
+                  ? ` on ${formatTimestamp(dashboard.signing.activatedAt)}`
                   : null}
               </span>
             ) : null}
