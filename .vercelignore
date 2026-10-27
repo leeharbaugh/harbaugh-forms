@@ -1,0 +1,35 @@
+# Never upload local credentials or private operational records to Vercel.
+# Deploy only from a clean, detached checkout of the exact commit; never from a
+# development worktree, and never with a bare `vercel` command.
+# Every pattern here matches only untracked files; Git builds are unaffected.
+
+# Environment and credential files (any directory)
+.env
+.env.*
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.dpapi
+*id_rsa*
+
+# Private security notes and local evidence
+/security.md
+/_audit_tmp/
+/_import_tmp/
+/exports/
+/tmp/
+/_tmp_*
+
+# Local tool state, database dumps, archives and backups
+/supabase/.temp/
+/*.sql
+*.dump
+*.sqlite
+*.7z
+*.zip
+*.bak
+*.backup
+*.jsonl
+*.tsbuildinfo
