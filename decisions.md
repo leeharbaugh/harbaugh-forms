@@ -43,7 +43,7 @@ Each decision should include:
 
 ## One permanent local worktree; temporary worktrees are removed after merge
 
-**Date:** 2026-10-28 (proposed after the read-only workspace audit; Lee approved the same day)
+**Date:** 2026-10-28 (proposed after the read-only workspace audit; Lee approved and the consolidation ran the same day)
 
 **Decision:**
 1. **One primary worktree.** `E:\dev\harbaugh-forms` is the only permanent worktree, kept on `main` and synced with `origin/main`. It also holds the gitignored private operational files (security log, environment files, audit and import evidence, exports). They stay there because private tools read them by fixed path, and `.gitignore` and `.vercelignore` protect them.
@@ -73,6 +73,11 @@ Each decision should include:
 - The original folder moves from a merged feature branch to `main`. Its superseded doc versions are kept on a local archive branch rather than discarded.
 - Five private verifier scripts must be repointed before the candidate worktree is removed.
 - Lee approved the cleanup steps in `project_status.md` "Local workspace audit (2026-10-28)" on 2026-10-28. Any step that meets an unexpected file, conflict or dependency stops and keeps that worktree.
+- **In effect since 2026-10-28.**
+  - `E:\dev\harbaugh-forms` is the permanent primary workspace, on `main`.
+  - Eleven obsolete worktrees and one temporary worktree were removed, and 29 merged local branches were deleted.
+  - `harbaugh-forms-main-docs` is retained only until the Cursor agent session that runs from it ends, because a worktree hosting an active editor or agent session is never removed.
+  - Private verifier scripts now use the primary folder.
 
 **Related:** `project_status.md` "Local workspace audit (2026-10-28)"; decision "The Vercel CLI runs only from a neutral directory against a clean detached checkout" (candidate builds still use a clean detached checkout, removed afterwards).
 
