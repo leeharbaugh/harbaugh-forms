@@ -41,6 +41,43 @@ Each decision should include:
 
 ---
 
+## One permanent local worktree; temporary worktrees are removed after merge
+
+**Date:** 2026-10-28 (proposed after the read-only workspace audit; Lee approved the same day)
+
+**Decision:**
+1. **One primary worktree.** `E:\dev\harbaugh-forms` is the only permanent worktree, kept on `main` and synced with `origin/main`. It also holds the gitignored private operational files (security log, environment files, audit and import evidence, exports). They stay there because private tools read them by fixed path, and `.gitignore` and `.vercelignore` protect them.
+2. **Temporary worktrees.**
+   - Create one only for a specific branch, hotfix, candidate build or parallel task, named after it (`harbaugh-forms-<branch-or-purpose>`).
+   - Remove it with plain `git worktree remove` once its PR merges or its candidate is promoted or abandoned.
+   - Before removal, copy any unique untracked evidence into the primary folder's gitignored `_audit_tmp`.
+   - Never copy environment files into a temporary worktree unless the task needs them, and never copy obsolete or revoked credentials.
+3. **`main` stays in the primary worktree.** Documentation and release work uses a branch in a temporary worktree, not a second checkout of `main`.
+4. **Branches.**
+   - Delete local branches only with `git branch -d`, after confirming that no commits exist only locally.
+   - Remote branches stay on GitHub unless Lee decides otherwise.
+   - Stashes are never dropped without a review and Lee's approval.
+5. **No destructive shortcuts.** No `--force` worktree removal, `git reset --hard`, `git clean` or destructive stash operations. Production backups and historical evidence are never moved or deleted as part of workspace cleanup.
+6. **Private operations tools, security evidence and encrypted backups stay outside tracked Git files.** They are kept in their existing private locations or in the primary folder's gitignored and vercelignored paths.
+7. **Inspect before removing.** Before recommending removal of any worktree, Cursor inspects it for:
+   - unique untracked or ignored files, comparing hashes against the primary folder;
+   - uncommitted changes;
+   - local-only commits;
+   - private files;
+   - running processes or editor sessions that depend on it.
+8. **The project record stays current.** Every future development task reads `project_status.md` and `decisions.md` first and updates them when it finishes.
+
+**Reason:** the audit found 13 worktrees and about 7 GB of mostly duplicated dependencies and build caches. Only about 10 MB of unique local evidence was scattered among them, along with five extra copies of the development environment file. One primary worktree reduces the risk of working on stale branches and of losing unique evidence, and limits how many copies of secrets exist.
+
+**Consequences:**
+- The original folder moves from a merged feature branch to `main`. Its superseded doc versions are kept on a local archive branch rather than discarded.
+- Five private verifier scripts must be repointed before the candidate worktree is removed.
+- Lee approved the cleanup steps in `project_status.md` "Local workspace audit (2026-10-28)" on 2026-10-28. Any step that meets an unexpected file, conflict or dependency stops and keeps that worktree.
+
+**Related:** `project_status.md` "Local workspace audit (2026-10-28)"; decision "The Vercel CLI runs only from a neutral directory against a clean detached checkout" (candidate builds still use a clean detached checkout, removed afterwards).
+
+---
+
 ## Post-launch backlog is tracked in the repository; synthetic test data is hidden, never destroyed
 
 **Date:** 2026-10-28 (post-launch cleanup; Lee's direction)
@@ -61,6 +98,11 @@ Each decision should include:
    - For TEST Contacts #29 and #30, which have no app delete action: an asserted `status = 'DELETED'` update, run only with Lee's explicit approval.
 3. **Never removed or rewritten:** completed Signings, their events, artifacts, Storage objects, credentials history, delivery records, and the source Packet's documents and values.
 4. **Approval first.** The record-level plan in `project_status.md` "Post-launch cleanup (2026-10-28)" needs Lee's separate approval before any production record changes.
+5. **Executed 2026-10-28, 20:22–20:30 UTC (Lee approved).**
+   - Both test Signings were archived with Archive Signing; they stay COMPLETE, and their chains and artifacts verify.
+   - Packet #17 and its form #66 were soft-deleted with Delete; they are restorable.
+   - Contacts #29 and #30 were set to DELETED by a guarded update of exactly two rows.
+   - No other record, Storage object or evidence changed. Restoring any of them uses Unarchive Signing, Restore (Packet), or a reviewed status update back to ACTIVE.
 
 **Reason:** The test Signings are part of the launch evidence; their hash chains and fingerprints were verified and are referenced by the recovery snapshot. Hiding them keeps evidence intact while keeping business lists clean, consistent with the soft-delete decision ("Soft Deletes").
 
