@@ -12,6 +12,649 @@ Each decision should include:
 
 ---
 
+## H-1: every response denies framing and MIME sniffing; script/style CSP deferred for initial use
+
+**Date:** 2026-10-26 (Lee's scope: smallest safe change before activation; deferral approved and PR #61 merged the same day)
+
+**Decision:**
+1. **Headers.** Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`. One site-wide `next.config.ts` `headers()` rule does this, placed first, so the existing `/sign` rule still supplies its full first-party CSP, which also contains `frame-ancestors 'none'`. Same-origin framing is denied too, because the app never frames its own content (PDFs render with pdf.js; downloads use `attachment`). [PR #61](https://github.com/leeharbaugh/harbaugh-forms/pull/61), squash-merged as `42dd7d5` (2026-10-26) after merge-boundary validation. The feature-off candidate `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` carries the headers and is not promoted.
+2. **No enforced script/style CSP for the initial Native Signing rollout (Lee approved, 2026-10-26).** An enforced policy that meaningfully limits scripts needs per-request nonces, which makes every page dynamic. The alternative, `'unsafe-inline'`, adds little. A future policy must allow Supabase (REST, Auth, Storage, Realtime), Mapbox, inline styles, pdf.js workers and blobs, and `data:` images and fonts.
+   - **Deferred follow-up, before broader multi-user adoption:** deploy a report-only CSP with a reporting endpoint, evaluate its compatibility with the pages above, and run focused XSS testing of user-entered fields and rendered content. Then decide on enforcement.
+3. **`Referrer-Policy`** stays at the browser default `strict-origin-when-cross-origin` on workspace pages. `/sign` keeps `no-referrer`.
+
+**Reason:** R45 H-1 found no anti-framing or `nosniff` on workspace and auth responses, in production too. These headers close clickjacking and MIME confusion without touching rendering.
+
+**Consequences:**
+- **Residual risk of deferring script CSP (defense in depth, not a finding).** The missing CSP is not a confirmed exploitable XSS vulnerability: R11 found none and its stored-XSS canary never executed. XSS has not been ruled out, however. If an injection flaw existed or were introduced, workspace pages have no CSP to limit what the injected script could do. The Supabase session cookies are readable by page scripts, because the browser client needs them, so a successful injection could act as the signed-in user.
+- **Current mitigations:**
+  - React output escaping.
+  - No `dangerouslySetInnerHTML`.
+  - The R11 stored-XSS canary never executed.
+  - Participant `/sign` pages already have a strict CSP.
+  - Lee-only initial use.
+- **Revisit:** before broader multi-user use, or with any feature that renders third-party or user-supplied HTML.
+- **Rule order:** moving the site-wide rule after `/sign` would strip the `/sign` CSP. `lib/security-headers.test.ts` guards this.
+- **Production:** live since 2026-10-26 21:05 UTC with the promotion of `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`, verified on both production domains. The `/sign` CSP is unchanged.
+- **H-1 is resolved for initial activation:** headers merged, and enforced script CSP deferral approved, with the follow-up above.
+
+**Related:** `next.config.ts`, `lib/security-headers.test.ts`; local `security.md` R45 (H-1); `project_status.md` "Gate D: H-1 security headers" and "Gate D: feature-off production candidate".
+
+---
+
+## Post-launch backlog is tracked in the repository; synthetic test data is hidden, never destroyed
+
+**Date:** 2026-10-28 (post-launch cleanup; Lee's direction)
+
+**Decision:**
+1. **Canonical backlog.** `Harbaugh_Forms_Post_Launch_Improvements.md` is tracked in the repository. It lists only active work, in Lee's order:
+   1. Remove the "DEV QA Test Signing" default title from Create Signing (highest-priority application fix).
+   2. Save buttons at the top and bottom of edit screens.
+   3. Packet lifecycle statuses.
+   4. View and restore hidden or inactive Packets.
+   5. Zero-mapping Form publishing.
+   6. Scroll to the Edit Form panel.
+
+   Completed work (credential rotation, incident cleanup) is recorded in `project_status.md` and `decisions.md`, not in the backlog.
+2. **Synthetic test data.** It is removed from ordinary workflows only by supported, reversible means:
+   - **Archive Signing** for the two completed test Signings.
+   - **Delete Packet** (soft delete) for TEST Packet #17.
+   - For TEST Contacts #29 and #30, which have no app delete action: an asserted `status = 'DELETED'` update, run only with Lee's explicit approval.
+3. **Never removed or rewritten:** completed Signings, their events, artifacts, Storage objects, credentials history, delivery records, and the source Packet's documents and values.
+4. **Approval first.** The record-level plan in `project_status.md` "Post-launch cleanup (2026-10-28)" needs Lee's separate approval before any production record changes.
+
+**Reason:** The test Signings are part of the launch evidence; their hash chains and fingerprints were verified and are referenced by the recovery snapshot. Hiding them keeps evidence intact while keeping business lists clean, consistent with the soft-delete decision ("Soft Deletes").
+
+**Related:** `project_status.md` "Post-launch cleanup (2026-10-28)"; decisions "Archive Signing is reversible organizational state, and archiving In Progress revokes participant access", "Packets use ACTIVE and DELETED only", "Soft Deletes"; local `security.md` R67.
+
+---
+
+## Native Signing is live in production
+
+**Date:** 2026-10-28, 17:18:38 UTC (Lee's final Gate E launch authorization)
+
+**Decision:**
+1. **Permanent activation.** Native Signing access and work are resumed permanently in production on `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` (`eb40577`), with the global flag on. This is an ongoing activation: no automatic re-suspension, no recurring monitor that could change the controls.
+2. **Suspension is an operator action.** Suspension happens only by deliberate operator action: the emergency-suspension script (work, then access), through the database with current credentials, on evidence of a material security, data-integrity, authorization, email-delivery or application failure. Evidence is always preserved. Rollback never uses a pre-rotation deployment.
+3. **Accounts unchanged.** Permissions and Susan's approved no-notice exception are unchanged.
+4. **Operating conditions.** The launch operating conditions below apply from activation: recipient guidance, monitoring of first transactions, kill switch ready, coverage accepted, accepted legal uncertainties, post-launch work.
+5. **Ongoing backups.** Newly completed Signing documents live in the private `signing-artifacts` bucket. They are captured by periodic encrypted recovery snapshots using the established procedure, refreshed regularly while volume is low and after notable activity.
+
+**Reason:** Every launch blocker is closed: credential rotation, the DKIM fix, two production synthetic Signings, and the verified final backup. Activation needed only the asserted control change, and live validation passed on both domains with no errors and no unintended records.
+
+**Related:** `project_status.md` "Native Signing launch (2026-10-28)"; local `security.md` R66.
+
+---
+
+## Native Signing launch operating conditions (Lee approved)
+
+**Date:** 2026-10-28 (Lee accepted the Gate E GO recommendation with these conditions; permanent activation is separately authorized)
+
+**Decision:**
+1. **Recipient guidance.** Agents tell clients to expect email from `Harbaugh Forms <signing@send.harbaughrealestate.com>`, and to check Spam or Junk if an invitation doesn't appear.
+2. **Monitoring.** During the first real transactions, watch:
+   - invitation acceptance by Resend;
+   - actual arrival (ask the client);
+   - completed-package delivery;
+   - Signing completion;
+   - production runtime errors.
+3. **Kill switch ready.** The production Signing suspension controls (asserted SQL through `prod-psql.ps1`, current credentials) stay ready for immediate use. Suspending work, then access, needs no deployment.
+4. **Accounts unchanged.** Susan's existing permissions and the approved no-notice sender exception stay as they are.
+5. **Test coverage accepted.** In-person signing, decline and cancellation keep their existing development-test coverage; no additional production testing is required before launch.
+6. **Accepted uncertainties.** The deferred E-SIGN legal-review and PDF-access-demonstration questions remain documented as accepted uncertainties, not claims of legal certification.
+7. **Post-launch work, not done now:**
+   - invitation wording that names the agent and brokerage;
+   - DMARC aggregate reporting;
+   - retiring the legacy Supabase JWT keys;
+   - printing the disclosure version on the audit certificate.
+8. **Recovery point.** The final pre-launch encrypted snapshot `harbaugh-forms-prod-snapshot-20261028T165902Z` (local and OneDrive, both verified) is the recovery point before activation. Earlier backups are retained.
+
+**Reason:** Every launch blocker is closed, and the final backup and readiness check passed. These practices manage the remaining known risks (Yahoo spam placement, a small first-use sample) without another development phase.
+
+**Related:** `project_status.md` "Final pre-launch backup and readiness (2026-10-28)"; local `security.md` R64 and R65.
+
+---
+
+## Gate E passed: Native Signing is ready for real customers once Lee authorizes activation
+
+**Date:** 2026-10-28 (Lee approved the controlled test; activation is a separate decision)
+
+**Decision:**
+1. **Evidence.** The final production test used the ordinary workflow: TEST Packet #17, a real TXR-1501 at full size, two remote participants at Lee's own Yahoo and Gmail mailboxes. Lee performed every manager and participant action.
+   - Signing `30211f2b-6fba-4514-88b1-2575b86eb898` completed correctly, with separate consents, field isolation and no premature finalization.
+   - It produced verified artifacts and a verified event chain, and both completed-package and manager downloads worked.
+   - Combined with the 2026-10-27 single-participant test and the development regression coverage, this is the launch evidence.
+2. **Recommendation: GO, with conditions.**
+   - Clients are told to check Spam or Junk for the Signing email (Yahoo filed the invitation as Spam despite full authentication).
+   - The first real Signings are monitored.
+   - The database kill switch stays ready.
+3. **Until Lee authorizes activation,** work and access stay suspended. Activation uses the asserted resume procedure (`controls-resume*.sql` pattern), with no deploy or migration needed.
+4. **Evidence is kept.** Both TEST Signings, the TEST Packet and Contacts, and all artifacts and records are retained, never deleted.
+
+**Reason:** Every launch blocker is closed: credential rotation (R58 to R62), the DKIM defect (R63), and the ordinary-transaction-shape test (R64). Deliverability to Yahoo is a reputation and content matter, handled by recipient guidance rather than a defect fix.
+
+**Consequences:**
+- When activated, Signing becomes available to all eligible accounts under their permissions, including the excepted agent account.
+- Optional improvements stay outside the launch:
+  - name the agent and brokerage in the invitation;
+  - DMARC aggregate reports;
+  - retire the legacy Supabase JWT keys;
+  - print the disclosure version on the audit certificate;
+  - test in-person, decline and cancellation in production when first needed.
+
+**Related:** `project_status.md` "Gate E: final two-participant production Signing (2026-10-28)"; local `security.md` R64.
+
+---
+
+## Signing email DKIM: one key per selector, from the active Resend account
+
+**Date:** 2026-10-28 (launch task; Lee made the DNS change)
+
+**Decision:**
+1. **One key per selector.** `resend._domainkey.send.harbaughrealestate.com` publishes exactly one DKIM key: the one listed by the Resend account that actually sends Signing email. That is the original account, which also holds the Supabase Auth email domain. The stale key from the duplicate account was removed.
+2. **How a DNS record is chosen for removal.** It is identified from the sender's own dashboard and its email log, never guessed. It is matched by value fragments and fingerprint. The owner confirms it before deleting, and only that record changes.
+3. **What stays.** SPF, MX, return-path CNAMEs, DMARC `p=none` and the root-domain Auth selector are unchanged. DMARC is not tightened until aggregate reports show every authorized sender.
+
+**Reason:** Two keys under one selector made receivers return `dkim=perm_fail` (Yahoo, both test emails). DMARC then rested on SPF alone, a likely cause of the spam placement.
+
+**Consequences:**
+- The final production Signing's emails must show `dkim=pass` for `send.harbaughrealestate.com`.
+- The duplicate Resend account can no longer verify the domain; Lee may remove it there.
+- Credential rotation is complete. Retiring the legacy Supabase JWT keys is optional future hardening, not a Native Signing launch blocker.
+
+**Related:** `project_status.md` "Signing email DKIM correction (2026-10-28)"; local `security.md` R63.
+
+---
+
+## Credential rotation runs before launch; rollback never relies on revoked credentials
+
+**Date:** 2026-10-27 (launch-readiness review; supersedes the "rotate after launch" timing in "Credential rotation is deferred until Native Signing is live")
+
+**Decision:**
+1. **Timing.** Lee rotates the exposed credentials after functional readiness is confirmed and before the suspensions are lifted for real customers. The review found no functional blocker.
+2. **Order** (shortest safe sequence, each step separately run and verified):
+   1. Development secret key: new key, then `rotate-intake-v2.ps1 -Credential DevSecret -UpdateVercelPreview`, then Lee deletes the old key.
+   2. Production database password: reset, then `-Credential ProdDbPassword`, then a read-only session check. The database kill switch must work with the new password before anything touches the live deployment.
+   3. Production secret key: Lee creates a new key and **keeps the old one**, then `-Credential ProdSecret -UpdateVercelProduction`, with a metadata-only read-back.
+   4. Fresh detached checkout of `eb40577`, `deploy-candidate-v2.ps1` (dry run, then execute), and the established validation. Stop.
+   5. Promotion only on Lee's separate approval, then post-promotion validation.
+   6. Lee deletes the old production key, followed immediately by a full re-check on both domains.
+3. **Rollback.**
+   - Before step 6, the previous deployment `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY` (old key, still valid) is the rollback target.
+   - After step 6, no deployment built before the rotation is used. Rollback means:
+     - The database suspensions (`controls-restore.sql` through the new password), immediately and with no deployment.
+     - A rebuild of a pinned commit with the guarded tool, which picks up the current key, then a guarded promotion.
+     - If the problem is the new key itself: re-run the intake with the new key, then rebuild and promote. Signing stays suspended throughout.
+4. **No other changes.** Signing secrets, the Resend key, legacy JWT keys, DNS and DMARC are not part of rotation.
+5. **Paused (2026-10-27, 14:10 Chicago, Lee).** Rotation stopped before step 1's key creation: no keys created, none revoked. It resumes at step 1 (development secret key) under this same order; no step is skipped or reordered on resumption.
+   - **Step 1 done (2026-10-28, 10:15 UTC).** The development key was replaced (`rotation_20261027`) in the ops file, six `.env.local` files and Vercel Preview, verified, and the old `default` revoked (refused afterwards). Production is unchanged.
+   - **Step 2 done (2026-10-28, 10:40 UTC).** The production `postgres` password was reset by Lee and installed in the ops file only, after a read-only session check. The preflight found no dependent outside the admin tooling. The database kill switch works with the new password. Production is unchanged.
+   - **Step 3 done to the approval gate (2026-10-28, 11:10 UTC).**
+     - Replacement key `rotation_20261028` installed in the ops file and Vercel Production `SUPABASE_SECRET_KEY`; the old `default` stays active.
+     - Candidate `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` (`eb40577`) built with the guarded procedure and validated: 35/35, 8/8, 82/82, clean logs, no Signing or email activity. Live unchanged.
+   - **Promotion** uses `promote-candidate.ps1`. Its guards require the candidate to be built after the key update; the only exception is an explicit `-AllowOldKeyRollback`, for rolling back to `dpl_8XsS…` while `default` is still active.
+   - **Revocation** waits until the promoted deployment is verified. Right after it, the promoted deployment's server-side checks must pass and the pre-rotation deployment's must fail. That pair is the definitive proof the live site runs the replacement key.
+   - **Step 5 done (2026-10-28, 10:57 UTC).** `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` was promoted with the guarded procedure and validated on both domains (35/35, 8/8, 82/82, clean logs, scheduled Cron `SUSPENDED`, no Signing activity). The old `default` key is still active by design. Until it is revoked, rollback is to `dpl_8XsS…` with `-AllowOldKeyRollback`.
+   - **Step 6 done (2026-10-28, about 11:09 UTC).** Lee deleted the production secret key `default`, confirmed by the dashboard and Supabase's key listing; `rotation_20261028` is the only secret key. The live deployment passes every suite. **Rotation of all exposed credentials is complete.**
+   - **Correction.** The pre-rotation deployments did not fail after revocation: they authenticate with the legacy `service_role` key, never exposed, so Vercel Production never held `default`, contrary to the incident analysis. The two-sided Cron proof therefore could not apply. Revocation rests on Supabase's own key listing.
+6. **Intake safety gate (added 2026-10-27).** No genuine credential goes through `rotate-intake-v2.ps1` unless its isolated safety suite (`rotation-dev-20261027\safety-test\run-safety-tests.ps1`: dummy values, mocked Vercel, Supabase and psql) passes on the exact script version. Any edit to the script requires a rerun. Clipboard history must be off. Supabase checks must use a non-browser user agent, because Supabase refuses secret keys from browser-like agents.
+7. **Rollback policy after rotation (2026-10-28).**
+   - No deployment built before 2026-10-28 10:41:30 UTC is a rollback target, even though such deployments still work through the legacy `service_role` key.
+   - Signing emergencies use the database suspensions.
+   - Application rollbacks use a guarded fresh build of a pinned commit (`deploy-candidate-v2.ps1`), validation, separate approval, then `promote-candidate.ps1` without `-AllowOldKeyRollback`.
+   - Disabling the production legacy JWT API keys is an open optional hardening step for Lee.
+8. **Tooling rule.** Never run the Supabase CLI (or anything else that writes files) from the neutral deploy directory. It must stay empty for the deploy guards.
+
+**Reason:** Vercel bakes env into each build, so revoking the old key disables every earlier deployment. Running the database password first keeps an independent kill switch. Keeping the old key until the new deployment is live and verified leaves a working rollback until then.
+
+**Consequences:**
+- Before real customers: the post-rotation Packet-sourced synthetic Signing, and removal of the duplicate DKIM record.
+- Lifting the suspensions remains a separate approval.
+
+**Related:** `project_status.md` "Gate D: launch-readiness review"; local `security.md` R51, R52 and R56.
+
+---
+
+## Production Signing controls change only through an asserted procedure; suspensions are restored after tests
+
+**Date:** 2026-10-27 (Gate D synthetic Signing; Lee approved)
+
+**Decision:**
+1. **Procedure.** Work and access are resumed or suspended only through reviewed SQL. It checks the exact starting state, changes only the control fields (in the order access then work to resume, work then access to suspend), asserts the result and commits atomically. Each script is dry-run first in a read-only session. The access epoch is not changed by resume or restore. Bumping it is the separate recovery action that invalidates every link.
+2. **Test window.** Resumption for a test lasts only as long as the test. A monitor with an automatic restore deadline guards the window.
+3. **After the synthetic Signing.** Both suspensions were restored. The completed test Signing and all its artifacts, delivery records and events are kept as evidence and never deleted. The feature flag stays on.
+
+**Reason:** The admin page shows the controls but deliberately cannot change them. The asserted procedure makes each change reviewable and reversible.
+
+**Consequences:**
+- The synthetic Signing `01713222-8006-45b7-8786-5df1aeb10a26` proved the production lifecycle: invitation, consent, ceremony, finalization, completed package, email, and the integrity checks. See `project_status.md` "Gate D: synthetic production Signing".
+- Leaving Signing operational for real transactions needs Lee's separate approval. Invitation deliverability (spam placement) should be addressed or communicated first.
+
+**Related:** local `security.md` R55; decision "Credential rotation is deferred until Native Signing is live; deployments use a guarded procedure".
+
+---
+
+## Credential rotation is deferred until Native Signing is live; deployments use a guarded procedure
+
+*Superseded in part 2026-10-28.* Item 1 (rotation deferred) was superseded when Lee moved rotation ahead of launch: decision "Credential rotation runs before launch; rollback never relies on revoked credentials". Rotation of every exposed credential is complete, and it is no longer a post-launch item. Items 2–4 (the upload safeguard, guarded deployments, the readable feature flag) remain in force.
+
+**Date:** 2026-10-27 (Lee's decision)
+
+**Decision:**
+1. **Rotation deferred.** Rotating the exposed Supabase credentials (production secret key, production database password, development secret key) is deferred until Native Signing is live and stable. It is post-launch improvement #1. Lee accepts the interim risk. Reassess immediately on any evidence of active compromise. The Vercel bypass secret is already rotated.
+2. **Upload safeguard in `main`.** `.vercelignore` ([PR #62](https://github.com/leeharbaugh/harbaugh-forms/pull/62), `eb40577`) excludes private local material from every Vercel upload. It matches no tracked file.
+3. **Guarded deployments.** Every production-target CLI build:
+   - runs from an empty neutral directory, against a dedicated clean detached checkout of the exact commit;
+   - goes through a script that verifies commit, checkout, project, domain-assignment setting, live target, flag value and upload set (with Vercel's own selection code) before running a fixed argument list;
+   - avoids bare `vercel`, argument-forwarding helpers and short or ambiguous helper names.
+4. **Feature flag.** `NATIVE_SIGNING_ENABLED=true` stays in Vercel Production as a readable Config value, so its exact value can be verified. It reaches only new builds. Work and access suspension, not the flag, is what keeps participants, workers and email blocked.
+
+**Reason:** Lee prefers to complete the controlled rollout first. The safeguard and guarded procedure address the cause of the 2026-10-26 incident without waiting for rotation.
+
+**Consequences:**
+- The feature-on candidate `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY` was built under these rules and validated.
+- *Promoted 2026-10-27 14:28 UTC with Lee's approval, by the same guarded procedure. Native Signing is on in production with work and access suspended; rollback target is the feature-off `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` (`project_status.md` "Gate D: feature-on promotion").*
+- Later automatic builds of `main` are feature-on but never live without manual promotion (`autoAssignCustomDomains=false`).
+
+**Related:** `project_status.md` "Gate D: feature-on candidate (2026-10-27)"; local `security.md` R51–R53; `Harbaugh_Forms_Post_Launch_Improvements.md` item 1.
+
+---
+
+## Exposed credentials are rotated replacement-first; only values actually exposed are rotated
+
+*Execution deferred 2026-10-27 to post-launch item #1 by Lee; the replacement-first method still applies when it is done.* *Completed 2026-10-28, before launch, with this method: development key, production database password, production secret key; the bypass secret was rotated 2026-10-26. See "Credential rotation runs before launch; rollback never relies on revoked credentials".*
+
+**Date:** 2026-10-26 (Lee approved rotation after incident R51)
+
+**Decision:**
+1. **Scope.** Rotate exactly the credentials whose usable values were exposed: the production Supabase secret API key, the production database password, the development secret API key, and the Vercel deployment-protection bypass secret (found by the file scan). The publishable key is public by design and stays. Signing keys, Cron and worker secrets, Resend and legacy JWT keys were not exposed and stay, as does all historical evidence.
+2. **Replacement first.** Create the new credential, validate it read-only, install it in every consumer, and revoke the old one only after nothing live depends on it. The production secret key is revoked only after a rebuilt deployment carrying the new key is promoted (separate approval) and verified.
+3. **Values never displayed.** New values move from the Supabase dashboard through the clipboard into the intake tool, which validates, writes and clears without printing. Exposed values are recognized by SHA-256 only.
+4. **Prevention.** A `.vercelignore` excludes private files from every Vercel upload. Combined with the neutral-directory deploy rule, a stray CLI call cannot upload them again.
+
+**Reason:** The live deployment uses the exposed production key, so revoking it first would take production down. Rotating unexposed signing keys would disturb Signing evidence for no benefit.
+
+**Consequences:**
+- Production stays available throughout.
+- The old production key remains valid until the approved deployment swap. The window is limited by doing that swap promptly.
+- The bypass secret was rotated immediately because nothing live uses it.
+
+**Related:** local `security.md` R51, R52; `project_status.md` "Credential-exposure remediation (R51/R52)"; decision "The Vercel CLI runs only from a neutral directory against a clean detached checkout".
+
+---
+
+## The Vercel CLI runs only from a neutral directory against a clean detached checkout
+
+**Date:** 2026-10-26 (after an agent-caused accidental Preview upload)
+
+**Decision:**
+1. **Explicit commands only.** Never invoke the Vercel CLI without an explicit subcommand, and never through a generic argument-forwarding helper. A bare `vercel` deploys the current directory.
+2. **Neutral directory.** Run it with a working directory outside every Git worktree. Use `--cwd` only to a clean detached checkout of the exact commit, and only for an intended `vercel deploy --prod --skip-domain`.
+3. **Private files stay off uploads.** A worktree that holds ignored private files (ops env files, `security.md`, `_audit_tmp/`) is never a deploy source. Adding a `.vercelignore` that excludes them is recommended as a separate approved change.
+4. **Variable read-back.** Non-secret flags and settings go in as non-sensitive Config, so their exact value can be verified.
+
+**Reason:** On 2026-10-26 a bare `vercel` from the original worktree created a private, SSO-protected Preview deployment. It uploaded ignored private files, including the production ops credentials file. It was deleted within about 7 minutes, and production was unaffected. Rotation is Lee's decision (local `security.md` R51).
+
+**Consequences:** Credential rotation may follow. The feature-on candidate is rebuilt only under these rules.
+
+**Related:** `project_status.md` "Gate D: feature-on preparation stopped (incident)"; local `security.md` R43, R51.
+
+---
+
+## Initial-rollout sender-policy exception for the remaining agent account
+
+**Date:** 2026-10-26, evening (Lee's explicit approval)
+
+**Decision:**
+1. **Exception.** For the initial Native Signing rollout, the one remaining agent account besides Lee's two is exempt from the pre-activation sender notice and acknowledgment. No email is sent to that person. The account, its permissions, memberships and data are not changed.
+2. **Not an acknowledgment.** No sender-policy acknowledgment from that account is recorded or claimed. The paper-copy, withdrawal and technical-change obligations still apply to every sender as policy. They have simply not been communicated to this account yet.
+3. **Technical access.** When `NATIVE_SIGNING_ENABLED` is on in the live deployment, that account meets every Signing eligibility rule (ACTIVE, onboarding ACTIVE, active brokerage membership). It can create, prepare and manage its own Signings under the existing permissions, and Send once work and access are resumed. This is an accepted initial-rollout decision, not a Lee-only authorization feature; none is built.
+4. **Lee's accounts.** Lee's Global Admin account and his second account need no separate email acknowledgment.
+5. **Revisit** before that account is expected to send Signings, or before any new account is added. The prepared notice (`2026-10-26-v1`) stays available.
+
+**Reason:** Lee is the intended initial sender. Lee chose not to contact the remaining agent at this stage and accepts the technical exposure over building gating.
+
+**Consequences:**
+- The all-sender acknowledgment requirement is satisfied for Lee's accounts and explicitly excepted for the remaining account. It is not "complete" for that account.
+- Before promotion of a feature-on deployment, `project_status.md` must keep recording that this account will gain Signing access.
+
+**Related:** decisions "Unused production accounts are removed with the existing hard-delete workflow; the remaining sender exception stays open", "Every Native Signing sender provides requested paper copies at no charge", "Initial Signing use is Lee only by practice; no new authorization feature".
+
+---
+
+## Unused production accounts are removed with the existing hard-delete workflow; the remaining sender exception stays open
+
+*Item 4 resolved 2026-10-26 evening by "Initial-rollout sender-policy exception for the remaining agent account" (Lee's explicit exception; no acknowledgment claimed).*
+
+**Date:** 2026-10-26 (Lee's decisions before Native Signing activation)
+
+**Decision:**
+1. **Cleanup.** Six unused production accounts were permanently deleted with Lee's authorization: no owned business data, no Signing rows, no storage. The existing Global Admin hard-delete workflow did this. That workflow requires the test-user mark, so each account was marked as a procedural step and deleted in the same run. Three accounts are preserved unchanged: Lee's Global Admin account, Lee's second account and one other agent account.
+2. **Safety rule used.** Before deleting, map every foreign key and user-id column, including tables added after the workflow was built. A target with any owned business row, including soft-deleted rows, Signing row or storage object stops the run. The workflow's own preview is not the only check, because its summary predates the Signing tables.
+3. **No sender notice now.** By Lee's decision, the remaining agent account is not sent the sender notice at this stage.
+4. **Acknowledgment stays open.** Deleting accounts does not satisfy the all-sender acknowledgment. The remaining agent account can create Signings as soon as the global flag is on. Before activation, Lee either obtains its acknowledgment or records an explicit exception. No Lee-only gating is built, and the account is unchanged.
+
+**Reason:** Fewer active accounts mean fewer people who can send Signings under the global flag, without building an authorization feature. Unused invited accounts were a needless sender population.
+
+**Consequences:**
+- The brokerage organization and brokerage-settings records keep the broker's name, license and email as text. They do not depend on any user account, so deleting the named broker's unused account changed neither.
+- The deletion audit events and snapshots are labeled "test user" because the workflow is named that way. They record a procedural mark, not real test accounts.
+- Recovery details (recovery record, UUIDs, evidence) are kept privately outside Git, in a folder restricted to owner, SYSTEM and Administrators.
+- The recurring `CodexSandboxUsers` read grant on the backups parent folder (R49 residual) is still present. *Resolved by decision 2026-10-26 evening: accepted as a local-access arrangement, not a blocker.*
+
+**Related:** `project_status.md` "Gate D: unused production account cleanup"; decisions "Test-user hard deletion (email reuse) with classified dependencies", "Every Native Signing sender provides requested paper copies at no charge", "Initial Signing use is Lee only by practice; no new authorization feature"; `lib/admin/delete-test-user.ts`.
+
+---
+
+## The feature-off build of main 42dd7d5 is promoted separately from enabling Native Signing
+
+**Date:** 2026-10-26
+
+**Decision:** `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`, Vercel's automatic production-target build of `42dd7d5`, is the feature-off deployment candidate. It was validated and left unpromoted. A later `vercel promote` of this deployment is its own approval. That promotion does not set `NATIVE_SIGNING_ENABLED`, unsuspend work or access, or send Signing email.
+
+*Promoted 2026-10-26 21:05 UTC with Lee's explicit approval for this deployment only. Both production domains serve it, and post-promotion validation passed (`project_status.md` "Gate D: feature-off production promotion"). Native Signing remains off; work and access remain suspended. Rollback target: `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`.*
+
+**Reason:** `main` now contains the Signing manager hydration fix and the H-1 headers. Production domains still serve `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` from `23607be`. Those fixes should be able to reach production while Native Signing stays off.
+
+**Consequences:**
+- The candidate is ready for manual promotion. Both production domains stay on `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` until that approval.
+- `autoAssignCustomDomains` stays false. The SSO team alias already follows the automatic build.
+- After promotion, the `*/2` Signing Cron is registered on this build. Authenticated calls return `FEATURE_DISABLED` and process nothing while the flag is unset.
+- Enabling Native Signing remains the later Gate D step and needs its own rebuild.
+
+**Related:** `project_status.md` "Gate D: feature-off production candidate"; decision "H-1: every response denies framing and MIME sniffing; script/style CSP deferred for initial use".
+
+---
+
+## Production recovery snapshots reuse the Gate A procedure, encrypted, with a verified OneDrive copy
+
+**Date:** 2026-10-26 (Lee approved one snapshot; recurring use needs separate approval)
+
+**Decision:**
+1. **Method.**
+   - The Gate A procedure: a read-only `pg_dump -Fc` of the whole database; a roles dump without passwords; every Storage object downloaded and checked against size and ETag; per-table checksums before and after.
+   - An isolated localhost restore checked row for row.
+   - A README with recovery steps, and an SHA-256 manifest.
+2. **Encryption.** 7-Zip AES-256 with encrypted file names, under the existing backup passphrase (DPAPI on the laptop, plus Lee's password manager).
+3. **Off-laptop copy.** Lee's personal OneDrive backup folder, verified by letting OneDrive upload and free the file, then reading it back from the cloud and verifying it in full.
+4. **Plaintext.** Staging goes in an owner-only folder outside the backups folder and every Git worktree, so it is not sandbox-readable and no ACL change is needed. Verification extracts there and is deleted. No plain-SQL rendering is kept. Deleting staged plaintext needs Lee's approval.
+5. **Completeness rule.** A snapshot is complete only if production checksums are identical before the dump and after the Storage copy, and the restore matches.
+
+**Reason:** Production has no managed backups. The Gate A procedure is proven, and the cloud read-back shows the off-laptop copy is recoverable without the laptop's local file.
+
+**Consequences:**
+- First run: 2026-10-26 22:40 UTC (`project_status.md` "Production recovery snapshot (2026-10-26)").
+- The recommended schedule is weekly, before every production change, and a quarterly restore test. It is not scheduled; automation and cleanup need separate approval.
+- Project configuration (Supabase Auth settings, Vercel) is still outside every backup.
+
+**Related:** local `security.md` R41, R42, R50; decision "Codex sandbox read access to the local backups folder is accepted for now".
+
+---
+
+## Codex sandbox read access to the local backups folder is accepted for now
+
+**Date:** 2026-10-26, evening (Lee's decision during the backup and recovery review)
+
+**Decision:** The `CodexSandboxUsers` read grant on the local backups folder came back after R49 removed it. Lee accepts it as a local-access arrangement for now. It is not an unresolved Gate D item or blocker. Windows ACLs, Codex sandbox configuration and backup locations are not changed. This **partly supersedes** the decision below: items 1 and 2 (owner-only access; re-check and restore before backup-sensitive gates) are suspended. Item 3 (no tooling change) still holds.
+
+**Reason:** The grant is restored by Codex's sandbox provisioning. Removing it again would not last without changing that tooling, and Lee chose not to change it now.
+
+**Consequences:**
+- The plaintext Gate A dump and PDFs in that folder are readable by the sandbox group, as are later evidence folders that inherit from it.
+- Folders created with inheritance removed, such as the Gate D sender-notice and user-cleanup folders, stay owner-only.
+- New sensitive exports should either use such a folder or keep plaintext out of the folder altogether by writing encrypted archives directly (see "Backup and recovery review" in `project_status.md`).
+- Lee can revisit this at any time.
+
+**Related:** `project_status.md` "Backup and recovery review (2026-10-26)"; local `security.md` R49.
+
+---
+
+## Local production backups stay restricted to Lee's account, SYSTEM and Administrators
+
+*Partly superseded 2026-10-26 evening by "Codex sandbox read access to the local backups folder is accepted for now" (items 1–2 suspended).*
+
+**Date:** 2026-10-26 (Lee's direction after the Gate D finding)
+
+**Decision:**
+1. **Access.** The private local production-backup folder grants access only to Lee's Windows account, SYSTEM and Administrators. No sandbox, service or shared group gets access, including Codex's sandbox accounts.
+2. **Re-check before backup-sensitive gates.** Before any production gate that relies on or creates a backup, re-check the folder's permissions. Restore the restriction if a grant has reappeared, recording the before state first.
+3. **No tooling change by default.** Codex settings and the sandbox group itself are not changed. If the grant keeps returning, Lee decides between excluding the folder from Codex sandbox access and moving the backups out of the user profile.
+
+**Reason:** The folder holds a plaintext production database dump and transaction PDFs, alongside recovery-key blobs. A read grant for the Codex sandbox group, most likely added by its provisioning, exposed them beyond the documented restriction, and no backup or restore workflow needed it.
+
+**Consequences:** Restored and verified 2026-10-26: backup contents unchanged, restore readability and the recovery-key blobs confirmed, and the encrypted OneDrive copies untouched. Processes running as Lee's account can still read the backups by design. The local plaintext copy remains unencrypted at rest (known Gate A gap). Details: local `security.md` R49.
+
+**Related:** `project_status.md` "Gate D: production-ready disclosure" (backup status); local `security.md` R41, R42, R48, R49.
+
+---
+
+## Material technical changes affecting Native Signing participants follow a manual release procedure
+
+**Date:** 2026-10-25 (Lee adopted a manual procedure; no notification feature)
+
+**Decision:** Every release follows this procedure. It refines rollout policy item 7 ("publish a new version; cancel and re-send"), which alone did not ensure notice. It is a release checklist plus sender actions. The application gains no notification, tracking or blocking feature.
+
+1. **Trigger: classify every release.** A change is *material* if it could prevent a participant from accessing or keeping the electronic records of a Signing they are on. Examples:
+   - Browser, JavaScript, cookie, device or PDF-viewing requirements.
+   - Email dependence or delivery (sending domain, invitation or completed-documents email).
+   - Participant links and credentials: format, lifetime, revocation, the site domain (`NEXT_PUBLIC_SITE_URL`), and the entry or completed-package exchange.
+   - Completed-document formats, availability, retention or download path.
+   - Removing anything the current disclosure promises.
+
+   Every PR that touches participant-facing code (`app/sign/**`, `app/api/sign/**`, `components/sign/**`, Signing delivery, bearer transport, completed packages, artifacts, email, the disclosure, `/sign` response headers, the site domain) states in its description: "Participant technical change: none" or "material: <what changes>", with the reason. Lee confirms the classification before merge. A material change triggers steps 2–7 before production promotion.
+2. **Disclosure.** Publish a new, production-ready disclosure version describing the revised requirements, in the same release or before it. Existing acceptances stay bound to the version accepted.
+3. **Identify affected Signings and participants before release.** With Lee's approval, run a read-only production query listing every `IN_PROGRESS` and `COMPLETE` Signing with each participant. Columns: Signing id, title, `original_sender_display_name`, `lifecycle_state`, `activation_mode`, archived, participant id, name, email, `participant_status`, `consent_disclosure_version_id`, `consent_withdrawn_at`. Email may be blank: an in-person participant can sign without an email address, and only Remote Send requires one. Affected:
+   - Every participant, remote or in person, with or without an email address, on an `IN_PROGRESS` Signing.
+   - On a `COMPLETE` Signing, every participant whose future access to, or ability to keep, the completed documents changes.
+
+   Draft Signings are sent after the release under the new version. Declined and Cancelled Signings produce no further electronic records. Participants who withdrew consent get no electronic notice; their sender contacts them another way if their paper-copy access is affected. Each sender receives the list of their affected Signings. On that list, every participant without an email address is marked for sender-managed contact.
+4. **Notice from the sender before release.** The sender contacts every affected participant; no one is skipped for lacking an email address.
+   - **Email recorded on the Signing:** the sender writes to that address from the sender's own mailbox. If it fails or bounces, the sender falls back to phone or direct contact.
+   - **No email recorded:** the sender contacts the participant directly, by phone or in person, using contact details the sender holds outside the Signing (for example the client's Contact record). A written copy of the notice is handed over or sent by another channel the participant chooses.
+
+   The application stores no phone numbers for Signing participants and sends nothing in this step. The notice states:
+   - What changes and when.
+   - The revised requirements.
+   - That withdrawal of consent is free, and how to request it.
+   - That paper copies are free on request.
+   - The alternatives. In progress: continue electronically under the new requirements after reviewing and consenting again, or arrange another signing method. Complete: download and save the completed documents before the change date, or request paper copies.
+
+   For each affected `IN_PROGRESS` Signing, the sender then uses Cancel Signing with a "Message to participants" summarizing the same points. The application stores that message and records per-participant cancellation email attempts. Those emails reach only invited remote participants with an address. In-person and no-email participants rely on the direct contact above.
+5. **Documentation.** Each release has a private notice log, kept outside Git because it contains participant contact data, for example `_audit_tmp/releases/<date>-<change>/notice-log.csv`. It has one row per affected participant, including every participant without an email address. Each row records:
+   - Signing id, participant id and sender.
+   - Whether an email address is recorded.
+   - Channel (email, phone, in person, in-app cancellation) and date and time.
+   - The notice text or template version.
+   - Result (sent, bounced, reached, no answer, no response).
+   - The participant's choice (continue, paper copy, withdrawal, other method, none).
+
+   For phone or in-person contact, the row also records who made the contact, what was conveyed, and how the written copy was provided. Copies of the sent messages are kept with the log. In-app cancellations also keep the message and delivery attempts in Signing history. `project_status.md` records only counts and the log location.
+6. **Release gate.** Production promotion is manual (`vercel promote`; `autoAssignCustomDomains=false` must stay false, so the automatic build of `main` is never live by itself). Lee promotes a material change only after recording in `project_status.md` that:
+   - The affected list is complete.
+   - Every affected participant, including each one without an email address, has a documented notice attempt.
+   - Every affected `IN_PROGRESS` Signing is cancelled, or its sender documented why it is unaffected.
+   - Completed-Signing participants had the notice period Lee set for the release (suggested 7 days) to save copies.
+   - Paper-copy requests are fulfilled or scheduled, and withdrawals are recorded with "Record consent withdrawal" where the Signing still allows it, otherwise in the log.
+
+   If any item is open, the change is not promoted.
+7. **After release.** Senders re-send cancelled Signings as new Signings. Each participant then sees the new disclosure version before signing and must give fresh affirmative consent with the existing checkbox. That checkbox is the application's current affirmative consent and capability acknowledgment mechanism: the participant states they have read the disclosure, can view it on this device, and can view and keep PDFs by saving or printing them. It is a participant's own statement, not an independent test. It has not been established to satisfy every applicable E-SIGN consumer-access demonstration requirement (15 U.S.C. §7001(c)(1)(C)(ii)). Under the rollout policy, an additional PDF access demonstration and formal legal review remain deferred, so that question stays open. Paper copies stay free on request.
+
+**Reason:** The approved disclosure (`esign-disclosure-2026-10-25`) promises that the sender will inform participants of material changes and their options, that withdrawal is free, and that participants may need to review and consent again. Cancellation emails alone do not carry the requirements unless the sender writes them, never reach in-person-only participants, and cannot reach completed Signings. Direct sender notice plus a logged release gate meets the promise without new software.
+
+**Consequences:**
+- The promise depends on senders acting and on Lee holding the release gate. Receipt cannot be guaranteed, so documented attempts and the notice period are the standard.
+- The identification query needs Lee's per-release approval because it reads production.
+- Senders are told about this duty in the pre-activation sender notice (decision "Every Native Signing sender provides requested paper copies at no charge").
+- With production promotion manual, an unpromoted build of `main` is not a deployment. Turning automatic domain assignment on would remove this gate.
+- *Corrected 2026-10-25 before the PR #59 merge (Lee's review).* Steps 3–6 first assumed every participant has an email address. Since migration `20260921200000` an in-person participant may have none, so the procedure now uses email when recorded, otherwise sender-managed phone or direct contact, and keeps those participants in the list, the log and the gate. Step 7 first called the checkbox "the access demonstration". It now describes it as the application's affirmative consent and capability acknowledgment, with the E-SIGN access-demonstration question left open and deferred. No data model, notification feature, checkbox or ceremony change.
+
+**Related:** decisions "Native Signing production rollout policy (Lee-only, legal review deferred)" item 7, "Cancel Signing records a private reason and emails invited participants asynchronously (refinement)", "Disclosure esign-disclosure-2026-10-25: withdrawal fee and technical-change notice, not production-ready"; `lib/signing/cancellation-notices.ts`; `project_status.md` "Gate D: production-ready disclosure (pending Lee's approval)".
+
+---
+
+## A production-ready disclosure is published as a new row that republishes reviewed text
+
+**Date:** 2026-10-25 (design for Gate D disclosure publication)
+
+**Decision:**
+1. **Method.** Migration `20261025130000_native_signing_esign_disclosure_2026_10_25_production_ready.sql` (PR #59) inserts `esign-disclosure-2026-10-25-production-ready` with `is_production_ready = true`. Its body is byte-identical to the reviewed `esign-disclosure-2026-10-25` (same SHA-256 `802ad621…da98`). The migration is data-only and forward-only.
+   - It aborts unless the stored text hashes to the pinned fingerprint.
+   - It aborts unless the reviewed version is current with the same text and fingerprint.
+   - It does nothing if its key exists.
+   - It supersedes only the current row.
+   - It finishes by asserting exactly one current version, that it is production-ready, and that every fingerprint verifies.
+2. **Same records everywhere.** The migration has no environment branch. Development, a restored copy and production all record the reviewed non-ready row, then the production-ready row. Production simply applies both in one push while Signing is off and suspended.
+3. **Development may hold a production-ready version.** The development ceremony validator no longer requires a non-ready development disclosure. That check was a test precondition, not a control. Development runtime accepts any verified version regardless. The validator now checks one of two things against real rows. For a non-ready current version: production refuses to load it, check consent or record consent. For a ready current version: production loads it, a real non-ready version is refused as current, and a non-ready acceptance is `ACCEPTANCE_NOT_ELIGIBLE`.
+4. **Readiness check tightened.** `evaluateDisclosure` reports READY only when the current version itself is production-ready with a valid fingerprint. Previously any production-ready row counted, even if a non-ready version were current. Runtime enforcement (`assertProductionDisclosureReady`, `isDisclosureEligibleForRuntime`) is unchanged.
+5. **Identical text does not transfer readiness.** An acceptance of the non-ready `esign-disclosure-2026-10-25`, even with the same bytes, stays `ACCEPTANCE_NOT_ELIGIBLE` in production. The participant must accept the production-ready version afresh. That appends a new event; the old one is untouched.
+6. **Future versions.** Once a production-ready version is live, every disclosure migration merged to `main` reaches production, so it must itself be Lee-approved and production-ready. Otherwise production would fail closed when it is applied. Draft wording is reviewed in the PR. A reviewed non-ready row followed by its production-ready republication may ship together, as here, only while Signing is off or with that brief fail-closed window accepted.
+
+**Reason:** Editing the applied non-ready migration, or flipping readiness on an existing row, would rewrite history or make earlier acceptances eligible (R40). A per-environment readiness table would be a schema change and environment-dependent records. A second immutable row is the smallest method that fits the existing schema and runtime.
+
+**Consequences:**
+- Development's current disclosure is now `esign-disclosure-2026-10-25-production-ready` (applied 2026-10-26 UTC). `main`'s unmodified ceremony validator fails against development until PR #59 merges, because it still requires a non-ready development disclosure.
+- Applying the two migrations to production is the publication act. It needs Lee's separate approval, a read-only preflight and post-checks (readiness `READY`, earlier rows and consent tables unchanged).
+- *Merged 2026-10-26 as `6f0c041` (PR #59, squash tree identical to the validated `85fa553`).*
+- *Published in production 2026-10-26 15:14 UTC with Lee's approval. Exactly these two migrations were applied. Production's current disclosure is `esign-disclosure-2026-10-25-production-ready` (ready, `802ad621…da98`); earlier rows changed only in the outgoing `superseded_at`, and consent and business data are unchanged. No fresh full backup was taken: business data had not materially changed since the verified Gate A backup, and the written table was exported first (`project_status.md` "Production publication"; `security.md` R48).*
+
+**Related:** `supabase/migrations/20261025120000_native_signing_esign_disclosure_2026_10_25.sql`, `supabase/migrations/20261025130000_native_signing_esign_disclosure_2026_10_25_production_ready.sql`, `lib/signing/production-readiness.ts`, `scripts/validate-native-signing-ceremony-dev.ts`, `scripts/validate-native-signing-production-readiness.ts`, `lib/signing/consent-disclosure-copy.test.ts`, `lib/signing/consent-eligibility.test.ts`; decision "Consent evidence is immutable; production eligibility is decided separately".
+
+---
+
+## Every Native Signing sender provides requested paper copies at no charge
+
+**Date:** 2026-10-25 (Lee's durable policy)
+
+**Decision:**
+1. **Policy.** Every sender who uses Native Signing must provide paper copies a participant requests, without charging the participant. This is Harbaugh Forms policy for all organizations and users, not only Lee.
+2. **No new feature.** No Lee-only authorization system and no fee-management feature are built. The application never charges participants.
+3. **Wording.** The disclosure keeps "The sender handles paper-copy requests directly and does not charge for paper copies." This policy is what makes that sentence accurate for every sender.
+4. **Supersedes** the Lee-only scope in "Disclosure esign-disclosure-2026-10-22" item 3 ("accurate only while Lee is the only sender; publish a new version before any other sender uses Native Signing") and in the rollout policy's item 3.
+
+**Reason:** The disclosure makes a no-charge commitment on the sender's behalf. With `NATIVE_SIGNING_ENABLED` global, any active account can send once it is on, so the commitment must bind every sender.
+
+**Consequences:**
+- **Operating support verified 2026-10-25.**
+  - No Signing workflow, email or UI charges or mentions a fee.
+  - Once Complete, the completed documents and audit certificate stay viewable and downloadable through the existing completed-artifact authority: primary agent, co-agent, active TC, originating-brokerage ORG_ADMIN and historical associations. This holds after archive and after a participant's consent withdrawal, so the sender, or a colleague with that authority, can print them.
+- **Gap, not a contradiction:** the application never tells senders about the obligation. Before any sender other than Lee uses Native Signing, they must be informed of it through an operating step, for example onboarding instructions. No application behavior was changed.
+- **Recipients refined (2026-10-26).** "Authorized sender" follows the code, not account count alone. An authorized sender is any profile with Signing account access (status `ACTIVE`, onboarding `ACTIVE` or `INVITED`, no forced password change) and an active membership in an active brokerage. Invited accounts that have never signed in are included, because they can send as soon as they accept. Global Admin status alone grants nothing. Disabled and deleted accounts are excluded; test-flagged accounts are noted separately. In production today the rule matches every active account except Lee: 8 accounts, 7 people plus Lee's second account. *Update 2026-10-26: six unused accounts deleted. The notice was not sent; the one remaining agent account's acknowledgment is open (decision "Unused production accounts are removed with the existing hard-delete workflow; the remaining sender exception stays open").* The notice text is version `2026-10-26-v1` (`project_status.md` "Gate D: sender notice"). It adds only "not yet available" and the reply wording to the approved points.
+- **Communication (added 2026-10-25).** Before `NATIVE_SIGNING_ENABLED` is turned on, Lee emails the prepared sender notice from his own mailbox to every authorized sender. The flag is global, so that is every active account except Lee. The notice covers free paper copies, recording withdrawal, and cooperating with technical-change notices; the text is in `project_status.md` "Gate D: production-ready disclosure". Each sender replies to confirm. Lee keeps the replies privately, outside Git, and records counts and the date in `project_status.md`. A sender who has not confirmed is asked not to send Signings. This is not a technical restriction; no onboarding or notification feature is built.
+- **Scope:** the disclosure promises paper copies of completed documents only. Declined and Cancelled Signings have no completed artifacts.
+
+**Related:** `project_status.md` "Gate D: production-ready disclosure (pending Lee's approval)"; `lib/signing/artifacts.ts` / `canReadCompletedSigningArtifacts`; decision "Managers view and download the immutable completed artifacts, server-mediated and only once Complete".
+
+---
+
+## Disclosure esign-disclosure-2026-10-25: withdrawal fee and technical-change notice, not production-ready
+
+**Date:** 2026-10-25 (Lee-approved refinements; not counsel-approved)
+
+**Decision:**
+1. **Version.** `esign-disclosure-2026-10-25` ("Electronic records and signatures") is prepared by data-only, forward-only migration `20261025120000_native_signing_esign_disclosure_2026_10_25.sql` in [PR #59](https://github.com/leeharbaugh/harbaugh-forms/pull/59). It supersedes `esign-disclosure-2026-10-22` and is inserted with `is_production_ready = false`. Fingerprint `802ad62180563777d229749ec6988036a42ee92824dbf41f07033e43a672da98` (UTF-8, LF, no trailing newline); the migration aborts if the stored text hashes differently. Applied to development only (2026-10-26 UTC).
+2. **Wording.** Exactly two lines are added to the 2026-10-22 body. "Withdrawing your consent" ends with "There is no fee for requesting or withdrawing your consent to electronic records for this Signing." "What you need" ends with "If the technical requirements materially change in a way that could prevent you from accessing or keeping your electronic records, the sender will inform you of the new requirements and your options. You may withdraw your consent without a fee. You may need to review updated requirements and give consent again before continuing electronically." Paper copies, every other line and the consent checkbox are unchanged.
+3. **Immutability.** Earlier versions keep their text, fingerprint, readiness and key. Only the outgoing row's `superseded_at` is set. Consent rows and `CONSENT_ACCEPTED` events are untouched (verified row by row in development).
+4. **Not production-ready, and publication is blocked.**
+   - (a) Lee's explicit approval of the exact text.
+   - (b) A notice procedure that actually reaches affected participants. Rollout policy item 7 (cancel and re-send) does not ensure it: the cancellation email carries the new requirements only if the sender writes them in the optional message; in-person-only participants are not emailed; completed Signings cannot be cancelled, and the completed-package email has no message. Item 7 also does not cover completed Signings.
+   - (c) An approved design for marking a version production-ready. The development ceremony validator requires the development disclosure to stay non-ready, so the earlier plan to insert with `is_production_ready = true` needs revisiting. Readiness is never flipped on an existing row.
+
+**Reason:** Lee approved stating that withdrawal is free and how material technical changes are handled. A new version keeps every earlier acceptance reproducible.
+
+**Consequences:** Production still fails closed with no production-ready version. No notification subsystem is built; Lee must approve a procedure (or a product change) for blocker (b). Re-consent remains "the sender sends a new Signing".
+
+**Update 2026-10-25, later:** Lee approved the wording, closing (a). (b) is resolved by the decision "Material technical changes affecting Native Signing participants follow a manual release procedure". (c) is resolved by "A production-ready disclosure is published as a new row that republishes reviewed text". This version stays non-ready and is superseded in every environment by `esign-disclosure-2026-10-25-production-ready`. *Merged 2026-10-26 as `6f0c041` (PR #59). Applied to production 2026-10-26 15:14 UTC, superseded there by the production-ready version in the same push.*
+
+**Related:** `supabase/migrations/20261025120000_native_signing_esign_disclosure_2026_10_25.sql`, `lib/signing/consent-disclosure-copy.test.ts`, `lib/signing/consent-eligibility.test.ts`, `scripts/qa-signing-ceremony-browser.ts`; decision "Native Signing production rollout policy (Lee-only, legal review deferred)" item 7; `project_status.md` "Gate D: production-ready disclosure (pending Lee's approval)".
+
+---
+
+## Gate D proceeds to the disclosure review; Signing manager hydration #418 is a separate UI item
+
+*Update 2026-10-26: #418 root cause confirmed and fixed in [PR #60](https://github.com/leeharbaugh/harbaugh-forms/pull/60), merged as `b0f8fbd` (not yet deployed). See "SSR-visible UI renders deterministic text on server and first client render".*
+
+**Date:** 2026-10-25, evening Chicago (Lee's direction after R11 PASS)
+
+**Decision:**
+1. **Next Gate D step.** With R11 closed as PASS on `23607bed0866356f59b5e7f3817158d0aab7fb69` (`security.md` R47), Gate D proceeds to Lee's review of the existing disclosure `esign-disclosure-2026-10-22` (SHA-256 `902d216bdececa5f6b7d2e54bc7698bce6dadbeb46619c41ba14efbf9f8a1617`, `is_production_ready = false`). This step is read-only.
+2. **Publication needs explicit approval.** A production-ready disclosure is published only after Lee explicitly approves its exact text, and only as a new version row inserted by a forward-only migration with `is_production_ready = true`. Existing rows are never rewritten or flipped to ready (decision "Consent evidence is immutable; production eligibility is decided separately").
+3. **Hydration #418.** React hydration error `#418` on the Signing manager page, seen in the R11 runtime browser runs, is tracked as a focused UI investigation to resolve or explicitly accept before live use. It is not a security finding and does not trigger another broad security assessment.
+
+**Reason:** R11 no longer blocks Gate D. The disclosure is the remaining content approval before activation. The hydration error makes the browser QA noise gates fail, and it should be understood before real use, but the R11 runtime checks showed no security effect.
+
+**Consequences:** No text change, new version, publication, deployment, configuration change, enablement, unsuspension or email has happened. Native Signing stays off, with work and access suspended. The H-1 header decision and the later Gate D approvals (feature on while suspended, synthetic Lee-owned Signing) are unchanged.
+
+**Related:** `project_status.md` "Gate D: production-ready disclosure (pending Lee's approval)" and "Gate D: Signing manager hydration #418 (open)"; decision "Disclosure esign-disclosure-2026-10-22: withdrawal and paper-copy policy, not production-ready"; local `security.md` R47.
+
+---
+
+## R11 authenticated runtime follow-up closes the evidence gaps
+
+**Date:** 2026-10-25 Chicago / 2026-10-26 UTC
+
+**Decision:** R11 security assessment is PASS for the exact production source revision `23607bed0866356f59b5e7f3817158d0aab7fb69`. The prior independent INCOMPLETE classification is superseded for the authenticated runtime gaps. No Native Signing activation or production action is authorized by this decision.
+
+**Reason:** Focused development-only runtime tests with synthetic users and documents showed no foreign packet or PDF read/write, no cross-user or cross-organization Signing artifact access, no cross-Signing participant document access, and correct rejection of invalid, expired-session, replaced and revoked access. Completed/archived artifacts and consent-withdrawal behavior matched the approved access policy. The earlier packet-editor failure was a broad text-marker harness error. The browser QA scripts' final noise gates still reported React hydration error `#418` after the authorization assertions; record that separately as a UI follow-up.
+
+**Consequences:** R11 no longer blocks the later, separately approved Gate D steps. Keep the production feature disabled and Signing work/access suspended pending the production-ready disclosure and remaining Gate D decisions. Preserve the existing header-hardening recommendation; no code fix, migration or deployment follows from this assessment.
+
+**Related:** Private `security.md` R47; `_audit_tmp/r11-2026-10-25/runtime-coverage/` in the assessment checkout; earlier R11 decision below.
+
+---
+
+## Historical: independent R11 evidence review recorded INCOMPLETE (superseded by the runtime follow-up above)
+
+**Date:** 2026-10-25 (recorded in the original worktree; consolidated here 2026-10-28)
+
+**Decision:** The independent review of the original R11 scan record classified R11 as **INCOMPLETE**. Native Signing stayed disabled and suspended in production. The ZAP plans completing, and zero High/Critical scanner alerts, were not by themselves approval to activate.
+
+**Reason:**
+- The six development plans completed and emitted reports, but the retained manual matrix included failed checks without a saved corrected rerun.
+- The Global Admin active scan reached its time limit.
+- Live participant sessions, manager access to a real Signing, and completed artifacts were outside the scan.
+
+**Consequences:** Before activation, a bounded authenticated rerun had to demonstrate the disputed cross-user checks and the live Signing access boundaries. That was done by the focused runtime follow-up (decision above; `security.md` R47), which recorded R11 as PASS. The baseline security-header gap was handled separately as H-1 (PR #61). This entry is historical only.
+
+**Related:** Private `security.md` R46; `_audit_tmp/r11-2026-10-25/`.
+
+---
+
+## R11 authenticated DAST: accepted; header hardening recommended
+
+**Date:** 2026-10-26 (Gate D, R11 only)
+
+**Decision:**
+1. **R11 acceptance.** R11's pre-activation criterion (no unreviewed High/Critical alert) is met. The 2026-10-25 development scan of `main` `23607be` found 0 High / 0 Critical and no confirmed vulnerability.
+2. **Original ZAP method.** Development only, against a production-mode build. Disposable role accounts with real login sessions. GET-only crawling. A reviewed active policy limited to anonymous, ordinary and Global Admin. POST seeds limited to endpoints that cannot change state without valid credentials. That scan had no live Signing fixture. The later focused R11 runtime follow-up above used synthetic Signings with scoped cleanup and verified zero recent fixture rows. Server Actions were covered by the validators.
+3. **H-1, response-header hardening (Medium; not a vulnerability).** A focused follow-up adds `frame-ancestors 'none'` / `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy` and a report-only baseline CSP for workspace and auth routes. The existing `/sign` CSP is kept. Lee decides whether it lands before activation.
+4. **Accepted residuals unchanged:** `/sign` CSP `'unsafe-inline'`, OTP `token_hash` in the confirm link, and the non-HttpOnly `hf_device_handoff_active` flag.
+
+**Reason:** R11 was the documented pre-activation security gate. The scan confirmed the authorization boundaries and found only hardening gaps.
+
+**Consequences:** R11 is closed for the initial activation. Rerun it before broader multi-user rollout, or after changes to authentication, response headers or Signing routes. Gate D still needs a Lee-approved production-ready disclosure before the feature is turned on.
+
+**Related:** local `security.md` R45 and the regression matrix row R11; `project_status.md` "Gate D: R11 authenticated security assessment"; `next.config.ts`; `lib/supabase/proxy.ts`.
+
+---
+
+## Initial Signing use is Lee only by practice; no new authorization feature
+
+**Date:** 2026-10-25 (Lee's clarification at the Gate C promotion)
+
+**Decision:**
+1. **No new authorization feature.** Native Signing's initial production use proceeds with Lee as the only intended active Signing user, without a Lee-only authorization feature. `NATIVE_SIGNING_ENABLED` stays a global flag, and the existing Signing authorization controls are preserved unchanged.
+2. **This supersedes** the earlier Gate A item "Lee must decide how to restrict Signing before Gate D".
+3. **Pre-activation tasks.** R11 (authenticated development security scan) and Lee's approval and publication of a production-ready disclosure version remain required before Signing is enabled in Gate D.
+
+**Reason:** Lee accepted proceeding without expanding scope.
+
+**Consequences:**
+- Production has other active accounts (Gate A: 9 active profiles in one brokerage). When the flag is turned on, they also see Signings, governed by the existing manager authority checks.
+- The 2026-10-22 rollout policy's Lee-only scope is therefore a practice, not an enforced control. The disclosure's no-charge statement remains accurate only while Lee is the only sender.
+
+**Related:** decisions "Native Signing production rollout policy (Lee-only, legal review deferred)" and "Native Signing production configuration: key custody, email account, and pre-activation security scan"; `project_status.md` "Gate A: production verification and backup" and "Gate C: production configuration".
+
+---
+
 ## Internal Signing worker routes bypass workspace login; Signing emails carry a configurable Reply-To
 
 **Date:** 2026-10-25 (Gate C fixes; Lee approved)
@@ -27,9 +670,35 @@ Each decision should include:
 
 **Reason:** The Gate C candidate showed Vercel Cron could never reach the worker through the login redirect. Signing email comes from a sending-only domain with no mailbox, so replies were lost.
 
-**Consequences:** After merge, Gate C sets `SIGNING_EMAIL_REPLY_TO` in Vercel Production and re-verifies the Cron route with the real secret on a rebuilt candidate. Supabase Auth SMTP and non-Signing email are unaffected.
+**Consequences:** Merged as `23607be` (PR #58). Gate C next sets `SIGNING_EMAIL_REPLY_TO` in Vercel Production and re-verifies the Cron route with the real secret on a rebuilt candidate. Supabase Auth SMTP and non-Signing email are unaffected.
 
 **Related:** `lib/signing/internal-worker-routes.ts`, `lib/supabase/proxy.ts`, `app/api/internal/cron/signing-worker/route.ts`, `app/api/internal/signing-worker/route.ts`, `lib/signing/email-reply-to.ts`, `lib/signing/delivery.ts`, `lib/signing/production-readiness.ts`, and their tests.
+
+---
+
+## Native Signing production configuration: key custody, email account, and pre-activation security scan
+
+**Date:** 2026-10-25 (Gate C; Lee's decisions)
+
+**Decision:**
+1. **Key custody.**
+   - Production Signing keys and secrets are generated fresh for production and never reuse development values. They live in Vercel Production only, as Sensitive variables (key ids as readable Config).
+   - Because Sensitive variables cannot be read back, a recovery copy is kept as an encrypted bundle under the production backup passphrase, which Lee holds in his password manager, both locally and in Lee's OneDrive next to the production backup.
+   - Losing the event-chain key would make Signing evidence unverifiable, so key rotation must keep the old key as a previous key and update the bundle.
+2. **One Resend account.**
+   - Native Signing email consolidates into the original Resend account, which already provides Supabase Auth SMTP for user invitations and authentication emails. Lee moved the verified `send.harbaughrealestate.com` domain there (done 2026-10-25, Verified) and creates a separate sending-only key for Signing. The duplicate account will be retired.
+   - Supabase SMTP settings and their existing credentials are not changed or revoked as part of the Signing rollout. The newer Resend account is not used.
+3. **Sender.** `SIGNING_EMAIL_FROM` is `Harbaugh Forms <signing@send.harbaughrealestate.com>`.
+4. **R11 timing.** The authenticated development security scan (R11) must be completed, or explicitly deferred by Lee, before Native Signing is enabled in production (Gate D). It does not block configuration or the feature-off deployment.
+
+**Reason:** Lee wants a single email provider account, and the rollout must not disturb working user invitations. Keys need a recovery path that does not depend on Vercel alone. The R11 scan concerns live Signing behavior, not configuration.
+
+**Consequences:**
+- `RESEND_API_KEY` is the original account's sending-only Signing key (installed 2026-10-25; Sensitive, Production only). The non-secret `SIGNING_EMAIL_FROM` and `SIGNING_EMAIL_REPLY_TO` are stored as readable Config, so their exact values can be verified. Actual delivery is first proven by Gate D's synthetic Signing.
+- `send.harbaughrealestate.com` has no human mailbox: its MX is the email provider's bounce endpoint. Lee chose a Reply-To (`SIGNING_EMAIL_REPLY_TO=lee@harbaughbrothers.com`), added by PR #58; see the decision "Internal Signing worker routes bypass workspace login; Signing emails carry a configurable Reply-To".
+- Gate D still needs R11 and a Lee-approved production-ready disclosure. No Lee-only authorization feature is built (see "Initial Signing use is Lee only by practice; no new authorization feature"). The internal worker routes' exemption from the login proxy (Gate C finding) is fixed by PR #58, merged as `23607be`.
+
+**Related:** `project_status.md` "Gate C: production configuration"; decision "Native Signing production rollout policy (Lee-only, legal review deferred)"; `lib/signing/delivery.ts`; `lib/supabase/proxy.ts`; local `security.md` R43.
 
 ---
 
@@ -40,7 +709,7 @@ Each decision should include:
 **Decision:**
 1. **Version.** `esign-disclosure-2026-10-22` ("Electronic records and signatures") is published to development by data-only, forward-only migration `20261022130000_native_signing_esign_disclosure_2026_10_22.sql`, supersedes `esign-disclosure-2026-10-20`, and is current with `is_production_ready = false`. Fingerprint `902d216bdececa5f6b7d2e54bc7698bce6dadbeb46619c41ba14efbf9f8a1617` (UTF-8, LF, no trailing newline); the migration aborts if the stored text hashes differently. Earlier versions, acceptances and events are unchanged (only the previous current row's `superseded_at` is set).
 2. **Wording.** Relative to `esign-disclosure-2026-10-20`: a new "Withdrawing your consent" section, with the exact paragraph Lee approved (participants request withdrawal from the sender; once it is recorded there is no electronic signing and no further invitations, cancellation notices or completed-document emails; recorded actions stay; an existing completed-documents link keeps working; re-consent needs a new Signing). The post-Finish "contact the sender" paragraph is removed. Paper copies now says the completed-documents email is not sent after withdrawal, and that "The sender handles paper-copy requests directly and does not charge for paper copies." The consent checkbox is unchanged, and no PDF access test is added. The wording matches the implemented withdrawal behavior.
-3. **Paper-copy policy.** For Lee's initial use, the sending agent handles paper-copy requests manually and does not charge. The statement is accurate only while Lee is the only sender; publish a new version before any other sender uses Native Signing.
+3. **Paper-copy policy.** For Lee's initial use, the sending agent handles paper-copy requests manually and does not charge. The statement is accurate only while Lee is the only sender; publish a new version before any other sender uses Native Signing. *Superseded 2026-10-25 by "Every Native Signing sender provides requested paper copies at no charge": the no-charge rule now binds every sender.*
 4. **Still deferred.** Human legal review of the disclosure and workflow, and any PDF-access demonstration beyond the checkbox. Nothing here records E-SIGN or UETA compliance.
 
 **Related:** `supabase/migrations/20261022130000_native_signing_esign_disclosure_2026_10_22.sql`, `lib/signing/consent-disclosure-copy.test.ts`, `scripts/qa-signing-ceremony-browser.ts`, `_audit_tmp/esign-disclosure-2026-10-22-draft-for-review.md` (local).
@@ -82,11 +751,11 @@ Each decision should include:
 **Decision:**
 1. **Environment.** Native Signing rolls out in the existing production environment (`eetonalyyyssvkyfdoxh`, current Vercel project) for Lee's own real transactions. No staging or pilot infrastructure is created. The Gate A–E sequence still applies, with a stop and Lee's explicit approval at each gate.
 2. **Legal review deferred, not completed.** Human legal review of the disclosure and consent workflow is deferred. Nothing here records E-SIGN or UETA compliance; the open issues listed under the 2026-10-20 disclosure decision remain open. A disclosure version becomes `is_production_ready = true` only by publishing a new row after Lee approves its final text. That marks Lee's product approval for this rollout, not legal approval.
-3. **Paper copies.** The sending agent handles paper-copy requests manually, outside the application. Lee approved no charge for his initial use, and `esign-disclosure-2026-10-22` states it.
+3. **Paper copies.** The sending agent handles paper-copy requests manually, outside the application. Lee approved no charge for his initial use, and `esign-disclosure-2026-10-22` states it. *Extended 2026-10-25 to every sender (decision "Every Native Signing sender provides requested paper copies at no charge").*
 4. **PDF access.** The existing consent checkbox stays. No PDF challenge or access test is added.
 5. **Consent withdrawal.** The participant asks the sender, and an authorized manager records it ("Record consent withdrawal"; see the 2026-10-22 withdrawal decision). There is no participant-facing control. After withdrawal, nothing that relies on that consent proceeds for that participant: no further ceremony actions and no further electronic invitations, completed-copy emails or notices. Historical signing evidence, events and completed artifacts are never changed. The successor disclosure describes this.
 6. **Re-consent.** When fresh consent is needed (after withdrawal or a material change), the sender creates a new Signing. No re-consent flag is built.
-7. **Technical-access changes.** A release that materially changes what participants need (browser, PDF, email or retention requirements) must, before deploy: publish a new disclosure version describing the change; leave existing acceptances bound to the version accepted; and have the sender cancel and re-send any in-progress Signing whose accepted disclosure would become inaccurate. This is a documented release check, not an automated system.
+7. **Technical-access changes.** A release that materially changes what participants need (browser, PDF, email or retention requirements) must, before deploy: publish a new disclosure version describing the change; leave existing acceptances bound to the version accepted; and have the sender cancel and re-send any in-progress Signing whose accepted disclosure would become inaccurate. This is a documented release check, not an automated system. *Assessed 2026-10-25: insufficient for `esign-disclosure-2026-10-25`'s promise that the sender will inform participants. It needs an approved notice procedure; see that decision. Refined 2026-10-25 by "Material technical changes affecting Native Signing participants follow a manual release procedure".*
 
 **Reason:** Lee chose the smallest safe path to real use for his own transactions. Production keeps failing closed until a Lee-approved, production-ready version is published.
 
@@ -1048,6 +1717,7 @@ Production admin pages raised React #418 because the Vercel server formats in UT
 * Admin timestamps display in Central time with a `CST`/`CDT` label regardless of the viewer's browser zone.
 * Packet Created/Updated timestamps (Packets list, Packet detail, Contact detail associated packets) follow the same rule: `formatDateTime()` in `lib/types/packet.ts` delegates to `formatTimestamp()`, so date and time both come from the same instant in `America/Chicago` with a `CDT`/`CST` label. Never pair a UTC calendar date with a local time, and do not use the viewer's zone (2026-10-02, Lee; PR #52; live in production via hotfix `3e5eaa3`).
 * `lib/format-timestamp.test.ts` bans `toLocale*String(` in `components/admin`; extend it when other surfaces adopt the formatter.
+* Native Signing manager pages follow the same rule (2026-10-26, [PR #60](https://github.com/leeharbaugh/harbaugh-forms/pull/60), squash-merged as `b0f8fbd` after merge-boundary validation; not yet deployed). The dashboard header activation time, its participant access, cancellation and consent-withdrawal times, and the Signings list Updated time use `formatTimestamp()`. They had raised #418 under a UTC server, the root cause found after R11. The test now also bans runtime-locale formatting in `components/signings`, with one exception: the in-person handoff expiry, which renders only from client state after a manager action. `components/forms/forms-page.tsx` (form lifecycle history) still uses `toLocaleString()` and is a separate follow-up, deferred (not part of Native Signing rollout).
 * Local production-mode QA must serve with the same env (e.g. `NATIVE_SIGNING_ENABLED`) used at build time; build-time-prerendered shells otherwise disagree with request-time renders.
 * Rolled out 2026-10-02 from `hotfix/admin-hydration-prod` (`c25e4c3` = production `2a92d82` + the fix) as `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, via skip-domain deploy, unique-URL validation, and manual promotion; rollback target `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`. PR #50 squash-merged the same fix to `main` as `c2a490a` (2026-10-02 16:42 UTC) with no production action.
 

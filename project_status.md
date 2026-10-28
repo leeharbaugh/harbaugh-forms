@@ -1,6 +1,308 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-25, afternoon. [PR #58](https://github.com/leeharbaugh/harbaugh-forms/pull/58) (`fix/signing-worker-auth-reply-to` from `main` `b6e0531`) is open for Lee's review and not merged. It holds two Lee-approved Gate C fixes: the internal Signing worker routes now reach their own secret checks instead of the login redirect, and Signing emails gain an optional `SIGNING_EMAIL_REPLY_TO`. No migration and no production change; Native Signing is still off. The Gate A–C production rollout records are maintained separately and not yet committed. See "Signing worker route authentication and email Reply-To" below.
+**As of:** 2026-10-28, 15:15 Chicago (20:15 UTC). **Native Signing remains LIVE. Post-launch documentation consolidated; backlog updated; synthetic test-data cleanup plan prepared (awaiting Lee's approval, no record changed).**
+- **Documentation:** the Gate A–E, rotation, DKIM, test and launch records are reconciled into `project_status.md` and `decisions.md` and committed in a documentation-only PR.
+- **Backlog:** `Harbaugh_Forms_Post_Launch_Improvements.md` is now in the repository with six active items. Item 1 is removing the "DEV QA Test Signing" default title; credential rotation is no longer on it.
+- **Test data:** see "Post-launch cleanup (2026-10-28)" for the inventory and the proposed archive and soft-delete actions.
+
+Earlier: 2026-10-28, 14:50 Chicago (19:50 UTC). **Harbaugh Forms Native Signing is LIVE for real customer transactions.**
+- **Activation:** permanently activated on Lee's authorization at **2026-10-28 17:18:38 UTC** (12:18 PM Central). Work and access are operational.
+- **Deployment:** `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` (`eb40577`) on `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app`; `autoAssignCustomDomains=false`.
+- **Validation:** 35/35 security checks, 8/8 participant checks and 85/85 authenticated smoke (including both historical Signings) on each domain.
+- **Workers:** Cron and worker answer `OK` with no queue; no errors in runtime logs.
+- **No test activity:** no Signing or email was created by the launch.
+- **Emergency suspension:** ready. See "Native Signing launch (2026-10-28)".
+
+Earlier: 2026-10-28, 12:20 Chicago (17:20 UTC). **Final pre-launch backup and readiness check done. Native Signing is ready for permanent activation; work and access remain suspended until Lee authorizes it.**
+- **Backup:** fresh encrypted recovery snapshot `harbaugh-forms-prod-snapshot-20261028T165902Z`. It covers the full database and all 101 Storage objects, including both synthetic Signings and TEST Packet #17.
+- **Verification:** consistent across three checksum passes; isolated restore identical; local and OneDrive copies verified by full extraction.
+- **Readiness:**
+  - Both domains healthy on `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ`.
+  - Both Signings COMPLETE with verified evidence.
+  - Current key works and the exposed key is gone; DKIM is correct.
+  - Cron, worker and kill switch work; no backlog.
+- **Blockers:** none.
+- See "Final pre-launch backup and readiness (2026-10-28)" and the launch conditions in `decisions.md`.
+
+Earlier: 2026-10-28, 11:55 Chicago (16:55 UTC). **Final two-participant, Packet-based production Signing passed; suspensions restored. Recommendation: GO for real-customer activation, with conditions, on Lee's separate authorization.**
+- **Signing:** `30211f2b-6fba-4514-88b1-2575b86eb898`, from TEST Packet #17 (TXR-1501, two Buyers at Lee's Yahoo and Gmail).
+- **Ceremonies:** both completed their own ceremonies, and the Signing did not finalize after the first. Finalized about 28 s after the second Finish.
+- **Integrity:** event chain 31/31; artifacts verified; marks in place on the full-size form.
+- **Downloads:** manager and participant downloads worked.
+- **Email:** DKIM, SPF and DMARC pass at both providers. Invitation: Gmail Inbox, Yahoo Spam. Completed-documents emails: Inbox at both.
+- **Production:** `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ`; Native Signing on; work and access **suspended** (restored 16:47 UTC). See "Gate E: final two-participant production Signing (2026-10-28)".
+
+Earlier: 2026-10-28, 06:45 Chicago (11:45 UTC). **Credential-rotation remediation complete; duplicate Signing-domain DKIM record removed and verified.**
+- **DKIM:** `resend._domainkey.send.harbaughrealestate.com` now publishes one key, the active Resend account's (fingerprint `5866fe61…`). It is visible at HostPapa's nameservers and 11 public resolvers.
+- **Unchanged:** SPF, MX, DMARC, return paths and the Supabase Auth email selector. Resend still shows the domain Verified.
+- **Root cause confirmed:** Yahoo's headers for both test emails showed `dkim=perm_fail` for the domain's own signature, caused by the duplicate.
+- **Production:** `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ`; Native Signing on; work and access suspended.
+- **Next (separate approval):** the final Packet-based, two-participant production Signing. See "Signing email DKIM correction (2026-10-28)".
+
+Earlier: 2026-10-28, 06:30 Chicago (11:30 UTC). **Credential rotation complete. The exposed production secret key `default` is revoked; the live deployment works on `rotation_20261028`.**
+- **Revocation:** Lee deleted `default`, confirmed by the dashboard and Supabase's key listing.
+- **Validation:** both domains pass 35/35, 8/8 and 82/82; runtime logs show no errors; Cron `SUSPENDED`; no Signing activity.
+- **Kill switch:** the database suspensions work with the new password.
+- **Finding:** the pre-rotation deployments authenticate with the legacy `service_role` key (never exposed), not `default`, so they kept working.
+- **Production:** `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ`; Native Signing on; work and access suspended; `autoAssignCustomDomains=false`.
+- **Next launch tasks:** correct the duplicate DKIM record; one Packet-based, two-participant production Signing. See "Credential rotation: complete (2026-10-28)".
+
+Earlier: 2026-10-28, 06:10 Chicago (11:10 UTC). **Rotation step 4 done: replacement-key deployment `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` (`eb40577`) promoted and validated. The old production key is still active; revocation is next and needs separate approval.**
+- **Live:** both domains and the production target on `dpl_6FVk…`; `autoAssignCustomDomains=false`.
+- **Validation:** 35/35, 8/8 and 82/82 on each domain. Runtime logs show no errors (503s only on designed suspended paths). Scheduled Cron `SUSPENDED`. No Signing, credential or email activity.
+- **Signing:** Native Signing on; work and access suspended; disclosure READY.
+- **Next:** see "Credential rotation: replacement deployment promoted (2026-10-28)".
+
+Earlier: 2026-10-28, 06:10 Chicago (11:10 UTC). **Rotation step 3 done: replacement production secret key installed; replacement candidate built and validated; NOT promoted.**
+- **Key:** `rotation_20261028` created by Lee in production and validated read-only (Auth, REST, Storage). The exposed `default` key **remains active**.
+- **Installed in:** the private ops file and Vercel Production `SUPABASE_SECRET_KEY` (Sensitive, Production-only, read back). Nothing else changed.
+- **Candidate:** `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` (`eb40577`), `https://harbaugh-forms-a02xz36fa-lee-harbaugh-s-projects.vercel.app`. It passed 35/35 feature-on and security checks, 8/8 participant checks and 82/82 authenticated smoke; runtime logs clean; no Signing or email activity.
+- **Live:** both domains stay on `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`. Native Signing on; work and access suspended.
+- **Next (separate approval):** promote, verify, then revoke `default`. See "Credential rotation: production secret key (2026-10-28; candidate validated)".
+
+Earlier: 2026-10-28, 05:40 Chicago (10:40 UTC). **Rotation step 2 done: production database password reset and installed.**
+- **Reset:** Lee reset the `postgres` password once in the dashboard and saved it in his password manager.
+- **Install:** the intake confirmed a read-only production session with it (after about a minute of pooler propagation), then updated only the ops file's `TARGET_DB_PASSWORD`.
+- **Dependencies:** none outside the admin tooling; Vercel, the app, Auth, Storage and PostgREST don't use it.
+- **Production unchanged:** both domains on `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`; 35/35 checks and 82/82 smoke on each domain; Native Signing on; work and access suspended; no env change.
+- **Next (separately authorized):** step 3, the coordinated production secret API key replacement. See "Credential rotation: production database password (2026-10-28; done)".
+
+Earlier: 2026-10-28, 05:15 Chicago (10:15 UTC). **Rotation step 1 done: development secret key replaced and the old key revoked.**
+- **Local copies:** the new key `rotation_20261027` is in the ops file's development entry and all six worktree `.env.local` files, and validated read-only against development (Auth, REST, Storage 200).
+- **Vercel:** Preview `SUPABASE_SECRET_KEY` updated and read back, with no other variable changed.
+- **Revocation:** Lee deleted the old `default` key, which is now refused ("Unregistered API key").
+- **Production unchanged:** `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`; Native Signing on; work and access suspended; production credentials untouched.
+- **Next (separate go-ahead):** step 2, the production database password reset. See "Credential rotation: development secret key (2026-10-28; done)".
+
+**Earlier stopping point (2026-10-27, 14:10 Chicago; confirmed by Lee).** Lee paused here and will resume later.
+- **Keys:** no new keys created; no keys revoked. The exposed development key `default` and the exposed production credentials remain active (accepted temporary risk).
+- **Production:** unchanged on `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`, with Native Signing on and work and access suspended.
+- **Resume:** at step 1 of "Credential rotation: development secret key (2026-10-27; paused)" below, starting by turning off Windows Clipboard history.
+
+**As of:** 2026-10-27, 14:10 Chicago (19:10 UTC). **Development secret-key rotation started and paused by Lee before key creation. Nothing rotated or changed.**
+- **Intake tool:** passes a 78-check isolated safety suite with dummy values and mocked Vercel, Supabase and psql.
+- **Two defects fixed before any real key was used:**
+  - The Vercel argument whitelist was case-insensitive and accepted a trailing newline.
+  - Supabase rejects secret keys from PowerShell's default browser-like user agent, so validation would have refused every genuine key.
+- **Production unchanged** (verified).
+- **To resume:** Lee turns off Windows Clipboard history, creates `rotation_20261027` in the development project (keeping `default`) and copies it; then the intake runs.
+- See "Credential rotation: development secret key (2026-10-27; paused)".
+
+Earlier: 2026-10-27, 14:00 Chicago (19:00 UTC). **Launch-readiness review done: GO for credential rotation as the final pre-launch task.**
+- **Functional blockers:** none found.
+- **Before real customers:**
+  1. Remove the stale duplicate DKIM record on the Signing sending domain (Lee, DNS; a specific defect found by this review).
+  2. After rotation, run one Packet-sourced, two-participant synthetic Signing on the rebuilt deployment. It also serves as the Gmail or Outlook test.
+- **Production unchanged:** `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`, feature on, work and access suspended, disclosure READY.
+- See "Gate D: launch-readiness review (2026-10-27)".
+
+Earlier: 2026-10-27, 12:10 Chicago (17:10 UTC). **First synthetic production Signing completed end to end; both suspensions restored.**
+- **Signing:** `01713222-8006-45b7-8786-5df1aeb10a26` (TEST ONLY, Lee-owned, ad hoc test PDF, no Packet). Participant `leeharbaugh@yahoo.com` (Lee).
+- **Lifecycle:** Draft, then Send, then the invitation (accepted by Resend; delivered to **Yahoo spam**), then identity, E-SIGN consent (current production-ready disclosure), typed signature and initials, Finish.
+- **Finalization:** Complete. Completed document, audit certificate and combined package generated; completed-package email delivered, and Lee downloaded the package from its link.
+- **Verified:**
+  - The protected event chain (15 of 15), the prepared-document fingerprint and every artifact's stored fingerprint.
+  - Marks inside the intended boxes.
+  - Private storage under the Signing's own path.
+  - Business data untouched; only the test participant ever received email.
+- **Signing was open about 14 minutes** (16:49:44–17:03:51 UTC). Now Native Signing is ON, with work and access suspended. Production deployment and data otherwise unchanged.
+- **Before real use:** invitation deliverability (spam) and two minor evidence notes. See "Gate D: synthetic production Signing (2026-10-27)". Leaving Signing operational needs Lee's separate approval.
+
+Earlier: 2026-10-27, 09:45 Chicago (14:45 UTC). **Native Signing is ON in production, with work and access suspended.** With Lee's approval, `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY` (`main` `eb40577ec25cdd83db2dc335680c60af45a693a8`) was promoted at 14:28:36 UTC.
+- **Domains:** `forms.harbaughrealestate.com`, `harbaugh-forms.vercel.app` and the production target serve `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`; `autoAssignCustomDomains=false`.
+- **Validation on each domain:** 35/35 header, fail-closed and worker checks; 8/8 participant browser checks; 82/82 feature-on smoke (0 hydration, page or server errors); valid PDF download.
+- **Signing management:** available under the existing permissions. Admin controls show Signings enabled Yes, Work suspended Yes, Access suspended Yes.
+- **Still blocked:** participant links, sessions, workers and email. Cron and worker return `SUSPENDED`, and three scheduled Cron runs processed nothing.
+- **Data:** only smoke sign-ins and preferences changed. 0 Signings, credentials, work items and delivery instructions. 152 migrations; disclosure READY.
+- **Rollback:** feature-off `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` (Ready). Not needed.
+- **Next (separate approval):** resume access and work for one controlled Lee-owned synthetic Signing. See "Gate D: feature-on promotion (2026-10-27)".
+
+Earlier: 2026-10-27, 09:15 Chicago (14:15 UTC). **Feature-on, suspended production candidate validated; not promoted.** Candidate `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY` (`https://harbaugh-forms-mosqxegl9-lee-harbaugh-s-projects.vercel.app`) from `main` `eb40577ec25cdd83db2dc335680c60af45a693a8`.
+- **Upload safeguard merged:** [PR #62](https://github.com/leeharbaugh/harbaugh-forms/pull/62), a `.vercelignore` only, squash-merged as `eb40577`. It was tested with Vercel's own upload-selection code and passed a Preview build.
+- **Flag:** `NATIVE_SIGNING_ENABLED=true` in Vercel Production as a readable Config value, read back exactly. Work and access stay suspended.
+- **Validation:** unauthenticated 35/35, feature-on smoke 82/82 (0 hydration errors), participant browser 8/8, unit 242/242. Workers `SUSPENDED`; participant links refused; no credentials, Signings or email.
+- **Production unchanged:** both domains and the production target on feature-off `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`; `autoAssignCustomDomains=false`; 152 migrations; disclosure READY.
+- **Credential rotation:** deferred by Lee to post-launch item #1, with the risk accepted. No evidence of active compromise. *Resolved 2026-10-28: Lee moved rotation ahead of launch, and it was completed (see "Credential rotation: complete").*
+- **Next:** Lee's separate approval to promote the candidate. See "Gate D: feature-on candidate (2026-10-27)".
+
+Earlier: 2026-10-26, 18:45 Chicago (23:45 UTC). **Gate D paused; credential-exposure remediation in progress** (Lee approved rotation). *Update 2026-10-27: Lee deferred rotation to post-launch item #1 and resumed Gate D.*
+- **Exposed (confirmed):**
+  - Production Supabase secret API key, production database password and development secret API key.
+  - Vercel's deployment-protection bypass secret.
+  - The production publishable key, public by design and not rotated.
+  - **Not exposed:** Signing keys, Cron and worker secrets, Resend key, backup passphrase, legacy JWT keys.
+- **Done:**
+  - `NATIVE_SIGNING_ENABLED` removed from Production. The 16 original variables are restored, and Signing is still disabled and suspended.
+  - The Vercel bypass secret is rotated, with no live effect.
+  - A `.vercelignore` safeguard is prepared and validated (branch `security/vercelignore`, uncommitted).
+  - A rotation intake tool and plan are ready.
+- **Second exposure:** an agent scripting error printed the production secret API key in this session's tool output. Its rotation is now urgent.
+- **Next, Lee in the Supabase dashboard:**
+  - New development secret key, then revoke the old one.
+  - New production secret key.
+  - Production database password reset.
+  - Each new value is installed with the intake tool.
+- **Then, with separate approval:** set Vercel Production `SUPABASE_SECRET_KEY` to the new key, build and promote a feature-off deployment, then revoke the old production key.
+- **Production availability unchanged.** See "Credential-exposure remediation (R51/R52)".
+
+Earlier: 2026-10-26, 18:10 Chicago (23:10 UTC). **Gate D feature-on candidate STOPPED after an agent-caused incident; no candidate was built.**
+- **Exception recorded:** the remaining agent account's initial-rollout sender-policy exception (Lee's explicit approval; no email; no acknowledgment claimed; the account gains Signing access when the flag is live).
+- **Preflight result:**
+  - A Vercel variable change reaches only deployments built afterwards. After `NATIVE_SIGNING_ENABLED` was added to Production (22:55 UTC), the live deployment still answers Cron with `FEATURE_DISABLED` on both domains.
+  - With the flag on and both suspensions kept: Send, in-person handoff and every participant credential or session refuse issuance; bearer validation denies; workers return `SUSPENDED`; invitation, package and cancellation email park. Managers would gain Draft creation and preparation under the existing permissions.
+- **Incident:** a scripting error started a bare `vercel` command in the original worktree. It created an SSO-protected **Preview** deployment that uploaded that worktree's ignored private files, including the production ops credentials file. It was deleted within about 7 minutes; no requests were logged. Production domains, data and other variables are unchanged.
+- **Decision needed from Lee:** credential rotation. See "Gate D: feature-on preparation stopped (incident)". Private details are in local `security.md` R51.
+- **Production unchanged:** both domains and the production target on `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`; `autoAssignCustomDomains=false`; 152 migrations; disclosure READY; work and access suspended; 0 Signings. Vercel Production now has `NATIVE_SIGNING_ENABLED` (Sensitive, not yet read-back-verified), which affects only future builds.
+
+Earlier: 2026-10-26, 17:55 Chicago (22:55 UTC). **Fresh encrypted production recovery snapshot created and verified** (Lee approved this single backup). It captures production at 22:40 UTC.
+- **Contents:** the whole database (152 migrations, 115 tables and 6,736 rows, including Auth, Storage metadata and migration history), the roles without passwords, and all 90 Storage objects (35.5 MB: 52 templates, 38 generated documents, 0 Signing artifacts).
+- **Consistency:** production was unchanged across the whole run.
+- **Isolated restore:** matched production row for row in all 115 tables, with only the expected Vault-extension errors.
+- **Archive:** AES-256 with encrypted file names, 17.3 MB, under the existing backup passphrase. Stored locally and on OneDrive. The OneDrive copy was read back from the cloud and fully verified.
+- **Existing backups:** the October 24 backup and the Signing-key bundle are unchanged.
+- **Production:** no change. See "Production recovery snapshot (2026-10-26)".
+
+Earlier: 2026-10-26, 17:40 Chicago (22:40 UTC). **Backup and recovery review (read-only).** Production has **no managed backups**: Supabase lists none, and Point-in-Time Recovery is off. The only restorable copy is the Gate A snapshot of 2026-10-24, encrypted on OneDrive, which includes the Storage PDFs. Work since then is not backed up anywhere: 41 migrations, 1 Packet, 4 Packet forms, 1 form, 1 contact and 5 new PDFs. Code and migrations are all on GitHub; the Gate A–D documentation and the improvements backlog are not. See "Backup and recovery review (2026-10-26)" for the proposed plan.
+- **Accepted by Lee:** the `CodexSandboxUsers` read access to the local backups folder is an accepted local-access arrangement. It is not a Gate D blocker, and no ACL was changed.
+- No production, Git, backup-file, ACL or Gate D change.
+
+Earlier: 2026-10-26, 16:45 Chicago (21:45 UTC). **Unused production accounts removed: 6 of 6 deleted, 3 accounts remain.** Lee authorized this. Each deletion went through the existing Global Admin hard-delete workflow on the live deployment, one account at a time. Each account was re-checked before deletion and verified in the database afterward. See "Gate D: unused production account cleanup".
+- **Remaining:** Lee's Global Admin account, Lee's second account and one other agent account. Their profiles, memberships, agent settings and data are unchanged. Lee's Global Admin Auth row has only the one-time admin sign-in timestamps.
+- **Integrity:** no orphan user references; business tables and storage byte-identical; the brokerage organization and settings records unchanged.
+- **Sender notice:** not sent, by Lee's decision. The remaining agent account can still create Signings once the global flag is on. The all-sender acknowledgment is **not** complete; that exception must be resolved at activation.
+- **Production unchanged otherwise:** `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`, 16 variables, no `NATIVE_SIGNING_ENABLED`, `autoAssignCustomDomains=false`, 152 migrations, disclosure READY, work and access suspended, 0 Signings. No email, invitation or code change.
+
+Earlier: 2026-10-26, 16:30 Chicago (21:30 UTC). **Sender notice prepared for Lee's approval; not sent.** A read-only review of production accounts found 8 authorized sender accounts besides Lee's own `lee@` account. They are 7 other people plus Lee's second ordinary account. All 8 are ordinary members of the one active brokerage. Lee is the only organization administrator and the only Global Admin. There are no disabled or test accounts and no Transaction Coordinator delegations. See "Gate D: sender notice (prepared; awaiting Lee's approval)".
+- **Local finding:** the backups parent folder again grants `CodexSandboxUsers` read access (the R49 residual recurred). Not changed; needs Lee's decision. *Update 17:40 Chicago: Lee accepted it as a local-access arrangement, not a blocker.*
+- Production unchanged: no email, data, permission, configuration or deployment change. Native Signing off; work and access suspended.
+
+Earlier: 2026-10-26, 16:15 Chicago (21:15 UTC). **Feature-off deployment of `main` `42dd7d5` is live in production.** With Lee's explicit approval for this deployment only, `vercel promote dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` ran 21:05:09–21:05:15 UTC. No rebuild, env, migration or database change.
+- **Domains:** `forms.harbaughrealestate.com`, `harbaugh-forms.vercel.app` and the project production target are on `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`. Each login page embeds that id over HTTPS with HSTS. `autoAssignCustomDomains=false` before and after.
+- **In production now:** Signing manager hydration #418 fix and the H-1 headers (`nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'`). The `/sign` CSP is unchanged.
+- **Validation:** 50/50 header, fail-closed and worker checks and 81/81 smoke on each domain. Fill Form Download PDF saved a valid PDF on each domain. Scheduled Cron at 21:06:26, 21:08:26 and 21:10:26 UTC returned 503 `FEATURE_DISABLED`. 0 log errors, warnings or 500s. See "Gate D: feature-off production promotion".
+- **Data:** only `auth.users` (smoke sign-ins) and `user_preferences` changed. 0 Signings, work items and delivery instructions. 152 migrations, disclosure READY, work and access suspended.
+- **Still off:** `NATIVE_SIGNING_ENABLED` unset. No unsuspension or email. Rollback target: `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` (Ready). Not needed.
+
+Earlier: 2026-10-26, 15:55 Chicago (20:55 UTC). **Feature-off production candidate validated and not promoted.** The candidate is Vercel's automatic Git build `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` of `main` `42dd7d5bc764928a53a64bc0954b9cc3084a00f2` (`https://harbaugh-forms-n8hmd37m1-lee-harbaugh-s-projects.vercel.app`). It was reused after the build was shown to be that exact verified commit with the current production environment. No new deployment was uploaded.
+- **Result:** ready for a later manual promotion. Header, fail-closed, worker, and 81-check smoke validation passed. See "Gate D: feature-off production candidate".
+- **Production domains unchanged:** `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` still serve `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`, and each login page embeds that id. The project production target is unchanged. `autoAssignCustomDomains=false`.
+- **Team alias:** the SSO-protected `harbaugh-forms-lee-harbaugh-s-projects.vercel.app` alias points at the candidate. That assignment happened when Vercel finished the automatic build, before these checks. The git-main alias does too.
+- **Database:** 152 migrations, dry run up to date, disclosure READY, work and access suspended, 0 Signings. This check changed only the smoke sign-in timestamp and `user_preferences`.
+- **Still off:** `NATIVE_SIGNING_ENABLED` is unset. No env, migration, unsuspension, email, or domain promotion.
+
+Earlier: 2026-10-26, 15:20 Chicago (20:20 UTC). **H-1 resolved for initial activation: [PR #61](https://github.com/leeharbaugh/harbaugh-forms/pull/61) squash-merged into `main` as `42dd7d5bc764928a53a64bc0954b9cc3084a00f2`** (20:14:30 UTC, pinned to `a5080a3`, identical tree).
+- **Validation:** comprehensive merge-boundary checks passed (see "Gate D: H-1 security headers"), with headers verified on built responses and browser framing refusal confirmed.
+- **CSP deferral:** Lee approved deferring an enforced script/style CSP for the initial rollout. A report-only CSP and XSS-testing follow-up is recorded for before broader multi-user use.
+- **Separate follow-up:** the `/auth/login?_rsc` 404s are header-less background fetches after logout, not a login failure.
+- **Production unchanged:** `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`, `autoAssignCustomDomains=false`, 16 variables, no `NATIVE_SIGNING_ENABLED`. Vercel's automatic build of `42dd7d5` (`dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`) is Ready and not promoted. The database is unchanged.
+- **`main` now holds the #418 fix and the H-1 headers.** Neither is deployed.
+
+Earlier: 2026-10-26, afternoon Chicago. **H-1 security headers: [PR #61](https://github.com/leeharbaugh/harbaugh-forms/pull/61) open, not merged.**
+- **Change:** every response gets `nosniff`, `X-Frame-Options: DENY` and `frame-ancestors 'none'`, while `/sign` keeps its full CSP.
+- **Validation:** browser enforcement confirmed; Fill Form, pdf.js rendering, the Signing ceremony, Prepare, templates and login pass.
+- **Deferred:** script/style CSP is recommended for deferral for initial use, with residual risk recorded.
+- **Pre-existing follow-up:** account switch on a production build shows `/auth/login?_rsc` 404 noise on unchanged `main` too.
+- No production change. See "Gate D: H-1 security headers".
+
+Earlier: 2026-10-26, 13:05 Chicago (18:05 UTC). **[PR #60](https://github.com/leeharbaugh/harbaugh-forms/pull/60) (Signing manager hydration #418) is squash-merged into `main` as `b0f8fbd4eda75aa9918ce433ea0afb6103614320`** (17:59:54 UTC, Lee authorized, conditional on validation).
+- **Merge:** pinned to the validated head `f8e0f4d`. `main` had not moved from `6f0c041`, and the squash tree `c39c158` is identical to the PR.
+- **Merge-boundary validation passed** (see "Gate D: Signing manager hydration #418"): all 58 unit suites (1,669 tests), all 21 dev validators (649 OK), 11 browser QA scripts, and the four R11 scripts on a `TZ=UTC` production build with 0 #418. It also covered `build:validate` with the flag on and off, audits, scans, `tsc`, ESLint and the diff check.
+- **Cleanup:** the branch and worktree are cleaned up, and QA artifacts and the generated `AGENTS.md` are kept in `_audit_tmp/merge-2026-10-26-pr60/`.
+- **Production unchanged:** both domains on `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`, `autoAssignCustomDomains=false`, 16 Production variables, no `NATIVE_SIGNING_ENABLED`. Vercel's automatic build of `b0f8fbd` (`dpl_WqmpnjvYfhkNLsZLWm9Y5quzS2iQ`) is Ready and not promoted. The database is unchanged (152 migrations, disclosure READY, work and access suspended).
+- **Hydration #418** is resolved on `main`. Production gets the fix only with a later approved deployment of `main`.
+- **Deferred:** the Forms page lifecycle-history timestamp uses the same runtime-locale pattern, outside Native Signing. It is a separate follow-up.
+
+Earlier: 2026-10-26, 11:20 Chicago (16:20 UTC). **Signing manager hydration #418: root cause confirmed and fixed in [PR #60](https://github.com/leeharbaugh/harbaugh-forms/pull/60) (not merged).**
+- **Cause:** the dashboard and the Signings list formatted timestamps with the runtime's time zone during server rendering, so a UTC server and a Chicago browser disagreed (reproduced with React's diff).
+- **Fix:** they now use the shared `formatTimestamp()` (America/Chicago with zone label).
+- **Validation:** the four R11 browser scripts now exit 0 on a `TZ=UTC` production build with no hydration errors, and the focused unit suites, `tsc` and ESLint pass. See "Gate D: Signing manager hydration #418".
+- No production change: still `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`, 152 migrations, disclosure READY, Native Signing off and suspended.
+
+Earlier: 2026-10-26, 10:37 Chicago (15:37 UTC). **Local backup-permission finding resolved.**
+- **Change:** the private production-backup folder again grants access only to Lee's account, SYSTEM and Administrators. A read grant for the local Codex sandbox group was removed from the parent folder and verified across every subfolder and file. That grant was most likely added by Codex sandbox provisioning; no workflow needed it.
+- **Integrity:** all backup files are byte-identical and readable by Lee. The Gate A manifest and the database dump's restore table of contents verify, the recovery-key blobs still decrypt under Lee's account, and the encrypted OneDrive copies are present and untouched.
+- **Record:** the original permissions are kept privately for reference.
+- **Follow-up:** re-check the folder's permissions before each backup-sensitive gate, because sandbox provisioning may re-add the grant. Details are in `security.md` R49.
+- No production, deployment, database, flag or email change.
+
+Earlier: 2026-10-26, 10:17 Chicago (15:17 UTC). **Gate D disclosure publication done.** With Lee's explicit approval, production `eetonalyyyssvkyfdoxh` received exactly the two approved migrations from `main` `6f0c041`, at 15:14:44–15:14:47 UTC: `20261025120000_native_signing_esign_disclosure_2026_10_25` and `20261025130000_native_signing_esign_disclosure_2026_10_25_production_ready`.
+- **Disclosure:** the current production disclosure is `esign-disclosure-2026-10-25-production-ready`, `is_production_ready = true`, SHA-256 `802ad62180563777d229749ec6988036a42ee92824dbf41f07033e43a672da98`. The production readiness check reports the disclosure READY.
+- **Unchanged:** of all 111 tables, only the disclosure table (5 → 7 rows) and the migration history (150 → 152) changed. Earlier disclosure rows are unchanged apart from the 2026-10-22 `superseded_at`; consent and business data are untouched.
+- **Backup:** no fresh backup was needed. Business data matched the last Gate C snapshot, and the only changes since the Gate A backup were documented and approved. The Gate A backup re-verified intact, and the disclosure table was exported first.
+- **Still off:** Native Signing is off, work and access are suspended, and both domains stay on `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`. No deployment, env, flag, unsuspension, email or Signing.
+- **Local discrepancy for Lee:** the private backup folder grants read access to a local sandbox group beyond the documented owner-only ACL. It was not changed. See `security.md` R48. *Resolved 10:37 Chicago (`security.md` R49).*
+- Next Gate D steps need separate approval (see "Remaining Gate D steps").
+
+Earlier: 2026-10-26, 10:00 Chicago (15:00 UTC). **[PR #59](https://github.com/leeharbaugh/harbaugh-forms/pull/59) is squash-merged into `main` as `6f0c041d1eef6df9d3fc8250791d8428218c4020`** (14:55:48 UTC, Lee approved).
+- **Merge:** pinned to the validated head `85fa553`. Both GitHub checks passed, `main` had not moved from `23607be`, and the squash tree (`71b339c`) is identical to `85fa553`, so no regression rerun was needed.
+- **Cleanup:** the feature branch is deleted locally and on GitHub, and the `harbaugh-forms-esign-1025` worktree is removed (its development env and CLI link copies deleted first). Its QA artifacts and generated `AGENTS.md` are kept in `_audit_tmp/merge-2026-10-25-pr59/`.
+- **Production unchanged:** both domains and the project production target are on `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` and `autoAssignCustomDomains=false`. Vercel's automatic Git build of `main` (`dpl_Dt5tWjNJcBvQ1yhRfBeGo2BQQEcB`, `6f0c041`) is Ready and not promoted. No migration, env, flag, unsuspension or email. Native Signing is off, with work and access suspended.
+- **Pending production migrations (from the Gate C record of 150 applied, latest `20261022130000`; confirm by dry run):** exactly `20261025120000_native_signing_esign_disclosure_2026_10_25` and `20261025130000_native_signing_esign_disclosure_2026_10_25_production_ready`. Applying them is the disclosure publication step and needs Lee's separate approval. See "Gate D: production-ready disclosure" → "Remaining Gate D steps".
+
+Earlier: 2026-10-26, 00:07 Chicago (05:07 UTC). **PR #59 passed merge-boundary validation on `85fa553` and is ready for Lee's merge approval. It is not merged.**
+- Lee approved the `esign-disclosure-2026-10-25` wording exactly.
+- Two procedure corrections were made in documentation only. In-person participants without email are notified by sender-managed phone or direct contact and stay in the list, the log and the release gate. The consent checkbox is described as the application's affirmative consent and capability acknowledgment, not as a proven E-SIGN access demonstration; the PDF demonstration and legal review remain deferred.
+- Results: all 58 unit suites (1,667 tests), all 21 dev validators, 11 browser QA scripts (one environmental combined-refresh timeout, diagnosed and rerun clean), `build:validate` flag on and off, audits and scans pass. Historical consent evidence is unchanged.
+- Production unchanged: no merge, migration, deployment, flag, unsuspension or email. See "Merge-boundary validation" under "Gate D: production-ready disclosure".
+
+Earlier: 2026-10-25, 22:55 Chicago (2026-10-26 03:55 UTC). **PR #59 is ready for merge-boundary validation; the disclosure publication blockers are resolved.**
+- **Wording:** Lee approved `esign-disclosure-2026-10-25`.
+- **Publication method:** PR #59 now also republishes that text byte for byte as the new production-ready version `esign-disclosure-2026-10-25-production-ready` (same SHA-256 `802ad621…da98`). It uses a guarded, data-only migration that records the same rows in every environment and changes no existing row except `superseded_at`.
+- **Readiness check:** READY now requires the current version itself to be production-ready.
+- **Development:** applied there only. Unit tests, a scratch-database migration test, the dev validators and the ceremony and withdrawal browser QA pass.
+- **Procedures:** a manual technical-change release procedure is adopted, and a sender notice (free paper copies, withdrawal, technical-change cooperation) is prepared for Lee to send before global activation. No notification or onboarding feature.
+- Production unchanged: no migration, deployment, flag, unsuspension or email. Publication needs Lee's approval after merge.
+
+Earlier: 2026-10-25, 21:35 Chicago (2026-10-26 02:35 UTC). **Disclosure candidate `esign-disclosure-2026-10-25` prepared; production publication blocked pending Lee's approvals.**
+- **Candidate:** [PR #59](https://github.com/leeharbaugh/harbaugh-forms/pull/59), not merged. It contains Lee's approved withdrawal-fee sentence and technical-change paragraph, with all other text unchanged. SHA-256 `802ad62180563777d229749ec6988036a42ee92824dbf41f07033e43a672da98`, `is_production_ready = false`. Applied to development only, with consent evidence unchanged. Focused unit tests, the dev validators and the ceremony and withdrawal browser QA pass.
+- **Durable policy:** every Native Signing sender, in every organization, provides requested paper copies without charge. The decision is recorded, with no Lee-only or fee feature.
+- **Blockers:** the existing technical-change release rule cannot ensure the notice the new paragraph promises (in-person-only participants, completed Signings, and cancellation emails without a sender message). The production-ready publication path also needs an approved design. See "Gate D: production-ready disclosure (pending Lee's approval)".
+- Production unchanged: Native Signing off, work and access suspended, no deployment, migration, env, flag or email. Hydration `#418` is still a separate open item.
+
+Earlier: 2026-10-25, 20:40 Chicago (2026-10-26 01:40 UTC). **Gate D continues with the disclosure review. R11 is closed as PASS** on production source `23607bed0866356f59b5e7f3817158d0aab7fb69` (`security.md` R47 supersedes R46's INCOMPLETE for the authenticated runtime gaps). Nothing else in Gate D has started.
+- **Disclosure review (read-only).** Lee is reviewing the exact text of `esign-disclosure-2026-10-22` before he approves production use. It was retrieved from migration `20261022130000` on `main`. Its SHA-256, recomputed independently from the CR-stripped migration body, equals the pinned `902d216bdececa5f6b7d2e54bc7698bce6dadbeb46619c41ba14efbf9f8a1617` (4,037 characters, LF, no trailing newline). It is current with `is_production_ready = false` in development and, per Gates B and C (not re-queried today), in production, where 0 of 5 versions are production-ready and the readiness check reports `BLOCKED: PRODUCTION_DISCLOSURE_NOT_READY`. No disclosure text was changed and no version was created or published. A local exact-text copy is in `_audit_tmp/gate-d-disclosure-review-2026-10-25/` (gitignored). See "Gate D: production-ready disclosure (pending Lee's approval)" below.
+- **New pre-live-use UI item: React hydration error `#418` on the Signing manager page.** This is a focused UI investigation, not a security assessment. See "Gate D: Signing manager hydration #418 (open)" below.
+- Production unchanged: `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` live, Native Signing off, work and access suspended. No deployment, env, migration, flag, Cron, disclosure, unsuspension or email.
+
+**R11 authenticated runtime follow-up (2026-10-25 Chicago / 2026-10-26 UTC): PASS on production source `23607be`.** The foreign packet-editor alert was a broad-marker test-harness false alarm: foreign roles saw a generic 200 shell with no owner data; their packet/document reads and updates affected zero rows, PDF download returned 404 and overwrite 403. Focused development-only browser tests exercised live Signing entry/session, participant and manager isolation, revoked and expired session access, completed and archived artifacts, and consent withdrawal without a confirmed authorization vulnerability. Four broad browser QA scripts completed their security assertions but exited nonzero at a separate React hydration `#418` noise check; that UI observation remains open. The R11 security verdict is PASS; the previous independent INCOMPLETE review is superseded for these gaps. Native Signing remains off and work/access suspended in production. No Gate A–C state changed. Private evidence: `security.md` R47 and `_audit_tmp/r11-2026-10-25/runtime-coverage/` in the assessment checkout.
+
+Earlier: 2026-10-26, early (UTC). **Gate D started, limited to R11. R11 passed its pre-activation acceptance criterion** (0 High / 0 Critical; no confirmed vulnerability). The scan ran in development only, against a production-mode build of `main` `23607be`. One Medium hardening item (missing security headers on workspace and auth pages) is recommended, not required. No other Gate D activity has started.
+- Production unchanged: `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` live, Native Signing off, work and access suspended, no env, schema, flag, deployment or Cron change. See "Gate D: R11 authenticated security assessment" below.
+
+Earlier: 2026-10-25, 23:40 UTC. **Gate C passed.** With Lee's explicit approval, `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` (from `main` `23607bed0866356f59b5e7f3817158d0aab7fb69`) was promoted to production at 23:27:08 UTC. Both domains serve it.
+- Post-promotion: 81/81 smoke on each domain and 28/28 fail-closed checks on each domain. The scheduled `*/2` Cron runs (23:28:26, 23:30:26, 23:32:26) authenticated and were refused with `FEATURE_DISABLED`, processing no jobs. 0 log errors. Production business data is unchanged apart from smoke sign-in metadata.
+- Native Signing is off, work and access are suspended, `autoAssignCustomDomains=false`, and no migration, env, disclosure or Supabase SMTP change was made. Rollback target: `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr` (Ready).
+- Gate D has not started; it needs Lee's approval. See "Gate C: production configuration", section 6.
+
+Earlier: 2026-10-25, evening. Gate C validation passed. Production email configuration is complete, and the replacement candidate `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` (from `main` `23607be`) is validated and not promoted. The last Gate C step, manual promotion, needs Lee's separate explicit approval.
+- Email: `RESEND_API_KEY` is the sending-only Signing key from the original Resend account (confirmed as a restricted key without sending). `SIGNING_EMAIL_REPLY_TO=lee@harbaughbrothers.com`; `SIGNING_EMAIL_FROM` is unchanged. Supabase Auth SMTP is untouched.
+- Candidate: 28/28 fail-closed checks. Both worker routes return 401 for every bad credential; the real `CRON_SECRET` reaches the worker, which refuses with `FEATURE_DISABLED`. The 81/81 smoke passed, runtime logs show 0 errors, and no production data changed beyond the smoke sign-in.
+- Production unchanged: Native Signing off, work and access suspended, both domains on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`, `autoAssignCustomDomains=false`. See "Gate C: production configuration" below.
+
+Earlier: 2026-10-25, afternoon. [PR #58](https://github.com/leeharbaugh/harbaugh-forms/pull/58) is squash-merged into `main` as `23607bed0866356f59b5e7f3817158d0aab7fb69` (2026-10-25 19:26 UTC), with Lee's approval, after full merge-boundary validation passed.
+- The merge was pinned to the validated head `4a72f81`. Both GitHub checks passed, `main` had not moved from `b6e0531`, and the squash tree (`f9f8076`) is identical to `4a72f81`.
+- The two internal Signing worker routes now reach their own secret checks instead of the login redirect. Signing emails support an optional `SIGNING_EMAIL_REPLY_TO`.
+- Gate C is still in progress. Lee has moved `send.harbaughrealestate.com` into the original Resend account (the Supabase Auth SMTP account), where it shows Verified. Next: Lee's dedicated sending-only Signing key, `RESEND_API_KEY` and `SIGNING_EMAIL_REPLY_TO` in Vercel Production, and a rebuilt candidate from `23607be`.
+- Production unchanged: Native Signing off, work and access suspended, both domains on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`, no migration, env, Resend or Supabase SMTP change. Vercel's automatic Git build of `main` (`dpl_7zPBsSRhTpXwRLGk8Bp9dbkng3q7`) was not promoted; `autoAssignCustomDomains` is `false`. See "Signing worker route authentication and email Reply-To" and "Gate C: production configuration" below.
+
+Earlier: 2026-10-25, midday. Gate C is in progress and not passed. Production configuration and a feature-off deployment candidate are validated. Email configuration is paused, by Lee's decision, while he moves `send.harbaughrealestate.com` into the original Resend account. One code finding blocks Gate D: the login proxy intercepts the internal Signing worker routes.
+- The backup passphrase is in Lee's password manager, verified by a MATCH check.
+- Fresh production Signing keys and secrets are installed in Vercel Production, with an encrypted recovery copy. `SIGNING_EMAIL_FROM` is set; `RESEND_API_KEY` is not.
+- Candidate `dpl_EY7ajHuizRM1rEGe4zhvzjGVQrYL` from `main` `b6e0531` (uploaded source identical) passed 21 fail-closed checks and an 81-check smoke, and was not promoted.
+- Native Signing is off, work and access are suspended, and both domains are still on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`. See "Gate C: production configuration" below.
+
+Earlier: 2026-10-23, late night (2026-10-24 03:08 UTC). Gate B passed. With Lee's approval, production `eetonalyyyssvkyfdoxh` received exactly the 39 reviewed migrations from `main` `b6e0531` (`--include-all`). Signing work and access are suspended, with a fresh access epoch. Native Signing remains off.
+- Before the push, the Gate A backup was copied encrypted (7-Zip AES-256) to Lee's OneDrive and verified by downloading and decrypting it. The full push was rehearsed on an isolated restored copy.
+- Production now has 150 migrations, and the existing data is intact. Only Packet 12 changed (`INACTIVE` to `ACTIVE`, approved), plus the new `signing-artifacts` bucket.
+- No deployment, env, Cron, email or feature change. Both domains still serve `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`.
+- Interim effect until Gate C deploys `main`: the live Packet edit form still offers "Inactive", and saving it now fails.
+- Gate C is not started. See "Gate B: production migration" below.
+
+Earlier: 2026-10-23, night (2026-10-24 UTC). Gate A (production verification and backup) is done on `main` `b6e0531` and is a conditional pass. Nothing in production was changed.
+- Production `eetonalyyyssvkyfdoxh` has 111 applied migrations with no drift. Exactly 39 are pending (37 Native Signing plus the two Packet migrations), and the push needs `--include-all`.
+- A complete database dump and a copy of all 85 Storage objects are stored privately outside Git. The dump was restored into an isolated local Postgres and verified row for row.
+- Production is not Lee-only: 9 active accounts in one brokerage, and `NATIVE_SIGNING_ENABLED` is global. Lee must decide how to restrict Signing before Gate D.
+- Gate B is not started and needs Lee's approval. See "Gate A: production verification and backup" below.
 
 Earlier: 2026-10-23, late night. [PR #56](https://github.com/leeharbaugh/harbaugh-forms/pull/56) (manager-recorded participant consent withdrawal and disclosure 2026-10-22) is squash-merged into `main` as `a267cb2b7cfa68f6524a85cfdc254de5e1fc84da` (2026-10-24 01:44 UTC), with Lee's approval.
 - The merge was pinned to the validated head `38a7579`. Both GitHub checks passed and `main` had not moved from `da5f011`. The squash commit's tree (`bb15045`) is identical to `38a7579`.
@@ -66,9 +368,1080 @@ Earlier: 2026-10-14, evening (PR #46 Signing Placement Templates tranche impleme
 Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancellation in development now leaves the exact sandboxed email in `_audit_tmp/signing-email-sandbox/`. This needed a small dev-only code change; previously the sandbox discarded the body. No migration, production untouched, Gate A paused. See "Sandbox email inspection" below. Earlier: 2026-10-13, morning (PR #46 cancellation emails tranche implemented and browser-QA'd in development. Cancel Signing now asks for a required "Internal cancellation reason", which is saved in Signing history and never emailed, and an optional "Message to participants". It emails every invited participant after commit. Eligibility comes from invitation history, so finished, revoked-link, replaced-link and archived participants are included; Draft and in-person-only participants are not. The email has no link and makes no legal claim. Delivery uses the existing instruction / outbox / attempt architecture, is retried, never changes lifecycle, and sends at most one email per participant. New dev-only migration `20261013120000`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Cancellation emails tranche" below. Earlier: 2026-10-12, night (PR #46 Archive Signing tranche implemented and browser-QA'd in development. Archive is organizational state (`signings.archived_at`), not lifecycle. Any lifecycle state can be archived and unarchived. The Signings list hides archived Signings unless "Show archived" is selected. Archiving an In Progress Signing revokes every participant link, entry session, in-person handoff and open ceremony session in one transaction, and unarchiving never restores them (managers Replace links to resume). New dev-only migrations `20261012120000` and `20261012120100`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Archive Signing tranche" below. Earlier: 2026-10-12, evening (Stage 1 / Stage 2 npm scripts now run under `tsx`, and `participant-link-qa.test.ts` runs in the Stage 4 suite; all 54 `test:*` scripts pass on PR #46. Earlier the same afternoon: dependency-security PR #53 squash-merged to `main` as `a15bbb5`: Next.js 16.3.8, sharp 0.35.5, source-map-js 1.2.2, `npm audit --omit=dev` 0. PR #46 synced with patched `main` by a merge commit and fully revalidated; see "PR #46 synced with patched main" below. PR #46 still open and unmerged, Gate A paused, production untouched. Earlier: 2026-10-12, afternoon (PR #46 combined-package refresh tranche implemented and browser-QA'd in development. The combined signed package stays a post-Complete convenience artifact. An open manager dashboard now shows "Combined signed package — Preparing…" when it reaches Complete before the package exists, keeps refreshing every 20 s, and swaps in View / Download when the package is verified, with no reload or navigation. The watcher stops once completed artifacts settle. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Combined-package refresh tranche" below. Earlier: 2026-10-11, night (PR #46 completed-document access tranche implemented and browser-QA'd in development. On a Complete Signing, managers with existing Signing authority see "Completed documents" at the top of the dashboard: each signed document, the audit certificate and the combined package once generated, each with View (full-screen read-only viewer, Fit Width / Fit Page / zoom) and Download. Both serve the same immutable, re-hashed finalization artifact through one authorized server route. A fingerprint mismatch is refused, and Draft, In Progress, Declined and Cancelled show and serve nothing. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Completed-document access tranche" below. Earlier: 2026-10-11, evening (PR #46 ceremony-regression tranche implemented and browser-QA'd in development. Applied Initials, Date Signed and Signature show their full text inside the stored field box at every zoom, with no ellipsis, and the completed PDF uses the same fit. Your fields docks from one measured width (1024px and up) and is otherwise a keyboard-accessible drawer, with no dead zone and no horizontal scroll at any of 13 widths from 1440 to 390. A long-open manager Signing page now shows Declined (naming who declined), Cancelled and Complete without a reload: authorized polling every 20 s while In Progress, plus a refresh on tab focus or visibility. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony-regression tranche" below. Earlier: 2026-10-11, afternoon (PR #46 ceremony UX tranche implemented and browser-QA'd in development. Start signing records the read-only Signing name and derived, non-editable initials. The PDF fills the screen with Fit Width / Fit Page / zoom. Guidance goes to the first required field and, only after the server accepts each mark, to the next one or to Finish. Your fields navigates spatially. Finish and done wording separate the participant's part from Signing completion. Leave for now and Decline to sign are QA'd end to end. E-sign consent is now enforced on the server (security finding, fixed). No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony UX tranche" below. Earlier: 2026-10-10, afternoon (PR #46 toolbar tranche implemented and QA'd in development. The auto-add notice shows names, not "[object Object]", and stays one-time. Prepare Documents places with explicit one-shot tools (Signature, Initials, Date, Printed Name, Checkmark) instead of a Field type dropdown, and choosing a participant arms nothing. Link to is removed: Dates link to the nearest source at placement, a selected Date outlines its source, and relinking is delete-and-replace. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Toolbar tranche" below. Earlier the same day: PR #46 polish tranche implemented and QA'd in development. The "Added from the source Packet" notice now shows once and is acknowledged only after the browser displays it. Date Signed links automatically to the nearest Signature or Initials on the hovered page, with Link to as an explicit override. Send readiness updates from the server within about 2 seconds of each placement change, instead of after a 12–14 s reload. New dev-only migration `20261010120000`. PR still open and unmerged, Gate A paused, production untouched. See "Polish tranche" below. Earlier: 2026-10-09, evening (PR #46 Packet lifecycle cleanup implemented and QA'd in development. Packets are ACTIVE or DELETED only, and the unintended INACTIVE state is gone from the database constraint, types and UI. Dev Packet #12, the only INACTIVE Packet, was normalized to ACTIVE. New dev-only migration `20261009140000`. PR still open and unmerged, Gate A paused, production untouched. See "Packet lifecycle cleanup" below. Earlier the same day: PR #46 correctness tranche implemented and QA'd in development. Create Signing eligibility now comes from one server helper, and ineligible Packets show a disabled control with the reason. The Packets list and the selector agree: Inactive is listed, and only Deleted waits for Show deleted. Opening a Draft Signing completes Packet auto-add and identity sync before the first paint. Signing rename works in every lifecycle state and records a history event. New dev-only migration `20261009130000`. PR still open and unmerged, Gate A paused, production untouched. Next after Lee's approval: the separate dependency-advisory PR from `main`. See "Correctness tranche" below. Earlier: 2026-10-08, late (PR #46 Draft polish tranche implemented and QA'd in development: Packet parties auto-add while Draft with per-Signing removal suppression and Restore; linked participant identity live from Contact / profile / brokerage profile while Draft and canonized at activation, with Cancel + new Signing as the only post-activation correction; Date Signed click-to-link; Copy enters paste mode immediately; new fields anchor at the click's left edge. New dev-only migration `20261009120000`. PR still open and unmerged, Gate A paused, production untouched. See "Draft polish tranche" below. Earlier the same day: PR #46 Draft-preparation tranche implemented and QA'd in development: additive Add from Packet, participant roles, Include me / Include broker, Initials-linked Date Signed, click-anchored paste, Printed Name and Checkmark prepared content, Quick Fields removed; new dev-only migration `20261008120000`; PR still open and unmerged, Gate A paused, production untouched; see "Draft-preparation tranche" below. Earlier, 2026-10-05: PR #46 document-visible participant ceremony + read-only typed Signature implemented and browser-QA'd in development; ready for Lee's re-QA; PR still open and unmerged, Gate A paused, production untouched; new upstream `npm audit` advisories (source-map-js / postcss, braces) recorded for a separate dependency PR, see "Lee's manual QA findings and document-visible ceremony tranche" below. Earlier, 2026-10-02: PR #46 brought up to date with `main` `7733493` by merge commit `8769993` (Next.js 16.3.6, no conflicts left, full revalidation and ceremony browser regression pass); PR still open, awaiting Lee's manual re-QA, manager completed-document access is a pre-production blocker, see "PR #46 merged with current main" below; Native Signing participant ceremony QA complete on PR #46 at `3f92e48`: four ceremony defects fixed; packet Created/Updated timestamps fixed to Central time with CDT/CST, PR #52 squash-merged to `main` as `7733493`, live in production via hotfix `3e5eaa3` (= `c25e4c3` + PR #52 code only), deployment `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, rollback `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; dev-only `brace-expansion` advisories remediated by lockfile-only PR #51, squash-merged to `main` as `edfc5a7`, full lockfile audit clean, not deployed (dev-only, no production effect); admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 squash-merged to `main` as `c2a490a` on 2026-10-02; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j is live in production via hotfix `2a92d82` (= `a87b1aa` + dependency change only; deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`); PR #49 squash-merged to `main` as `9f00a80` on 2026-10-02. Earlier, 2026-09-30: Native Signing development and QA remain the active workstream; work paused briefly for the duplicate packet forms hotfix, now live in production. Resume Native Signing development/QA from the state recorded below. Production is running the isolated hotfix, not `main`; production Native Signing remains unavailable.)
 ## Current State
 
+### Post-launch cleanup (2026-10-28; plan awaiting approval)
+
+**Documentation reconciliation.**
+- The `harbaugh-forms-main-docs` worktree held the complete, current Gate A–E record. It was compared with the original worktree's modified docs and with `stash@{0}` ("Gate A-C docs before PR #58 sync"):
+  - **Original worktree:** its four decision headings are short summaries of decisions already recorded here in full under retitled headings. The one record found only there, the independent R11 "INCOMPLETE" review, is now added (R11 section above and `decisions.md`).
+  - **Stash:** only superseded "Gate C in progress" text.
+- Stale statements (rotation "deferred to post-launch item #1", "production enablement not started", the old Next Steps list) now carry dated resolution notes rather than being deleted, so the history stays readable.
+- Both worktrees and the stash are preserved unchanged.
+
+**Post-launch backlog.** `Harbaugh_Forms_Post_Launch_Improvements.md` was added to the repository; previously it was only an untracked file in the original worktree, which is left unchanged. It has six active items:
+1. Remove the "DEV QA Test Signing" default title from Create Signing.
+2. Save buttons at the top and bottom of edit screens.
+3. Packet lifecycle statuses (Closed, Did Not Proceed / Abandoned).
+4. View and restore hidden or inactive Packets.
+5. Publishing a Form with zero field mappings.
+6. Scrolling to the Edit Form panel.
+
+Credential rotation is complete and recorded historically.
+
+**Synthetic production test data (read-only inventory, 20:00 UTC).**
+
+| Category | Records | Exclusively test data | Real business references | Supported hide or remove path | Integrity impact | Must remain |
+|----------|---------|-----------------------|--------------------------|-------------------------------|------------------|-------------|
+| Gate D Signing | `01713222-8006-45b7-8786-5df1aeb10a26` (COMPLETE, ad hoc PDF, no source Packet) | Yes | None | **Archive Signing** (reversible, preserves all evidence; still viewable and downloadable by managers) | Hard deletion would destroy evidence; archive does not | Yes (evidence) |
+| Gate E Signing | `30211f2b-6fba-4514-88b1-2575b86eb898` (COMPLETE, source Packet 17) | Yes | None | **Archive Signing** | Same | Yes (evidence) |
+| Signing-side rows (both) | Participants 3; participant credentials 3; completed-package credentials 3; events 46 (chains 15 and 31); package revisions 2; document versions 2; fields 19; draft fields 19; placements 19; adopted marks 6; artifacts 6; work items 10 (all SUCCEEDED); delivery instructions 6 and attempts 6 (all ACCEPTED); entry, browser and package sessions; package access log 6; presence leases 3; draft source snapshots 2; Gate D prepared content 2; agent associations 2; event-chain state 2; idempotency 2 | Yes | None outside the two Signings | None needed; they follow the Signing | Any change would break chain, fingerprint or audit verification | Yes |
+| Signing Storage | 10 private objects in `signing-artifacts` (Gate D 5: 43,045 bytes; Gate E 5: 1,297,033 bytes) | Yes | None | None needed | Removal would break artifact readback | Yes |
+| TEST Packet | #17 "TEST PACKET FOR SIGNING ROLLOUT" (custom, no property, collection or agreement), owned by Lee | Yes | Only `signings.source_packet_id` of the Gate E Signing | **Delete Packet** (soft delete to DELETED, reversible with Restore) | None: the Signing uses frozen artifacts, not the live Packet | No |
+| Packet document | Packet form #66 (TXR-1501), with its generated PDF (1 `generated-documents` object, 299,216 bytes) | Yes | Gate E `signing_documents` and `signing_document_versions` reference it as source | Set DELETED by Delete Packet; the PDF stays in Storage, as for any deleted Packet | None | The file stays |
+| Fill Form values | 48 field instances on Packet 17 / form #66 | Yes | None | Left as-is under the deleted Packet (Delete Packet does not touch them) | None | Stays |
+| Packet parties | Packet contacts #13 and #14 (both BUYER) | Yes | None | Left as-is under the deleted Packet; a per-contact soft delete also exists | None | Stays |
+| TEST Contacts | #29 "Kenneth Lee Harbaugh" and #30 "Lee Test Seller", notes "TEST CONTACT FOR SIGNING ROLLOUT", owned by Lee | Yes | No agreements, no other Packets; only the Gate E participants' `linked_contact_id` | **No delete or archive action exists in the app.** The status column allows ACTIVE, INACTIVE or DELETED, and the Contacts list and picker show ACTIVE only | None: participants keep their own name and email snapshots | No |
+
+- **Nothing else was created for the tests:** only Contacts 2, Packets 1, Packet Contacts 2, Packet Forms 1 and Field Instances 48, plus the Signing rows above. No Auth accounts or admin audit events reference them.
+- Older smoke-test Packets (#6, #7, #8, #14, #15) were already soft-deleted earlier and need no action.
+- The TEST Contacts carry Lee's own mailboxes, not client data.
+
+**Proposed cleanup (needs Lee's approval; nothing has been changed).**
+1. **Archive both completed test Signings** through the Signing page's **Archive Signing**, as Lee:
+   - `01713222-8006-45b7-8786-5df1aeb10a26`
+   - `30211f2b-6fba-4514-88b1-2575b86eb898`
+
+   They leave the default Signings list but stay viewable and downloadable under "Show archived". Lifecycle stays COMPLETE, and artifacts, hashes and events are unchanged.
+2. **Delete TEST Packet #17** through the Packet page's **Delete Packet**, as Lee. Packet #17 and packet form #66 become DELETED and leave the Packets list; it stays recoverable with **Restore**.
+3. **Retire TEST Contacts #29 and #30** with a reviewed, asserted database update, `status = 'DELETED'` for exactly those two IDs, since no app action exists.
+   - Precondition: Packet #17 already DELETED, and no other references.
+   - This follows the soft-delete convention and the existing DELETED-contact precedent. It needs Lee's explicit approval as a direct database change.
+4. **Keep everything else:** Signing rows, events, artifacts, Storage objects, the generated PDF, field instances and packet contacts. **No hard deletion.**
+5. **Verify afterwards:**
+   - Both event chains still verify, and all artifacts read back.
+   - Manager download still works while archived.
+   - Signings, Packets and Contacts lists no longer show the test records.
+   - Native Signing controls are unchanged.
+
+**Dependencies:** none prevent this cleanup.
+- Archiving appends a protected archive event and sets `archived_at`; the chain stays verifiable.
+- The Gate E Signing's `source_packet_id` link to a DELETED Packet is allowed, since deleted Packets are only ineligible for *new* Signings.
+- Contacts have no supported UI path, which is why item 3 is a direct, asserted update.
+
+### Native Signing launch (2026-10-28; LIVE)
+
+**Status: operational for real customer transactions.** Private evidence is in local `security.md` R66.
+
+| Item | Result |
+|------|--------|
+| Activation | Lee's final Gate E authorization. Access, then work, resumed at **2026-10-28 17:18:38 UTC** through the asserted database procedure. Epoch unchanged. No automatic re-suspension of any kind |
+| Production | `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` (`eb40577`) on both domains; production target the same; `autoAssignCustomDomains=false`. Database: 152 migrations; disclosure `esign-disclosure-2026-10-25-production-ready` READY; two TEST ONLY Signings COMPLETE (kept as evidence); no queued work or pending deliveries |
+| Preflight | Baseline identical to the final backup; current key working; both Signings' evidence verified; DKIM correct; suspended-state checks passed; activation and emergency-suspension scripts dry-run |
+| Security and participants | 35/35 per domain (headers and strict `/sign` CSP exact; invalid participant and package links refused; manager routes require login; invalid worker and Cron credentials rejected). Participant browser checks 8/8 per domain |
+| Application | 85/85 authenticated smoke per domain: login and logout, Packets, Forms, Collections, Contacts, Properties, Fill Form PDF, Settings, admin, Signing management with Create Signing available (not clicked); admin controls "Work suspended No, Access suspended No"; both historical Signings open as Complete with their completed-document controls. 0 hydration, page or console errors |
+| Workers | Real Cron and worker credentials: `200 OK`, 0 processed (no queue). Scheduled Cron every 2 minutes returning 200 |
+| Logs and data | 0 server errors or warnings since activation. Only the controls row and sign-in rows changed; no Signing, participant, credential, job or email records created |
+| Timing note | Validation ran about 2 h 18 min after activation because of a session pause. That interval had no Signing activity and no errors |
+
+**Operating conditions (see `decisions.md` "Native Signing launch operating conditions").**
+- **Accounts:** permissions unchanged; Susan's approved no-notice exception unchanged. All eligible accounts can now send under their existing permissions.
+- **Recipient guidance:** recipients should expect `Harbaugh Forms <signing@send.harbaughrealestate.com>` and check Spam or Junk if needed.
+- **Monitor the first real transactions closely:**
+  - invitation acceptance and actual arrival;
+  - bounces and failures (Resend dashboard);
+  - consent and completion;
+  - completed-package email;
+  - Cron and worker health;
+  - PDF finalization and Storage;
+  - runtime errors.
+- **Monitoring views:** the on-demand read-only status query (`q-launch-monitor.sql` in the private launch folder), the manager `/signings` pages, `/admin/signing-controls`, Vercel runtime logs and the Resend Emails log. No recurring monitor.
+- **Backups:** maintain independent backups of newly completed Signing documents with periodic encrypted snapshots by the established procedure. The 2026-10-28 snapshot is the pre-launch recovery point.
+- **Emergency:** the emergency-suspension script (work, then access) runs through the database with current credentials. It needs no deployment, and must never roll back to a pre-rotation build.
+- **Post-launch work:**
+  - invitation wording naming the agent and brokerage;
+  - DMARC aggregate reporting;
+  - legacy Supabase JWT-key retirement;
+  - disclosure version on the audit certificate;
+  - production use of in-person, decline and cancellation when first needed.
+- **Accepted uncertainties:** E-SIGN legal review and PDF-access demonstration. These are not claims of legal certification.
+
+### Final pre-launch backup and readiness (2026-10-28; done)
+
+**Backup.** One new production recovery snapshot, using the established 2026-10-26 procedure (Lee approved). Private paths and hashes are in local `security.md` R65.
+
+| Item | Result |
+|------|--------|
+| Archive | `harbaugh-forms-prod-snapshot-20261028T165902Z.7z`, 7-Zip AES-256 with encrypted file names, under the existing backup passphrase; in the approved local encrypted folder and the personal OneDrive folder (online-only) |
+| Database | Full `pg_dump` of every schema (auth, public, storage metadata, migrations, realtime, vault, extensions); roles without passwords. 152 migrations, 3 Auth users, 0 Vault secrets; both synthetic Signings with all events, work items, deliveries and artifacts records; TEST Packet #17 and Contacts #29/#30 |
+| Storage | All 101 current objects enumerated live, 37.1 MB: form templates 52, generated documents 39, Signing artifacts 10. Manifest with path, size, SHA-256, MD5 and ETag per object |
+| Consistency | 111 table checksums identical before the dump, after Storage and after the restore test. Object list unchanged |
+| Fingerprints | Every object matches its size and MD5 ETag. Every Signing artifact and prepared document matches the application's recorded SHA-256 |
+| Isolated restore | Local localhost-only PostgreSQL 17: all 111 tables identical to production; schema identical except the usual re-deparsed CHECK constraints; only the expected Supabase-vault restore errors; cluster deleted afterwards |
+| Archive verification | Integrity test, wrong passphrase rejected, names hidden, full extraction with 0 mismatches (138 files, 101 Storage objects) |
+| OneDrive | Uploaded, then read back from the cloud. Same SHA-256; full extraction with 0 mismatches |
+| Plaintext | This run's plaintext staging was removed after both copies verified. Earlier backups and archives untouched |
+| Restoration | Instructions are in the archive's README (row-level repair, full disaster recovery, Signing restore rule). Extract to a short path; some object paths are about 190 characters |
+
+**Readiness (read-only).**
+- **Domains:** both pass 35/35 on `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ`, with headers and CSP exact and participant links refused.
+- **Suspension:** Cron and worker `SUSPENDED`; both suspensions active.
+- **Signings:** both COMPLETE; event chains, prepared documents and all six artifacts re-verified.
+- **Keys:** current production key works (Auth, REST, Storage); the exposed secret key is no longer listed by Supabase.
+- **Email:** DKIM single record (active key); SPF unchanged.
+- **Kill switch, queue and configuration:** the kill switch works with current credentials; no Drafts, in-progress Signings, unfinished work or pending deliveries; disclosure READY; Vercel unchanged; `autoAssignCustomDomains=false`.
+
+**Remaining launch blockers:** none. Permanent activation is Lee's separate authorization. It uses the asserted resume procedure (access, then work); no deploy or migration is needed.
+
+### Gate E: final two-participant production Signing (2026-10-28; passed; suspensions restored)
+
+**Setup.**
+- **Preparation:** Lee prepared everything in the manager UI while Signing was suspended:
+  - TEST Contacts #29 "Kenneth Lee Harbaugh" (`leeharbaugh@yahoo.com`) and #30 "Lee Test Seller" (`leeharbaugh@gmail.com`).
+  - TEST Packet #17 (custom, no property), both Contacts as Buyer.
+  - **TXR-1501 Buyer/Tenant Representation Agreement – Long Form**, filled with synthetic data including a TEST ONLY provision.
+- **Fields:** Draft fields were placed manually; production has no placement templates.
+- **Timing:** the window opened after the DKIM cache horizon.
+- **Controls:** resumed and restored with new asserted scripts, with a 3-hour auto-restore monitor.
+
+| Item | Result |
+|------|--------|
+| Signing | `30211f2b-6fba-4514-88b1-2575b86eb898`, "TEST ONLY - Gate E two-party Signing 2026-10-28", source Packet 17, COMPLETE |
+| Participants and fields | 2 remote Buyers. Each: Initials on pages 1 to 5, Signature and linked Date Signed on page 6 (14 fields). Each saw and could act on only their own fields; 0 cross-participant placements |
+| Invitations | Resend accepted both (16:32:52 and 16:32:53 UTC). **Gmail: Inbox. Yahoo: Spam** |
+| Authentication | Both providers: `dkim=pass` for `send.harbaughrealestate.com` (selector `resend`), SPF pass, DMARC pass (`p=none`). The R63 DKIM fix is confirmed |
+| Ceremonies | Separate identity, disclosure and consent per participant (both bound to the production-ready disclosure). After the first Finish the Signing stayed In Progress with no finalization |
+| Finalization | Started about 22 s after the last Finish (*/2 Cron), finished in about 5.5 s. Completed PDF 6 pages, 336 KB, letter size; audit certificate 2 pages; combined package 8 pages. No production limit hit |
+| Integrity | Event chain verified (31/31 protected); prepared-document fingerprint MATCH; all three artifacts byte-identical to their recorded SHA-256 in the private bucket; marks inside their boxes (checked by text position and visually) |
+| Completed package | Emails accepted and delivered to the **Inbox at both providers**; participant links downloaded from both mailboxes (4 access-log entries); manager View/Download of all three worked |
+| Window | Resumed 16:31:39, restored 16:47:08 UTC (about 15.5 min). No other sender's activity. 0 server errors and 0 5xx inside the window |
+| Data | Only Signing tables and this Signing's Storage objects changed during the window. Business data changed only through the intended TEST Contacts, Packet and Fill Form during preparation |
+| After restore | Both suspended (epoch unchanged); Cron and worker `SUSPENDED`; participant and package links refused (503, no cookie) on both domains |
+
+**Limitations and observations (not blockers).**
+1. **Yahoo still files the invitation as Spam** despite full DKIM, SPF and DMARC pass, while Gmail delivers to the Inbox. The likely causes are new-domain reputation and the invitation's content, which doesn't name the agent.
+2. **Tested scope:** remote signing with typed marks only. In-person, decline and cancellation remain development-proven.
+3. **Broker data:** the TXR-1501 broker block printed Lee's real brokerage and associate defaults on this TEST document. The document is preserved as evidence and was sent only to Lee's mailboxes.
+4. **Finalization latency:** it waits for the next Cron run, up to 2 minutes.
+
+**Recommendation: GO for real-customer activation**, as a separate decision by Lee, with these conditions:
+1. Agents tell clients to expect the email from `Harbaugh Forms <signing@send.harbaughrealestate.com>` and to check Spam or Junk. Yahoo users especially.
+2. Watch the first real Signings' delivery and completion.
+3. Keep the database kill switch ready.
+4. Accepted standing items: the agent-account sender exception; optional legacy-key retirement; the optional invitation wording and DMARC reporting improvements.
+
+### Signing email DKIM correction (2026-10-28; done)
+
+**Result.** The duplicate DKIM record is removed. Private detail is in local `security.md` R63.
+
+| Item | Result |
+|------|--------|
+| Defect | Two competing TXT records at `resend._domainkey.send.harbaughrealestate.com`, each a complete key; not one record split into strings |
+| Authoritative value | The original Resend account, which sends the Signing emails (both test emails are in its log) and holds the Supabase Auth email domain, lists the key with fingerprint `5866fe61…` (`…KBgQDIOqiO…`). The other key (`d17e7f9a…`, `…KBgQCmJRg6…`) belonged to the unused duplicate account: stale |
+| Impact before | Yahoo headers on both 2026-10-27 test emails: `dkim=perm_fail` for `send.harbaughrealestate.com`; DMARC passed only via SPF |
+| Change | Lee deleted only the stale record in HostPapa after confirming it by its fragments |
+| DNS after | One record (`5866fe61…`) at both HostPapa nameservers and 11 public resolvers. Any lingering caches expire by about 15:40 UTC today (4-hour TTL) |
+| Unchanged | SPF, MX, return-path CNAMEs, DMARC (`p=none`), the `resend-domain-verification` TXT, and the Supabase Auth selector on the root domain |
+| Resend | Domain and DKIM still Verified in the original account |
+
+**Remaining (not launch blockers).**
+1. Confirm `dkim=pass` for `send.harbaughrealestate.com` in the headers of the final Signing's emails (no test email was sent today).
+2. DMARC aggregate reports (`rua`) before any future tightening.
+3. New-domain reputation.
+4. Optionally name the agent and brokerage in the invitation.
+5. Optionally remove the domain from the duplicate Resend account.
+
+**Optional future hardening (not a launch blocker).** Retiring the production legacy Supabase JWT API keys (`anon`, `service_role`). See "Credential rotation: complete".
+
+**Ready for the final Signing:** yes. That is the Packet-based, two-participant production Signing, with separate approval.
+
+### Credential rotation: complete (2026-10-28)
+
+**Result.** Every credential exposed in the 2026-10-26 incident is replaced or revoked: development secret key, production database password, production secret key `default`, and the deployment-protection bypass. Private detail is in local `security.md` R58 to R62.
+
+| Check | Result |
+|-------|--------|
+| Preflight | Live `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` (`eb40577`) on both domains; flag on; work and access suspended; disclosure READY; replacement key working; promoted deployment's Cron `SUSPENDED` |
+| Revocation | Lee deleted the production secret key `default` (about 11:09 UTC). Supabase's key listing now shows the secret key `rotation_20261028` only, plus the publishable key (also named `default`, a different key, still working) and the legacy `anon` and `service_role` keys (enabled; never exposed) |
+| Replacement key | Auth, REST and Storage 200; both domains' real Cron 503 `SUSPENDED`, 0 processed |
+| Suites, both domains | 35/35 security and fail-closed; 8/8 participant; 82/82 authenticated smoke (login and logout, Packets, Forms, Collections, Properties, Contacts, Fill Form, Settings, admin, Signing management with controls enabled and work and access suspended); 0 hydration, page or console errors |
+| Logs | 0 error, warning or fatal since revocation; all 5xx are 503 on designed suspended or unavailable paths; scheduled Cron `SUSPENDED` every 2 minutes |
+| Data and configuration | Only smoke sign-in rows changed; no Signing activity; Vercel and all env rows unchanged; `autoAssignCustomDomains=false` |
+| Kill switch | The suspension script connects with the new database password and reaches its write step (refused only because the test session was read-only) |
+
+**Unexpected finding.** The previous deployment's key-dependent operations did **not** fail after revocation; its Cron kept returning `SUSPENDED`.
+- Diagnosis: pre-rotation builds used Vercel's old `SUPABASE_SECRET_KEY`, which must be the legacy `service_role` key. That is the only other service credential still valid. It is not `default`, as the incident analysis had inferred.
+- So the exposed `default` key was only ever used by local operations tooling, never by the live app.
+- Revocation is proven by Supabase's own key listing and the dashboard. A direct refusal test was impossible because no copy of the old value was kept.
+
+**Recovery procedure (from now on).**
+- **No earlier deployment is a rollback target.** All are built before 2026-10-28 10:41:30 UTC: `dpl_8XsS…`, `dpl_G7Ww…` and older. They still function only through the legacy `service_role` key, and the recovery path must not depend on that or on any pre-rotation build.
+- **Signing kill switch:** the database suspensions (`controls-restore.sql` via `prod-psql.ps1 -Write`), with no deployment.
+- **Application rollback:**
+  1. Fresh clean detached checkout of a pinned commit.
+  2. `deploy-candidate-v2.ps1` dry run, then execute (picks up `rotation_20261028`).
+  3. Candidate validation.
+  4. Separate approval, then `promote-candidate.ps1` (without `-AllowOldKeyRollback`).
+  5. Post-promotion validation.
+- **Do not delete** historical deployments, backups or incident evidence.
+
+**Open (Lee's decision; not done).** Optionally disable the production legacy JWT API keys (`anon`, `service_role`). The live app doesn't use them, and they were never exposed. Disabling them would make every pre-rotation deployment stop working server-side and confirm the diagnosis.
+
+**Next launch tasks.**
+1. Correct the duplicate DKIM record on `send.harbaughrealestate.com`.
+2. One Packet-based, two-participant production Signing (separate approval).
+
+### Credential rotation: replacement deployment promoted (2026-10-28; validated; old key still active)
+
+**Authorized scope.** Promotion of `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` and validation; **no revocation**. Private detail is in local `security.md` R61.
+
+| Item | Result |
+|------|--------|
+| Pre-checks | All ten conditions matched: candidate READY at `eb40577`, built after the key update; Production `SUPABASE_SECRET_KEY` Sensitive and updated; no other variable changed; flag on; work and access suspended; disclosure READY; both domains on `dpl_8XsS…`; `autoAssignCustomDomains=false`; no Signing activity |
+| Promotion | Guarded `promote-candidate.ps1` (dry run, then execute) running the fixed `vercel promote dpl_6FVk… --yes --timeout 5m` from the empty neutral directory; 10:57:05–10:57:11 UTC. No new build |
+| Targets | `forms.harbaughrealestate.com`, `harbaugh-forms.vercel.app` and the production target all on `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ`; `autoAssignCustomDomains=false` |
+| Security and fail-closed | 35/35 per domain: headers and strict `/sign` CSP exact; participant and package links refused; manager login gates; Cron and worker `SUSPENDED`, 0 processed |
+| Participants | 8/8 per domain |
+| App and auth | 82/82 per domain: login and logout, Packets, Forms, Contacts, Properties, Collections, Fill Form PDF, Settings, admin, Signing management visible with controls enabled and work and access suspended. 0 hydration, page or console errors |
+| Logs | 0 error, warning or fatal. All 5xx are 503 on designed suspended or unavailable paths. Scheduled Cron at 10:58, 11:00 and 11:02 UTC returned `SUSPENDED` |
+| Data | Only smoke sign-in rows changed; no Signing, credential, job or email activity; disclosure READY |
+| Keys | Replacement `rotation_20261028` works (Auth, REST, Storage 200; promoted deployment's Cron `SUSPENDED`). Old `default` **still active** (the previous deployment's Cron also returns `SUSPENDED`) |
+
+**Ready for revocation: yes.** No regression; no rollback needed.
+
+**Revocation (separate approval).**
+1. In production project `eetonalyyyssvkyfdoxh`, Settings, API Keys, Secret keys: delete **`default`** (the exposed key) and **keep `rotation_20261028`**.
+2. **Immediate checks.**
+   - Real Cron on both domains must still return 503 `SUSPENDED` (replacement key works server-side).
+   - Real Cron on the previous deployment's unique URL must now fail. That proves the old key is revoked and that the live site never depended on it.
+   - The replacement key still gets 200 on Auth, REST and Storage.
+3. **Then re-run the suites:** 35, 8 and 82 per domain, plus runtime logs and data checksums.
+4. **Reminder:** every deployment built before 2026-10-28 10:41:30 UTC, including `dpl_8XsS…` and `dpl_G7Ww…`, then stops working server-side and is no longer a rollback option. Rollback after revocation uses the database suspensions, or a guarded rebuild and promotion that picks up the replacement key.
+
+### Credential rotation: production secret key (2026-10-28; candidate validated, not promoted)
+
+**Authorized scope.** Create and install the replacement key; build and validate a candidate. Promotion and revocation of the old key were **not** authorized. Private detail is in local `security.md` R60.
+
+| Item | Result |
+|------|--------|
+| State before | Matched the expected baseline exactly; intake byte-identical to the safety-tested version; clipboard history off |
+| New key | `rotation_20261028`, created by Lee in production. Validated read-only before any write: Auth admin list, REST read, Storage bucket list all 200; development refuses it. Not the exposed key |
+| Old key | `default` (exposed) **still active**, as required; the live deployment uses it |
+| Ops file | Only `TARGET_SUPABASE_SECRET_KEY` changed (other 6 lines identical) |
+| Vercel | Production `SUPABASE_SECRET_KEY` updated (value via stdin), read back Sensitive and Production-only; the other 24 variables unchanged. Clipboard cleared; no value printed |
+| Build | Fresh clean detached worktree `E:\dev\harbaugh-forms-candidate-eb40577-r2` at `eb40577`. Guarded `deploy-candidate-v2.ps1`: 29 guards, upload set equal to the 933 tracked files, `--prod --skip-domain` from the empty neutral directory |
+| Candidate | **`dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ`**, `https://harbaugh-forms-a02xz36fa-lee-harbaugh-s-projects.vercel.app`. READY, production target, created after the key update |
+| Security and suspension | 35/35: headers and strict `/sign` CSP exact; participant and package links refused (503, no cookie); manager routes require login; Cron and worker `SUSPENDED`, 0 processed; bad secrets 401 |
+| Participants | 8/8 browser checks: unavailable notice, no Signing cookie |
+| App and auth | 82/82 smoke: sign-in and sign-out, Packets, Contacts, Properties, Collections, Forms, Fill Form PDF, Settings, admin, `/signings`, Create Signing visible (not clicked), Signing controls enabled, work and access suspended. 0 hydration, page or console errors |
+| Logs and data | Candidate runtime logs: 0 errors, warnings or 5xx. Data: only smoke sign-in rows (`auth.users`, `user_preferences`); no Signing, credential, delivery or email activity. Disclosure READY |
+| Live domains | Both on `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY` throughout (35/35 rechecked after validation); `autoAssignCustomDomains=false` |
+
+**Concerns.**
+1. **Proof of key is indirect until revocation.** While both keys are valid, no runtime test can show which key the candidate uses. The evidence is ordering: the variable was updated and read back before the candidate was built, and Vercel injects env at build time. The definitive check comes right after revocation (step 6 below).
+2. **Team URL moved.** The build also moved the team production URL `harbaugh-forms-lee-harbaugh-s-projects.vercel.app` to the candidate. It is login-protected, not a live domain, and moves with promotion anyway.
+3. **Old deployments will stop working.** Every deployment built before 10:41:30Z UTC, including the live `dpl_8XsS…` and the earlier `dpl_G7Ww…`, carries the exposed key and stops working server-side once it is revoked.
+
+**Next steps (each needs Lee's approval where noted).**
+1. **Promote (approval).** Run `promote-candidate.ps1 -Candidate dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ -ExpectedLive dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY -ExpectedCommit eb40577ec25cdd83db2dc335680c60af45a693a8 -Execute`. Guards re-check everything first.
+2. **Verify on both domains.** 35 checks, 8 participant checks, 82 smoke, scheduled Cron returning 503 `SUSPENDED`, runtime logs, data checksums.
+3. **Rollback while the old key is active.** Run the same script with `-Candidate dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY -ExpectedLive dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ -AllowOldKeyRollback -Execute`.
+4. **Revoke (approval).** Lee deletes `default` in production API Keys, keeping `rotation_20261028`.
+5. **Immediate re-check.** Repeat the domain checks and smoke.
+6. **Definitive proof.** The promoted deployment still returns `SUSPENDED` from real Cron, which needs a server-side database read with its key. The old `dpl_8XsS…` unique URL, which has the old key, must now fail that same call.
+7. **Rollback after revocation (no revoked credentials).**
+   - Signing kill switch: the database suspensions via `controls-restore.sql` and the new database password, with no deployment.
+   - App fault: fresh checkout of a pinned commit, `deploy-candidate-v2.ps1` (picks up the new key), validate, then `promote-candidate.ps1` without the rollback switch.
+   - If the new key itself were at fault: Lee copies `rotation_20261028` again (or a new key), then the intake with `-UpdateVercelProduction`, rebuild and promote.
+
+### Credential rotation: production database password (2026-10-28; done)
+
+**Result.** The production `postgres` password is reset, installed and verified. Private detail is in local `security.md` R59.
+
+| Item | Result |
+|------|--------|
+| Dependency preflight | Only the private ops file holds it, read at run time by the admin tools (psql wrapper, backup, migration dry run and push). Not used by Vercel (no database variable), the deployed app (the only code reference is migration tooling, not imported by the app) or Supabase Auth, Storage and PostgREST (their own platform roles). No stored connection credentials, Vault secrets or scheduled jobs in the database. No unexpected dependent |
+| Tool | `rotate-intake-v2.ps1`, unchanged from the safety-tested version; isolated Windows PowerShell 5.1 process; clipboard history off |
+| Reset | Lee, once, in Database Settings for `eetonalyyyssvkyfdoxh`; generated password saved in his password manager; never displayed or logged |
+| Validation | Read-only production session with the new password before any write. Accepted on the fourth attempt, after about 60 s of pooler propagation; no second reset |
+| Updated | Only `TARGET_DB_PASSWORD` in the private ops file (6 other lines unchanged, including both API keys); clipboard cleared |
+| Admin tooling | `prod-psql.ps1` works read-only with the new password; the database kill switch (controls scripts) uses the same path |
+| Production | Both domains on `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`. 35/35 unauthenticated checks per domain, including Cron and worker `SUSPENDED`. 82/82 authenticated smoke per domain: sign-in, app pages, Fill Form PDF, Signing pages; 0 console or page errors. Native Signing on; work and access suspended; `autoAssignCustomDomains=false`. Vercel project and every env row identical. Data changed only in `auth.users` and `user_preferences` (smoke sign-ins) |
+
+**Notes.**
+- The old exposed password no longer works.
+- The generated password is 16 characters, the dashboard default. It is acceptable; a longer one is optional at a future reset.
+- The migration dry-run and push wrappers put the password in a `--db-url` process argument while they run. This predates the rotation; improve it before the next migration.
+
+**Next (step 3, separately authorized).** The coordinated production secret API key replacement:
+1. Lee creates a new production secret key and keeps the old one.
+2. `rotate-intake-v2.ps1 -Credential ProdSecret -UpdateVercelProduction`.
+3. A fresh detached checkout of `eb40577` and a guarded build with `deploy-candidate-v2.ps1`.
+4. Validation, then stop for promotion approval.
+
+### Credential rotation: development secret key (2026-10-28; done)
+
+**Result.** The development Supabase secret key is replaced and the old exposed key `default` is revoked. Private detail is in local `security.md` R58.
+
+| Item | Result |
+|------|--------|
+| Tool | `rotate-intake-v2.ps1`, byte-identical to the version that passed the 78-check safety suite; isolated Windows PowerShell 5.1 process; clipboard history off |
+| Validation | New key accepted by development (Auth admin list, read-only) before anything was written |
+| Updated | Ops file development entry; `SUPABASE_SECRET_KEY` in the `.env.local` of `harbaugh-forms`, `-dupfix`, `-hydration-prod`, `-main-next-1641`, `-next-patch` and `-next-prod`; Vercel Preview `SUPABASE_SECRET_KEY` (Sensitive, Preview-only, read back; 24 other variables unchanged) |
+| Independent check | Exactly those 7 local files changed; all copies identical; no local file still holds the exposed key; production entries in the ops file untouched; installed key reads development Auth, REST and Storage (200); Vercel diff is the one Preview row |
+| Revocation | Lee deleted `default`, keeping `rotation_20261027`. The old key is refused by Auth and REST (401 "Unregistered API key") and Storage (400); the new key still gets 200. The temporary sealed copy used for this proof is destroyed |
+| Production | Unchanged: both domains on `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`, `autoAssignCustomDomains=false`, Native Signing on, work and access suspended, disclosure READY, table checksums and all Production variables identical |
+| Output | No credential value in any output, log or evidence file (scanned) |
+
+**Notes.**
+- The first clipboard reads held other text from the same dashboard page, not the key. The intake refused it and nothing changed; Lee then copied the revealed `sb_secret_` value.
+- Existing Preview deployments, built before the change, carry the revoked key and can no longer reach the development database server-side. New Preview builds use the new key.
+- Vercel Development uses a legacy JWT and is unaffected.
+
+**Next (step 2, needs Lee's go-ahead).** Reset the production database password. Lee resets it in the production dashboard and copies it, then runs `rotate-intake-v2.ps1 -Credential ProdDbPassword`. That checks a read-only session through the pooler and then updates only the ops file's `TARGET_DB_PASSWORD`. Verify `prod-psql.ps1` read-only and the controls scripts' connectivity. No app or Vercel impact.
+
+### Credential rotation: development secret key (2026-10-27; paused before key creation)
+
+**Status.** Lee approved the development key only and chose to stop at the key-creation step. No key was created, read or installed; no local file, Vercel variable or Supabase setting changed. Private detail is in local `security.md` R57.
+
+**Safety validation of `rotate-intake-v2.ps1`: 78 of 78 checks pass.** The test copy differed from the real script only in constant paths and endpoints. It used random dummy values and mocked Vercel CLI, Supabase Auth and psql, and was shown unable to reach real configuration. Proven:
+- No value appears in output, exception text, logs or PowerShell history.
+- Every Vercel process runs from the empty neutral directory with an exactly whitelisted argument string. No bare `vercel` command exists in the script.
+- Only the ops file's development-key line and the six matching `.env.local` lines change, plus only the Vercel Preview row.
+- Refusals, Vercel failures, hangs, missing read-backs and other-row changes all fail closed, with no deployment possible.
+- The clipboard is cleared on every path.
+
+**Defects fixed before use.**
+1. The Vercel argument whitelist was case-insensitive and accepted a trailing newline. It is now exact.
+2. Supabase answers "Forbidden use of secret API key in browser" to PowerShell's default `Mozilla/5.0` user agent, so key validation would have rejected every genuine key. It failed closed, but rotation could never finish. It now sends a non-browser user agent, confirmed live and read-only against development.
+
+**Dependents found (read-only).**
+- The ops file's development entry and six worktree `.env.local` files (unchanged from R52).
+- Vercel Preview `SUPABASE_SECRET_KEY`, one Sensitive row.
+- Vercel Development uses a legacy JWT, not the exposed key, so it is not affected.
+- 100 or more existing Preview deployments were built with the old Preview value and lose development database access once the old key is revoked. They are SSO-protected previews; rebuild one only if needed.
+- No local dev server is running.
+
+**Production unchanged (verified at stop).** Both domains serve `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`; `autoAssignCustomDomains=false`; Native Signing on; work and access suspended; disclosure READY. Production table checksums and the full Vercel env listing are identical to the start.
+
+**To resume (development key only).**
+1. Lee turns off Windows Clipboard history (Settings, System, Clipboard). The intake refuses while it is on.
+2. In project `ewxsxwzezhkeawnjvigx`, under Settings, API Keys, Secret keys: create `rotation_20261027`, keep `default`, and copy the new key.
+3. Run `rotate-intake-v2.ps1 -Credential DevSecret -UpdateVercelPreview` in an isolated Windows PowerShell 5.1 process. Expected: HTTP 200, seven local updates, a Preview read-back, the clipboard cleared.
+4. Read-only development check with the new key from the files.
+5. Lee deletes `default`.
+6. Prove the old key now gets 401 using the DPAPI-sealed copy, then delete that copy.
+7. Re-verify production.
+
+Then the production database password, then the coordinated production secret key and deployment.
+
+### Gate D: launch-readiness review (2026-10-27; done; GO for rotation)
+
+**Scope.** A read-only review: no deploy, migration, unsuspension, Signing, email, account, DNS, Resend or credential change. Private evidence is in local `security.md` R56.
+
+**Baseline confirmed (18:33 UTC).**
+- **Deployment:** both domains and the production target are on `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY` (`eb40577`, also `origin/main`); `autoAssignCustomDomains=false`.
+- **Signing:** feature flag on; work and access suspended (epoch unchanged); disclosure `esign-disclosure-2026-10-25-production-ready` READY; the synthetic Signing COMPLETE with verified artifacts.
+- **Accounts:** only the three preserved accounts, with the agent-account exception unchanged.
+- **Credentials:** rotation outstanding; no new evidence of misuse.
+
+**Deliverability.**
+
+| Check | Finding |
+|-------|---------|
+| DKIM | **Defect.** `resend._domainkey.send.harbaughrealestate.com` publishes two different public keys (authoritative HostPapa DNS and public resolvers, order varies). One is almost certainly stale from the duplicate Resend account. A receiver that picks the stale key fails DKIM, which plausibly explains one email in spam and the other in the inbox. The Auth-email selector on the root domain has one key |
+| SPF and return path | Correct: `send.send.harbaughrealestate.com`, CNAME to Resend's `send.forge.rmta.net`; aligned (relaxed) with the From domain |
+| DMARC | `p=none` on `harbaughrealestate.com`, no reports (`rua`), inherited by `send.`. Not the cause: with SPF aligned, DMARC can pass regardless of the DKIM problem. Do not tighten: the root domain also sends through the web host's servers and Resend (Auth email), and there are no reports to prove all sources |
+| Sender and content | From `Harbaugh Forms <signing@send.harbaughrealestate.com>`, Reply-To `lee@harbaughbrothers.com`, plain text, link on `forms.harbaughrealestate.com` (same organizational domain). The invitation never names the sending agent or brokerage, unlike the completed-package email. "Documents ready to sign" plus one tokenized link from an unfamiliar sender is a phishing-like pattern. Optional improvement |
+| Tracking | The app sends text only and sets no tracking; there is no tracking-domain DNS. Open tracking cannot apply to text mail. Click tracking is a Resend domain setting; Lee confirms it is off |
+| Reputation | The invitation was the first message from this domain to Yahoo; new-domain reputation is a likely contributor and improves with normal volume |
+| Resend events and Insights | Not readable: the installed key is send-only by design. Lee checks the dashboard |
+
+**Conclusion.** There is one specific defect: the duplicate DKIM record. Fix it, then launch with delivery monitoring and a "check spam or junk" line in the agent's own message to clients. No DMARC change. Lee's checks, none sending email:
+1. In Yahoo, **View raw message** for both emails and read `Authentication-Results` (`dkim=`, `spf=`, `dmarc=`).
+2. In Resend, Domains, `send.harbaughrealestate.com`: note which DKIM value is listed (it starts `…KBgQCmJRg6…` or `…KBgQDIOqiO…`). Confirm both emails show Delivered, read Deliverability Insights, and confirm click and open tracking are off.
+3. At HostPapa, delete only the DKIM TXT value that Resend does not list.
+
+**Minimum Gmail or Outlook test.** Make it part of the post-rotation synthetic Signing below: one participant at a Gmail or Outlook.com mailbox Lee controls and authorizes. No separate email.
+
+**Functional coverage.**
+
+| Capability | Production | Development |
+|-----------|------------|-------------|
+| Remote signing, consent, typed marks, Finish | **Proven** (synthetic, 1 participant) | Ceremony QA 83/83 |
+| Finalization, completed PDF, certificate, combined package, delivery, participant download | **Proven** (chain 15/15, fingerprints, rendered pages) | Stage 6 and completion-delivery validators |
+| Prepared content (Printed Name, Checkmark), ad hoc PDF | **Proven** | Draft-prep validators |
+| Signing from a real Packet (TXR forms) | Not exercised | Draft-prep and Stage 4 validators; Prepare QA 90 |
+| Multiple participants, isolation, parallel completion | Not exercised | Ceremony QA (2 participants plus copy recipient) |
+| Sequential signing | Not supported by design: all participants sign in parallel | — |
+| In person | Not exercised | Ceremony QA, device lock and unlock |
+| Decline, cancellation, cancellation email | Not exercised | Ceremony QA decline; cancellation QA 31; validators |
+| Manager view and download of completed documents | Not checked | Manager artifact access validator |
+| Link resend, replace, revoke; consent withdrawal | Not exercised | Link-ops 28; withdrawal QA 7/7 |
+
+No production failures and no untested core path. The material confidence gap is the **ordinary transaction shape**: Packet-sourced TXR forms at real size, with two signers, on Vercel's production limits. The synthetic used a 3 KB two-page PDF. Rotation also replaces the credential every Signing write uses, and suspended smoke checks cannot exercise those writes.
+
+**Recommended test, after rotation and before real customers (separate approval; not a development phase).** One Lee-owned synthetic Signing:
+- Source: a TEST Packet with a real TXR form.
+- Participants: two remote, `leeharbaugh@yahoo.com` plus one authorized Gmail or Outlook address.
+- Check: both complete, the manager downloads the completed documents, and delivery results are recorded.
+- In person, decline and cancellation stay development-proven. Add an in-person participant only if Lee plans in-person use at launch.
+
+**Final document review.** The stored combined package was rendered from a copy (evidence hash unchanged). Page 1 shows ✓ inside the Checkmark box. Lee's simple check: open the local evidence copy of the combined package (SHA-256 `a9d3021a…e6e9`, the same bytes as the stored artifact; location in local `security.md` R56), or the copy he downloaded, in Edge, and look at page 1, Section B. Rendered page images are kept with that evidence.
+
+**Optional improvements (not blockers).**
+- The invitation could name the agent and brokerage.
+- The audit certificate could print the accepted disclosure version and fingerprint.
+- DMARC aggregate reports (`rua`) before any future tightening.
+
+**Rotation handoff.**
+- **Inventory (unchanged from R52):**
+  - Production secret API key: the ops file and Vercel Production `SUPABASE_SECRET_KEY`.
+  - Production database password: the ops file only.
+  - Development secret key: the ops file, six worktree `.env.local` files and Vercel Preview `SUPABASE_SECRET_KEY`.
+  - The bypass secret is already rotated, and the publishable key is public by design.
+- **Tools:**
+  - `rotate-intake-v2.ps1` fixes the PowerShell hazards in the original. Vercel runs only from the empty neutral directory with whitelisted arguments, output is read asynchronously, the Vercel row is read back, psql stderr is handled, and STA and clipboard history are checked.
+  - `deploy-candidate-v2.ps1` adds asynchronous reads.
+- **Safeguards:** `.vercelignore` is in `eb40577` and the clean-checkout procedure stands. The rotation build needs a fresh detached checkout, because the existing one has `node_modules`.
+- **Rollback:** after the old production key is revoked, no existing deployment is a usable rollback target. See the decision "Credential rotation runs before launch; rollback never relies on revoked credentials".
+
+### Gate D: synthetic production Signing (2026-10-27; done)
+
+**Setup.**
+- **Recipient:** Lee confirmed the participant mailbox `leeharbaugh@yahoo.com`.
+- **Document:** a generated two-page TEST ONLY PDF with fictional placeholders, uploaded directly to the Signing. It created no Packet, Contact or Form records.
+- **Roles:** Lee performed the manager steps in his own browser, and personally performed the participant steps, including consent.
+- **Controls:** access, then work, were resumed by an asserted database procedure with the access epoch unchanged, and restored the same way.
+
+| Item | Result |
+|------|--------|
+| Signing | `01713222-8006-45b7-8786-5df1aeb10a26`, "TEST ONLY - Gate D synthetic Signing 2026-10-27", sender Lee, no source Packet. Draft 11:53, Sent 11:57, Complete 12:00:32 CDT |
+| Invitation | Accepted by Resend (provider message id recorded); arrived in **Yahoo spam** |
+| Ceremony | Identity affirmed, then the E-SIGN disclosure shown and consent given by Lee (bound to `esign-disclosure-2026-10-25-production-ready`, `802ad621…`), then typed signature and initials adopted, 3 marks placed, Finish |
+| Completed PDF | 2 pages, valid PDF, TEST ONLY on every page. "LH" in both Initials boxes; "Lee Harbaugh" in Signature and Printed Name; "2026-10-27" in both Date Signed boxes; Checkmark placed on page 1 (vector; Lee to confirm visually) |
+| Evidence | Audit certificate (2 pages): sender, brokerage, participant, prepared and completed SHA-256, and the 13-event chronology through the certificate boundary. Combined package (4 pages: document plus certificate). Event chain verified, 15 of 15 protected events. Prepared-document and all artifact fingerprints re-verified |
+| Storage | 5 objects in the private `signing-artifacts` bucket under `signings/<id>/` only; other buckets unchanged |
+| Completed package | Email accepted by Resend and delivered to the inbox; Lee downloaded the combined package from its link |
+| Isolation | Only `leeharbaugh@yahoo.com` ever received Signing email. All 34 non-Signing application tables byte-identical; no other sender's Signings |
+| Suspensions | Restored at 17:03:51 UTC; Cron `SUSPENDED` on both domains afterwards. Feature flag stays on |
+
+**Unexpected behavior.**
+- The invitation was filtered as spam.
+- A monitoring-script deadline bug briefly restored the suspensions at 16:49:25, before the test began. Nothing was lost, and the controls were resumed again at 16:49:44.
+
+**Before real transactions.**
+1. **Deliverability:** improve inbox placement. Check the domain's reputation and authentication results in Resend, consider a stricter DMARC policy, and test Gmail and Outlook. Until then, tell participants to check spam.
+2. **Audit certificate:** optionally print the accepted disclosure version and fingerprint. The binding is already stored.
+3. **Lee confirms** the Checkmark and overall appearance in the downloaded package.
+
+**Tested scope.** One remote participant, typed marks, ad hoc PDF. Not tested here: Packet-sourced documents, multiple participants, in-person signing, representative capacity, cancellation, decline and copy recipients. Those have development QA coverage. No claim of legal compliance certification is made.
+
+### Gate D: feature-on promotion (2026-10-27; done)
+
+**Promotion.** Lee approved promotion and validation only.
+- `vercel promote dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`, 14:28:31–14:28:36 UTC, run as a fixed, guarded command from the neutral directory. No rebuild, variable, migration, account or credential change.
+- Pre-checks all matched the approved baseline:
+  - Candidate Ready and staged from `eb40577`, with the flag reading exactly `true`.
+  - Domains on the previous build; `autoAssignCustomDomains=false`.
+  - Work and access suspended; 152 migrations with the dry run up to date; disclosure READY.
+  - Data identical to the end of candidate validation.
+
+| Check (each domain) | Result |
+|---------------------|--------|
+| Domains | Both serve `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY` (login pages embed it); production target is the same; `autoAssignCustomDomains=false` after promotion |
+| App and auth | 82/82 smoke: login, cleared-session logout, Packets (Chicago and Tokyo), Contacts, Properties, Collections, Forms, Settings, admin pages, Fill Form PDF, client navigation. 0 console, hydration or page errors; 0 5xx. Download PDF valid |
+| Signing management | `/signings` renders, Signings nav link shown, Packet page offers Create Signing (not clicked). Admin controls: enabled Yes, work suspended Yes, access suspended Yes. Manager pages require login |
+| Participants | Landings render the live bootstrap. Random well-formed links get 503 with no cookie, and the browser shows the unavailable notice. Session pages go to `/sign/unavailable`; random in-person token 503; no Signing cookie issued |
+| Workers and Cron | Real secrets get `503 SUSPENDED`, 0 processed; bad credentials 401. Scheduled `*/2` Cron at 14:30:26, 14:32:26 and 14:34:26 UTC returned 503 (suspended) |
+| Send and email | Blocked by access suspension at credential issuance, and email parks on suspension. Proven by the candidate's 242 unit tests; no Draft was created |
+| Headers | `nosniff`, `DENY`, `frame-ancestors 'none'`; strict `/sign` CSP unchanged |
+| Data | Only `auth.users` (smoke sign-ins) and `user_preferences` changed. All 40 Signing tables byte-identical: controls, epoch history and 7 disclosures only. 152 migrations; disclosure READY |
+| Logs | 0 error, warning or fatal; 0 HTTP 403, 500, 502 or 504 since promotion |
+
+**Who can do what now.** Every eligible account can open Signings and prepare Drafts under the existing permissions: Lee's two accounts, and the excepted agent account (no notice, Lee's approved exception). Nobody can send, issue participant links or send email while work and access are suspended.
+
+**Rollback.** Feature-off `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` is Ready and works against the same 152-migration database: `vercel promote dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` with a fixed command from the neutral directory, then recheck `autoAssignCustomDomains`. Not needed.
+
+**Next (separate approval).** The controlled activation for one Lee-owned synthetic Signing:
+- Resume access and then, immediately, work.
+- Prepare, Send and complete it.
+- Verify the invitation and completed-package email: key, domain, From, Reply-To.
+
+Accepted risks remain: the exposed credentials (post-launch item #1) and the no-notice exception. *Update 2026-10-28: the credentials were rotated or revoked before launch; the no-notice exception remains.*
+
+### Gate D: feature-on candidate (2026-10-27; validated, promoted the same day)
+
+**Safeguard.**
+- [PR #62](https://github.com/leeharbaugh/harbaugh-forms/pull/62) adds only `.vercelignore`, squash-merged as `eb40577` with a tree identical to the validated head `5d8da6f`.
+- It excludes local env and credential files, key stores, `security.md`, `_audit_tmp/`, `_import_tmp/`, `exports/`, `tmp/`, Supabase CLI state, root SQL dumps, dumps, archives, backups, session logs and build-info files.
+- Tested with the Vercel CLI's own upload-selection code:
+  - All 933 tracked files are still uploaded.
+  - 29 dummy sensitive files were excluded.
+  - A replay of the 2026-10-26 accidental upload excludes every private file.
+- The PR's Vercel Preview built. The automatic production build of `main` (`dpl_3YW6rYL3fBV7uo2Skboxu7thpEPR`, feature-off) took no domain.
+
+**Configuration.** `NATIVE_SIGNING_ENABLED=true` was added to Vercel Production as a readable Config value and read back exactly `true`. No other variable changed, and nothing in Signing work or access was unsuspended. Variable changes reach only new builds: the live deployment still answers Cron with `FEATURE_DISABLED`. Any later automatic build of `main` will also be feature-on, but not live.
+
+**Candidate.** `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY`, `https://harbaugh-forms-mosqxegl9-lee-harbaugh-s-projects.vercel.app`.
+- Built with the guarded `vercel deploy --prod --skip-domain` from a neutral directory against a clean detached checkout of `eb40577`.
+- Uploaded files are identical to the commit (933 of 933). Production target, Ready, not promoted.
+- Its `*/2` Signing Cron activates only on promotion.
+
+| Check | Result |
+|-------|--------|
+| Auth and app | 82/82 feature-on smoke: login, cleared-session logout, Contacts, Properties, Collections, Packets (Chicago and Tokyo), Forms, Settings, admin users, organizations and audit, Fill Form PDF, client navigation. 0 console, hydration or page errors; 0 5xx |
+| Signing management | `/signings` renders for the manager, and the Signings nav link appears. The Packet page shows Create Signing (not clicked). Admin Signing controls: Signings enabled Yes, Work suspended Yes, Access suspended Yes. Manager pages require login |
+| Participants | Participant and package landings render the live link bootstrap. Random well-formed links are refused (exchange 503, no cookie), and the browser shows the unavailable notice. Ceremony, continue and package without a session go to `/sign/unavailable`; a random in-person token gets 503. No Signing cookie was issued |
+| Send and issuance | Not exercisable without a Draft (out of scope). The activation-boundary and recovery-access suites on `eb40577` pass, including "wires issuance to requireIssuanceAccessEpoch", which refuses while access is suspended |
+| Workers and email | Real Cron and worker secrets: `503 SUSPENDED`, 0 processed. Bad credentials get 401. Delivery and cancellation suites pass "parks invitation and completed-package email on access suspension" and "blocks invitation and finalization when work is suspended" |
+| Unit | 242/242 across stage2 (feature gate, authority), stage4, recovery access, production readiness (worker routes and feature), completion delivery, cancellation notices |
+| Headers | `nosniff`, `X-Frame-Options: DENY`, `frame-ancestors 'none'`; the strict `/sign` CSP is unchanged |
+| Disclosure, data | 152 migrations; disclosure READY (`802ad621…da98`). Only `auth.users` (smoke sign-in) and `user_preferences` changed. Signing tables hold only baseline rows; 0 Signings, participants, credentials, work items and delivery instructions |
+| Logs | 0 error, warning or fatal; 0 HTTP 500, 502 or 504 |
+| Live | Both domains and the production target on `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`; Cron `FEATURE_DISABLED`; participant routes show the feature-off notice; `autoAssignCustomDomains=false` |
+
+**Promotion effect (separate approval).** Signing management and Draft preparation become available to every eligible account under the existing permissions, including the excepted agent account. Sending, participant access, workers and email stay blocked until work and access are resumed (later approval). Rollback target: `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`.
+
+**Accepted risks at promotion.** The exposed credentials stay active until post-launch item #1. The excepted agent account has had no sender notice. *Update 2026-10-28: the credentials were rotated or revoked before launch.*
+
+### Credential-exposure remediation (R51/R52) (2026-10-26; resolved 2026-10-28)
+
+*Resolved 2026-10-28.* Every exposed credential was replaced or revoked before Native Signing launched: the development secret key, the production database password and the production secret key `default`; the bypass secret had already been rotated. See "Credential rotation: complete (2026-10-28)". The record below is kept as the incident history. Its "deferred to post-launch item #1" status (Lee's decision of 2026-10-27) was superseded when Lee moved rotation ahead of launch.
+
+**Gate D is paused** until rotation completes. Private detail is in local `security.md` R51–R52; no credential value is recorded anywhere.
+
+| Credential | Exposed | Consumers | Action |
+|------------|---------|-----------|--------|
+| Production Supabase secret API key (`default`) | Yes; also printed in this session's tool output | Ops file; Vercel Production `SUPABASE_SECRET_KEY` (live, most likely) | Lee creates a new key. Install in the ops file now. Install in Vercel Production, then rebuild and promote (separate approval). Revoke the old key only after the live deployment runs the new key |
+| Production database password | Yes | Ops file only (no app or Vercel use) | Lee resets it in the dashboard; intake verifies a read-only session, then updates the ops file. No live impact |
+| Development Supabase secret API key (`default`) | Yes | Ops file, six worktree `.env.local` files, one local Codex transcript | Lee creates a new key; intake updates every copy, optionally Vercel Preview; then revoke the old one |
+| Vercel deployment-protection bypass | Yes (19 audit JSON dumps) | Smoke tools read it from the API | **Rotated** (revoke plus regenerate); custom domains unaffected |
+| Production publishable key | Yes | Browser clients | Public by design; not rotated |
+| Signing keys, Cron and worker secrets, Resend key, backup passphrase, legacy JWT keys | No | — | Not rotated |
+
+- **Access evidence.** No sign of use in the database: no new sessions, tokens, Auth audit entries, Storage writes or events, and checksums unchanged. Vercel exposes no team access log on this plan. Lee should review the Supabase Logs Explorer (secret-key API requests and `postgres` connections since 22:56 UTC).
+- **Flag.** `NATIVE_SIGNING_ENABLED` removed from Production; the 16 original variables are unchanged. Live Cron returns `FEATURE_DISABLED`; work and access suspended.
+- **Safeguard.** A `.vercelignore` excludes `.env*`, key files, `security.md`, `_audit_tmp/`, `_import_tmp/`, `exports/`, `tmp/`, `supabase/.temp/`, dumps and build-info files. It excludes 0 tracked files, so builds are unaffected, and it would have excluded every private file in the accidental upload. It is prepared on branch `security/vercelignore`, uncommitted, and needs a PR.
+- **Deploy rule.** All later Vercel CLI deployments run from a neutral directory with `--cwd` pointing to a clean detached checkout, never the development worktree. No bare `vercel` command.
+
+### Gate D: feature-on preparation stopped (incident) (2026-10-26)
+
+**Sender policy.** Lee approved an initial-rollout exception for the one remaining agent account. No email was sent and no acknowledgment is claimed. The account is unchanged and will have Signing access when the flag is live. Lee's two accounts need no separate acknowledgment. See decision "Initial-rollout sender-policy exception for the remaining agent account".
+
+**Preflight (code on `42dd7d5`, plus a live check).**
+
+| Control | Effect with `NATIVE_SIGNING_ENABLED=true`, work and access suspended |
+|---------|--------------------------------------------------------------|
+| Flag | Read per request on the server (`=== "true"`). Vercel applies variable changes only to new deployments, so the live build is unaffected until a rebuilt deployment is promoted. Verified: Cron returns `FEATURE_DISABLED` on both domains after the variable was added |
+| Managers | `/signings`, Create Signing, Draft preparation and uploads under the existing permissions: own Signings, organization admins for their brokerage, delegated Transaction Coordinators. Any active account, including the excepted one, can create Drafts once a feature-on build is live |
+| Send and in person | Activation issues participant credentials through the access-epoch check, which throws while access is suspended. Send fails before any credential, link or invitation exists. In-person handoff, entry, ceremony and package sessions refuse in the same way |
+| Participants | Every bearer and session validation denies while suspended (generic unavailable message) |
+| Workers and email | The worker batch returns `SUSPENDED` without claiming work. Invitation, completed-package and cancellation handlers check work and then access suspension before `sendSigningEmail`, and park |
+| Epoch | The Gate B epoch (hash `c91184fc`) is unchanged. Credentials are epoch-bound; none exist |
+
+**Incident.**
+- A scripting error in a re-add of the flag started a bare `vercel` in the original worktree. That created Preview deployment `dpl_CWQarGYFtEVrioYmdihqaeap52pv`.
+- The upload included the worktree's ignored private files: the production ops credentials file, `security.md` and `_audit_tmp/`.
+- The deployment was private, SSO-protected and unaliased, with no logged requests. Lee is the only Vercel team member.
+- Deleted at 23:03 UTC. Production domains, data and other variables unchanged.
+- **Lee to decide:** rotate the production database password and the production secret API key (the latter also requires updating Vercel's `SUPABASE_SECRET_KEY` and rebuilding), and optionally the development secret key.
+- **Prevention:** run the Vercel CLI only from a neutral directory, against a clean detached worktree; consider a `.vercelignore`.
+
+**Not done:** no feature-on candidate was built or validated. No unsuspension, email or Signing.
+
+**Before resuming:**
+1. Lee's rotation decision.
+2. Replace the Sensitive `NATIVE_SIGNING_ENABLED` row with a readable Config row and verify it is exactly `true`, or remove it if not resuming.
+3. Build the candidate with `vercel deploy --prod --skip-domain` from a clean detached checkout of `42dd7d5`, with a neutral working directory.
+4. Run the established unique-URL validation with feature-on expectations.
+
+### Production recovery snapshot (2026-10-26)
+
+**Status:** done and verified. Lee approved one backup plus the OneDrive copy. The procedure is the Gate A one. The database was read only, nothing was relinked, and no ACL, Codex setting or existing backup file changed. Private paths, connection handling and hashes are in local `security.md` R50.
+
+| Item | Result |
+|------|--------|
+| Captured | 2026-10-26, `pg_dump` 22:39:41–22:40:01 UTC; Storage 22:40:33–22:41:23 UTC. Production on `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`, Native Signing off, work and access suspended |
+| Database | Full `pg_dump -Fc` of every schema: data, Auth, Storage metadata, `supabase_migrations` with 152 migrations. 115 tables, 6,736 rows; 2,135 TOC entries; 0 dump errors. Roles dump: 16 roles, no passwords. 0 Vault secrets |
+| Storage | All 90 current objects, enumerated fresh, at their bucket paths: `form-templates` 52 (13,376,302 bytes), `generated-documents` 38 (22,130,543), `signing-artifacts` 0. Every size matches, and every MD5 matches its ETag |
+| Consistency | Per-table checksums identical before the dump, after Storage and after the restore test; the object list was identical before and after the download. One consistent point in time |
+| Isolated restore | Postgres 17.9, localhost only, removed afterwards. The only errors were the expected local role differences and the 8 `supabase_vault` errors, as at Gate A. All 115 tables identical row for row. Catalog identical except 53 re-deparsed CHECK definitions (same names and values). Restored: 152 migrations, 3 users, 90 object rows, controls suspended, disclosure ready with matching fingerprint, 0 Signings |
+| Archive | 7-Zip AES-256 with encrypted file names, 17,299,130 bytes, under the existing backup passphrase. Inner manifest 125 files with README and recovery steps. Integrity passed; wrong passphrase rejected; names hidden without the passphrase; full extraction matched all 125 files and all 90 objects |
+| OneDrive | Copied next to the existing backups. OneDrive uploaded it and freed the local copy. It was then retrieved from the cloud and re-verified with the same SHA-256 and the same full results. Online-only again. The October 24 archive, the Signing-key bundle and the recovery note are unchanged |
+| Plaintext | One staged plaintext copy remains in an owner-only folder outside the backups folder and every Git worktree. It is not sandbox-readable, and no ACL was changed. Verification extractions were deleted. Removing the staged copy waits for Lee's cleanup approval |
+
+**Remaining gaps.**
+- Supabase project configuration (Auth URLs, templates, SMTP) and Vercel settings are not in any backup.
+- There are no managed Supabase backups (plan to be confirmed).
+- Recurring snapshots and restore tests are not scheduled.
+- Laptop disk encryption is off.
+- The staged plaintext copy and the Gate A plaintext folder remain until cleanup is approved.
+
+**Recommended minimal recurring schedule (needs Lee's approval; nothing scheduled).**
+- **Weekly:** one encrypted snapshot by this procedure, verified, copied to OneDrive and verified by cloud read-back.
+- **Before every production change:** a snapshot before every production migration, Gate step, account deletion and Native Signing activation.
+- **Quarterly:** a full isolated restore test.
+- **Retention:** the last 4 weekly snapshots, one per month for 12 months, and the latest before-change snapshot. Prune only with approval.
+
+### Backup and recovery review (2026-10-26)
+
+Read-only. No backup file, ACL, Git state or production setting was changed, and nothing was decrypted or downloaded. Private locations and recovery details stay in local `security.md` and the backups folder's README.
+
+**1. Supabase production (`eetonalyyyssvkyfdoxh`).**
+
+| Item | Finding |
+|------|---------|
+| Managed backups | Supabase lists none (`backups: null`). PITR is off. WAL-G is reported enabled, but it is platform-internal and offers nothing to restore from. Same as Gate A |
+| Plan | Not readable with the CLI. No daily backups suggests the Free plan; Pro keeps daily backups for 7 days. **Lee to confirm** in the dashboard (Organization → Billing, and Project → Database → Backups). If Free, the project can also be paused after inactivity |
+| What managed backups would cover | Database only: data, Auth tables and Storage *metadata*. Never the Storage files, Edge config, or project settings such as Auth URLs, email templates, SMTP and API keys |
+| Database | 23 MB; 152 migrations |
+| Storage | 3 private PDF buckets, about 34 MB: `form-templates` 52 objects (13 MB), `generated-documents` 38 (21 MB), `signing-artifacts` 0 |
+| PDFs | No independent protection apart from the Gate A copy. Of today's 90 objects, 85 are in that copy; 5 newer ones (1 template, 4 generated) are in no backup |
+
+**2. GitHub.**
+- **Pushed:** `origin/main` equals local `main`, `42dd7d5`. Every application code and migration commit is pushed. The one local-only branch, `implement-txr-1605-condo-dev` (`e0f38d2`), has identical content on `main` (PR #17).
+- **Not in Git:**
+  - This worktree's Gate A–D documentation: `project_status.md` and `decisions.md`, about 1,100 added lines.
+  - The original worktree's `Harbaugh_Forms_Post_Launch_Improvements.md`: 5 items, no secrets or email addresses.
+  - The original worktree's condensed entries in `decisions.md` and `project_status.md`, including the historical R11 INCOMPLETE entry that exists only there.
+  - Stash `stash@{0}` ("Gate A-C docs before PR #58 sync"). It is mostly carried into these docs; 16 superseded interim lines are not.
+- **Worktrees:** 9 (one under the Codex folder). All others are clean, apart from generated `AGENTS.md` / `CLAUDE.md` files.
+- **Should eventually be committed:** these docs, the improvements backlog, and the reconciled original-worktree entries.
+- **Must stay out of Git:** `.env.local`, `.env.ops.production`, `security.md`, `_audit_tmp/` (about 956 MB in the original worktree), `exports/`, `_import_tmp/`, `tmp/`, the generated agent files, and everything in the local backups folder: dumps, PDFs, DPAPI blobs, recovery records, trackers.
+
+**3. Existing backup.**
+- **Gate A snapshot (2026-10-24 02:28 UTC):**
+  - Full `pg_dump` of every schema: Auth, Storage metadata, migration history.
+  - A roles dump without passwords.
+  - All 85 Storage objects at their paths.
+  - A SHA-256 manifest (127 files, 37 MB) and a README with the restore steps.
+  - Verified by an isolated restore (row-for-row match) and object hashes.
+- **Encrypted copy:** a 7-Zip AES-256 archive with encrypted headers, 17.4 MB. One copy is local and one is on OneDrive, online-only and not hydrated here. The passphrase is in Lee's password manager (MATCH-verified at Gate C). A separate encrypted bundle holds the production Signing keys.
+- **Not in the snapshot:** Supabase project configuration, and anything created after it, including the migrations from Gates B–D.
+- **Reusable:** yes. The Gate A connection wrapper, the read-only `pg_dump` and Storage-copy procedure, the manifest, and `encrypt-and-verify.ps1` all apply to new snapshots.
+- **Plaintext:** the current method leaves a plaintext folder until it is deleted, and verification extracts to a temporary folder, deleted afterwards. With BitLocker off (Gate A, R41), deleted plaintext may stay recoverable on disk. A plaintext-minimal variant: pipe `pg_dump` into 7-Zip, stage PDFs in a temporary folder, encrypt, verify by hash, then delete the staging.
+
+**4. Proposed plan (pending Lee's approval; nothing implemented).**
+1. **Managed backups:** confirm the plan. Moving production to Pro gives daily 7-day database backups and no inactivity pausing. PITR is an optional paid add-on, useful once real Signings exist.
+2. **Own encrypted snapshot (database plus Storage):**
+   - **Cadence:** weekly; before every production migration, gate or deletion; and within a day of creating important documents.
+   - **Method:** reuse the Gate A procedure, encrypt with the same scheme, verify, then copy to OneDrive.
+   - **Retention:** 4 weekly snapshots, plus the latest before-change snapshot, plus 12 monthly snapshots.
+   - **First one:** take it now, after Gate D's feature-off promotion. It covers the 5 unprotected PDFs and the Gate B–D schema.
+3. **Restore test:** quarterly and after any procedure change. Restore into an isolated local Postgres, compare row counts, and check object hashes.
+4. **Configuration record:** a private, non-secret list of Supabase Auth URLs, templates and SMTP sender, plus Vercel variable names. Secrets are regenerated, not exported; the Signing keys keep their encrypted escrow.
+5. **Git:** commit this documentation and the backlog through a docs-only PR. Reconcile the original worktree's entries and the stash first, without dropping either.
+6. **Laptop:** BitLocker or Device Encryption reduces the plaintext risk. It is Lee's choice and outside this review; status needs an elevated check.
+
+### Gate D: unused production account cleanup (2026-10-26; done)
+
+**Decision and scope.** Lee preserved three accounts: his Global Admin account, his second account and one other agent account. He authorized permanent removal of the six unused accounts. Each was identified by its production Auth UUID and email. Names, addresses, UUIDs and the recovery record are kept privately, outside Git.
+
+| Check | Result |
+|-------|--------|
+| Identity | All 9 Auth users matched one profile each with equal emails. The six target UUIDs were pinned in the run and re-verified before each deletion |
+| Dependency map (read-only) | Every foreign key to `auth.users` or `profiles` (40 columns, including all Signing tables), plus 20 user-id columns without foreign keys, plus storage. Each target had only its profile, 1 brokerage membership, 1 agent-settings row and Auth-side rows. Contacts, Properties, Packets, Packet forms, Forms, Collections, Fields, defaults, representation agreements, annotations, Signing rows and storage: 0, counting soft-deleted rows. Three targets were the subject of historical invitation audit events, which are retained |
+| Brokerage identity | The organization and brokerage-settings records hold the broker's name, license and email as their own text columns, with no user link. One deleted account was the named broker. Its email also appears as a text value in those records. Both records remain, unchanged |
+| Workflow guards | No Global Admin among the targets; no self-deletion; the final active Global Admin is untouched. The workflow refuses non-test accounts, so each target was first marked as a test user in the same run, as a procedural step |
+| Backups before export | The `CodexSandboxUsers` read grant has recurred on the backups parent, so 269 of 307 items are readable by that group again. The recovery record was written only to a new folder with inheritance removed (owner, SYSTEM and Administrators only). The parent was not changed; Lee's decision |
+| Recovery record | Auth users without password or token fields, identities, profiles, memberships, agent settings and the targeting audit references for all six. Kept with checksums and a 116-table baseline in that protected folder |
+| Deletion (21:36:48–21:38:31 UTC) | `/admin/users` on `forms.harbaughrealestate.com`, signed in as the Global Admin with a one-time link, session revoked afterwards. Per account: Mark test user, then the dependency preview (Profile 1, Organization memberships 1, Agent settings 1, three blocking categories at 0), then exact-email confirmation, then Delete permanently. Each was verified in the database before the next started: Auth user, profile, membership and agent settings gone; one deletion snapshot and one `test_user_permanently_deleted` audit event; preserved accounts present. 6 of 6 succeeded, no failure or retry |
+| After | 3 Auth users, 3 profiles, 3 memberships, 3 agent-settings rows, 3 identities. 0 orphan user references across every foreign-key column. Preserved accounts: profile, membership, agent settings and owned-data counts identical. The two non-Global-Admin Auth rows are identical. The Global Admin Auth row changed only `recovery_sent_at`, `last_sign_in_at` and `updated_at` from the one-time link |
+| Table checksums | Changed only for the deleted accounts' Auth rows, profiles, memberships and agent settings, plus 6 deletion snapshots and 6 audit events. Every business table, storage object (52 + 38 objects, same bytes), brokerage record and Signing table is byte-identical |
+| Signing and platform | 152 migrations; disclosure `esign-disclosure-2026-10-25-production-ready` READY (`802ad621…da98`); work and access suspended (Gate B epoch); 0 Signings, work items and delivery instructions. Vercel unchanged: both domains on `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`, `autoAssignCustomDomains=false`, 16 Production variables, no `NATIVE_SIGNING_ENABLED`. No email or invitation sent; no code or migration |
+
+**Signing exception (open).** The remaining agent account meets every Signing eligibility rule: ACTIVE, onboarding ACTIVE, active brokerage membership. It can create and manage its own Signings as soon as `NATIVE_SIGNING_ENABLED` is set. By Lee's decision, it receives no sender notice now. The all-sender acknowledgment is therefore **not** satisfied. Before activation, Lee must either obtain that acknowledgment or record an explicit decision covering this account. No Lee-only gating is built, and the account is unchanged.
+
+### Gate D: sender notice (prepared; not sent by Lee's decision)
+
+**Update 2026-10-26, 16:45 Chicago:** not sent. Lee deleted the six unused accounts, and at this stage he chose not to notify the remaining agent account (see "Gate D: unused production account cleanup"). The text below stays prepared for later use. The acknowledgment requirement remains open.
+
+**Status (2026-10-26, 16:30 Chicago):** recipient list and notice text prepared, not sent. Lee approves both before sending. This is "Remaining Gate D steps" item 2 and must be complete before `NATIVE_SIGNING_ENABLED` is set.
+
+**Who can send (code on `42dd7d5`).** Every Signing action requires `NATIVE_SIGNING_ENABLED`, then `requireSigningActor`.
+- **Account:** profile `ACTIVE`, onboarding `ACTIVE` or `INVITED`, no forced password change (`hasSigningAccountAccess`).
+- **Brokerage:** creating a Signing needs an active membership in an active organization, from the primary organization or the only active one.
+- **What a member can do:** any such member can create a Draft and manage their own Signings as Primary agent. A Packet is optional: the Packet source must be owned by the sender, but an ad hoc upload needs no Packet.
+- **Organization administrators** can also manage every unfinished Signing in their brokerage.
+- **Transaction Coordinators** need an active delegation.
+- **Global Admin** (`app_role = ADMIN`) adds no Signing authority on its own.
+
+**Production accounts (read-only, 21:18 UTC).** 9 profiles, all `ACTIVE`, none test-flagged, none with a forced password change or ban. Each has one active membership in the single active brokerage and a primary organization. 0 Transaction Coordinator delegations, 0 Signings, no orphan Auth users.
+
+| Category | Count | Signing authority once enabled |
+|----------|-------|--------------------------------|
+| Lee (`lee@`): Global Admin and organization administrator | 1 | Create own; manage every unfinished brokerage Signing. Not a recipient |
+| Ordinary members, onboarding `ACTIVE` | 2 | Create and manage own |
+| Ordinary members, onboarding `INVITED`, signed in before | 2 | Same; `INVITED` is eligible |
+| Ordinary members, onboarding `INVITED`, never accepted the invitation | 3 | Same, as soon as they accept |
+| Lee's second ordinary account (onboarding `ACTIVE`) | 1 | Create and manage own |
+| Disabled, deleted, test, Transaction Coordinator, other admins | 0 | — |
+
+**Recipients:** 7 people, plus Lee's second account if Lee chooses to treat it as a separate sender. Names and addresses are in the private tracker only.
+
+**Special handling.**
+- **Lee's second account:** an authorized sender in its own right. Lee decides whether it needs no notice (his own account) or should be handled separately. Not changed.
+- **Three never-accepted invitations:** they can send as soon as they accept. Notify them now. One address is on a non-brokerage domain; Lee confirms that address and that the access is intended.
+- **Only Lee is an organization administrator.** No other member can see or manage another agent's Signings.
+
+**Notice text (version `2026-10-26-v1`; replaces the 2026-10-25 draft in "Gate D: production-ready disclosure", which is kept for history).** Lee sends it from his own mailbox, one email per recipient (no shared recipient list).
+
+> Subject: Action needed: Harbaugh Forms electronic signing rules (reply "I agree")
+>
+> Hi [First name],
+>
+> Harbaugh Forms is adding electronic signing ("Signings"). It is not turned on yet, so there is nothing to do in the app today. Before it is turned on for your account, please read the three rules below and reply to this email with "I agree."
+>
+> 1. Paper copies are free. If a participant asks for paper copies of their completed documents, give them paper copies at no charge. Download the documents from the Signing's "Completed documents" section and print them. Harbaugh Forms does not mail paper copies.
+>
+> 2. Withdrawal of consent. If a participant asks to withdraw their consent to electronic records, record it promptly on the Signing with "Record consent withdrawal." There is no fee. If they later want to sign electronically again, send them a new Signing.
+>
+> 3. Technical-change notices. If I tell you that a Harbaugh Forms change affects one of your Signings, contact each participant I list, as instructed, before the change. Offer free paper copies and free withdrawal of consent, and tell me the date and method of each contact.
+>
+> Please do not send any Signings until you have replied "I agree."
+>
+> Thank you,
+> Lee
+
+**Acknowledgment tracking (manual, existing workflow; no feature).**
+- **Tracker:** a private CSV outside Git, with one row per recipient. Columns: name, email, category, notice version, date sent, sending mailbox, send result, reply date, reply text, reply saved, notes. Pre-filled, awaiting Lee's approval.
+- **Replies:** keep each reply email in a dedicated folder or label in the sending mailbox. The tracker row points to it.
+- **Here:** record counts and dates only, for example "7 sent 2026-10-27; 7 of 7 agreed by 2026-10-29."
+- **Activation gate:** `NATIVE_SIGNING_ENABLED` is set only after Lee records that every included recipient replied "I agree", or that he excluded a non-responder in writing. This is a procedure, not a technical restriction.
+
+Production unchanged: no email sent, no permission, account, data, configuration or deployment change.
+
+### Gate D: feature-off production promotion (2026-10-26; done)
+
+**Status:** `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` (`main` `42dd7d5bc764928a53a64bc0954b9cc3084a00f2`) is live on both production domains, with Lee's explicit approval for this deployment only. Native Signing stays off, and work and access stay suspended. Evidence: `_audit_tmp/gate-d-promotion-20261026/` in this checkout.
+
+| Check | Result |
+|-------|--------|
+| Pre-promotion (21:03 UTC) | Candidate Ready (`STAGED`), `source=git`, verified commit `42dd7d5`, unchanged creation time. Both domains and the production target on `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`. `autoAssignCustomDomains=false`. 16 Production variables, none changed since the build; `NATIVE_SIGNING_ENABLED` absent in every target. Read-only database: 152 migrations, dry run up to date, current disclosure `esign-disclosure-2026-10-25-production-ready` ready with `802ad621…da98`, work and access suspended with the Gate B epoch, 0 Signings, participants, consent records, events, work items and delivery instructions. Fresh 116-table checksum baseline, identical to the candidate post-check |
+| Promotion | `vercel promote dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`, 21:05:09–21:05:15 UTC, CLI exit 0. No rebuild, env, migration or database change |
+| Domains | `forms.harbaughrealestate.com`, `harbaugh-forms.vercel.app` and the project production target are `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` (`PROMOTED`). Each login page embeds that id; HTTPS 200 with HSTS. `autoAssignCustomDomains=false`. 16 Production variables, no `NATIVE_SIGNING_ENABLED` |
+| Headers and fail-closed | 50/50 on each domain. Login, workspace redirects, pdf.js worker, worker and exchange APIs carry `nosniff`, `DENY` and `frame-ancestors 'none'`. `/sign` pages carry the strict pre-promotion CSP byte for byte plus `nosniff` and `DENY`. Participant routes show the unavailable notice (200 or 503); both exchange APIs 503; `/signings`, `/admin/signing-controls` and near-miss internal paths redirect to login. A browser open of `/sign/ceremony`, `/continue`, `/package` and `/return-to-agent` lands on `/sign/unavailable` on each domain |
+| Workers | Missing, wrong, swapped and malformed credentials 401; wrong methods 405. Real `CRON_SECRET` and real worker secret: `503 FEATURE_DISABLED`, 0 processed |
+| Scheduled Cron | `*/2` `/api/internal/cron/signing-worker` now runs on this deployment: 21:06:26, 21:08:26 and 21:10:26 UTC each returned 503 (the post-authentication `FEATURE_DISABLED` path). Signing tables unchanged |
+| Smoke | 81/81 on each domain, sequential: login, cleared-session logout, Contacts, Properties, Collections, Packets (Chicago and Tokyo browsers, Central timestamps), Forms, Settings, admin users, organizations and audit, Fill Form PDF on FINAL packet form #57, client navigation, back and forward. Admin Signing controls: Signings enabled No, Work suspended Yes, Access suspended Yes. 0 console, hydration (#418) or page errors; 0 5xx; sessions revoked (local scope) |
+| PDF download | Separate read-only check on each domain: Fill Form 57 Download PDF saved a valid 144,552-byte PDF (`%PDF-` header, `%%EOF`), 0 page errors, session revoked. Download fills the PDF in the browser and writes nothing |
+| Logs since promotion | 0 error, warning or fatal; 0 HTTP 500, 502 or 504. 503s and 401s are the designed checks and scheduled Cron |
+| Production data | 116-table checksums before promotion and after all checks: only `auth.users` (smoke sign-in timestamps; still 9 users) and `user_preferences` changed. Sessions, refresh tokens, Packets, forms, Packet forms, contacts, storage and every Signing table are byte-identical. No Signing, participant email or delivery instruction |
+| Rollback | `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` (`23607be`) retained and Ready: `vercel promote dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`, then recheck `autoAssignCustomDomains`. Not needed |
+
+### Gate D: feature-off production candidate (validated 2026-10-26; promoted the same day)
+
+**Candidate:** `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh`, unique URL `https://harbaugh-forms-n8hmd37m1-lee-harbaugh-s-projects.vercel.app`. Vercel's automatic Git build of `main` `42dd7d5bc764928a53a64bc0954b9cc3084a00f2`. Reused. No second build was uploaded.
+
+| Check | Result |
+|-------|--------|
+| Build identity | `source=git`, GitHub commit verification verified, `gitSource.sha` and `githubCommitSha` are `42dd7d5bc764928a53a64bc0954b9cc3084a00f2` on `main`. Created 20:14:33 UTC, three seconds after the push. `buildSkipped=false`. Ready, `readySubstate=STAGED`. The client reports Next.js 16.4.1 |
+| Contents | The commit is the squash merge of PR #61 (H-1 headers) on top of `b0f8fbd` (Signing manager hydration #418). Built responses send `nosniff`, `X-Frame-Options: DENY`, and `frame-ancestors 'none'`. The `/sign` CSP value is byte-identical to the CSP `forms.harbaughrealestate.com` serves today. `/sign` responses also carry `nosniff` and `X-Frame-Options: DENY` |
+| Environment | Production target. The deployment's env key list contains the 16 Production variables, including `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `NEXT_PUBLIC_SITE_URL`, the Signing key ids and keys, `CRON_SECRET`, `SIGNING_WORKER_SECRET`, `RESEND_API_KEY`, `SIGNING_EMAIL_FROM`, and `SIGNING_EMAIL_REPLY_TO`. Every variable's created and updated time is before the build. `NEXT_PUBLIC_SITE_URL` is `https://forms.harbaughrealestate.com`. The Supabase URL is the production project `eetonalyyyssvkyfdoxh`. From and Reply-To match the Gate C values. `NATIVE_SIGNING_ENABLED`, `SIGNING_EMAIL_SANDBOX`, `SIGNING_WORK_SUSPENDED`, and `SIGNING_ACCESS_SUSPENDED` are absent |
+| Domains | Before and after the checks, both production domains and the project production target are `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`. `autoAssignCustomDomains=false`. Each production login page lacks the new headers and embeds the live deployment id. The SSO team alias and the git-main alias point at the candidate |
+| Migrations | Read-only session. 152 applied, latest `20261025130000`. `supabase db push --dry-run` with an explicit production URL, from `42dd7d5`, no relink and no `--include-all`: "Remote database is up to date." Development stayed linked |
+| Disclosure and controls | Current `esign-disclosure-2026-10-25-production-ready`, ready, SHA-256 `802ad621…da98`, body hash matches. Work and access suspended, nothing resumed, Gate B epoch unchanged (`c91184fc`). 0 Signings, participants, consent records, events, work items, and delivery instructions, before and after |
+| Headers | Login, workspace redirect, pdf.js worker, auth redirects, worker 401s, and `/sign` responses carry `nosniff`, `DENY`, and the expected CSP, with no duplicates |
+| Feature off | `/sign/<id>`, `/sign/done`, and `/sign/completed/<id>` render the unavailable notice. `/sign/unavailable` and `/sign/in-person/<token>` return 503 with that notice. Both exchange APIs return 503. `/signings` and `/admin/signing-controls` redirect to login. A browser open of `/sign/ceremony`, `/sign/continue`, `/sign/package`, and `/sign/return-to-agent` lands on `/sign/unavailable`. Their first response is a Next.js prerender shell (`x-nextjs-prerender`); the document request is HTTP 200 and the completed navigation shows the unavailable notice |
+| Workers | Missing, wrong, swapped, and malformed credentials get 401. Wrong methods get 405. Near-miss internal paths redirect to login. The real `CRON_SECRET` and the real worker secret each get `503` `FEATURE_DISABLED`, `processed` 0, queue unchanged. No email |
+| Smoke | 81/81 on the unique URL, one-time admin sign-in, session revoked locally. Login, logout, Contacts, Properties, Collections, Packets, Forms, Settings, admin users, organizations, and audit, Fill Form PDF on FINAL packet form #57 (1 page, 1 canvas). Chicago and Tokyo browsers show Central timestamps. Client navigation, back, and forward. 0 console, hydration, or page errors. 0 unexpected 5xx. `/signings` unavailable, no Signings link. Admin Signing controls: Signings enabled No, Work suspended Yes, Access suspended Yes |
+| Hydration limit | The Signing manager page is not rendered while the feature is off, so this smoke does not reopen that screen. Packet, contact, and admin timestamps rendered from the UTC deployment to Chicago and Tokyo browsers with 0 `#418` |
+| Logs | 0 error, warning, or fatal. 0 HTTP 500. The 23 HTTP 503s and 18 HTTP 401s are the designed fail-closed and worker checks above. A 50-line info sample also includes ordinary workspace GETs on the candidate host, including packet edit and forgot-password. Business checksums did not change during the check |
+| Data during the check | All table checksums around the smoke: only `auth.users` (sign-in timestamp; still 9 users) and `user_preferences` changed. Packets, forms, storage, and every Signing table are unchanged from the pre-check snapshot |
+| Data since the Gate D publication snapshot | Before this check, production use had already changed business tables relative to the 15:14 UTC publication checksums: packets 12 to 13 (8 active, 5 deleted), forms 53 to 54, packet forms 42 to 46, contacts 25 to 26, packet contacts 10 to 12, mappings 2462 to 2465, form-state events 86 to 88, storage objects 85 to 90. Storage object updates are 17:14 and 17:20 UTC, before this deployment existed. Signing tables were already 0 |
+
+Promotion would assign both production domains and register the candidate's `*/2` Signing Cron. The manual authenticated Cron call on this build returns `FEATURE_DISABLED` and processes nothing. Promotion does not set `NATIVE_SIGNING_ENABLED`. It needs Lee's separate approval.
+
+### Gate D: production-ready disclosure (pending Lee's approval)
+
+**Status (2026-10-26, 10:17 Chicago):** **Published in production** at 15:14 UTC (`esign-disclosure-2026-10-25-production-ready`, readiness READY). See "Production publication" under the merge-boundary validation below. Earlier status (10:00): PR #59 merged as `6f0c041`, not yet published.
+
+**Earlier status (2026-10-25, 22:55 Chicago):** Lee approved the 2026-10-25 wording, with no further text or checkbox changes. Both remaining publication blockers are resolved by documents and code in [PR #59](https://github.com/leeharbaugh/harbaugh-forms/pull/59) (commits `476eeab`, `85fa553`; not merged).
+- **Technical changes:** a manual release procedure, in the decision "Material technical changes affecting Native Signing participants follow a manual release procedure".
+- **Publication method:** a second immutable, production-ready row with the identical text, in the decision "A production-ready disclosure is published as a new row that republishes reviewed text".
+
+PR #59 is ready for merge-boundary validation. Production publication (applying both migrations to production) needs Lee's separate approval. No production change, deployment, flag, unsuspension or email.
+
+**Production-ready version (development only).**
+
+| Item | Value |
+|------|-------|
+| Version key | `esign-disclosure-2026-10-25-production-ready`, `is_production_ready = true` |
+| Source | `supabase/migrations/20261025130000_native_signing_esign_disclosure_2026_10_25_production_ready.sql`, inventory 39 |
+| Body | Byte-identical to the reviewed `esign-disclosure-2026-10-25` (generated from it and compared); SHA-256 `802ad62180563777d229749ec6988036a42ee92824dbf41f07033e43a672da98` |
+| Guards | Pinned fingerprint; the reviewed version must be current with the same text and fingerprint; no-op if the key exists; only `superseded_at` of the current row is updated; post-checks: one current version, which is production-ready, and every fingerprint verifies. No environment branch |
+| Development | Applied 2026-10-26 03:36 UTC (dry run listed only this migration). Current. Disclosures 6 → 7; 251/251 consent rows and 26/26 `CONSENT_ACCEPTED` events identical; only the 2026-10-25 row's `superseded_at` set; 1 production-ready |
+| Related code | `evaluateDisclosure` reports READY only when the current version is production-ready. The development ceremony validator handles a ready or non-ready current version instead of requiring non-ready. Ceremony QA fails if a production-ready version shows the development badge |
+
+**Validation of `85fa553`.**
+
+| Check | Result |
+|-------|--------|
+| Scratch Postgres 17 (localhost, throwaway, removed) running the real 2026-10-22, 2026-10-25 and production-ready migrations | Success path leaves `-production-ready` current and ready, with the same SHA as the reviewed row; a re-run is a no-op; it aborts without the reviewed version, with a tampered body, or with altered stored reviewed text |
+| Unit | `test:native-signing-ceremony` 198/198; `test:native-signing-production-readiness` 73/73 (READY requires the current version to be ready; inventory 39); `test:native-signing-cancellation-notices` 27/27; `test:native-signing-stage1` 16/16 |
+| Validators (development, production-ready current) | `validate:native-signing-ceremony-dev` 58 OK, 0 failures. Production loads the ready current version; non-ready `esign-disclosure-2026-10-25` is refused as current; its acceptance is `ACCEPTANCE_NOT_ELIGIBLE`; evidence unchanged. `validate:native-signing-production-readiness -- --target=dev` pass, inventory 39 |
+| Browser QA | Ceremony 83 OK, 0 failures, 0 dev-server issues ("production-ready, no dev copy badge"; every line renders). Consent withdrawal 7/7 |
+| Static | `tsc --noEmit`, ESLint `--max-warnings=0` on the 8 changed files, `git diff --check` clean |
+
+Side effect: `main`'s unmodified ceremony validator (`23607be`) fails against development until PR #59 merges, because it requires a non-ready development disclosure.
+
+**Merge-boundary validation (2026-10-25 23:05 to 2026-10-26 00:05 Chicago, on `85fa553` against `main` `23607be`).** Lee approved the wording; no text, checkbox, fingerprint or migration change. PR head and `main` were unchanged throughout. Evidence: `_audit_tmp/merge-2026-10-25-pr59/` in the `E:\dev\harbaugh-forms` checkout.
+
+| Item | Result |
+|------|--------|
+| Review | Diff limited to the 10 intended files: two new disclosure migrations, registry, readiness evaluator and validator, ceremony validator, ceremony QA, three test files. No historical migration edited. The 2026-10-25 body is the 2026-10-22 body plus exactly the two approved lines; the production-ready body is byte-identical (both SHA-256 `802ad621…da98`). Neither migration branches on environment. Readiness enforcement in runtime unchanged; the readiness report is stricter |
+| Unit suites | All 58 `test:*` pass: 1,667 tests, 0 failures (PR #58 boundary 1,647 plus the 20 added here) |
+| Dev validators | All 21 `validate:*-dev` pass on a fresh dev server (649 OK lines; ceremony 58 OK against the production-ready current version) |
+| Browser QA (dev server from the PR worktree) | Consent withdrawal 7, ceremony 84, archive 39, cancellation 31, link-ops 28, account switch 10, placement templates 44, Prepare Documents 90, Packet edit navigation 19, all first run with 0 dev-server issues. **Combined refresh** first failed 7/10 at "the revealed tab did not show the ready combined package". The dev-server log shows that reveal's dashboard refresh `POST` took 10.0 s (9.9 s application code, typically ~0.5 s), the same dev-Supabase latency pattern as the PR #55 boundary, in code this PR does not touch. One rerun passed 10/10 (reveal caught up in 1.9 s). Both runs retained |
+| Admin hydration | 16/16 on a clean `TZ=UTC` production build with `NATIVE_SIGNING_ENABLED=false` (`next start -p 3300`), 0 server-log issues |
+| Build | `build:validate` passes with the feature on and with it off (clean `.next`), 53 pages each. Only the pre-existing `partialPrefetching` and module-type notices |
+| Static | `tsc --noEmit` clean; ESLint `--max-warnings=0` clean on the 8 changed TypeScript files plus the 5 consent runtime and UI files; `git diff --check` clean |
+| Audit / scans | `npm audit --omit=dev` 0; full audit 3 moderate (pre-existing Tailwind 3 chain); 0 secret-pattern hits in the PR diff; no tracked env files |
+| Evidence | Disclosures 7/7 with every stored fingerprint reproducing its body and its pinned value; only `esign-disclosure-2026-10-25-production-ready` is ready and current. Against the pre-PR baseline, the 249 consent records and 26 `CONSENT_ACCEPTED` events are identical, and earlier versions are unchanged except the outgoing 2026-10-22 `superseded_at`. During this run 253/253 records and 26/26 events stayed identical; 3 fixture participants were added |
+
+**Merge readiness:** ready for Lee's merge approval. Merging changes no production state. Applying the two migrations to production is the separately approved publication step.
+
+**Merged (2026-10-26 14:55:48 UTC, Lee approved).** `6f0c041` on `main` (parent `23607be`), pinned to `85fa553`; squash tree `71b339c` identical to the validated head, so no rerun. Both migrations, the registry entries and the stricter readiness check are present on `main`. Development already holds both migrations from validation. No app route imports `production-readiness` or the migration registry; runtime disclosure enforcement in the live `23607be` build is unchanged. Publication is therefore data-only and needs no redeploy.
+
+**Production publication (2026-10-26, Lee approved exactly these two migrations).**
+
+| Check | Result |
+|-------|--------|
+| Preflight (read-only, 15:12 UTC) | Read-only production session; 150 applied, latest `20261022130000`; work and access suspended, nothing resumed, Gate B epoch; 0 Signings, participants, events, consent records, work items and delivery instructions; 5 disclosures, none ready, current `esign-disclosure-2026-10-22` `902d216b…1617`, all fingerprints reproduce; Packets 7 active and 5 deleted; Storage counts and bytes as at Gate A; both domains and the production target on `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`, `autoAssignCustomDomains=false`, `NATIVE_SIGNING_ENABLED` absent |
+| Dry run | Explicit production `--db-url` from `main` `6f0c041`, no relink, no `--include-all`: exactly the two approved migrations, in order |
+| Backup | All 111 table checksums identical to the Gate C post-promotion snapshot. Against the Gate A backup, only the documented Gate B and C changes differ, so no fresh backup was needed. The Gate A backup re-verified 127/127, and the encrypted copy is present. The disclosure table was exported before the push |
+| Apply (15:14:44–15:14:47 UTC) | An exact read-only precheck matched, then `supabase db push` applied exactly `20261025120000` and `20261025130000` (CLI exit 0). A follow-up dry run reported up to date |
+| Postflight | 152 applied. Current `esign-disclosure-2026-10-25-production-ready`, ready, SHA-256 `802ad621…da98`. `esign-disclosure-2026-10-25` non-ready and superseded. Both bodies byte-identical to the repository text. Four earlier rows unchanged in every column; 2026-10-22 changed only `superseded_at`. Of 111 tables, only the disclosure table (5 → 7) and migration history (150 → 152) changed. Controls, consent and business tables byte-identical |
+| Readiness | `validate-native-signing-production-readiness --target=prod` from `6f0c041`, read-only: disclosure READY; project ref, feature off, suspensions, epoch, no queued work, private bucket, Cron and worker posture all READY. The only BLOCKED row, `site_url`, reflects the local process without `NEXT_PUBLIC_SITE_URL`; production's value is set in Vercel |
+| Vercel after | Both domains and the production target unchanged, `autoAssignCustomDomains=false`, 16 Production variables, no `NATIVE_SIGNING_ENABLED` |
+
+Private execution details and the local backup-ACL discrepancy are in `security.md` R48.
+
+**Remaining Gate D steps (each needs Lee's separate approval).**
+1. **Done 2026-10-26: published the disclosure via the controlled production migration** (above). Plan as approved, kept for the record:
+   - Read-only preflight: production identity; 150 applied; a `supabase db push --dry-run` with an explicit production `--db-url` (no relink) lists exactly the two migrations above; work and access suspended; 0 Signings; 0 production-ready disclosures; a fresh backup if business data changed since Gate C.
+   - Then `supabase db push`.
+   - Post-checks: 152 applied; `esign-disclosure-2026-10-25-production-ready` current and ready with SHA-256 `802ad621…da98`; `esign-disclosure-2026-10-25` non-ready and superseded; the five earlier rows unchanged apart from the outgoing 2026-10-22 `superseded_at`; readiness validator from `main` reports the disclosure READY; feature still off and suspended.
+2. **Send the sender notice** (text above) to every other active account, and record the confirmations, before `NATIVE_SIGNING_ENABLED` is set. *Update 2026-10-26: recipients and revised text `2026-10-26-v1` prepared; see "Gate D: sender notice". Awaiting Lee's approval; not sent.* *Update 2026-10-26, 16:45 Chicago: six unused accounts deleted. Lee chose not to notify the one remaining agent account for now. Still open: that account's acknowledgment, or Lee's recorded exception, before `NATIVE_SIGNING_ENABLED` is set.*
+3. **Decide H-1** (workspace and auth security headers): before activation or accepted. *Update 2026-10-26: anti-framing and `nosniff` implemented in PR #61 (pending merge). Script/style CSP deferral recommended, with residual risk recorded; Lee to confirm.* *Done: PR #61 merged as `42dd7d5`, deferral approved by Lee; H-1 resolved for initial activation. The headers reach production with the next approved deployment of `main`.*
+4. **Resolve or accept Signing manager hydration `#418`** before live use (separate UI investigation). *Update 2026-10-26: fixed in PR #60 (pending merge-boundary validation and merge). Production needs a later approved deployment of `main` to include it.* *Done: merged as `b0f8fbd` after merge-boundary validation. The fix is in the validated candidate above and is not on the production domains yet.*
+5. **Promote the feature-off candidate** `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` (`42dd7d5`). Validated 2026-10-26 20:55 UTC. Promotion is a separate approval. It does not set `NATIVE_SIGNING_ENABLED`. *Done 2026-10-26 21:05 UTC with Lee's approval; see "Gate D: feature-off production promotion". The #418 fix and H-1 headers are now in production.*
+6. **Feature on while suspended:** set `NATIVE_SIGNING_ENABLED` in Vercel Production, rebuild and promote, then verify fail-closed and suspended behavior. *Done 2026-10-27: `dpl_8XsSmqtbsmxN2WFUCYJZ5WC7HLAY` promoted at 14:28 UTC and validated on both domains (see "Gate D: feature-on promotion").*
+7. **Synthetic Lee-owned Signing:** prove email delivery (key, domain, From, Reply-To) and the ceremony against the production-ready disclosure, then decide on unsuspending work and access. *Done 2026-10-27: completed end to end (`01713222-…`); invitation went to spam; suspensions restored. Unsuspending for real use awaits Lee's decision.*
+
+**Manual technical-change procedure checked against the disclosure.**
+- "The sender will inform you of the new requirements and your options." Covered by step 4: direct sender notice to every affected participant, remote and in person, on in-progress and completed Signings. Email is used where the Signing records an address; otherwise the sender uses phone or direct contact, and participants without email stay on the list, in the log and in the release gate. Steps 3 and 5 make the list and each attempt auditable, and step 6 blocks promotion until notice is documented.
+- "You may withdraw your consent without a fee." Covered: the notice states it. Withdrawal is recorded in the app where allowed, otherwise in the log. No workflow charges a fee.
+- "You may need to review updated requirements and give consent again before continuing electronically." Covered by steps 2 and 7: a new version, cancel and re-send, and fresh affirmative consent with the existing checkbox. That checkbox is the application's affirmative consent and capability acknowledgment mechanism. It is not established as satisfying every E-SIGN consumer-access demonstration requirement; the PDF demonstration and legal review remain deferred.
+- Paper copies at no charge: by policy, and the notice says so.
+- Limit: delivery depends on senders and Lee's gate, and receipt cannot be guaranteed. Documented attempts plus the notice period are the standard.
+
+**Sender notice (prepared; Lee sends it from his own mailbox before global activation; not sent).** Recipients: every active account other than Lee, since `NATIVE_SIGNING_ENABLED` is global. Lee takes the list from Admin → Users at send time. Keep replies privately and record the count and date here.
+
+> Subject: Before you use Harbaugh Forms electronic signing
+>
+> Harbaugh Forms electronic signing will soon be available to your account. Before you send any Signing, please confirm you will follow these requirements:
+>
+> 1. Paper copies at no charge. If a participant asks for paper copies of their completed documents, provide them without charging the participant. Download the documents from the Signing's "Completed documents" section and print them. Harbaugh Forms does not mail paper copies.
+> 2. Withdrawal of consent. If a participant asks to withdraw consent to electronic records, record it promptly with "Record consent withdrawal" on the Signing. There is no fee. To sign electronically again, send a new Signing.
+> 3. Technical-change notices. If I tell you that a Harbaugh Forms change affects one of your Signings, contact each listed participant as instructed before the change, offer free paper copies and free withdrawal, and tell me the date and method of each contact.
+>
+> Please reply "I agree" before sending your first Signing. Until you reply, please do not send Signings.
+
+Earlier status (2026-10-25, 21:35 Chicago), kept for history: Candidate `esign-disclosure-2026-10-25` is prepared in development and open as [PR #59](https://github.com/leeharbaugh/harbaugh-forms/pull/59) (`feat/esign-disclosure-2026-10-25` from `main` `23607be`, commit `476eeab`; not merged). It applies Lee's three approved refinements. Two lines are added, and the paper-copy refinement is a policy decision with no wording change. Production publication is **blocked** (see "Blockers to production publication" below) and needs Lee's separate explicit approval. No production change, deployment, flag, unsuspension or email. Earlier status, kept for history: "Review only. Lee is reviewing the exact text of the current disclosure and will give explicit approval before anything is published."
+
+**Candidate version.**
+
+| Item | Value |
+|------|-------|
+| Version key / title | `esign-disclosure-2026-10-25` / "Electronic records and signatures". Unused before: absent from every earlier migration and from development's 5 rows; production holds the same 5 (Gate B) |
+| Source | `supabase/migrations/20261025120000_native_signing_esign_disclosure_2026_10_25.sql` (data-only, forward-only, same pattern as 2026-10-22), registered in `lib/signing/native-signing-migrations.ts` (inventory 38) |
+| Wording | The 2026-10-22 body plus exactly two lines, verified line by line. A new last line of "Withdrawing your consent": "There is no fee for requesting or withdrawing your consent to electronic records for this Signing." A new last paragraph of "What you need": "If the technical requirements materially change in a way that could prevent you from accessing or keeping your electronic records, the sender will inform you of the new requirements and your options. You may withdraw your consent without a fee. You may need to review updated requirements and give consent again before continuing electronically." Paper copies and every other line are unchanged |
+| SHA-256 | `802ad62180563777d229749ec6988036a42ee92824dbf41f07033e43a672da98` (UTF-8, LF, no trailing newline, 4,482 characters, 35 lines), pinned in the migration and tests; the migration aborts on mismatch |
+| Readiness | `is_production_ready = false`, like every earlier version. The development ceremony validator requires the development disclosure to stay non-ready |
+| Consent checkbox | Unchanged (`CONSENT_ACKNOWLEDGEMENT`) |
+| Development | Applied 2026-10-26 ~02:16 UTC by `supabase db push` (dry run listed only this migration; CLI linked to `ewxsxwzezhkeawnjvigx`). Now current. 2026-10-22 superseded; 0 production-ready. Production not touched |
+
+**Validation (development only).**
+
+| Check | Result |
+|-------|--------|
+| Unit | `test:native-signing-ceremony` 190/190 (new 2026-10-25 copy, publication and eligibility tests); `test:native-signing-production-readiness` 72/72; `test:native-signing-cancellation-notices` 27/27; `test:native-signing-stage1` 16/16 |
+| Consent evidence, row by row before/after the push | Disclosures 5 → 6; 249/249 consent rows and 26/26 `CONSENT_ACCEPTED` events identical; earlier rows identical except the outgoing 2026-10-22 `superseded_at` |
+| Validators | `validate:native-signing-ceremony-dev` 58 OK, 0 failures (2026-10-25 current; a 2026-10-22 acceptance stays valid and is not re-bound; production fails closed); `validate:native-signing-production-readiness -- --target=dev` pass, inventory 38 |
+| Browser QA (dev server from the PR worktree) | Ceremony 83 OK, 0 failures, 0 dev-server issues. It now asserts every heading, paragraph and bullet of the current version renders. It reported 83 rather than 84 because the conditional "Preparing…" check did not fire: the package was already ready. Consent withdrawal 7/7 |
+| Static | `tsc --noEmit`, ESLint `--max-warnings=0` on the changed files, `git diff --check` clean |
+
+Evidence: `_audit_tmp/gate-d-disclosure-review-2026-10-25/` in the `E:\dev\harbaugh-forms` checkout (exact texts of both versions, verifier, snapshots, logs).
+
+**Paper-copy policy support (assessed 2026-10-25).** See the decision "Every Native Signing sender provides requested paper copies at no charge".
+- Supports the commitment: no Signing workflow, email or UI mentions or charges a fee.
+- Once a Signing is Complete, its completed documents and audit certificate stay available for View and Download (`canReadCompletedSigningArtifacts`). Access covers the primary agent and, for continuity, the co-agent, active TC, originating-brokerage ORG_ADMIN and historical agent and operator associations. It holds after archive and after a participant's consent withdrawal (R47), so the sender can print them.
+- Gap, an operating prerequisite rather than a code defect: the application never tells a sender about the obligation. `NATIVE_SIGNING_ENABLED` is global, so once on, every active account can send. Each sender other than Lee must be informed before they use Native Signing.
+- Paper copies of documents before Complete (Declined, Cancelled) are not available from the Signing. The disclosure promises only completed documents.
+
+**Technical-change release policy support (assessed 2026-10-25; blocker).** Rollout policy item 7 requires, before a release that materially changes participant requirements: publish a new disclosure version; keep acceptances bound; and have the sender cancel and re-send any in-progress Signing whose accepted disclosure would become inaccurate. Against the new sentence "the sender will inform you of the new requirements and your options":
+- **Notice:** not ensured.
+  - Cancel emails only invited remote participants. Its fixed text says the link no longer works and "nothing else is needed from you". The new requirements and options appear only if the sender writes them in the optional "Message to participants". The policy does not require that.
+  - In-person-only participants get no email.
+  - Completed Signings cannot be cancelled, and the completed-package email (and Resend Package) has no message field. Policy item 7 does not cover completed Signings, yet the sentence covers "keeping" records.
+  - Nothing identifies affected Signings for each sender.
+- **Revised requirements and withdrawal rights:** shown in the re-sent Signing's new disclosure version, before signing. They are not part of the cancellation notice.
+- **Renewed consent:** yes. A new Signing requires fresh affirmative consent through the existing checkbox, the application's affirmative consent and capability acknowledgment. No PDF test is added (2026-10-22 rollout policy), and whether the checkbox meets every E-SIGN access-demonstration requirement remains an open, deferred legal question. *(Wording corrected 2026-10-25; this line earlier called the checkbox "the access demonstration".)*
+- **Result:** existing procedures cannot ensure the promised notice. A documented sender notice procedure needs Lee's approval, or so does a product change, before publication. No notification subsystem was built.
+
+**Blockers to production publication** (as of 21:35; update 22:55: 1–3 resolved, 4 is the pre-activation sender notice above).
+1. Lee's explicit approval of the exact 2026-10-25 text.
+2. Technical-change notice procedure (above).
+3. Production-ready publication design. The candidate is non-ready, and the development validators require the development disclosure to stay non-ready. Making a version production-ready therefore needs a separately approved design, for example a later migration publishing the approved body under a production-ready version key, with the validator invariant revisited. Readiness must never be flipped on an existing row (R40).
+4. Paper-copy obligation communicated to any sender other than Lee before that sender uses Native Signing. This is an operating prerequisite; it does not block Lee's own use.
+
+Also open before live use, separate from this PR: H-1 header decision; Signing manager hydration `#418`.
+
+**Previous review: `esign-disclosure-2026-10-22`.**
+
+| Item | Value |
+|------|-------|
+| Version key / title | `esign-disclosure-2026-10-22` / "Electronic records and signatures" |
+| Source | `supabase/migrations/20261022130000_native_signing_esign_disclosure_2026_10_22.sql` (added by `a267cb2`, PR #56), body stored with carriage returns stripped |
+| SHA-256 | `902d216bdececa5f6b7d2e54bc7698bce6dadbeb46619c41ba14efbf9f8a1617`, recomputed from the migration body on 2026-10-25 and equal to the value pinned in the migration and `consent-disclosure-copy.test.ts` |
+| Readiness | `is_production_ready = false`; current (not superseded) in development and in production (Gate B/C records; production not re-queried). Lee-approved product wording, not counsel-approved |
+| Consent checkbox | `CONSENT_ACKNOWLEDGEMENT` in `lib/signing/consent-disclosure-view.ts`, unchanged since 2026-10-20. It is UI text and is not covered by the disclosure fingerprint |
+
+**Participant flow (code on `23607be`).** Invitation email link, then `/sign/<publicId>` and the entry exchange, then "Confirm who you are" ("I am <name>"; for in-person, after the agent's device handoff). The ceremony then shows the disclosure card before any signing step, with Download (exact text plus version and SHA-256) and Print, "Leave for now" and "Decline to sign". The checkbox starts unchecked and Continue is disabled until it is checked. The server action `acceptConsent` records the version id and fingerprint and appends `CONSENT_ACCEPTED`. "Start signing" then shows the derived signature and initials. Later, "Electronic records disclosure" reopens the accepted version. Invitation emails do not mention the disclosure. In development a non-ready version shows a "Development disclosure copy" badge. In production a non-ready version is never presented or accepted.
+
+**Coverage of earlier approved language.** Paper copies (no-charge, sender-handled, no mailing) and withdrawal (request through the sender, consequences, links already issued) are present as approved on 2026-10-22. Hardware and software requirements are in "What you need". Notice and re-consent when those requirements change are a documented release rule (rollout policy item 7), not disclosure text. The no-charge paper-copy statement is accurate only while Lee is the only sender. *Update 2026-10-25: the paper-copy statement is now backed by an all-sender policy, and the candidate above adds the withdrawal-fee and technical-change lines.*
+
+**Steps to publish a new production-ready version (after Lee's explicit approval).** *Correction 2026-10-25: step 3 as first written (insert with `is_production_ready = true`) conflicts with the development ceremony validator, which requires the development disclosure to stay non-ready. Steps 1–6 were followed for the non-ready candidate in PR #59. The production-ready step needs the separate design in blocker 3 above.*
+1. Lee approves the exact final body (UTF-8, LF, no trailing newline), plus the checkbox wording if it changes. A checkbox change is a code change and applies to every ceremony.
+2. Choose a new, unused `version_key` and compute the body's SHA-256 independently.
+3. Add one data-only, forward-only migration in the established pattern: CR-stripped dollar-quoted body, pinned expected SHA-256, abort on mismatch, no-op if the key exists, supersede the current row, insert the new row with `is_production_ready = true`. Never `UPDATE` `body_text`, `content_sha256`, `is_production_ready` or `version_key` on an existing row. Setting `superseded_at` on the outgoing current row is the only change to an existing row. Register it in `lib/signing/native-signing-migrations.ts`.
+4. Extend `consent-disclosure-copy.test.ts` (pin the new fingerprint, reassert every earlier fingerprint, section layout, no unsupported claims, and that the publication sets readiness only on the inserted row). Also cover eligibility and readiness (`consent-eligibility`, `production-readiness`).
+5. Development first: snapshot disclosure versions, consent rows and `CONSENT_ACCEPTED` events, apply, verify one current row with the stored fingerprint and earlier rows unchanged apart from the outgoing `superseded_at`, and run ceremony and withdrawal browser QA.
+6. PR review and merge-boundary validation, then merge to `main`.
+7. Production, with Lee's approval for this step only: read-only preflight (dry run shows only this migration; controls still suspended; 0 production-ready versions), a fresh backup if business data changed, `supabase db push` with an explicit production `--db-url` (no relink), then verify the row, fingerprint, readiness `READY` and unchanged earlier rows and consent tables. No redeploy is needed for a data-only change. Native Signing stays off and suspended until the later Gate D approvals.
+
+Known residuals (backlog): no database immutability trigger on accepted disclosure rows (R39), and readiness carries no timestamp (R40). Both are reasons for the new-row-only rule.
+
+### Gate D: H-1 security headers (resolved for initial activation; merged as `42dd7d5`)
+
+**Merge (2026-10-26 20:14:30 UTC, Lee authorized conditional on validation).** PR #61 squash-merged as `42dd7d5bc764928a53a64bc0954b9cc3084a00f2` (parent `b0f8fbd`), pinned to `a5080a3`; squash tree `5a581bc` identical. Branch and worktree removed. Not deployed. Lee approved deferring an enforced script/style CSP for the initial rollout (decision "H-1: every response denies framing and MIME sniffing; script/style CSP deferred for initial use").
+
+**Merge-boundary validation (on `a5080a3` against `b0f8fbd`).** Evidence: `_audit_tmp/merge-2026-10-26-pr61/`.
+
+| Item | Result |
+|------|--------|
+| Review | Three files only: the first site-wide `headers()` rule, `lib/security-headers.test.ts` and its `test:security-headers` script. The diff adds lines only; the `/sign` rule and all other config are unchanged |
+| Unit suites | All 59 pass (the 58 established plus `test:security-headers`): 1,674 tests, 0 failures (PR #60 boundary 1,669 plus 5) |
+| Dev validators | All 21 pass on a fresh dev server (649 OK) |
+| Browser QA (dev server, with headers) | All 10 passed first run with 0 header, MIME or server issues: consent withdrawal 7, ceremony 84, archive 39, cancellation 31, link-ops 28, account switch 10, combined refresh 10, placement templates 44, Prepare Documents 90, Packet edit navigation 19 |
+| Built responses (production build, `next start`) | 16 routes (pages, auth, proxy 307s, worker 401s, `/sign` pages and route handlers, `/api/sign`, static JS, pdf.js worker, font, 404) all carry `nosniff`, `DENY` and `frame-ancestors 'none'`, with no duplicates. The `/sign` CSP is byte-identical to the one production serves today |
+| Browser enforcement and Fill Form (production build) | Cross-origin and same-origin framing refused (`chrome-error://`); the header-free control frame loads. The authenticated Fill Form page carries the headers, its PDF renders with pdf.js (11 painted canvases), and Download PDF saves a valid PDF, with no MIME or worker errors |
+| Admin hydration | 16/16 on a clean `TZ=UTC` flag-off production build (3300), 0 server-log issues |
+| Build | `build:validate` passes with the feature on and with it off (clean `.next`), 53 pages |
+| Static and security | `tsc` clean; ESLint `--max-warnings=0` on the changed files and the `/sign` CSP test; `git diff --check` clean; `npm audit --omit=dev` 0; full audit 1 moderate (pre-existing; lockfile unchanged); 0 secret-pattern hits; no tracked env files |
+| Evidence | 259/259 earlier consent records and 26/26 `CONSENT_ACCEPTED` events identical; 7 disclosures unchanged; 3 QA fixture participants added |
+| Run notes | Two server starts were issued in parallel with their builds (my sequencing error) and read an incomplete `.next`. Both were stopped and restarted after the build completed; no results came from those servers |
+
+**Separate authentication/navigation follow-up (`/auth/login?_rsc=…` 404).** Traced on the production build during the account-switch flow. After logout, the client navigation to `/auth/login` fetches its RSC payload with the `RSC: 1` header and gets 200, and the navigation completes. About 4 extra `fetch` requests to `/auth/login?_rsc=…` follow, **without** the `RSC` or prefetch headers, and return 404. There is no fallback document load, and the next sign-in succeeds in every cycle (all 9 functional checks pass). Classification: background request noise, not a demonstrated login or navigation failure. It also occurs on unchanged `main`. The requester of the header-less fetches is not yet identified (possibly Next.js client caching after logout). Investigate separately; no auth code was changed here.
+
+**Status at PR open (2026-10-26):** Implemented and focused-validated in [PR #61](https://github.com/leeharbaugh/harbaugh-forms/pull/61) (`security/h1-anti-framing-nosniff`, commit `a5080a3` on `main` `b0f8fbd`; not merged). Development only; no production change.
+
+- **Confirmed findings (production, read-only GET of public pages).** `/auth/login`, and every workspace page per R45, had no CSP, `X-Frame-Options`, `X-Content-Type-Options` or `Referrer-Policy`. `/sign/*` already had a strict CSP with `frame-ancestors 'none'`, `no-referrer` and `no-store`, but no `nosniff` or `X-Frame-Options`. HSTS (Vercel) and per-route `nosniff` on some PDF handlers already existed. The pdf.js worker is served as `application/javascript`.
+- **Change.** A first site-wide `headers()` rule adds `nosniff`, `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'` to every response. `/sign` keeps its full CSP, because the later rule wins per key. A new `test:security-headers` (5 tests) checks effective headers per route and the rule order; mutations fail it.
+- **Functionality affected:** none observed. Framing the app (cross-origin or same-origin) is now refused, and no workflow frames it.
+- **Validation (local production build, development Supabase).**
+  - Runtime header matrix: correct on pages, auth, proxy redirects, worker APIs, `/api/sign`, static files and 404. `/sign` is unchanged plus the two headers, and there are no duplicates.
+  - Chromium: cross-origin and same-origin framing refused (frames end at `chrome-error://`), with a header-free control frame loading.
+  - Fill Form (signed-in development account): the PDF renders (11 painted canvases), Download PDF saves a valid PDF, and there are no MIME or worker errors.
+  - Ceremony 83 OK. Its first run hit a Cloudflare 502 from development Supabase; one valid rerun passed. A second attempt reached a leftover baseline server, so it was invalid and is recorded as such.
+  - Prepare Documents 90, placement templates 44, and account switch 10/10 on a dev server.
+  - Unit suites reading `next.config` plus the auth suites passed; `tsc`, ESLint, `git diff --check` and `build:validate` pass.
+  - Evidence: `_audit_tmp/h1-headers-2026-10-26/`.
+- **Pre-existing, separate follow-up.** On a production build, account switch exits 1 after its 9 functional checks because `GET /auth/login?_rsc=…` returns 404 (16–17×). Unchanged `main` shows the same; it is not caused by H-1. The script previously ran only on dev servers.
+- **Deferred (see decision "H-1: every response denies framing and MIME sniffing; script/style CSP deferred for initial use").** Enforced script/style CSP (needs nonces and dynamic rendering) and an explicit workspace `Referrer-Policy`. The residual XSS risk is recorded there.
+- **Run notes.** A stray `npm ci` ran in the `harbaugh-forms-main-docs` worktree, from a parallel command race. It added only an ignored `node_modules/`, which was removed; tracked files and these docs were unaffected. A duplicate QA-loop instance also ran in parallel; its results were discarded and the scripts rerun one at a time.
+- **Next:** merge-boundary validation and Lee's merge approval. Production picks the headers up only with a later approved deployment of `main`.
+
+### Gate D: Signing manager hydration #418 (resolved; merged as `b0f8fbd`)
+
+**Merge (2026-10-26 17:59:54 UTC, Lee authorized).** PR #60 squash-merged as `b0f8fbd` (parent `6f0c041`), pinned to `f8e0f4d`; squash tree `c39c158` identical. The branch and worktree are removed. Not deployed: production picks up the fix only with a later approved deployment of `main`.
+
+**Merge-boundary validation (on `f8e0f4d` against `6f0c041`).** Evidence: `_audit_tmp/merge-2026-10-26-pr60/`.
+
+| Item | Result |
+|------|--------|
+| Review | Three files: both Signing manager components use `formatTimestamp()` (fixed America/Chicago, assembled from parts; its existing test gives identical output under UTC, Chicago and Tokyo), plus the new guard. No authorization, session, consent, document or database logic changed |
+| Unit suites | All 58 pass: 1,669 tests, 0 failures (PR #59 boundary 1,667 plus 2 new) |
+| Dev validators | All 21 pass on a fresh dev server (649 OK; ceremony 58) |
+| Browser QA (dev server) | Ceremony 83 (the conditional "Preparing…" check did not fire), archive 39, cancellation 31, link-ops 28, account switch 10, combined refresh 10, placement templates 44, Prepare Documents 90, Packet edit navigation 19; first run, 0 dev-server issues. **Consent withdrawal** first failed at "I am Ava": the dev server logged a Cloudflare `502 Bad Gateway` HTML response from development Supabase during `affirmIdentityAction`, so the ceremony never opened (environmental; same window had an 11.3 s activation). One rerun passed 7/7 with 0 issues. Both runs retained |
+| #418 regression (`TZ=UTC` production build, `next start -p 3400`, Chicago browser) | Consent withdrawal 7, ceremony 83, archive 39, link-ops with the R11 expiry patch 31 (patch temporary and reverted), unpatched link-ops 28. All exit 0, with 0 #418 and 0 hydration errors. The pre-fix reproduction (React diff and 9× #418) is retained in `_audit_tmp/hydration-418-2026-10-26/` |
+| Admin hydration | 16/16 on a clean `TZ=UTC` flag-off production build (port 3300). The first attempt ran before the server had started (no request reached it) and was rerun after confirming the server answered |
+| Build | `build:validate` passes with the feature on and off (clean `.next`), 53 pages |
+| Static and security | `tsc` clean; ESLint `--max-warnings=0` on the changed files and both Signing pages; `git diff --check` clean; `npm audit --omit=dev` 0; full audit 1 moderate (`postcss-selector-parser`, pre-existing Tailwind 3 chain; lockfile unchanged); 0 secret-pattern hits; no tracked env files |
+| Evidence | 256/256 earlier consent records and 26/26 `CONSENT_ACCEPTED` events identical; 7 disclosures unchanged; 3 QA fixture participants added |
+
+**Deferred:** `components/forms/forms-page.tsx` (form lifecycle history) still uses `toLocaleString()`. It is outside Native Signing and a separate follow-up.
+
+**Status at PR open (2026-10-26):** Root cause confirmed and fixed in [PR #60](https://github.com/leeharbaugh/harbaugh-forms/pull/60) (`fix/signing-manager-hydration-418`, commit `f8e0f4d` on `main` `6f0c041`; not merged). Development only; no production change.
+- **Root cause.** `SigningDashboardPage` and `SigningsListPage` are client components rendered on the server first. They formatted timestamps with `new Date(...).toLocaleString()`, which takes the runtime's time zone. A `TZ=UTC` dev server gave React's diff on the dashboard header: server `" on 10/26/2026, 3:46:00 PM"` against browser `" on 10/26/2026, 10:46:00 AM"`. Vercel runs in UTC, so production would hit it for any manager outside UTC. Earlier dev-server QA was clean only because server and browser shared the local zone. The timezone hypothesis is now confirmed.
+- **Fix.** The header activation time, `formatWhen` (link issued, replaced and revoked, invitation and attempt, cancelled, consent withdrawn) and the Signings list Updated time now use the existing `formatTimestamp()`: America/Chicago with a `CDT`/`CST` label, as on the admin and Packet pages. The in-person handoff expiry is client state only and unchanged. `lib/format-timestamp.test.ts` now guards `components/signings`; reverting the header fix fails it. Three files changed. No authorization, session, data, consent or document-access code changed.
+- **Validation.**
+  - Before the fix (`6f0c041`), the consent-withdrawal QA exited 1: on a `TZ=UTC` dev server with the full diff, and on a `TZ=UTC` production build (`next start -p 3400`) with 9× minified #418, matching R11.
+  - After the fix, on the R11 setup (`TZ=UTC` production build, `next start -p 3400`): consent withdrawal 7, ceremony 83 (the conditional "Preparing…" check did not fire), archive 39, link-ops with the R11 expiry patch 31, unpatched link-ops 28. All exit 0, with 0 #418 and 0 hydration errors.
+  - The fixed `TZ=UTC` dev run gave consent withdrawal 7/7, with no console or server issues.
+  - The nine unit suites that read the changed components passed: 692 tests, 0 failures. `tsc`, targeted ESLint and `git diff --check` are clean.
+  - Evidence: `_audit_tmp/hydration-418-2026-10-26/` in the `E:\dev\harbaugh-forms` checkout.
+- **Next.** Merge-boundary validation, then Lee's merge approval. Production picks the fix up only with a later approved deployment of `main`, which is not planned here.
+
+**Earlier status:** Open pre-live-use UI investigation, separate from security. It does not reopen R11, and no broad security assessment follows from it.
+
+- **Observed:** the R11 runtime follow-up's archive, ceremony, link-expiry and consent-withdrawal browser scripts logged repeated `[manager] pageerror: Minified React error #418 … args[]=text` on the Signing manager page. The scripts completed their security assertions and cleanup, then exited 1 at their runtime-noise gate. The server was a `next start` build of `23607be` on localhost:3400 with `TZ=UTC`. Logs are in `_audit_tmp/r11-2026-10-25/runtime-coverage/` of the `E:\dev\harbaugh-forms` checkout.
+- **Not yet known:** the exact component and text. The `text` argument indicates a server/client text-content mismatch. Because the server ran in UTC, timezone-dependent rendering is a candidate (as in the earlier admin-page `#418` fix), but this is unverified. Earlier merge-boundary Signing QA on a development server reported 0 issues.
+- **Scope:** reproduce on a non-minified build with the server in UTC and the browser in America/Chicago. Identify the mismatching node, fix it narrowly with a regression check, and rerun the four affected browser scripts to a clean exit. Development only; no production change. Resolve or explicitly accept it before Lee's live use.
+
+### Gate D: R11 authenticated security assessment (2026-10-25 to 2026-10-26)
+
+**Historical independent evidence review (2026-10-25; superseded):** an independent review of the original scan record classified R11 as **INCOMPLETE** at that time.
+- The six development ZAP plans on `23607be` reported no High or Critical alerts.
+- But the retained manual matrices did not prove every claimed pass (30/35 rendered-page checks with no corrected rerun saved), and the Global Admin active scan reached its 20-minute cap.
+- No live Signing session or completed artifact had been scanned.
+- Native Signing stayed off and suspended.
+
+The focused authenticated runtime follow-up (`security.md` R47) then closed those gaps, and R11 was recorded as PASS. Private details: `security.md` R46.
+
+**Original ZAP status:** R11's scanner acceptance criterion, "No unreviewed High/Critical alert", was met (`security.md` regression matrix). The later authenticated runtime follow-up at the top of this file closed the gaps in this original scan record. Both passes used development only, per R11's "Do not target production". Private details are in local `security.md` R45–R47; evidence is in `_audit_tmp/r11-2026-10-25/` (gitignored, credentials removed). See the 2026-10-26 decision "R11 authenticated DAST: accepted; header hardening recommended" and its runtime addendum.
+
+**Scope and environment.**
+- Target: a production-mode build (`next start`, `TZ=UTC`) of `main` `23607be` against development Supabase, Native Signing on, email sandboxed.
+- Roles: disposable ordinary, disabled, inactive-organization, organization-admin and Global Admin accounts, plus anonymous.
+- Tools: OWASP ZAP 2.17.0 (Automation Framework) on Temurin JRE 21, plus Playwright checks. Production was not scanned.
+
+**Tests and results.**
+
+| Test | Result |
+|------|--------|
+| ZAP passive (all six roles; GET-only spider, 83–1,010 URLs) and reviewed active scan (anonymous, ordinary, Global Admin) | **0 High, 0 Critical.** Medium: no CSP and no anti-clickjacking header on workspace and auth pages; `/sign` CSP `'unsafe-inline'` (accepted residual). Low: no `X-Content-Type-Options`; `X-Powered-By` (local only; stripped in production); two false positives. The rest is informational |
+| HTML authorization role matrix | 90/90: anonymous and disabled sessions go to login; ordinary, inactive-organization and organization-admin sessions are denied admin pages and other users' records; unknown Signing ids and artifacts are denied for every role |
+| RSC payload matrix (real client navigations) | 20/20 unauthorized cases leak no privileged data |
+| Rendered-page matrix + stored-XSS canary | Original disposition reported 35/35 after corrected expectations, but the retained raw matrix has 30/35 and no corrected rerun was saved. The canary never executed. The focused runtime follow-up resolved the disputed foreign packet editor against exact owner markers and PDF bytes. Global Admin cross-user visibility is by RLS design |
+| Server Action CSRF | A forged `Origin` is rejected by Next.js before the action runs |
+| Signing surfaces | Exchange APIs return 503 and worker routes 401 under active scanning; `/sign/*` carry a strict CSP with `frame-ancestors 'none'`; Signing cookies are `HttpOnly; Secure; SameSite=Lax`; manager Signing pages require login |
+| Cleanup | All fixture accounts, organizations and data deleted; 0 Signings or audit events reference them; session and password material deleted; the R11 worktree was removed |
+
+**Findings.** No vulnerability requires a fix before activation.
+- **H-1 (Medium, hardening):** workspace and auth pages lack CSP / `frame-ancestors`, `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy`, in production too. Clickjacking risk is limited because session cookies are `SameSite=Lax`, and participant `/sign` pages already have `frame-ancestors 'none'`.
+- **Recommended:** a small focused PR adding these response headers in `next.config` (a report-only CSP first), with tests. Lee decides whether this precedes activation.
+
+**Limits.**
+- ZAP does not invoke Server Actions; they are covered by the 21 dev validators and unit suites.
+- The Global Admin active scan was capped at 20 min.
+- Live Signing tokens and ceremonies were not scanned; they are covered by the Signing validators.
+
+**Remaining before activation (Gate D).** Lee's approval and publication of a production-ready disclosure version, and the decision on H-1. Then the feature-on-while-suspended step and the synthetic Lee-owned Signing, each only with Lee's approval. **Update 2026-10-25 evening:** R11 is PASS (R47). The disclosure review has started, and the Signing manager hydration `#418` investigation is added (both sections below).
+
 ### Signing worker route authentication and email Reply-To (2026-10-25)
 
-**Status:** [PR #58](https://github.com/leeharbaugh/harbaugh-forms/pull/58) is open and not merged. Development and tests only: no migration, no production env, deploy or Signing change. See the 2026-10-25 decision "Internal Signing worker routes bypass workspace login; Signing emails carry a configurable Reply-To".
+**Status:** [PR #58](https://github.com/leeharbaugh/harbaugh-forms/pull/58) is squash-merged into `main` as `23607be` (2026-10-25, Lee approved; pinned to `4a72f81`, tree identical). No migration and no production env, deploy or Signing change. See the 2026-10-25 decision "Internal Signing worker routes bypass workspace login; Signing emails carry a configurable Reply-To".
 
 **Worker routes.**
 - The Gate C production candidate showed `GET /api/internal/cron/signing-worker` and `POST /api/internal/signing-worker` answering 307 to `/auth/login` even with the correct secret: the workspace-login proxy ran before the handlers.
@@ -84,7 +1457,258 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 - New `internal-worker-routes.test.ts`, `internal-worker-route-auth.test.ts` (real route handlers, no network) and `email-reply-to.test.ts`, all added to `test:native-signing-production-readiness` (56 → 72). A mutation check confirms the proxy tests fail without the fix.
 - Focused suites: production-readiness, cancellation, completion delivery, sandbox email, Stage 4, ceremony, recovery access, Supabase guard, auth bootstrap, admin invite and admin user lifecycle. 469 tests, 0 failures.
 - `tsc --noEmit`, ESLint `--max-warnings=0` on the touched files, and `git diff --check` are clean.
-- Comprehensive regression is reserved for the merge boundary.
+
+**Merge-boundary validation (2026-10-25, on `4a72f81` against `main` `b6e0531`).**
+
+| Item | Result |
+|------|--------|
+| Review | Only `/api/internal/cron/signing-worker` and `/api/internal/signing-worker` bypass the login proxy. They are the only route files under `app/api/internal`, and `next.config.ts` has no rewrites, redirects, `basePath` or trailing-slash setting that could map another path onto them. Both handlers are unchanged, with their own constant-time secret checks. Every Signing email (invitation, completed package, cancellation) goes through the one Resend call in `sendSigningEmail`, which carries `reply_to` |
+| Unit suites | All 58 `test:*` pass: 1,647 tests, 0 failures (production-readiness 72) |
+| Dev validators | All 21 `validate:*-dev` pass on a fresh dev server. `packet-form-annotation-auth` first failed in 4 s on "Cannot find project ref" (the fresh worktree had no Supabase CLI link); with the development link metadata copied in, it passed. Environment, not product |
+| Browser QA | Consent withdrawal 7, ceremony 84, archive 39, cancellation 31, link-ops 28, account switch 10, combined refresh 10, placement templates 44, Prepare Documents 90, Packet edit navigation 19, all first run with 0 dev-server issues. Admin hydration 16 on a `TZ=UTC` production build with the flag off. The only dev-server log lines were npm's `devdir` notice, with 0 "destination stream closed early" |
+| Live route checks | Dev server, local production build and the PR's Vercel Preview: both worker routes answer `401 {"error":"Unauthorized"}` with no or wrong secrets (the Gate C candidate from `b6e0531` answered 307). `/api/internal/<other>`, the near-miss `/api/internal/signing-worker/extra`, `/signings` and `/admin/signing-controls` still redirect to login |
+| Build | `build:validate` passes with the feature on and with `NATIVE_SIGNING_ENABLED=false` (53 pages each). Only the pre-existing `partialPrefetching` and build-guard module-type notices |
+| Type check / lint / audit / diff | `tsc --noEmit` clean; ESLint `--max-warnings=0` clean on 19 files (PR files plus proxy, Supabase clients, root layout, auth and admin actions, `/auth/confirm`, feature gate, both routes); `npm audit --omit=dev` 0; full audit 3 moderate (pre-existing Tailwind 3 chain); `git diff --check`, secret-pattern scan and tracked-env-file check all clean |
+| Evidence | Development consent evidence snapshotted before and after: 5/5 disclosure versions, 246/246 consent records and 26/26 `CONSENT_ACCEPTED` events byte-identical; 3 fixture participants added. Production not accessed except read-only Vercel metadata |
+| Cleanup | The branch was deleted locally and on GitHub, and the `harbaugh-forms-gatec-fixes` worktree was removed (its development env and CLI link copies were deleted first). Evidence is in `_audit_tmp/merge-2026-10-25/` (gitignored) |
+
+### Gate C: production configuration (2026-10-24 to 2026-10-25; passed)
+
+**Status (2026-10-25, 23:40 UTC):** Passed. The validated candidate `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` was promoted with Lee's explicit approval and verified (section 6). Earlier status: "All Gate C validation passed on the replacement candidate (see "5. Replacement candidate" below). The only remaining Gate C step is manual promotion, which needs Lee's separate explicit approval." Earlier status, kept for history: "Not passed. It is waiting on Lee's Resend step and a code fix (below)." No production migration, promotion, feature enablement, unsuspension, email or Signing activity. The production database was written only by the smoke sign-in (below). Private details are in local `security.md` R43. See the 2026-10-25 decision "Native Signing production configuration: key custody, email account, and pre-activation security scan".
+
+**1. Backup recovery credential: done.** Lee received the backup passphrase through a short-lived clipboard hand-off (excluded from clipboard history and cloud sync, never displayed) and saved it in his password manager. A masked dialog then confirmed the stored copy matches (MATCH). The encrypted OneDrive backup no longer depends on the laptop.
+
+**2. Production Signing variables (Vercel Production only).**
+
+| Variable | Type | State |
+|----------|------|-------|
+| `SIGNING_EVENT_CHAIN_KEY_ID`, `SIGNING_CREDENTIAL_WRAP_KEY_ID`, `SIGNING_COMPLETED_PACKAGE_WRAP_KEY_ID` | Config | Set, and read back exactly |
+| `SIGNING_EVENT_CHAIN_KEY`, `SIGNING_CREDENTIAL_WRAP_KEY`, `SIGNING_COMPLETED_PACKAGE_WRAP_KEY` | Sensitive | Set |
+| `SIGNING_WORKER_SECRET`, `CRON_SECRET` | Sensitive | Set, and proven live (the candidate accepts them) |
+| `SIGNING_EMAIL_FROM` | Config | `Harbaugh Forms <signing@send.harbaughrealestate.com>`, read back exactly |
+| `RESEND_API_KEY` | Sensitive | Set 2026-10-25: the sending-only Signing key from the original Resend account, confirmed as a restricted key without sending |
+| `SIGNING_EMAIL_REPLY_TO` | Config | `lee@harbaughbrothers.com`, read back exactly (added 2026-10-25, PR #58) |
+| `NATIVE_SIGNING_ENABLED`, `SIGNING_WORK_SUSPENDED`, `SIGNING_ACCESS_SUSPENDED`, `SIGNING_EMAIL_SANDBOX`, `*_PREVIOUS_KEYS` | — | Unset (feature off; the database controls hold suspension) |
+
+- All values are new, generated with a CSPRNG, and not equal to any development value.
+- Before install, they were validated with the app's own parsers: the event-chain keyring loads, both wrap/unwrap round trips pass, and Cron authorization accepts the right secret and rejects a wrong one.
+- The recovery copy is an encrypted bundle under the backup passphrase, locally and in OneDrive. It was verified by downloading it and decrypting it back to the escrowed keys.
+- Nothing Signing-related exists in Preview or Development.
+- Install note: the first key id briefly carried a byte-order mark from the Windows stdin writer. It was caught by reading the value back and was reinstalled cleanly before any deploy.
+
+**3. Email: configured 2026-10-25 (earlier paused by Lee's decision; the history follows).** `RESEND_API_KEY`, `SIGNING_EMAIL_FROM` and `SIGNING_EMAIL_REPLY_TO` are set as described in the table above. Delivery is first proven by Gate D's synthetic Signing, since no email was sent.
+- `send.harbaughrealestate.com` has Resend DKIM and a return path published.
+- Lee found two Resend accounts. The original one is the Supabase Auth custom SMTP provider for production (`noreply@harbaughrealestate.com`: user invitations and authentication emails), so it must not be retired, and its Supabase SMTP settings and credentials are not to be touched.
+- Signing email is being consolidated into that original account. **Update 2026-10-25:** Lee has moved `send.harbaughrealestate.com` there, and it shows Verified. The separate sending-only Signing key is not created or installed yet. The duplicate account will be retired later. Supabase SMTP settings and credentials are unchanged.
+- Development needs no Resend key: none is referenced in code, any env file, Vercel (any target), GitHub secrets or Supabase secrets, and development Signing email uses the sandbox. Supabase SMTP credentials are write-only and were not inspected.
+
+**4. Deployment candidate `dpl_EY7ajHuizRM1rEGe4zhvzjGVQrYL`.**
+
+| Check | Result |
+|-------|--------|
+| Production database (read-only) | 150 migrations; work and access suspended, no resume, the Gate B epoch unchanged; 0 production-ready disclosures (5 versions); 0 Signings, work items or delivery instructions |
+| Build | `vercel deploy --prod --skip-domain` from a clean detached checkout of `b6e0531`; Next.js 16.4.1, build 46 s, Ready. All 924 uploaded files byte-identical to `b6e0531` (only `.gitignore` omitted) |
+| Domains and settings | `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` stay on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`; project production target unchanged; `autoAssignCustomDomains=false`. Cron stays tied to the live deployment with 0 definitions (the candidate's `*/2` Signing Cron activates only on promotion). As before, `--skip-domain` moved only the SSO-protected team alias |
+| Fail-closed (21 checks) | 20 pass outright: `/sign/<id>`, `/sign/completed/<id>`, `/sign/done`, `/sign/unavailable` and `/sign/in-person/<token>` show "Signing access is currently unavailable" (200 or 503, strict CSP); `/sign/ceremony`, `/continue` and `/package` refresh to `/sign/unavailable`; `/sign/return-to-agent` is the static hand-back page; both exchange APIs return 503; `/signings` and `/admin/signing-controls` require login. The internal worker routes fail closed only because the login proxy intercepts them (finding below) |
+| Smoke (81 checks) | One-time admin sign-in (session revoked afterwards). Packets list, detail and Contact, in Chicago and Tokyo; admin users, organizations and audit; Contacts, Collections, Properties, Forms, Settings; Fill Form PDF on FINAL Packet form #57; client navigation and back/forward. `/signings` unavailable, no Signings link, and admin Signing controls showing "Signings enabled No, Work suspended Yes, Access suspended Yes". 0 console, hydration or page errors; 0 5xx |
+| Runtime logs | 0 error / warning / fatal; the only 5xx are the 8 designed fail-closed 503s |
+| Production writes | All 111 tables checksummed before and after the smoke. Only `auth.users` (Lee's sign-in timestamp) and `user_preferences` changed. In the latter, the new build clamped the Forms list Actions column width from 250 to its new 160 maximum; the live build clamps it back to its own 250 minimum. Sessions back to 6 |
+
+**Finding: Gate D blocker (code change; needs Lee's approval).**
+- `lib/supabase/proxy.ts` exempts only `/sign/*` and `/api/sign/*` from workspace login.
+- `GET /api/internal/cron/signing-worker` and `POST /api/internal/signing-worker` therefore get a 307 to `/auth/login` before their own `CRON_SECRET` / `SIGNING_WORKER_SECRET` checks run, even with the correct secret.
+- Harmless while Signing is off. Once enabled, the `*/2` Vercel Cron recovery sweep would never reach the worker. The inline invitation path, in-process kicks and the admin "Run worker now" call the worker directly and are unaffected.
+- Fix: exempt exactly those two paths in the proxy (both authenticate with constant-time secret checks), with a unit test. Then rebuild the candidate and re-verify that Cron returns `FEATURE_DISABLED` with the real secret.
+- **Update 2026-10-25:** fixed by [PR #58](https://github.com/leeharbaugh/harbaugh-forms/pull/58), squash-merged into `main` as `23607be` together with the Reply-To setting below. The replacement candidate must re-verify Cron `FEATURE_DISABLED` with the real secret.
+
+**Other items before Gate D (unchanged unless noted).**
+- **R11:** the authenticated development DAST remains scheduled before Native Signing is enabled in production; not run. **Update:** done in Gate D; PASS on `23607be` (`security.md` R47).
+- **Disclosure:** all 5 production versions are `is_production_ready=false` and none was published. A Lee-approved production-ready version is a Gate D step. Consent evidence is untouched.
+- **Lee-only access restriction:** not to be built (Lee's 2026-10-25 decision, "Initial Signing use is Lee only by practice; no new authorization feature"). Existing authorization controls are preserved.
+- **Email delivery proof:** no email has been sent. Gate D's synthetic Lee-owned Signing must confirm that the Signing key, the verified `send.harbaughrealestate.com` domain, From and Reply-To work together.
+- **New:** replies to `signing@send.harbaughrealestate.com` reach no one, because that domain's MX is the provider's bounce endpoint and the app sets no reply-to. **Update 2026-10-25:** Lee chose a Reply-To. [PR #58](https://github.com/leeharbaugh/harbaugh-forms/pull/58) (merged as `23607be`) adds `SIGNING_EMAIL_REPLY_TO`. The production value `lee@harbaughbrothers.com` is set in the next Gate C step (not yet set).
+
+**Next.**
+1. Done: Lee moved `send.harbaughrealestate.com` into the original Resend account (Verified).
+2. Done: [PR #58](https://github.com/leeharbaugh/harbaugh-forms/pull/58) merged as `23607be` after merge-boundary validation.
+3. Done: Lee created the sending-only Signing key in the original account; it is installed as `RESEND_API_KEY`, and `SIGNING_EMAIL_REPLY_TO=lee@harbaughbrothers.com` is set.
+4. Done: the candidate was rebuilt from `main` `23607be` and re-verified (section 5).
+5. Done (Lee approved): `vercel promote dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` at 23:27:08 UTC, both domains verified (section 6). Gate C is complete; stop.
+
+**5. Replacement candidate `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU` (2026-10-25, evening).**
+
+| Check | Result |
+|-------|--------|
+| Build | `vercel deploy --prod --skip-domain` from a clean detached checkout of `23607be`; Next.js 16.4.1, build 43 s, Ready. All 929 uploaded files byte-identical to `23607be` (only `.gitignore` omitted). Build log has only npm notices from Vercel's image and no errors |
+| Domains and settings | Both custom domains and the project production target stay on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`; `autoAssignCustomDomains=false` before and after. Cron is still tied to the live deployment with 0 definitions (the candidate's `*/2` `/api/internal/cron/signing-worker` activates only on promotion). As before, only the SSO-protected team alias moved. Supersedes `dpl_EY7ajHuizRM1rEGe4zhvzjGVQrYL` |
+| Worker routes | Cron: no header, wrong secret, secret without `Bearer`, worker secret as bearer, and Cron secret in the worker header all get 401. Worker: no secret, wrong secret, Cron secret, and worker secret as a bearer all get 401. The real `CRON_SECRET` gets `503 FEATURE_DISABLED` (0 processed); the real worker secret also gets `503 FEATURE_DISABLED`; wrong methods get 405. `/api/internal/signing-worker/extra` and `/api/internal/other` redirect to login |
+| Feature-off paths | Participant routes show "Signing access is currently unavailable" (200 or 503, strict CSP) or refresh to `/sign/unavailable`; both exchange APIs return 503; `/signings` and `/admin/signing-controls` require login (28/28 checks) |
+| Smoke | 81/81 (same checks as the first candidate): admin Signing controls show "Signings enabled No, Work suspended Yes, Access suspended Yes"; 0 console, hydration or page errors; 0 5xx; session revoked |
+| Production database | Read-only before and after: 150 migrations; work and access suspended with the Gate B epoch unchanged; 0 production-ready disclosures; 0 Signings, work items or delivery instructions. All 111 tables checksummed around the smoke: only `auth.users` (sign-in timestamp) and `user_preferences` (the known Forms list width clamp) changed |
+| Runtime logs | 0 error / warning / fatal. The only 5xx are the 6 designed 503s (two worker `FEATURE_DISABLED` responses plus four participant fail-closed routes) |
+| Readiness | All 15 required production variables present (secrets Sensitive); `NEXT_PUBLIC_SITE_URL` exactly `https://forms.harbaughrealestate.com`; `NATIVE_SIGNING_ENABLED`, `SIGNING_EMAIL_SANDBOX` and the env suspension switches unset. Disclosure remains BLOCKED (no production-ready version), as designed until Gate D |
+
+**6. Production promotion (2026-10-25, Lee's explicit approval for this deployment only).**
+
+| Check | Result |
+|-------|--------|
+| Pre-promotion | Candidate unchanged and Ready (built 23:03:12 UTC, after all email variables were installed); both domains and the project production target on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`; `autoAssignCustomDomains=false`; no `NATIVE_SIGNING_ENABLED` in any target; 16 Production variables unchanged; 150 migrations; work and access suspended with the Gate B epoch; 0 Signings, work items or delivery instructions. No Supabase configuration command was run at any gate, so Auth SMTP is untouched |
+| Promotion | `vercel promote dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`, 23:27:02–23:27:08 UTC. No rebuild, migration, env or Signing change |
+| Domains | `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` resolve to `dpl_CECsHHSS293ymuKGU8vzP7QHB7UU`, and each page embeds that id; HTTPS 200 with HSTS. The project production target is the new deployment, and `autoAssignCustomDomains=false` after promotion |
+| Smoke | 81/81 on each domain, run sequentially: one-time admin sign-in; Packets list, detail and Contact (Chicago and Tokyo); Contacts, Collections, Properties, Forms, Settings; admin users, organizations and audit; Fill Form PDF on FINAL Packet form #57; client navigation and back/forward. `/signings` unavailable, no Signings link, admin Signing controls "Signings enabled No, Work suspended Yes, Access suspended Yes". 0 console, hydration or page errors; 0 5xx; both sessions revoked |
+| Fail-closed | 28/28 on each domain. Both worker routes return 401 for missing, wrong or swapped credentials; the real `CRON_SECRET` and worker secret get `503 FEATURE_DISABLED` with 0 processed; participant routes are unavailable; manager Signing pages require login |
+| Scheduled Cron | `/api/internal/cron/signing-worker */2 * * * *` is now registered on the deployment. Scheduled runs at 23:28:26, 23:30:26 and 23:32:26 UTC each returned 503 (the handler returns 401 for any credential failure and 503 only after authentication; with the feature off that is `FEATURE_DISABLED`). Signing tables were unchanged afterwards |
+| Logs | 0 error / warning / fatal. The 21 5xx are all designed: 6 Cron (3 checks, 3 scheduled), 3 worker, and 12 participant fail-closed responses |
+| Production data | All 111 tables checksummed before promotion and after all checks: only `auth.users` (smoke sign-in timestamps) and `user_preferences` (the known Forms list width clamp) changed. Packets, Packet forms, field instances, annotations and every other business table are byte-identical. Signing tables hold only the Gate B rows (1 controls, 2 epoch history, 5 disclosures) |
+| Rollback | `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr` retained and Ready (`vercel promote dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`). Not needed |
+
+### Gate B: production migration (2026-10-24 UTC)
+
+**Status:** Passed, with Lee's approval, on `main` `b6e0531`. Writes were limited to the 39 migrations and one recovery-controls transaction. No Vercel, env, Cron, email, feature or application-code change, and no application pages were opened. Private execution details are in local `security.md` R42.
+
+**Encrypted backup.**
+- The Gate A backup folder was packed as 7-Zip AES-256 with encrypted file names and stored in a new private folder in Lee's personal OneDrive (the only off-laptop location configured on this machine).
+- Decrypting the local archive reproduced all 127 manifest files with 0 mismatches, and a wrong passphrase cannot open it.
+- After OneDrive confirmed the upload by freeing the local copy, the archive was downloaded from the cloud, decrypted and checked again: 127 of 127.
+- The passphrase is random and was never displayed. It is held as a Windows-protected (DPAPI) secret on the laptop. **Lee action:** copy it into his password manager (instructions in R42). The plaintext backup stays on the laptop, access-restricted, as the verified local copy.
+
+**Revalidation (read-only, before any write).**
+- Production identity confirmed. 111 applied, latest `20260930120000`; `main` = `origin/main` = `b6e0531`.
+- `--include-all` dry run: exactly the 39 reviewed migrations in the reviewed order. File SHA-256 hashes recorded; no file has changed.
+- All 70 existing tables were byte-identical to the Gate A backup, so no refresh was needed.
+
+**Rehearsal.** The Gate A dump was restored into an isolated local Postgres 17.9. Its baseline matched production's 70 tables, with only the 8 expected Supabase Vault errors. Then:
+- The real `supabase db push --include-all` applied all 39 migrations in 4 s, and a follow-up dry run reported up to date.
+- The prepared controls SQL ran and its assertions passed.
+- Only `packets` (Packet 12's status), `storage.buckets` and the migration history changed.
+- The rehearsal database was deleted afterwards.
+
+**Apply.**
+
+| Step (UTC) | Result |
+|------------|--------|
+| 03:08:10 pre-check | 111 applied, 0 Signing tables, Packet 12 `INACTIVE` |
+| 03:08:11–03:08:18 push | `supabase db push --include-all` with an explicit production `--db-url` from `main`; 39 "Applying migration" lines in the reviewed order; CLI exit 0 |
+| 03:08:19 controls | One transaction set `work_suspended=true` (reason and note), `access_suspended=true`, and a new random `access_epoch`. Assertions passed and it committed. The guard trigger retired the migration-seeded epoch into `signing_access_epoch_history` |
+| Final dry run | "Remote database is up to date" |
+
+**Verification after apply.**
+- **Controls:** work suspended, access suspended, new epoch, prior epoch retired, nothing resumed.
+- **Migrations:** 150 applied, latest `20261022130000`, matching `main`.
+- **Schema:**
+  - 41 `signing_*` tables, all with forced RLS, plus 25 functions and 115 policies.
+  - No permissive policy opens a Signing table to `anon` or `authenticated`.
+  - Through the REST API, the anonymous key gets 401 permission denied on Signing tables, or 0 rows under RLS.
+  - The Signing object counts and the policy and function exposure rows match the rehearsal.
+- **Storage:** the private `signing-artifacts` bucket (PDF, 50 MiB) and its two restrictive deny policies, which are scoped to that bucket. Existing buckets and all 85 objects are unchanged.
+- **Disclosures:** five versions, with the same fingerprints as development. None is production-ready, so production fails closed. Zero Signings, work items, participants or events.
+- **Existing data:**
+  - 67 of the 70 pre-existing tables are byte-identical.
+  - `packets` changed only in Packet 12. All other Packets, and Packet 12's other columns, Packet forms and Packet contacts, hash identically to before.
+  - `storage.buckets` gained `signing-artifacts`, and `supabase_migrations` gained the 39 rows.
+  - Now 7 `ACTIVE` and 5 `DELETED` Packets, with the new `packets_status_check` and `packet_contacts_packet_role_check` (AGENT) in place.
+- **Live app, checked read-only:**
+  - Both domains' login pages return 200.
+  - The REST API serves `packets`, `forms` and `packet_forms` normally under the migrated schema.
+  - Vercel is unchanged: production target and both domains on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`, `autoAssignCustomDomains=false`, no Cron definitions, the same five production env names, and no Signing, Cron or Resend variable in any target.
+
+**Native Signing:** off. `NATIVE_SIGNING_ENABLED` is unset, the live deployment contains no Signing code, and the database controls are suspended.
+
+**Interim effect (expected, not a defect).** Until Gate C deploys `main`, the live Packet edit form (`614cfe6`) still offers Status "Inactive". Saving it now fails the new constraint, and no data changes. Avoid that option until the deploy.
+
+**Recovery, if ever needed.** The pending set was applied as a whole and verified, so no rollback is planned. The Gate A backup, in both its local and encrypted copies, plus the in-place undo described under Gate A, remain the recovery path. Do not resume work or access without the restore rule: suspend, bump the epoch, re-issue links.
+
+**Next (Gate C, needs Lee's approval).**
+1. Generate fresh production Signing keys and secrets (never the development ones), including `CRON_SECRET`.
+2. Install them in Vercel Production with the feature unset.
+3. Verify the Resend domain and From address.
+4. Deploy `main` to a unique URL and verify the Cron and worker report `DENIED` / `FEATURE_DISABLED`.
+5. Promote manually and stop.
+
+R11 DAST and the Lee-only access decision remain open, as recorded under Gate A.
+
+### Gate A: production verification and backup (2026-10-24 UTC)
+
+**Status:** Conditional pass on `main` `b6e0531`. Production was accessed read-only: every database session ran with `transaction_read_only = on`, and the Supabase CLI used an explicit `--db-url` for dry runs and was never relinked. Development `ewxsxwzezhkeawnjvigx` stayed linked and was re-verified. No migration, data, Storage, Auth, env, Vercel or Signing change, and no application pages were opened. Private details (connection handling, backup location, tools) are in local `security.md` R41.
+
+**Production identity.** `harbaugh-forms-prod` (`eetonalyyyssvkyfdoxh`), us-east-1, `ACTIVE_HEALTHY`, Postgres 17.6.1.147. No `signing_*` tables, functions, policies or bucket yet. 34 public tables.
+
+**Migrations.**
+- 111 applied, with names identical to `main`'s files and none unknown to `main`. No migration file has been modified since it was added.
+- Exactly 39 pending, in timestamp order from `20260914200000_native_signing_stage1_foundation` to `20261022130000_native_signing_esign_disclosure_2026_10_22`: 37 Native Signing plus `20261009140000_packets_active_deleted_only` and `20261016120000_packet_contact_role_agent`.
+- 23 of them predate the applied `20260930120000`. Without `--include-all` the dry run refuses ("Found local migration files to be inserted before the last migration"). `supabase db push --dry-run --include-all` lists exactly the 39.
+- Static review of the 39:
+  - Only the two Packet migrations change existing tables. Every other `update` targets new `signing_*` tables.
+  - Stage 1 adds the private `signing-artifacts` bucket (PDF, 50 MiB) and two restrictive Storage policies, scoped so other buckets are unaffected.
+  - New foreign keys to `profiles`, `organizations` and `forms` are `on delete restrict` or `set null`, which blocks hard-deleting referenced rows.
+  - The two newer disclosure migrations strip CR and abort on a fingerprint mismatch, so a CRLF Windows checkout is safe. `2026-10-19` stores CRLF text, as in development.
+- **Existing-data effects.**
+  - Exactly one `INACTIVE` Packet (12, Lee-owned listing, 9 forms, 2 contacts) becomes `ACTIVE`, which Lee approved. The owner trigger leaves owners unchanged.
+  - All 10 Packet contacts use roles within the new constraint.
+
+**Users and organizations.** Production is not Lee-only.
+- 9 Auth users, each with an `ACTIVE` profile; Lee is the only `ADMIN`. 4 completed onboarding; 5 are still `INVITED`, 3 of them unconfirmed. Email login only, no MFA.
+- One organization (`BROKERAGE`, `ACTIVE`). Lee is `ORG_ADMIN`; the other 8 are `MEMBER`.
+- 3 users besides Lee hold Auth sessions, the latest from September. Another user owns an `ACTIVE` Packet.
+- `NATIVE_SIGNING_ENABLED` is global, so turning it on would expose Signing to all active accounts. This conflicts with the 2026-10-22 Lee-only policy and needs Lee's decision before Gate D (feature on). It does not block Gate B, which keeps the feature off.
+
+**Storage.**
+- Two private buckets: `form-templates` (51 objects, 13.2 MB) and `generated-documents` (34 objects, 20.0 MB).
+- The policies are the existing authenticated CRUD policies per bucket plus the restrictive `account_state_storage_gate`.
+- Every `ACTIVE` form and Packet-form path resolves to an object. 9 `DELETED` rows already pointed at absent files.
+
+**Configuration (names only).**
+- Vercel: both domains and the production target are on `dpl_G5APEaKS5ECoZzD9nWPBtbp7aiRr`, `autoAssignCustomDomains=false`, and the live deployment declares no Cron. Project Cron is enabled, so promoting `main` (`vercel.json` `*/2`) activates the Signing Cron.
+- Production env has the same five names as before: `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`.
+- Missing Signing settings: `SIGNING_EVENT_CHAIN_KEY_ID` / `_KEY`, `SIGNING_CREDENTIAL_WRAP_KEY_ID` / `_KEY`, `SIGNING_COMPLETED_PACKAGE_WRAP_KEY_ID` / `_KEY`, `SIGNING_WORKER_SECRET`, `CRON_SECRET`, `RESEND_API_KEY`, `SIGNING_EMAIL_FROM`.
+- `NATIVE_SIGNING_ENABLED`, `SIGNING_WORK_SUSPENDED` and `SIGNING_ACCESS_SUSPENDED` are unset. Supabase platform backups: none, PITR off.
+
+**Backup (complete and verified).**
+- A `pg_dump` custom archive of the whole database (all schemas, including `auth`, `storage` metadata and `supabase_migrations`), created with `pg_dump` 17.9 at 2026-10-24 02:28 UTC. Also a plain-SQL rendering and a roles dump (no passwords).
+- All 85 Storage objects, at their original bucket and path, with a manifest.
+- A SHA-256 manifest covers all 127 files.
+- The backup is stored in Lee's Windows profile on his laptop, outside every Git worktree, in a folder only Lee, SYSTEM and Administrators can access. The folder's README holds the recovery procedure.
+
+**Backup verification.**
+
+| Check | Result |
+|-------|--------|
+| Production stable during backup | Row counts and content MD5s for 70 tables (6,709 rows) identical before the dump, after it and after the Storage copy |
+| Isolated restore | Local Postgres 17.9 on localhost only: roles, then the full archive. Only 8 errors, all from the Supabase-only `supabase_vault` extension (production has 0 vault secrets). Local data deleted afterwards |
+| Restored data | All 70 tables match production row for row (collation-independent content MD5) |
+| Restored schema | Functions, policies, triggers, indexes, views, RLS flags, event triggers and publications identical. All 222 public constraints have the same names and allowed values; 53 CHECKs are only re-deparsed by the dump round-trip |
+| Storage | 85 of 85 downloaded; sizes match `metadata.size`, and every MD5 matches its ETag |
+
+**Gaps (not blockers).**
+- Supabase project configuration (Auth URLs, email templates, SMTP) is not in the backup. Migrations do not touch it.
+- The backup is not encrypted at rest (BitLocker off on the laptop) and exists in one place.
+
+**Recovery.**
+- A failed Gate B is undone in place: drop the added `signing_*` objects and their migration-history rows, restore Packet 12 and the two previous constraints from the dump, and compare checksums.
+- Lost or corrupted rows are restored per table from the dump through a scratch database.
+- A full loss means restoring into a new Supabase project, re-uploading Storage, re-entering Auth configuration and repointing Vercel.
+
+**Before Gate B (Lee).**
+1. Approve Gate B.
+2. Make an encrypted second copy of the backup and keep it off the laptop.
+3. Optionally approve a local rehearsal of the 39-migration push on a restored copy. It was blocked here as out of scope.
+
+**Before Gate C.** Close or explicitly defer R11 (authenticated development DAST, recorded as due before rollout). Choose the production Resend sending domain and From. Generate fresh production keys that are never the development ones.
+
+**Before Gate D.** Restrict Signing to Lee (the flag is global). Publish a separate, Lee-approved, production-ready disclosure version.
+
+**Gate B sequence (on approval).**
+1. Re-run the `--include-all` dry run (expect exactly these 39) and the table checksums. Take a fresh dump with the same procedure if business data changed.
+2. `supabase db push --include-all` with an explicit production `--db-url` from `main`. Do not relink the CLI.
+3. In the same sitting, run one `update public.signing_system_controls` on `id='default'` that sets `work_suspended=true` (reason, `suspended_at`, note), `access_suspended=true` (`access_suspended_at`, note), and a new `access_epoch = gen_random_uuid()::text` with `access_epoch_bumped_at` and a note. The guard trigger requires the suspension in the same row and retires the seeded epoch. The live deployment has no Signing code, routes or Cron, so the seeded `access_suspended=false` is never read in between.
+4. Verify:
+   - 150 applied, and a dry run reports up to date.
+   - Controls show `work_suspended=true`, `access_suspended=true` and a new epoch, with the old one in `signing_access_epoch_history`.
+   - Packet 12 is `ACTIVE` and the new constraints are in place.
+   - Every other existing table checksum is unchanged.
+   - The bucket and policies exist, and no disclosure row is production-ready.
+   - Domains are still on `dpl_G5AP…`, the env is unchanged and the feature is off.
+5. Stop for Gate C.
 
 ### Participant consent withdrawal (2026-10-22)
 
@@ -3401,20 +5025,26 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 
 ## Next Steps (operations)
 
-1. **Gate A production rollout preparation:** backup/checkpoint verification and final production migration preflight. Do **not** execute migrations until Lee explicitly approves.
-2. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
-3. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
-4. Monitor real-world Lee-only production use; review runtime logs periodically
-5. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
-6. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
-7. Add error tracking before broader multi-user exposure
-8. Establish production backup/restore procedures
-9. Consider paid tiers only when recovery, usage, or SLA requirements justify them
-10. Review Mapbox domain restrictions if map behavior fails on the custom domain
+*Updated 2026-10-28 after the Native Signing launch. Gate A production rollout preparation is done: Gates A–E are complete and Native Signing is live. Production backup and restore procedures are established; see the 2026-10-26 and 2026-10-28 recovery snapshots.*
+
+1. **Native Signing first real transactions:** follow the launch operating conditions (`decisions.md` "Native Signing launch operating conditions").
+   - Watch invitation acceptance and arrival, completed-package delivery, completion and runtime errors.
+   - Keep the emergency suspension ready.
+   - Take periodic encrypted recovery snapshots so newly completed Signing documents are backed up independently.
+2. **Post-launch backlog:** `Harbaugh_Forms_Post_Launch_Improvements.md`. Item 1, removing the "DEV QA Test Signing" default title, is the highest-priority application fix.
+3. **Synthetic production test data:** the record-level cleanup plan in "Post-launch cleanup (2026-10-28)" awaits Lee's approval. No test record has been changed.
+4. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
+5. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
+6. Monitor real-world production use; review runtime logs periodically
+7. Verify production invite email template uses TokenHash + `type=invite` + `next=/auth/update-password`, then run one brand-new invitation smoke test
+8. Treat the two previously failed invitees with Resend invitation or password recovery (do not create duplicate Auth users)
+9. Add error tracking before broader multi-user exposure
+10. Consider paid tiers only when recovery, usage, or SLA requirements justify them
+11. Review Mapbox domain restrictions if map behavior fails on the custom domain
 
 ## Future Product Roadmap
 
-Two **major** planned feature areas. They are related through the packet/document model, but they are **distinct product efforts**. Native Signing architecture is recorded in `decisions.md`; Stages 1–6, TC/operator authority, and completion delivery are merged to `main` (DB development-only). Production Native Signing enablement, drawn UI, and representative signing remain deferred. Imported-document markup remains separate.
+Two **major** planned feature areas. They are related through the packet/document model, but they are **distinct product efforts**. Native Signing architecture is recorded in `decisions.md`; Stages 1–6, TC/operator authority, and completion delivery are merged to `main` (DB development-only). *Update 2026-10-28: Native Signing is live in production (see "Native Signing launch (2026-10-28)").* Drawn UI and representative signing remain deferred. Imported-document markup remains separate.
 
 ### Native E-Signature Workflow
 
@@ -3498,6 +5128,8 @@ Smaller / optional items (not the two major roadmap areas above):
 
 ## Known Issues (non-blocking)
 
+- Create Signing defaults its title to "DEV QA Test Signing" (`components/signings/signings-list-page.tsx`). Tracked as post-launch improvement #1, the highest-priority application fix; until then, senders should replace the title before sending
+- Yahoo filed the first Native Signing invitations as Spam despite passing DKIM, SPF and DMARC; Gmail delivered to the Inbox. Recipients are told to check Spam or Junk (launch operating conditions)
 - Signature / initials fields may appear but are not editable as preference defaults
 - Multi-organization users need a valid `profiles.primary_organization_id` with ACTIVE membership for Organization defaults
 - `listing-packet-kind.test.ts` has a pre-existing bare-Node `@/lib` import-resolution problem
@@ -3550,7 +5182,7 @@ See `decisions.md` for architectural decisions. Highlights:
 - Invitation-only access; invite confirmation uses token-hash `verifyOtp` (PKCE preserved separately); HostPapa DNS changes limited to intended subdomain records
 - Packet-form annotations (`typed_signature`, `date_signed`) are packet-document-specific agent markup, not catalog fields and not Native Signing evidence; future Fill Form markup should extend that annotation model, while ceremony signer fields belong to Signing-owned tables
 - Native e-signature is planned in-app; Authentisign remains prior research / current inventory-exclusion policy, not a committed vendor
-- Native e-signature architecture decisions are in `decisions.md`. Stages 1–5 (foundation through participant ceremony) exist on `main` with development-only DB; completed-PDF finalization, delivery, and production enablement are not started
+- Native e-signature architecture decisions are in `decisions.md`. Native Signing (all stages, finalization, completed-package delivery) is live in production since 2026-10-28, under the launch operating conditions and the emergency-suspension procedure
 - Signing development must preserve the verified F1–F11 security baseline and R12 Stage 1 deny-by-default tests before each stage is complete
 - One-off imported packet PDFs should not require the reusable form-library workflow; quick PDF annotations are not reusable fields
 - Packet existing-property search shows matches only after the user types; a blank query does not list all properties, and the selected property stays independent of the search box
@@ -3563,6 +5195,8 @@ See `decisions.md` for architectural decisions. Highlights:
 
 - Feature documentation updates for production status land via focused PRs into `main`
 - Pre-launch merge tip for storage tooling: `db3a3f2` (PR #15) — subsequent commits may document launch status
+- 2026-10-28: the Gate A–E rollout, credential rotation, DKIM, synthetic Signing tests and Native Signing launch documentation was consolidated from the `harbaugh-forms-main-docs` worktree and committed in one documentation-only PR. That PR also added `Harbaugh_Forms_Post_Launch_Improvements.md` to the repository as the canonical backlog
+- Private records stay outside Git: `security.md`, env files, backups, audit temporary files
 
 ## Historical Session Log
 
