@@ -1,6 +1,21 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-28, 15:15 Chicago (20:15 UTC). **Native Signing remains LIVE. Post-launch documentation consolidated; backlog updated; synthetic test-data cleanup plan prepared (awaiting Lee's approval, no record changed).**
+**As of:** 2026-10-28, 16:35 Chicago (21:35 UTC). **Native Signing remains LIVE. Lee approved the local workspace consolidation; it is in progress.**
+- **Preserved first:** all unique local evidence from the obsolete worktrees (209 files, 12.5 MB) was copied into a dated, gitignored archive in the primary folder. Every file was verified by SHA-256 against its original.
+- **This record:** this documentation-only PR commits the R68 cleanup record, the audit and the workspace policy.
+- **Next:** `E:\dev\harbaugh-forms` becomes the only permanent worktree, on `main`, and the obsolete worktrees are removed with plain `git worktree remove`. See "Local workspace audit (2026-10-28)" and the decision "One permanent local worktree; temporary worktrees are removed after merge".
+- **Untouched:** application code, production, Vercel, Supabase, credentials, Native Signing settings and backups.
+
+Earlier: 2026-10-28, 15:45 Chicago (20:45 UTC). **Read-only local workspace audit completed; consolidation plan prepared for Lee's approval. Nothing moved, archived or deleted.** Twelve Harbaugh Forms worktrees under `E:\dev`, plus one Codex worktree, share one repository. Every branch is on GitHub except one local-only commit whose content is already on `main`. About 7 GB is recoverable.
+
+Earlier: 2026-10-28, 15:30 Chicago (20:30 UTC). **Native Signing remains LIVE. Approved synthetic test-data cleanup completed; no evidence removed.**
+- **Signings:** both test Signings archived through Archive Signing. Still COMPLETE; event chains verify (16 and 32 events); artifacts verified.
+- **Packet:** TEST Packet #17 soft-deleted through Delete (form #66 DELETED; restorable).
+- **Contacts:** TEST Contacts #29 and #30 set to DELETED by a guarded, approved update of exactly 2 rows.
+- **Untouched:** no other record changed; no jobs or emails; Storage and the deployment are unchanged.
+- See "Post-launch cleanup (2026-10-28)".
+
+Earlier: 2026-10-28, 15:15 Chicago (20:15 UTC). **Native Signing remains LIVE. Post-launch documentation consolidated; backlog updated; synthetic test-data cleanup plan prepared (awaiting Lee's approval, no record changed).**
 - **Documentation:** the Gate A–E, rotation, DKIM, test and launch records are reconciled into `project_status.md` and `decisions.md` and committed in a documentation-only PR.
 - **Backlog:** `Harbaugh_Forms_Post_Launch_Improvements.md` is now in the repository with six active items. Item 1 is removing the "DEV QA Test Signing" default title; credential rotation is no longer on it.
 - **Test data:** see "Post-launch cleanup (2026-10-28)" for the inventory and the proposed archive and soft-delete actions.
@@ -368,7 +383,103 @@ Earlier: 2026-10-14, evening (PR #46 Signing Placement Templates tranche impleme
 Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancellation in development now leaves the exact sandboxed email in `_audit_tmp/signing-email-sandbox/`. This needed a small dev-only code change; previously the sandbox discarded the body. No migration, production untouched, Gate A paused. See "Sandbox email inspection" below. Earlier: 2026-10-13, morning (PR #46 cancellation emails tranche implemented and browser-QA'd in development. Cancel Signing now asks for a required "Internal cancellation reason", which is saved in Signing history and never emailed, and an optional "Message to participants". It emails every invited participant after commit. Eligibility comes from invitation history, so finished, revoked-link, replaced-link and archived participants are included; Draft and in-person-only participants are not. The email has no link and makes no legal claim. Delivery uses the existing instruction / outbox / attempt architecture, is retried, never changes lifecycle, and sends at most one email per participant. New dev-only migration `20261013120000`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Cancellation emails tranche" below. Earlier: 2026-10-12, night (PR #46 Archive Signing tranche implemented and browser-QA'd in development. Archive is organizational state (`signings.archived_at`), not lifecycle. Any lifecycle state can be archived and unarchived. The Signings list hides archived Signings unless "Show archived" is selected. Archiving an In Progress Signing revokes every participant link, entry session, in-person handoff and open ceremony session in one transaction, and unarchiving never restores them (managers Replace links to resume). New dev-only migrations `20261012120000` and `20261012120100`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Archive Signing tranche" below. Earlier: 2026-10-12, evening (Stage 1 / Stage 2 npm scripts now run under `tsx`, and `participant-link-qa.test.ts` runs in the Stage 4 suite; all 54 `test:*` scripts pass on PR #46. Earlier the same afternoon: dependency-security PR #53 squash-merged to `main` as `a15bbb5`: Next.js 16.3.8, sharp 0.35.5, source-map-js 1.2.2, `npm audit --omit=dev` 0. PR #46 synced with patched `main` by a merge commit and fully revalidated; see "PR #46 synced with patched main" below. PR #46 still open and unmerged, Gate A paused, production untouched. Earlier: 2026-10-12, afternoon (PR #46 combined-package refresh tranche implemented and browser-QA'd in development. The combined signed package stays a post-Complete convenience artifact. An open manager dashboard now shows "Combined signed package — Preparing…" when it reaches Complete before the package exists, keeps refreshing every 20 s, and swaps in View / Download when the package is verified, with no reload or navigation. The watcher stops once completed artifacts settle. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Combined-package refresh tranche" below. Earlier: 2026-10-11, night (PR #46 completed-document access tranche implemented and browser-QA'd in development. On a Complete Signing, managers with existing Signing authority see "Completed documents" at the top of the dashboard: each signed document, the audit certificate and the combined package once generated, each with View (full-screen read-only viewer, Fit Width / Fit Page / zoom) and Download. Both serve the same immutable, re-hashed finalization artifact through one authorized server route. A fingerprint mismatch is refused, and Draft, In Progress, Declined and Cancelled show and serve nothing. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Completed-document access tranche" below. Earlier: 2026-10-11, evening (PR #46 ceremony-regression tranche implemented and browser-QA'd in development. Applied Initials, Date Signed and Signature show their full text inside the stored field box at every zoom, with no ellipsis, and the completed PDF uses the same fit. Your fields docks from one measured width (1024px and up) and is otherwise a keyboard-accessible drawer, with no dead zone and no horizontal scroll at any of 13 widths from 1440 to 390. A long-open manager Signing page now shows Declined (naming who declined), Cancelled and Complete without a reload: authorized polling every 20 s while In Progress, plus a refresh on tab focus or visibility. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony-regression tranche" below. Earlier: 2026-10-11, afternoon (PR #46 ceremony UX tranche implemented and browser-QA'd in development. Start signing records the read-only Signing name and derived, non-editable initials. The PDF fills the screen with Fit Width / Fit Page / zoom. Guidance goes to the first required field and, only after the server accepts each mark, to the next one or to Finish. Your fields navigates spatially. Finish and done wording separate the participant's part from Signing completion. Leave for now and Decline to sign are QA'd end to end. E-sign consent is now enforced on the server (security finding, fixed). No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony UX tranche" below. Earlier: 2026-10-10, afternoon (PR #46 toolbar tranche implemented and QA'd in development. The auto-add notice shows names, not "[object Object]", and stays one-time. Prepare Documents places with explicit one-shot tools (Signature, Initials, Date, Printed Name, Checkmark) instead of a Field type dropdown, and choosing a participant arms nothing. Link to is removed: Dates link to the nearest source at placement, a selected Date outlines its source, and relinking is delete-and-replace. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Toolbar tranche" below. Earlier the same day: PR #46 polish tranche implemented and QA'd in development. The "Added from the source Packet" notice now shows once and is acknowledged only after the browser displays it. Date Signed links automatically to the nearest Signature or Initials on the hovered page, with Link to as an explicit override. Send readiness updates from the server within about 2 seconds of each placement change, instead of after a 12–14 s reload. New dev-only migration `20261010120000`. PR still open and unmerged, Gate A paused, production untouched. See "Polish tranche" below. Earlier: 2026-10-09, evening (PR #46 Packet lifecycle cleanup implemented and QA'd in development. Packets are ACTIVE or DELETED only, and the unintended INACTIVE state is gone from the database constraint, types and UI. Dev Packet #12, the only INACTIVE Packet, was normalized to ACTIVE. New dev-only migration `20261009140000`. PR still open and unmerged, Gate A paused, production untouched. See "Packet lifecycle cleanup" below. Earlier the same day: PR #46 correctness tranche implemented and QA'd in development. Create Signing eligibility now comes from one server helper, and ineligible Packets show a disabled control with the reason. The Packets list and the selector agree: Inactive is listed, and only Deleted waits for Show deleted. Opening a Draft Signing completes Packet auto-add and identity sync before the first paint. Signing rename works in every lifecycle state and records a history event. New dev-only migration `20261009130000`. PR still open and unmerged, Gate A paused, production untouched. Next after Lee's approval: the separate dependency-advisory PR from `main`. See "Correctness tranche" below. Earlier: 2026-10-08, late (PR #46 Draft polish tranche implemented and QA'd in development: Packet parties auto-add while Draft with per-Signing removal suppression and Restore; linked participant identity live from Contact / profile / brokerage profile while Draft and canonized at activation, with Cancel + new Signing as the only post-activation correction; Date Signed click-to-link; Copy enters paste mode immediately; new fields anchor at the click's left edge. New dev-only migration `20261009120000`. PR still open and unmerged, Gate A paused, production untouched. See "Draft polish tranche" below. Earlier the same day: PR #46 Draft-preparation tranche implemented and QA'd in development: additive Add from Packet, participant roles, Include me / Include broker, Initials-linked Date Signed, click-anchored paste, Printed Name and Checkmark prepared content, Quick Fields removed; new dev-only migration `20261008120000`; PR still open and unmerged, Gate A paused, production untouched; see "Draft-preparation tranche" below. Earlier, 2026-10-05: PR #46 document-visible participant ceremony + read-only typed Signature implemented and browser-QA'd in development; ready for Lee's re-QA; PR still open and unmerged, Gate A paused, production untouched; new upstream `npm audit` advisories (source-map-js / postcss, braces) recorded for a separate dependency PR, see "Lee's manual QA findings and document-visible ceremony tranche" below. Earlier, 2026-10-02: PR #46 brought up to date with `main` `7733493` by merge commit `8769993` (Next.js 16.3.6, no conflicts left, full revalidation and ceremony browser regression pass); PR still open, awaiting Lee's manual re-QA, manager completed-document access is a pre-production blocker, see "PR #46 merged with current main" below; Native Signing participant ceremony QA complete on PR #46 at `3f92e48`: four ceremony defects fixed; packet Created/Updated timestamps fixed to Central time with CDT/CST, PR #52 squash-merged to `main` as `7733493`, live in production via hotfix `3e5eaa3` (= `c25e4c3` + PR #52 code only), deployment `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, rollback `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; dev-only `brace-expansion` advisories remediated by lockfile-only PR #51, squash-merged to `main` as `edfc5a7`, full lockfile audit clean, not deployed (dev-only, no production effect); admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 squash-merged to `main` as `c2a490a` on 2026-10-02; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j is live in production via hotfix `2a92d82` (= `a87b1aa` + dependency change only; deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`); PR #49 squash-merged to `main` as `9f00a80` on 2026-10-02. Earlier, 2026-09-30: Native Signing development and QA remain the active workstream; work paused briefly for the duplicate packet forms hotfix, now live in production. Resume Native Signing development/QA from the state recorded below. Production is running the isolated hotfix, not `main`; production Native Signing remains unavailable.)
 ## Current State
 
-### Post-launch cleanup (2026-10-28; plan awaiting approval)
+### Local workspace audit (2026-10-28; Lee approved the consolidation; in progress)
+
+**Scope.** This was a read-only inventory of every Harbaugh Forms folder on Lee's laptop.
+- **Checked:** Git state, local-only commits, untracked and ignored files, unique files, private configuration, processes and disk use.
+- **Method:** private file contents were compared by hash only, never read or printed.
+- **Read-only:** no file, worktree, branch or stash was changed. The only edits are these documentation changes, uncommitted.
+
+**Findings.**
+- **One repository:** the 13 folders are all registered worktrees of one repository, whose Git data lives in `E:\dev\harbaugh-forms\.git`. No `harbaugh-forms*` folder is a standalone copy. `harbaugh-calculators` and `harbaugh-dfw-dashboard` are separate projects and out of scope.
+- **Commits:** every local branch matches GitHub, except `implement-txr-1605-condo-dev` (one commit, 2026-07-24). All 8 of that commit's content files are byte-identical on `main`; only `.gitignore`, `package.json` and `project_status.md` have changed since. The branch is not checked out anywhere.
+- **`main`:** checked out in `harbaugh-forms-main-docs`, 2 commits behind `origin/main`. That worktree holds the R68 documentation changes, uncommitted. Its untracked post-launch backlog copy is identical to the merged version.
+- **The original folder, `E:\dev\harbaugh-forms`:**
+  - **Branch:** `feat/signing-consent-withdrawal`, already merged via PR #56.
+  - **Superseded files:** older versions of the two docs, and an older untracked copy of the backlog file.
+  - **Private files:** all the private operational files (security log, environment files, audit and import evidence, exports), protected by `.gitignore` and `.vercelignore`.
+  - **Size:** about 3.9 GB, of which 2.3 GB is the regenerable `.next` build cache.
+- **`stash@{0}`:** contains only superseded "Gate C in progress" documentation text. It lives in the shared repository, so removing worktrees does not affect it.
+- **Unique local files elsewhere:** about 10 MB of untracked evidence and scripts in six worktrees:
+  - Gate D candidate and promotion logs (docs worktree).
+  - R11 assessment evidence (Codex worktree).
+  - Hydration and patch smoke scripts and diagnostics (hotfix worktrees).
+  - One snapshot script (dupfix).
+
+  None of it duplicates the original folder's `_audit_tmp`.
+- **Environment file copies:** five worktrees carry a copy of the current development environment file. Removing those worktrees reduces how many copies of that secret exist; none is needed elsewhere.
+- **Private tooling dependencies:**
+  - Several private operations scripts read credentials from the primary folder by fixed path, so those files must stay where they are.
+  - Five verifier scripts load packages from `harbaugh-forms-candidate-eb40577`. Repoint them to the primary folder before that worktree is removed.
+- **Activity:** no development servers or editors were using any worktree. The current Cursor workspace is `harbaugh-forms-main-docs`, so the editor must be reopened on the primary folder before that worktree is removed.
+
+**Classification.**
+
+| Worktree | Branch / commit | Unique local files | Recommendation |
+|----------|-----------------|--------------------|----------------|
+| `harbaugh-forms` | `feat/signing-consent-withdrawal` `38a7579` (merged) | All private operational files; superseded doc versions | **KEEP** as the only permanent worktree, moved to `main` |
+| `harbaugh-forms-main-docs` | `main` `42dd7d5` (behind 2) | R68 and audit docs (uncommitted); Gate D evidence (146 KB) | **REMOVE** after the docs merge and the evidence is preserved |
+| `harbaugh-forms-candidate-eb40577` | detached `eb40577` | None (Vercel link only) | **REMOVE** after the five verifiers are repointed |
+| `harbaugh-forms-candidate-eb40577-r2` | detached `eb40577` | None | **REMOVE** |
+| `harbaugh-forms-docs-postlaunch-20261028` | `docs/post-launch-2026-10-28` (merged, PR #63) | None | **REMOVE** |
+| `harbaugh-forms-vercelignore` | `security/vercelignore` (merged, PR #62) | None | **REMOVE** |
+| `harbaugh-forms-dupfix` | `chore/duplicate-packet-forms-post-rollout-docs` (on GitHub) | 1 snapshot script; 5 regression PDFs | **REMOVE** after preserving them |
+| `harbaugh-forms-hydration-prod` | `hotfix/packet-timestamps-prod` (on GitHub) | 5 smoke scripts and logs | **REMOVE** after preserving them |
+| `harbaugh-forms-main-next-1641` | `security/next-16.4.1` (on GitHub) | 5 regression PDFs | **REMOVE** after preserving them |
+| `harbaugh-forms-next-1641-prod` | `hotfix/next-16.4.1-prod` (on GitHub) | None | **REMOVE** |
+| `harbaugh-forms-next-patch` | detached `7733493` | 24 diagnostic files; an `AGENTS.md` variant | **REMOVE** after preserving them |
+| `harbaugh-forms-next-prod` | `hotfix/next-16.3.6-prod` (on GitHub) | 7 smoke and regression files; an `AGENTS.md` variant | **REMOVE** after preserving them |
+| Codex `r11-runtime-coverage` | detached `23607be` | R11 evidence (102 files, 8.7 MB) | **REMOVE** after preserving them |
+
+No worktree is archived whole: only its unique files are copied. **Recoverable space: about 7.0 GB** from the twelve worktrees. Optionally, deleting the primary folder's regenerable `.next` cache, with separate approval, recovers about 2.3 GB more.
+
+**Procedure (Lee approved 2026-10-28; stop on any refusal or unexpected state).**
+1. **Preserve unique files.** Copy, not move, every unique file listed above into a dated archive folder under the primary folder's gitignored `_audit_tmp`, one subfolder per source worktree, with a hash manifest. Verify every hash before continuing. Environment files are not copied.
+   - **Done:** 209 files, 12.5 MB, every copy matched by SHA-256.
+   - **Environment files:** every worktree's development environment file was a duplicate or subset of the primary's, apart from one local port override, so none was copied.
+2. **Bring the docs to `main`.**
+   - In `harbaugh-forms-main-docs`, move the backlog copy into the archive folder; it is identical to GitHub.
+   - Create a documentation branch carrying the uncommitted R68 and audit changes, commit, and bring it up to date with `origin/main`.
+   - Open a documentation-only PR and merge only with Lee's approval. This also frees `main`.
+3. **Make the primary folder the `main` worktree.**
+   - Commit its superseded doc versions to a local archive branch, so nothing is discarded.
+   - Move its older backlog copy into the archive folder; it would block checking out `main`.
+   - Switch to `main`, fast-forward to `origin/main`, and run `npm ci`.
+   - The private ignored files stay in place.
+4. **Repoint the five verifier scripts** to the primary folder's packages and confirm that they load.
+5. **Remove worktrees** with plain `git worktree remove` (never `--force`). In `next-patch` and `next-prod`, first move the untracked `AGENTS.md`/`CLAUDE.md` into the archive. Reopen the editor on the primary folder before removing `harbaugh-forms-main-docs`.
+6. **Clean up branches.** Delete local branches with `git branch -d` only, which refuses unmerged work. Keep `main`, the local archive branch and `implement-txr-1605-condo-dev`. Remote branches on GitHub are not touched. Leave `stash@{0}` as it is.
+7. **Verify.**
+   - `git worktree list` shows only `E:\dev\harbaugh-forms` on `main`, and `git worktree prune --dry-run` reports nothing.
+   - The stash and the archive branch exist.
+   - Private files, the archive manifest and the private operations tools are present, with unchanged hashes.
+   - The production monitor check runs read-only.
+
+**Not part of this plan:** encrypted production backups and their recovery note stay in their approved locations, unchanged. Older plaintext snapshot copies outside the repository are a separate security follow-up for Lee's decision. No force deletion, `git reset --hard`, `git clean` or destructive stash operation is used.
+
+### Post-launch cleanup (2026-10-28; test-data cleanup completed)
+
+**Cleanup outcome (Lee approved; 20:22–20:30 UTC).** Private details are in local `security.md` R68.
+
+| Record | Before | After | Method |
+|--------|--------|-------|--------|
+| Signing `01713222-8006-45b7-8786-5df1aeb10a26` (Gate D) | COMPLETE, not archived | COMPLETE, archived 20:23:44 UTC | Archive Signing (application UI, as Lee); protected `SIGNING_ARCHIVED` event #16 |
+| Signing `30211f2b-6fba-4514-88b1-2575b86eb898` (Gate E) | COMPLETE, not archived | COMPLETE, archived 20:23:51 UTC | Archive Signing; event #32 |
+| Packet #17 "TEST PACKET FOR SIGNING ROLLOUT" | ACTIVE | DELETED (restorable) | Delete (application soft delete; the dialog named the Packet) |
+| Packet form #66 (TXR-1501) | ACTIVE | DELETED | Same Delete action |
+| Contact #29 "Kenneth Lee Harbaugh" | ACTIVE | DELETED | Guarded update: prechecks; exactly 2 rows asserted; owner unchanged |
+| Contact #30 "Lee Test Seller" | ACTIVE | DELETED | Same update |
+
+**Verification.**
+- **Lists:** the default Signings list hides both test Signings, and Show archived lists them. The Packets list hides #17, and Show deleted lists it with Restore. The Contacts list no longer shows #29 or #30.
+- **Evidence:** both Signings stay directly viewable with their completed-document controls. Event chains verify (16 and 32 protected events), prepared-document fingerprints MATCH, and all 6 artifacts read back byte-identical.
+- **Storage:** unchanged, including all 10 test Signing objects and the Packet #17 PDF.
+- **Data:** only the six records above changed (plus the 2 archive events and the cleanup sign-in). Packet contacts #13/#14 and the 48 field values are unchanged, and no real business record changed.
+- **Live service:** no jobs or emails were generated. Native Signing is live, Cron answers `OK` on both domains, and the deployment and domains are unchanged.
+
+**Exception (none affecting the result):** the database wrapper reported the update's success notice as an error, so its log stopped early. A read-only check confirmed the transaction committed with exactly the intended changes.
+
+The inventory and the plan that preceded it follow.
 
 **Documentation reconciliation.**
 - The `harbaugh-forms-main-docs` worktree held the complete, current Gate A–E record. It was compared with the original worktree's modified docs and with `stash@{0}` ("Gate A-C docs before PR #58 sync"):
