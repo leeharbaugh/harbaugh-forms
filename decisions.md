@@ -30,7 +30,7 @@ Each decision should include:
 - No migration and no production data change. Manager-side only: "Participant technical change: none".
 - Authorization, consent, audit, delivery and completion paths are unchanged.
 
-**Related:** `components/signings/signings-list-page.tsx`, `lib/signing/types.ts`, `lib/signing/packet-to-signing.ts`, `lib/signing/create-signing-title.test.ts`; `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)".
+**Related:** [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67); `components/signings/signings-list-page.tsx`, `lib/signing/types.ts`, `lib/signing/packet-to-signing.ts`, `lib/signing/create-signing-title.test.ts`; `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)".
 
 ---
 

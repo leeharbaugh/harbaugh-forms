@@ -435,7 +435,7 @@ No other development or QA title default exists in Signing creation. The Packet 
 
 **Participant technical change:** none. The change is manager-side only. Participants see whatever title the agent enters, as before.
 
-**Release.** Merged by squash. The automatic production-target Git build of the merge commit takes no custom domain (`autoAssignCustomDomains=false`). It is validated at its unique URL and left unpromoted; production promotion is Lee's separate manual step. Details are in local `security.md` R69.
+**Release.** [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67), squash-merged. The automatic production-target Git build of the merge commit takes no custom domain (`autoAssignCustomDomains=false`). It is validated at its unique URL and left unpromoted; production promotion is Lee's separate manual step. Details are in local `security.md` R69.
 
 ### Local workspace audit (2026-10-28; consolidation fully completed)
 
