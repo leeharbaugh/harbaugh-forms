@@ -37,6 +37,31 @@ export function normalizeSigningTitle(title: unknown): string {
   return trimmed;
 }
 
+/** Title for a Signing created from a Packet, shortened to fit the title limit. */
+export function defaultPacketSigningTitle(packet: {
+  id: number;
+  label: string | null;
+}): string {
+  const label = packet.label?.trim() || `Packet ${packet.id}`;
+  let title = `Signing — ${label}`;
+  if (title.length > SIGNING_TITLE_MAX_LENGTH) {
+    title = title.slice(0, SIGNING_TITLE_MAX_LENGTH);
+    if (/[\uD800-\uDBFF]$/.test(title)) title = title.slice(0, -1);
+    title = title.trimEnd();
+  }
+  return title;
+}
+
+/** A nonblank requested title wins over the Packet-derived default. */
+export function resolvePacketSigningTitle(
+  requested: unknown,
+  packet: { id: number; label: string | null },
+): string {
+  return typeof requested === "string" && requested.trim()
+    ? requested.trim()
+    : defaultPacketSigningTitle(packet);
+}
+
 export type SigningRow = {
   id: string;
   create_date: string;

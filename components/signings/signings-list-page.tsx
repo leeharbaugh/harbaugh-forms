@@ -59,7 +59,7 @@ export function SigningsListPage({
   const [error, setError] = useState<string | null>(
     initial.ok ? null : initial.error,
   );
-  const [title, setTitle] = useState("DEV QA Test Signing");
+  const [title, setTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const visibleSignings = showArchived
@@ -122,7 +122,9 @@ export function SigningsListPage({
               id="signing-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
+              placeholder="Enter signing title"
               maxLength={200}
+              required
               disabled={creating}
             />
           </div>

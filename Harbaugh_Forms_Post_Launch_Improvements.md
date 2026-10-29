@@ -8,11 +8,13 @@ The credential rotation and security-incident cleanup from October 26 are comple
 
 ## 1. Remove the development test title from Create Signing
 
+**Status: COMPLETED (2026-10-28).** Implemented and validated in [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67); production promotion is Lee's separate manual step. The Signings page title now starts blank with the placeholder "Enter signing title" and is still required; Create Signing from a Packet keeps its server-derived "Signing — <Packet label>" title. Existing Signings are unchanged. See `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)".
+
 **Type:** Bug fix — production polish
 
 **Priority:** Highest-priority post-launch application fix.
 
-**Current observed behavior:** The Create Signing form defaults its title to **“DEV QA Test Signing”** (hard-coded initial state in `components/signings/signings-list-page.tsx`). That development/QA text is inappropriate in production, where it can end up on real Signings and in participant emails if not changed.
+**Observed behavior before the fix:** The Create Signing form defaults its title to **“DEV QA Test Signing”** (hard-coded initial state in `components/signings/signings-list-page.tsx`). That development/QA text is inappropriate in production, where it can end up on real Signings and in participant emails if not changed.
 
 **Expected behavior**
 - Remove the hard-coded development title.
@@ -91,7 +93,7 @@ Provide a straightforward way to find Packets that are hidden from normal active
 
 ## Implementation workflow
 
-These items are **not yet implemented**. Item 1 is the first post-launch application fix. Reprioritize the remaining items based on actual use; the zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
+Item 1 is completed. Items 2–6 are **not yet implemented**. Reprioritize the remaining items based on actual use; the zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 
 For each item when work begins, have Cursor:
 1. Read `project_status.md` and `decisions.md` to establish the current repository state and existing design decisions.

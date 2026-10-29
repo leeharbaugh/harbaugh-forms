@@ -12,6 +12,28 @@ Each decision should include:
 
 ---
 
+## Create Signing never pre-fills a test title; a Packet supplies the default title when present
+
+**Date:** 2026-10-28 (post-launch item 1; Lee's requirements)
+
+**Decision:**
+1. **No development or QA title.** No Create Signing workflow pre-fills a development or QA title. The Signings page title starts blank, with the placeholder "Enter signing title".
+2. **Packet-derived default.** Creating from a Packet titles the Signing "Signing — <Packet label>" on the server (`resolvePacketSigningTitle`), falling back to "Packet <id>" for a blank label and shortening the result to the 200-character limit. The Signings page has no Packet at creation time (a source Packet is chosen later on the Draft), so it has no default.
+3. **The agent's title wins.** A nonblank requested title is used as typed (trimmed). Choosing a source Packet later never rewrites the title.
+4. **Required.** A title is still required: Create stays disabled while it is blank, and the server rejects a blank title before any write.
+5. **History untouched.** Existing Signings keep their stored titles; changing a title remains the rename action ("A Signing's name is operational metadata, renamable in any lifecycle state").
+6. **Backlog.** Item 1 in `Harbaugh_Forms_Post_Launch_Improvements.md` is marked completed in place; items 2–6 stay active.
+
+**Reason:** The "DEV QA Test Signing" default came from the page's origin as a local QA harness (`fb022a5`). In production it would name real Signings, and their emails, unless the agent retyped it. A blank required field forces a deliberate title, and the Packet label is a reliable, meaningful default where it exists.
+
+**Consequences:**
+- No migration and no production data change. Manager-side only: "Participant technical change: none".
+- Authorization, consent, audit, delivery and completion paths are unchanged.
+
+**Related:** [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67); `components/signings/signings-list-page.tsx`, `lib/signing/types.ts`, `lib/signing/packet-to-signing.ts`, `lib/signing/create-signing-title.test.ts`; `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)".
+
+---
+
 ## H-1: every response denies framing and MIME sniffing; script/style CSP deferred for initial use
 
 **Date:** 2026-10-26 (Lee's scope: smallest safe change before activation; deferral approved and PR #61 merged the same day)
