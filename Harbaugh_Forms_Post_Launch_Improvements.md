@@ -6,13 +6,17 @@
 
 The credential rotation and security-incident cleanup from October 26 are complete and recorded historically in `project_status.md` and `decisions.md`; they are not part of this backlog.
 
-## 1. Remove the development test title from Create Signing
+**Current priorities**
+- **Completed:** 1. Remove the development test title from Create Signing (live in production since 2026-10-29).
+- **Remaining, in priority order:** 2. Help & Getting Started (highest-priority unfinished item); 3. Save buttons at both ends of edit screens; 4. Additional Packet transaction statuses; 5. View and restore hidden or inactive Packets; 6. Zero-mapping Form publishing; 7. Scroll to the Edit Form panel.
 
-**Status: COMPLETED (2026-10-28).** Implemented and validated in [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67); production promotion is Lee's separate manual step. The Signings page title now starts blank with the placeholder "Enter signing title" and is still required; Create Signing from a Packet keeps its server-derived "Signing — <Packet label>" title. Existing Signings are unchanged. See `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)".
+## 1. Remove the development test title from Create Signing (COMPLETED)
+
+**Status: COMPLETED and live in production (2026-10-29).** Implemented and validated in [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67); released to production on 2026-10-29 at 03:15 UTC. No further work. The Signings page title now starts blank with the placeholder "Enter signing title" and is still required; Create Signing from a Packet keeps its server-derived "Signing — <Packet label>" title. Existing Signings are unchanged. See `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)".
 
 **Type:** Bug fix — production polish
 
-**Priority:** Highest-priority post-launch application fix.
+**Priority:** Was the highest-priority post-launch application fix; completed.
 
 **Observed behavior before the fix:** The Create Signing form defaults its title to **“DEV QA Test Signing”** (hard-coded initial state in `components/signings/signings-list-page.tsx`). That development/QA text is inappropriate in production, where it can end up on real Signings and in participant emails if not changed.
 
@@ -144,7 +148,7 @@ Provide a straightforward way to find Packets that are hidden from normal active
 
 ## Implementation workflow
 
-Item 1 is completed. Items 2–7 are **not yet implemented**. Item 2, Help & Getting Started, is the highest-priority remaining enhancement (Lee's direction, 2026-10-28). Reprioritize items 3–7 based on actual use; the zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
+Item 1 is completed and live in production. Items 2–7 are **not yet implemented**. Item 2, Help & Getting Started, is the highest-priority remaining enhancement (Lee's direction, 2026-10-28). Reprioritize items 3–7 based on actual use; the zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 
 For each item when work begins, have Cursor:
 1. Read `project_status.md` and `decisions.md` to establish the current repository state and existing design decisions.

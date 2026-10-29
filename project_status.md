@@ -1,6 +1,18 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-28, 22:10 Chicago (03:10 UTC on 2026-10-29). **Native Signing remains LIVE. Help & Getting Started added to the post-launch backlog as high-priority item 2 (planning only; not implemented).**
+**As of:** 2026-10-29, 16:40 Chicago (21:40 UTC). **Native Signing remains LIVE. Documentation merge sequence completed: PR #68 (Help & Getting Started planned) then PR #69 (item 1 production release record), both docs only.**
+- **Backlog:** item 1, the Create Signing default title fix, is completed and live on `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`. Item 2, "Help & Getting Started — New User Walkthrough", is the highest-priority unfinished enhancement; items 3–7 follow unchanged.
+- **Production unchanged:** both domains and the production target still serve `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`; `autoAssignCustomDomains=false`. The merges' automatic production-target builds take no domain and are not promoted.
+- **Unchanged:** application code, data, credentials and Native Signing settings.
+
+Earlier: 2026-10-28, 22:25 Chicago (03:25 UTC on 2026-10-29). **Post-launch item 1 is LIVE in production: Create Signing no longer pre-fills "DEV QA Test Signing". Native Signing remains LIVE and operational.**
+- **Promoted:** with Lee's authorization, `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC` (`1cddb95`, [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67)) at 03:15:47 UTC. No rebuild. `forms.harbaughrealestate.com`, `harbaugh-forms.vercel.app` and the production target serve it; `autoAssignCustomDomains=false`.
+- **Validation on each domain:** 33/33 security and fail-closed checks, 8/8 participant checks, 92/92 authenticated read-only smoke. The Signings page title starts blank with the placeholder "Enter signing title" and Create stays disabled until a title is typed. The Packet page Create Signing control is present; existing Signing titles are unchanged; 0 hydration, page or console errors.
+- **Signing:** work and access operational (both suspensions off); disclosure READY; scheduled Cron answers 200 every 2 minutes on the new deployment; 0 runtime errors. No real customer Signing existed or was disrupted, and the release changed no Signing data.
+- **Rollback:** `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` (`eb40577`), READY, carries the current credentials. Not needed.
+- See "Create Signing default title (2026-10-28; post-launch item 1)".
+
+Earlier: 2026-10-28, 22:10 Chicago (03:10 UTC on 2026-10-29). **Native Signing remains LIVE. Help & Getting Started added to the post-launch backlog as high-priority item 2 (planning only; not implemented).**
 - **Backlog:** item 1 (Create Signing default title) is completed. The new item 2, "Help & Getting Started — New User Walkthrough", is the highest-priority remaining enhancement. The former items 2–6 are now 3–7, with their descriptions unchanged.
 - **Scope:** documentation only. No application code, data, deployment or Native Signing setting changed.
 - See "Help & Getting Started planned (2026-10-28; post-launch item 2)".
@@ -418,7 +430,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 **Status:** planned, high priority; not implemented. Documentation-only change.
 
 **Backlog order now** (`Harbaugh_Forms_Post_Launch_Improvements.md`):
-1. Remove the "DEV QA Test Signing" default title — **completed** ([PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67)).
+1. Remove the "DEV QA Test Signing" default title — **completed** ([PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67)); live in production since 2026-10-29 03:15 UTC on `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`.
 2. **Help & Getting Started — New User Walkthrough** — new; highest-priority remaining enhancement.
 3. Save buttons at both ends of edit screens.
 4. Additional Packet transaction statuses.
@@ -466,7 +478,24 @@ No other development or QA title default exists in Signing creation. The Packet 
 
 **Participant technical change:** none. The change is manager-side only. Participants see whatever title the agent enters, as before.
 
-**Release.** [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67), squash-merged. The automatic production-target Git build of the merge commit takes no custom domain (`autoAssignCustomDomains=false`). It is validated at its unique URL and left unpromoted; production promotion is Lee's separate manual step. Details are in local `security.md` R69.
+**Release.** [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67), squash-merged. The automatic production-target Git build of the merge commit takes no custom domain (`autoAssignCustomDomains=false`). It was validated at its unique URL before promotion. Details are in local `security.md` R69. *Update 2026-10-29: Lee authorized the promotion; it is live in production since 03:15:47 UTC (production release below).*
+- **Candidate (2026-10-29 02:33–02:40 UTC):** `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`, the automatic Git build of `1cddb95`. At its unique URL: 33/33 checks, 8/8 participant checks, 92/92 smoke; 0 runtime errors.
+
+**Production release (2026-10-29, 03:10–03:25 UTC; Lee authorized promotion).**
+
+| Step | Result |
+|------|--------|
+| Preflight | Candidate READY at `1cddb95` (`main`, Git integration). Both domains and the production target on `dpl_6FVk…`; `autoAssignCustomDomains=false`. All 25 Vercel environment rows identical to the launch record. Work and access operational; disclosure READY; 152 migrations. No real customer Signing: only the 2 archived TEST Signings, no Signing events since 20:23 UTC, 0 open ceremony sessions, every work item SUCCEEDED, every delivery ACCEPTED. Live deployment: 0 errors, warnings or 5xx since the launch validation; scheduled Cron 200 every 2 minutes |
+| Release classification | No migration, no environment change, no participant notice (participant technical change: none) |
+| Promotion | Guarded promotion script, dry run then execute: one fixed `vercel promote` from the neutral directory, 03:15:41–03:15:47 UTC. No build was created. The script's commit check was extended to accept a Git-integration build only when both recorded commit fields match, the ref is `main` and the repository is Lee's (decision "Release validation of a live build never runs Signing work with real credentials; Git-built candidates are promoted by verified commit") |
+| After | Both domains and the production target on `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`; `autoAssignCustomDomains=false`; environment rows unchanged |
+| Validation, each domain | Security checks 33/33: headers and the strict `/sign` CSP exact; login embeds the new deployment; invalid participant, package and in-person links refused with 503 and no cookie; manager routes require login; missing, wrong and swapped Cron and worker secrets 401. Participant checks 8/8. Smoke 92/92: sign-in and sign-out, Packets, Contacts, Properties, Collections, Forms, Fill Form PDF, Settings, admin pages; the Create Signing title is blank, placeholder "Enter signing title", required and Create disabled; a typed title enables Create and blank or spaces disable it (never clicked); no "DEV QA" text; the Packet page shows Create Signing (not clicked); both historical Signings show their stored titles; admin controls "Signings enabled Yes, Work suspended No, Access suspended No"; 0 hydration, page or console errors; 0 5xx |
+| Packet-derived title | Not exercised live, because that would create a Signing. Verified by the deployed commit's unit tests and the unchanged server derivation ("Signing — <Packet label>") |
+| Operational health | Scheduled Cron on the new deployment: 03:16:26, 03:18:26, 03:20:26 and 03:22:26 UTC, all 200. Runtime logs since promotion: 0 error, warning or fatal; the only 5xx are the checks' designed 503 probes |
+| Data | Database state identical to just before promotion: Signings, titles, events, work items, deliveries, ceremony sessions, disclosure and controls. Only the smoke sign-ins changed `auth` sessions and user preferences, as in every release |
+| Rollback | `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ` (`eb40577`) READY; created after the production key update, so it carries the current credentials. Not needed |
+
+**Not exercised by design:** the real Cron and worker were not called with real credentials (scheduled runs and logs were inspected instead), and no test Signing was created or sent. Private evidence: local `security.md` R70.
 
 ### Local workspace audit (2026-10-28; consolidation fully completed)
 
@@ -5259,8 +5288,8 @@ Do not edit already-applied migrations. Add a new corrective migration when need
    - Watch invitation acceptance and arrival, completed-package delivery, completion and runtime errors.
    - Keep the emergency suspension ready.
    - Take periodic encrypted recovery snapshots so newly completed Signing documents are backed up independently.
-2. **Post-launch backlog:** `Harbaugh_Forms_Post_Launch_Improvements.md`. Item 1, removing the "DEV QA Test Signing" default title, is implemented and validated; its production promotion awaits Lee. Items 2–7 remain; item 2, Help & Getting Started, is the highest-priority remaining enhancement (added 2026-10-28).
-3. **Synthetic production test data:** the record-level cleanup plan in "Post-launch cleanup (2026-10-28)" awaits Lee's approval. No test record has been changed.
+2. **Post-launch backlog:** `Harbaugh_Forms_Post_Launch_Improvements.md`. Item 1, removing the "DEV QA Test Signing" default title, is completed and live in production since 2026-10-29 03:15 UTC (`dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`). Items 2–7 remain; item 2, Help & Getting Started, is the highest-priority remaining enhancement (added 2026-10-28).
+3. **Synthetic production test data:** done. Lee approved the record-level cleanup plan, and it was carried out on 2026-10-28, 20:22–20:30 UTC; see "Post-launch cleanup (2026-10-28)".
 4. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 5. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
 6. Monitor real-world production use; review runtime logs periodically

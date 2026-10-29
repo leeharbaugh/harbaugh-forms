@@ -43,15 +43,34 @@ Each decision should include:
 3. **The agent's title wins.** A nonblank requested title is used as typed (trimmed). Choosing a source Packet later never rewrites the title.
 4. **Required.** A title is still required: Create stays disabled while it is blank, and the server rejects a blank title before any write.
 5. **History untouched.** Existing Signings keep their stored titles; changing a title remains the rename action ("A Signing's name is operational metadata, renamable in any lifecycle state").
-6. **Backlog.** Item 1 in `Harbaugh_Forms_Post_Launch_Improvements.md` is marked completed in place; items 2–6 stay active.
+6. **Backlog.** Item 1 in `Harbaugh_Forms_Post_Launch_Improvements.md` is marked completed in place; items 2–6 stay active. (Since 2026-10-28 the remaining items are 2–7, after Help & Getting Started was inserted as item 2.)
 
 **Reason:** The "DEV QA Test Signing" default came from the page's origin as a local QA harness (`fb022a5`). In production it would name real Signings, and their emails, unless the agent retyped it. A blank required field forces a deliberate title, and the Packet label is a reliable, meaningful default where it exists.
 
 **Consequences:**
 - No migration and no production data change. Manager-side only: "Participant technical change: none".
 - Authorization, consent, audit, delivery and completion paths are unchanged.
+- **Live in production since 2026-10-29 03:15:47 UTC** (Lee authorized): `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC` (`1cddb95`), validated on both domains. Rollback target `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ`.
 
 **Related:** [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67); `components/signings/signings-list-page.tsx`, `lib/signing/types.ts`, `lib/signing/packet-to-signing.ts`, `lib/signing/create-signing-title.test.ts`; `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)".
+
+---
+
+## Release validation of a live build never runs Signing work with real credentials; Git-built candidates are promoted by verified commit
+
+**Date:** 2026-10-29 (first application release after the Native Signing launch; Lee's instructions)
+
+**Decision:**
+1. **No real-secret Cron or worker calls.** While Native Signing is live, release validation of a candidate or of production never calls the Cron or worker endpoints with the real secrets, because that could process real customer work, from unpromoted code in the candidate's case. The fail-closed checks still prove that missing, wrong and swapped secrets are refused. Operational health comes from the scheduled Cron results and runtime logs instead.
+2. **No test Signings for release validation.** Releases are validated read-only: page rendering, controls and their enabled state, without creating or sending a Signing. Behavior that needs a write (for example the Packet-derived title) is covered by unit tests of the deployed commit.
+3. **Git-integration candidates.** The automatic production-target build of a merge commit is a valid candidate. The guarded promotion check accepts it only when `meta.githubCommitSha` and `gitSource.sha` both equal the approved commit, the ref is `main` and the repository is `leeharbaugh/harbaugh-forms`. CLI candidates still match `meta.gitCommitSha`. All other promotion guards are unchanged.
+4. **Activity check before promotion.** Before promoting, a read-only query confirms there are no open participant ceremony sessions and no unexpected Signing activity, and records the Signing title fingerprint, so data before and after the release can be compared and release effects separated from real customer activity.
+
+**Reason:** Before launch, candidates were validated with work suspended, so real-secret Cron calls were harmless. With real clients now able to have queued work, those calls are no longer side-effect free. Promoting the automatic build avoids a rebuild, so the exact validated artifact goes live.
+
+**Consequences:** Application releases need no rebuild and cause no Signing side effects. The scheduled Cron cadence (every 2 minutes) is the operational signal after promotion.
+
+**Related:** decisions "Material technical changes affecting Native Signing participants follow a manual release procedure", "Credential rotation is deferred until Native Signing is live; deployments use a guarded procedure" (item 3), "Native Signing is live in production"; `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)"; local `security.md` R69, R70.
 
 ---
 
@@ -139,7 +158,7 @@ Each decision should include:
    5. Zero-mapping Form publishing.
    6. Scroll to the Edit Form panel.
 
-   **Update 2026-10-28:** item 1 is completed and marked so in place. Help & Getting Started was inserted as item 2 (highest-priority remaining enhancement), so the former items 2–6 are now 3–7. See the decision "Help & Getting Started is the highest-priority remaining post-launch enhancement".
+   **Update 2026-10-28:** item 1 is completed and marked so in place (live in production since 2026-10-29 03:15 UTC). Help & Getting Started was inserted as item 2 (highest-priority remaining enhancement), so the former items 2–6 are now 3–7. See the decision "Help & Getting Started is the highest-priority remaining post-launch enhancement".
 
    Completed work (credential rotation, incident cleanup) is recorded in `project_status.md` and `decisions.md`, not in the backlog.
 2. **Synthetic test data.** It is removed from ordinary workflows only by supported, reversible means:
