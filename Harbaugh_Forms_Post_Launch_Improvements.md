@@ -8,7 +8,7 @@ The credential rotation and security-incident cleanup from October 26 are comple
 
 ## 1. Remove the development test title from Create Signing
 
-**Status: COMPLETED (2026-10-28).** Implemented and validated in [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67); production promotion is Lee's separate manual step. The Signings page title now starts blank with the placeholder "Enter signing title" and is still required; Create Signing from a Packet keeps its server-derived "Signing — <Packet label>" title. Existing Signings are unchanged. See `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)".
+**Status: COMPLETED and live in production (2026-10-29).** Implemented and validated in [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67); released to production on 2026-10-29 at 03:15 UTC. No further work. The Signings page title now starts blank with the placeholder "Enter signing title" and is still required; Create Signing from a Packet keeps its server-derived "Signing — <Packet label>" title. Existing Signings are unchanged. See `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)".
 
 **Type:** Bug fix — production polish
 

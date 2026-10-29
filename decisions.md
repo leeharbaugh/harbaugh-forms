@@ -29,8 +29,27 @@ Each decision should include:
 **Consequences:**
 - No migration and no production data change. Manager-side only: "Participant technical change: none".
 - Authorization, consent, audit, delivery and completion paths are unchanged.
+- **Live in production since 2026-10-29 03:15:47 UTC** (Lee authorized): `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC` (`1cddb95`), validated on both domains. Rollback target `dpl_6FVkEWE3G4ZfWQXMsFvKPJKZbVmJ`.
 
 **Related:** [PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67); `components/signings/signings-list-page.tsx`, `lib/signing/types.ts`, `lib/signing/packet-to-signing.ts`, `lib/signing/create-signing-title.test.ts`; `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)".
+
+---
+
+## Release validation of a live build never runs Signing work with real credentials; Git-built candidates are promoted by verified commit
+
+**Date:** 2026-10-29 (first application release after the Native Signing launch; Lee's instructions)
+
+**Decision:**
+1. **No real-secret Cron or worker calls.** While Native Signing is live, release validation of a candidate or of production never calls the Cron or worker endpoints with the real secrets, because that could process real customer work, from unpromoted code in the candidate's case. The fail-closed checks still prove that missing, wrong and swapped secrets are refused. Operational health comes from the scheduled Cron results and runtime logs instead.
+2. **No test Signings for release validation.** Releases are validated read-only: page rendering, controls and their enabled state, without creating or sending a Signing. Behavior that needs a write (for example the Packet-derived title) is covered by unit tests of the deployed commit.
+3. **Git-integration candidates.** The automatic production-target build of a merge commit is a valid candidate. The guarded promotion check accepts it only when `meta.githubCommitSha` and `gitSource.sha` both equal the approved commit, the ref is `main` and the repository is `leeharbaugh/harbaugh-forms`. CLI candidates still match `meta.gitCommitSha`. All other promotion guards are unchanged.
+4. **Activity check before promotion.** Before promoting, a read-only query confirms there are no open participant ceremony sessions and no unexpected Signing activity, and records the Signing title fingerprint, so data before and after the release can be compared and release effects separated from real customer activity.
+
+**Reason:** Before launch, candidates were validated with work suspended, so real-secret Cron calls were harmless. With real clients now able to have queued work, those calls are no longer side-effect free. Promoting the automatic build avoids a rebuild, so the exact validated artifact goes live.
+
+**Consequences:** Application releases need no rebuild and cause no Signing side effects. The scheduled Cron cadence (every 2 minutes) is the operational signal after promotion.
+
+**Related:** decisions "Material technical changes affecting Native Signing participants follow a manual release procedure", "Credential rotation is deferred until Native Signing is live; deployments use a guarded procedure" (item 3), "Native Signing is live in production"; `project_status.md` "Create Signing default title (2026-10-28; post-launch item 1)"; local `security.md` R69, R70.
 
 ---
 
