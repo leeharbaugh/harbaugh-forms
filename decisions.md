@@ -12,6 +12,27 @@ Each decision should include:
 
 ---
 
+## Help & Getting Started is the highest-priority remaining post-launch enhancement
+
+**Date:** 2026-10-28 (Lee's direction; planning only)
+
+**Decision:**
+1. **Priority.** "Help & Getting Started — New User Walkthrough" is item 2 in `Harbaugh_Forms_Post_Launch_Improvements.md`, directly after the completed Create Signing title fix, and is the highest-priority remaining enhancement. The former items 2–6 become 3–7, unchanged.
+2. **Scope.** An accessible Help menu or section with a plain-English, numbered Getting Started walkthrough of the normal workflow (Contacts, Properties, Forms, Collections, Packets, Fill and review, Send for signatures, Track and download) and support contact information: phone 817-881-4768, email lee@harbaughbrothers.com.
+3. **First release is a simple walkthrough page.** An interactive, page-by-page guided tour is a possible later step, not a requirement.
+4. **Match the live application.** At implementation, the steps and terminology are checked against the live workflows and adjusted. Creating custom Forms and Collections is labeled optional.
+5. **No workflow change.** Help explains existing workflows only. It does not change data, permissions, participant `/sign` pages or Native Signing behavior.
+
+**Reason:** Native Signing is live and the application is ready for agents beyond Lee. A first-time agent has no in-app explanation of how Contacts, Properties, Forms, Collections, Packets and Signings fit together, or of whom to contact for help.
+
+**Consequences:**
+- No code change until the item is picked up. It then follows the backlog's implementation workflow and the established PR and release process.
+- Manager-side workspace pages only, so the item is expected to be "Participant technical change: none".
+
+**Related:** `Harbaugh_Forms_Post_Launch_Improvements.md` item 2; `project_status.md` "Help & Getting Started planned (2026-10-28; post-launch item 2)"; `components/app-nav.tsx` (main navigation).
+
+---
+
 ## Create Signing never pre-fills a test title; a Packet supplies the default title when present
 
 **Date:** 2026-10-28 (post-launch item 1; Lee's requirements)
@@ -22,7 +43,7 @@ Each decision should include:
 3. **The agent's title wins.** A nonblank requested title is used as typed (trimmed). Choosing a source Packet later never rewrites the title.
 4. **Required.** A title is still required: Create stays disabled while it is blank, and the server rejects a blank title before any write.
 5. **History untouched.** Existing Signings keep their stored titles; changing a title remains the rename action ("A Signing's name is operational metadata, renamable in any lifecycle state").
-6. **Backlog.** Item 1 in `Harbaugh_Forms_Post_Launch_Improvements.md` is marked completed in place; items 2–6 stay active.
+6. **Backlog.** Item 1 in `Harbaugh_Forms_Post_Launch_Improvements.md` is marked completed in place; items 2–6 stay active. (Since 2026-10-28 the remaining items are 2–7, after Help & Getting Started was inserted as item 2.)
 
 **Reason:** The "DEV QA Test Signing" default came from the page's origin as a local QA harness (`fb022a5`). In production it would name real Signings, and their emails, unless the agent retyped it. A blank required field forces a deliberate title, and the Packet label is a reliable, meaningful default where it exists.
 
@@ -136,6 +157,8 @@ Each decision should include:
    4. View and restore hidden or inactive Packets.
    5. Zero-mapping Form publishing.
    6. Scroll to the Edit Form panel.
+
+   **Update 2026-10-28:** item 1 is completed and marked so in place (live in production since 2026-10-29 03:15 UTC). Help & Getting Started was inserted as item 2 (highest-priority remaining enhancement), so the former items 2–6 are now 3–7. See the decision "Help & Getting Started is the highest-priority remaining post-launch enhancement".
 
    Completed work (credential rotation, incident cleanup) is recorded in `project_status.md` and `decisions.md`, not in the backlog.
 2. **Synthetic test data.** It is removed from ordinary workflows only by supported, reversible means:
