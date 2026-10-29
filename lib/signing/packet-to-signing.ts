@@ -27,7 +27,7 @@ import {
   packetSigningRole,
   type SigningParticipantRoleCode,
 } from "./participant-roles";
-import type { SigningActor } from "./types";
+import { resolvePacketSigningTitle, type SigningActor } from "./types";
 
 /** Roles treated as transaction parties who may need to sign. */
 export const PACKET_SIGNING_PARTY_ROLES: readonly PacketContactRole[] = [
@@ -276,10 +276,10 @@ export async function createSigningFromPacketWithActor(
     );
   }
 
-  const title =
-    typeof input.title === "string" && input.title.trim()
-      ? input.title.trim()
-      : `Signing — ${String(packet.label ?? `Packet ${packetId}`)}`;
+  const title = resolvePacketSigningTitle(input.title, {
+    id: packetId,
+    label: packet.label ?? null,
+  });
 
   const signing = await createDraftSigningWithActor(
     actor,
