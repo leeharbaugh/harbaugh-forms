@@ -41,6 +41,7 @@ export type BrokerageSettings = {
   supervisor_email: string | null;
 };
 
+/** Settings "My Agent Profile" input, saved to the user's own `user_agent_settings`. */
 export type AgentProfileInput = {
   agent_first_name: string;
   agent_middle_name: string;
@@ -49,6 +50,7 @@ export type AgentProfileInput = {
   agent_phone: string;
   agent_email: string;
   agent_address: string;
+  agent_address_line_2: string;
   agent_city: string;
   agent_state: string;
   agent_zip: string;
@@ -79,6 +81,7 @@ export const emptyAgentProfileInput = (): AgentProfileInput => ({
   agent_phone: "",
   agent_email: "",
   agent_address: "",
+  agent_address_line_2: "",
   agent_city: "",
   agent_state: "TX",
   agent_zip: "",
@@ -100,23 +103,6 @@ export const emptyBrokerageProfileInput = (): BrokerageProfileInput => ({
   broker_phone: "",
   broker_email: "",
 });
-
-export function brokerageSettingsToAgentInput(
-  settings: BrokerageSettings,
-): AgentProfileInput {
-  return {
-    agent_first_name: settings.agent_first_name ?? "",
-    agent_middle_name: settings.agent_middle_name ?? "",
-    agent_last_name: settings.agent_last_name ?? "",
-    agent_license_number: settings.agent_license_number ?? "",
-    agent_phone: settings.agent_phone ?? "",
-    agent_email: settings.agent_email ?? "",
-    agent_address: settings.agent_address ?? "",
-    agent_city: settings.agent_city ?? "",
-    agent_state: settings.agent_state ?? "TX",
-    agent_zip: settings.agent_zip ?? "",
-  };
-}
 
 export function brokerageSettingsToBrokerageInput(
   settings: BrokerageSettings,
@@ -157,6 +143,7 @@ export function normalizeAgentProfileInput(
     agent_phone: trimToEmpty(input.agent_phone),
     agent_email: trimToEmpty(input.agent_email),
     agent_address: trimToEmpty(input.agent_address),
+    agent_address_line_2: trimToEmpty(input.agent_address_line_2),
     agent_city: trimToEmpty(input.agent_city),
     agent_state: trimToEmpty(input.agent_state) || "TX",
     agent_zip: trimToEmpty(input.agent_zip),
@@ -181,35 +168,6 @@ export function normalizeBrokerageProfileInput(
     broker_license_number: trimToEmpty(input.broker_license_number),
     broker_phone: trimToEmpty(input.broker_phone),
     broker_email: trimToEmpty(input.broker_email),
-  };
-}
-
-export function agentProfileInputToRow(
-  input: AgentProfileInput,
-): Pick<
-  BrokerageSettings,
-  | "agent_first_name"
-  | "agent_middle_name"
-  | "agent_last_name"
-  | "agent_license_number"
-  | "agent_phone"
-  | "agent_email"
-  | "agent_address"
-  | "agent_city"
-  | "agent_state"
-  | "agent_zip"
-> {
-  return {
-    agent_first_name: trimToNull(input.agent_first_name),
-    agent_middle_name: trimToNull(input.agent_middle_name),
-    agent_last_name: trimToNull(input.agent_last_name),
-    agent_license_number: trimToNull(input.agent_license_number),
-    agent_phone: trimToNull(input.agent_phone),
-    agent_email: trimToNull(input.agent_email),
-    agent_address: trimToNull(input.agent_address),
-    agent_city: trimToNull(input.agent_city),
-    agent_state: trimToNull(input.agent_state),
-    agent_zip: trimToNull(input.agent_zip),
   };
 }
 
@@ -319,17 +277,6 @@ export function formatPersonFullName(
     .join(" ");
 }
 
-export function agentFullName(settings: Pick<
-  BrokerageSettings,
-  "agent_first_name" | "agent_middle_name" | "agent_last_name"
->): string {
-  return formatPersonFullName(
-    settings.agent_first_name,
-    settings.agent_middle_name,
-    settings.agent_last_name,
-  );
-}
-
 export function brokerFullName(settings: Pick<
   BrokerageSettings,
   "broker_first_name" | "broker_middle_name" | "broker_last_name"
@@ -341,13 +288,19 @@ export function brokerFullName(settings: Pick<
   );
 }
 
+/**
+ * Brokerage-wide fields only. The legacy `agent_*` columns on this shared row
+ * are never form identity (agents resolve from their own `user_agent_settings`).
+ */
 export function resolveBrokerageSettingsField(
   settings: BrokerageSettings,
   field: string,
 ): string | null {
+  if (field.trim().toLowerCase().startsWith("agent_")) {
+    return null;
+  }
+
   switch (field) {
-    case "agent_full_name":
-      return agentFullName(settings) || null;
     case "broker_full_name":
       return brokerFullName(settings) || null;
     case "brokerage_phone":

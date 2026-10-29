@@ -20,11 +20,16 @@ import {
 } from "@/lib/types/authentisign-excluded-fields";
 import {
   type BrokerageSettings,
-  agentFullName,
   brokerFullName,
   fetchActiveBrokerageSettings,
   resolveBrokerageSettingsField,
 } from "@/lib/types/brokerage-settings";
+import type { UserAgentSettings } from "@/lib/types/user-agent-settings";
+import {
+  fetchActiveUserAgentSettings,
+  isAgentIdentitySourcePath,
+  resolveUserAgentSettingsField,
+} from "@/lib/user-agent-profile";
 import {
   type Contact,
   formatContactDisplayName,
@@ -135,7 +140,10 @@ export type FieldResolverContext = {
   packetContacts: PacketContact[];
   /** Lease listing packets may treat legacy SELLER contacts as landlords for fill. */
   fallbackSellersAsLandlords: boolean;
+  /** Packet owner's organization brokerage profile (brokerage-wide fields only). */
   settings: BrokerageSettings | null;
+  /** Packet owner's own ACTIVE agent profile; the only source of `agent_*` identity. */
+  agentProfile: UserAgentSettings | null;
   representationAgreement: {
     effective_date: string | null;
     expiration_date: string | null;
@@ -247,15 +255,6 @@ const PACKET_RESOLVER_SELECT = `
 
 export function normalizeFieldKey(fieldKey: string): string {
   return fieldKey.trim().toLowerCase();
-}
-
-export function buildAgentFullName(
-  settings: Pick<
-    BrokerageSettings,
-    "agent_first_name" | "agent_middle_name" | "agent_last_name"
-  >,
-): string {
-  return agentFullName(settings);
 }
 
 export function buildBrokerFullName(
@@ -580,19 +579,16 @@ function resolvePropertySourcePath(
   };
 }
 
-function resolveSettingsSourcePath(
+/**
+ * `agent_*` identity comes only from the packet owner's own agent profile.
+ * A missing profile or blank column leaves the field unresolved; it never
+ * borrows the shared brokerage row or another agent's values.
+ */
+function resolveAgentProfileField(
   sourcePath: string,
   context: FieldResolverContext,
 ): ResolvedFieldValue | null {
-  if (!context.settings) {
-    return null;
-  }
-
-  const value = resolveBrokerageSettingsField(
-    context.settings,
-    sourcePath.trim().toLowerCase(),
-  );
-
+  const value = resolveUserAgentSettingsField(context.agentProfile, sourcePath);
   if (!value?.trim()) {
     return null;
   }
@@ -602,6 +598,44 @@ function resolveSettingsSourcePath(
     value_json: null,
     source: "settings",
   };
+}
+
+function resolveBrokerageSettingsValue(
+  sourcePath: string,
+  context: FieldResolverContext,
+): ResolvedFieldValue | null {
+  if (!context.settings) {
+    return null;
+  }
+
+  const value = resolveBrokerageSettingsField(context.settings, sourcePath);
+  if (!value?.trim()) {
+    return null;
+  }
+
+  return {
+    value,
+    value_json: null,
+    source: "settings",
+  };
+}
+
+function resolveSettingsSourcePath(
+  sourcePath: string,
+  sourceType: "settings_agent" | "settings_brokerage",
+  context: FieldResolverContext,
+): ResolvedFieldValue | null {
+  const normalizedPath = sourcePath.trim().toLowerCase();
+
+  if (isAgentIdentitySourcePath(normalizedPath)) {
+    return resolveAgentProfileField(normalizedPath, context);
+  }
+
+  if (sourceType === "settings_agent") {
+    return null;
+  }
+
+  return resolveBrokerageSettingsValue(normalizedPath, context);
 }
 
 function resolvePropertyHoaResolverKey(
@@ -946,7 +980,7 @@ function resolveFromFieldSourceMapping(
     case "settings_agent":
     case "settings_brokerage":
       return field.source_path
-        ? resolveSettingsSourcePath(field.source_path, context)
+        ? resolveSettingsSourcePath(field.source_path, field.source_type, context)
         : null;
     case "packet_contact":
       return field.source_path
@@ -1109,22 +1143,13 @@ function resolveSettingsFieldKey(
   fieldKey: string,
   context: FieldResolverContext,
 ): ResolvedFieldValue | null {
-  if (!context.settings) {
-    return null;
-  }
-
   const normalized = normalizeFieldKey(fieldKey);
-  const value = resolveBrokerageSettingsField(context.settings, normalized);
 
-  if (!value?.trim()) {
-    return null;
+  if (isAgentIdentitySourcePath(normalized)) {
+    return resolveAgentProfileField(normalized, context);
   }
 
-  return {
-    value,
-    value_json: null,
-    source: "settings",
-  };
+  return resolveBrokerageSettingsValue(normalized, context);
 }
 
 const CONTEXT_FIELD_KEY_HANDLERS: Array<
@@ -1152,6 +1177,25 @@ export function registerFieldKeyHandler(
   }
 }
 
+/**
+ * Personal agent identity fields: `settings_agent`, any `agent_*` source path,
+ * or an unmapped `agent_*` field key resolved by key.
+ */
+export function isAgentIdentityField(
+  field: Pick<Field, "source_type" | "source_path" | "field_key">,
+): boolean {
+  if (field.source_type === "settings_agent") {
+    return true;
+  }
+  if (
+    (field.source_type === "settings_brokerage" || !field.source_type) &&
+    isAgentIdentitySourcePath(field.source_path)
+  ) {
+    return true;
+  }
+  return !field.source_type && isAgentIdentitySourcePath(field.field_key);
+}
+
 function resolveDefaultChain(params: {
   field: Field;
   mapping?: FormFieldMapping | null;
@@ -1159,9 +1203,17 @@ function resolveDefaultChain(params: {
 }): ResolvedFieldValue {
   const { field, mapping, context } = params;
 
+  // Organization defaults are brokerage-wide, so they must not supply one
+  // agent's identity to another agent's packet. Private defaults are the
+  // packet owner's own and still apply.
+  const lookup =
+    context?.scopedDefaults && isAgentIdentityField(field)
+      ? { ...context.scopedDefaults, organizationDefaults: [] }
+      : context?.scopedDefaults;
+
   // 1–2. Scoped preference defaults (Private beats Organization).
   const scoped = resolveScopedPreferenceDefault({
-    lookup: context?.scopedDefaults,
+    lookup,
     fieldId: field.id,
     formId: context?.formId ?? mapping?.form_id ?? null,
     mappingId: mapping?.id ?? null,
@@ -1696,11 +1748,13 @@ export async function loadFieldResolverContext(
   }
 
   // Brokerage details must belong to the packet owner's active organization,
-  // never to the person currently viewing the packet.
-  const settings = await fetchActiveBrokerageSettings(
-    supabase,
-    actingOrganizationId,
-  );
+  // and agent identity to the packet owner personally — never to the person
+  // currently viewing the packet. RLS lets exactly the viewers who can read the
+  // packet (its owner or an app admin) read the owner's agent profile.
+  const [settings, agentProfile] = await Promise.all([
+    fetchActiveBrokerageSettings(supabase, actingOrganizationId),
+    fetchActiveUserAgentSettings(supabase, actingUserId),
+  ]);
 
   return {
     packetId,
@@ -1722,6 +1776,7 @@ export async function loadFieldResolverContext(
     packetContacts: normalizePacketContactsJoin(packetRow.packet_contacts),
     fallbackSellersAsLandlords,
     settings,
+    agentProfile,
     representationAgreement: normalizeRepresentationAgreementJoin(
       ownedRepresentationAgreement,
     ),
