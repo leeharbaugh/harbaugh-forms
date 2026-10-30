@@ -1,6 +1,17 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-29, 16:40 Chicago (21:40 UTC). **Native Signing remains LIVE. Documentation merge sequence completed: PR #68 (Help & Getting Started planned) then PR #69 (item 1 production release record), both docs only.**
+**As of:** 2026-10-29, 21:45 Chicago (02:45 UTC on 2026-10-30). **Native Signing remains LIVE. `backlog.md` is the canonical backlog. The critical multi-agent identity correction is backlog item 2, ahead of Help & Getting Started (now item 3).**
+- **New item 2:** "Critical — Correct multi-agent identity resolution". It is fixed in development in [PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70) but not merged or released, and Susan's production packet #13 still shows another agent's details. It is complete only after the production release, verified identity resolution and validated remediation of packet #13.
+- **New deferred item 9:** warn users when required agent identity information is incomplete (not designed or implemented).
+- **Renumbered:** Help & Getting Started is now item 3, and the former items 3–7 are 4–8, with descriptions unchanged.
+- **Unchanged:** application code, data, production and Native Signing.
+
+Earlier: 2026-10-29, 17:05 Chicago (22:05 UTC). **Native Signing remains LIVE. The backlog file is renamed to `backlog.md`; item 2 (Help & Getting Started) has a read-only implementation assessment and is not started.**
+- **Rename:** `Harbaugh_Forms_Post_Launch_Improvements.md` → `backlog.md` with `git mv`; contents unchanged. References that identify the current file now use `backlog.md`; dated history entries keep the old name.
+- **Item 2:** assessment only, awaiting Lee's decisions; see "Help & Getting Started: implementation assessment (2026-10-29)". The backlog requirements are unchanged.
+- **Unchanged:** application code, data, migrations, production and Native Signing. Documentation changes are uncommitted on `docs/backlog-rename-help-assessment`, for review.
+
+Earlier: 2026-10-29, 16:40 Chicago (21:40 UTC). **Native Signing remains LIVE. Documentation merge sequence completed: PR #68 (Help & Getting Started planned) then PR #69 (item 1 production release record), both docs only.**
 - **Backlog:** item 1, the Create Signing default title fix, is completed and live on `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`. Item 2, "Help & Getting Started — New User Walkthrough", is the highest-priority unfinished enhancement; items 3–7 follow unchanged.
 - **Production unchanged:** both domains and the production target still serve `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`; `autoAssignCustomDomains=false`. The merges' automatic production-target builds take no domain and are not promoted.
 - **Unchanged:** application code, data, credentials and Native Signing settings.
@@ -429,7 +440,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 
 **Status:** planned, high priority; not implemented. Documentation-only change.
 
-**Backlog order now** (`Harbaugh_Forms_Post_Launch_Improvements.md`):
+**Backlog order now** (`backlog.md`):
 1. Remove the "DEV QA Test Signing" default title — **completed** ([PR #67](https://github.com/leeharbaugh/harbaugh-forms/pull/67)); live in production since 2026-10-29 03:15 UTC on `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`.
 2. **Help & Getting Started — New User Walkthrough** — new; highest-priority remaining enhancement.
 3. Save buttons at both ends of edit screens.
@@ -440,6 +451,8 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 
 Items 3–7 were items 2–6; their descriptions are unchanged. Earlier entries that cite "items 2–6" refer to the old numbering.
 
+*Update 2026-10-29:* the critical multi-agent identity correction was inserted as item 2. Help & Getting Started is now item 3 and still the highest-priority enhancement. The former items 3–7 are 4–8, and a deferred item 9 (incomplete agent identity warning) was added. See `backlog.md`.
+
 **What is planned.** A Help menu or section, reachable from the main navigation, with:
 - An eight-step, plain-English Getting Started walkthrough: Contacts, Properties, Forms (optional to add your own), Collections (optional to create your own), Packets, Fill and review, Send for signatures, Track and download.
 - Direct links to the relevant pages where practical, available again at any time, and usable on desktop and mobile.
@@ -448,6 +461,43 @@ Items 3–7 were items 2–6; their descriptions are unchanged. Earlier entries 
 The first release is a simple numbered walkthrough page; an interactive guided tour may come later. The full purpose, scope, user experience goals and suggested acceptance criteria are in the backlog file.
 
 **Read-only check of the current app.** The main navigation already runs Contacts, Properties, Forms, Collections, Packets (at `/`), Signings, Settings, matching the walkthrough order. Create Signing starts from both the Packet page and the Signings page. Terminology is to be re-checked against live functionality at implementation.
+
+### Help & Getting Started: implementation assessment (2026-10-29; not started)
+
+**Status:** read-only assessment; item 2 (item 3 since 2026-10-29) is **not started**. The requirements in `backlog.md` are unchanged. The open questions below need Lee's decisions before coding.
+
+**What exists today.**
+- **No help:** there is no Help, Getting Started, onboarding or support-contact content in the workspace.
+  - `/form-field-mappings` ("Field model") is an unlinked technical note.
+  - `/protected` is leftover starter-template content.
+  - `profiles.onboarding_status` (INVITED, ACTIVE) tracks account invitation only, not product onboarding.
+- **Navigation:** `components/app-nav.tsx` is mounted by each section's `layout.tsx`. Its links run Contacts, Properties, Forms, Collections, Packets (`/`), Signings and Settings, plus Admin for admins. The links row scrolls horizontally on narrow screens; the account greeting and Logout sit in a fixed right-hand area.
+- **Landing page:** sign-in lands on `/` (Packets), whose empty state is "No packets yet".
+- **Login protection:** `lib/supabase/proxy.ts` requires login for every non-`/auth` route, so a new workspace page is protected automatically.
+- **Signings visibility:** the Signings link and pages appear only when `NATIVE_SIGNING_ENABLED` is on (`lib/signing/feature-gate.ts`).
+- **Building blocks:** `components/ui` already has Card, Button, Badge, `dropdown-menu`, `info-dialog` and `form-section`.
+- **Preferences:** per-user preferences are a JSON document in `user_preferences` (`lib/user-preferences.ts`), so a future per-user flag would need no migration.
+
+**Findings that affect the walkthrough wording.**
+- **Settings:** both the Agent Profile and the Brokerage Profile save into the organization's single `brokerage_settings` row. Only app admins may insert or update it (migration `20260913200000`), so an ordinary agent can view Settings but not save it. Agent and brokerage fields on forms come from that row (`lib/field-resolver.ts`). *Update 2026-10-29:* this caused the multi-agent identity bug (backlog item 2). PR #70, not yet released, makes the Agent Profile personal.
+- **Collections:** the nav says "Collections", but the page heading is "Packet Templates" (button "Add packet template"). Agents can create Private collections and copy shared ones; Organization collections are created by org or app admins. Only Published forms can be added.
+- **Forms:** the page is "Form Templates" (button "Add form template"). An agent's own form is uploaded as Private and Draft, mapped with Map Fields, then published with Publish Form before collections and packets can use it. Global forms come from admins.
+- **Packets:** **Create packet** starts by choosing a packet type (Buyer Rep, Listing, Contract Offer, Custom Packet). Then come the collection, contacts (roles assigned in order and editable later), property (not for Buyer Rep), Review forms, and Create packet. When no collection matches, the wizard says "Create a collection under Forms → Collections first.", which no longer matches the navigation.
+- **Fill and download:** each packet form has **Fill form**, **Mark Final** and **Download PDF**, and the Packet page has **Download All Forms**. There is no separate Generate step.
+- **Signings:**
+  - **Start:** Create Signing from the Packet page (Packet owner, with an active brokerage membership) or from the Signings page.
+  - **Draft preparation:** "Use this Packet" adds its parties, then documents are added and fields placed in Prepare Documents.
+  - **Sending:** Send, or Begin In-Person Signing.
+  - **Statuses:** DRAFT, IN PROGRESS, COMPLETE, DECLINED, CANCELLED.
+  - **Completed documents:** each signed document, an Audit certificate and a Combined signed package, each with View and Download.
+- **Representation Agreements:** a legacy page outside the navigation; leave it out of the guide.
+
+**Recommended approach (for Lee's review).**
+- **What:** one static, server-rendered `/help` page using the existing layout and AppNav pattern.
+- **Contents:** a numbered Getting Started list in plain English, with links to each page. The Signings steps are shown only when the feature gate is on. A Support card with tap-to-call and email links.
+- **How to reach it:** a Help link that is always visible on every workspace page.
+- **No storage:** no database change, no progress tracking and no tour framework.
+- **Optional later:** a one-line "New here? See Getting Started" hint on empty states; a dismissible first-visit notice stored in `user_preferences`; an interactive tour (the backlog marks this as later).
 
 **Unchanged:** application code, production, Vercel, Supabase, data and Native Signing (live).
 
@@ -5288,7 +5338,11 @@ Do not edit already-applied migrations. Add a new corrective migration when need
    - Watch invitation acceptance and arrival, completed-package delivery, completion and runtime errors.
    - Keep the emergency suspension ready.
    - Take periodic encrypted recovery snapshots so newly completed Signing documents are backed up independently.
-2. **Post-launch backlog:** `Harbaugh_Forms_Post_Launch_Improvements.md`. Item 1, removing the "DEV QA Test Signing" default title, is completed and live in production since 2026-10-29 03:15 UTC (`dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`). Items 2–7 remain; item 2, Help & Getting Started, is the highest-priority remaining enhancement (added 2026-10-28).
+2. **Post-launch backlog:** `backlog.md`.
+   - **Item 1**, removing the "DEV QA Test Signing" default title, is completed and live in production since 2026-10-29 03:15 UTC (`dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`).
+   - **Item 2**, the critical multi-agent identity correction, is fixed in development (PR #70) and awaits production release and packet #13 remediation.
+   - **Item 3**, Help & Getting Started, is the highest-priority enhancement.
+   - **Items 4–8** remain; **item 9** is deferred.
 3. **Synthetic production test data:** done. Lee approved the record-level cleanup plan, and it was carried out on 2026-10-28, 20:22–20:30 UTC; see "Post-launch cleanup (2026-10-28)".
 4. **TXR-1957 / T-47.1:** Lee visual Map Fields review at `/forms/53/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred.
 5. **TXR-2216:** Lee visual Map Fields review at `/forms/51/editor`; keep DRAFT; do not publish until placements approved. Development mirror remains deferred. Optional: smoke multi-tenant `tenant_names` on a DRAFT lease packet with two TENANT contacts when such a packet exists.
