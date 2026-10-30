@@ -1,6 +1,13 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-29, 23:10 Chicago (04:10 UTC on 2026-10-30). **Native Signing remains LIVE. The multi-agent identity correction (backlog item 2) is merged as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70)), and its production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` is validated at its unique URL. NOT promoted; awaiting Lee's approval.**
+**As of:** 2026-10-29, 23:45 Chicago (04:45 UTC on 2026-10-30). **Native Signing remains LIVE. The multi-agent identity correction (backlog item 2) is LIVE in production: `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` (`1ebbca9`), promoted with Lee's approval at 04:29:17 UTC. Packet #13 is NOT yet remediated, so item 2 is not complete.**
+- **Promoted:** with the guarded promotion script (dry run, then one fixed `vercel promote`); no rebuild. Both domains and the production target serve it, and `autoAssignCustomDomains=false`.
+- **Validation on each domain:** 33/33 security and fail-closed checks, 8/8 participant checks, and 100/100 authenticated read-only smoke. Settings → My Agent Profile shows Lee's own details, and the shared Brokerage Profile is editable for the admin. 0 HTTP 5xx; scheduled Cron 200 on the new deployment.
+- **Data preserved:** before-and-after read-only fingerprints are identical for agent profiles, brokerage settings, all 1,071 field instances (including packet #13's 60, whose 6 agent values still show the shared details), Signings, packets, forms and Storage. Only `user_preferences` changed, from the smoke sign-ins, as in every release.
+- **Rollback:** `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC` (`1cddb95`), READY. Not needed.
+- **Next (separate approval):** packet #13 remediation; see "Multi-agent identity fix (2026-10-29; development only)".
+
+Earlier: 2026-10-29, 23:10 Chicago (04:10 UTC on 2026-10-30). **Native Signing remains LIVE. The multi-agent identity correction (backlog item 2) is merged as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70)), and its production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` is validated at its unique URL. NOT promoted; awaiting Lee's approval.**
 - **Candidate:** the automatic production-target Git build of `1ebbca9`. Both recorded commit fields equal `1ebbca9`, the ref is `main`, and the repository is `leeharbaugh/harbaugh-forms`. No migration is required.
 - **Validation:** 33/33 security and fail-closed checks, 8/8 participant checks, and 100/100 authenticated read-only smoke. Settings shows Lee's own agent profile and an editable shared Brokerage Profile. There were 0 server errors, and no field instance, agent profile or brokerage row changed.
 - **Production unchanged:** both domains and the production target serve `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`; `autoAssignCustomDomains=false`.
@@ -455,7 +462,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 
 ### Multi-agent identity fix (2026-10-29; development only)
 
-**Status:** merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), 2026-10-30 04:03 UTC). Production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` is validated at its unique URL and **not promoted**. **Backlog item 2 in `backlog.md`, the highest-priority open item**, above Help & Getting Started (item 3). Not complete until production is released and packet #13 is remediated and verified.
+**Status:** merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), 2026-10-30 04:03 UTC). Production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` was validated at its unique URL and is **LIVE in production since 2026-10-30 04:29:17 UTC** (Lee approved). Packet #13 remediation is pending. **Backlog item 2 in `backlog.md`, the highest-priority open item**, above Help & Getting Started (item 3). Not complete until production is released and packet #13 is remediated and verified.
 
 **Root cause (confirmed read-only in production, 2026-10-29).**
 - **Where values came from:** every agent field resolved from the packet owner's organization `brokerage_settings` row (`lib/field-resolver.ts`, `resolveSettingsSourcePath` and the key-based `resolveSettingsFieldKey`). That row holds one agent's details (Lee's) for the whole brokerage.
@@ -522,10 +529,24 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 3. Promote, then run the standard post-promotion smoke on both domains.
    - **Participant technical change:** none.
    - **Before and after promotion:** a read-only check that Lee's own record still matches the shared row on every mapped agent field (true on 2026-10-29), so his packets keep their values.
+   - *Done 2026-10-30; see "Production release" below. Agent profiles and the brokerage row were unchanged by the release.*
 4. Ask Susan to open Settings → My Agent Profile and confirm her details. Her record already has name, license, email and phone.
 5. Remediate packet #13 (below), then mark the item complete.
 
-**Production candidate (2026-10-30, 04:06–04:10 UTC; validated, NOT promoted).**
+**Production release (2026-10-30, 04:26–04:43 UTC; Lee authorized promotion).**
+
+| Step | Result |
+|------|--------|
+| Preflight | Candidate READY at `1ebbca9` (Git build, `main`, `leeharbaugh/harbaugh-forms`). Both domains and the production target on `dpl_DGk3…`; `autoAssignCustomDomains=false`. All 25 Vercel environment rows identical to the previous release record. PR #72 open, unmerged, with only a preview build. Live deployment: 0 errors, warnings or 5xx; scheduled Cron 200 |
+| Database before | Work and access operational; disclosure READY; 152 migrations. 2 Signings (archived TEST); no Signing events since 2026-10-28 20:23 UTC; 0 open ceremony sessions; every work item SUCCEEDED, every delivery ACCEPTED |
+| Promotion | Guarded promotion script, dry run then execute: one fixed `vercel promote` from the neutral directory, 04:29:11–04:29:17 UTC. No build was created |
+| After | Both domains and the production target on `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, and both login pages embed it; `autoAssignCustomDomains=false` |
+| Validation, each domain | Security checks 33/33, participant checks 8/8, smoke 100/100. Same coverage as the candidate, including Settings → My Agent Profile (Lee's own details) and the shared Brokerage Profile (editable for the admin, nothing saved), Fill Form PDF on a Final form, and both historical Signings. 0 HTTP 5xx; 0 hydration, page or console errors |
+| Operational health | Runtime logs since promotion: 0 error, warning or fatal; the only 5xx are the checks' designed 503 probes. Scheduled Cron on the new deployment at 04:40:26 and 04:42:26 UTC, both 200 |
+| Data | Read-only fingerprints before and after are identical for agent profiles (3), brokerage settings (1), all 1,071 field instances, packet #13 (60 instances, 2 overrides, 6 agent values still equal to the shared row, 6 DRAFT forms), Signings and events, work items and deliveries, packets, packet forms, contacts, properties, forms and Storage (101 objects). Only `user_preferences` changed, from the smoke sign-ins |
+| Rollback | `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC` (`1cddb95`) READY. Not needed |
+
+**Production candidate (2026-10-30, 04:06–04:10 UTC; validated before promotion).**
 
 | Step | Result |
 |------|--------|
@@ -540,7 +561,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 | Data | Signings, field instances (count, latest update, and all 60 on packet #13), agent profiles and the brokerage row are identical before and after. The browser's 25 non-GET requests are the same as the previous release's smoke: `user_preferences` saves, server-action reads, and Storage list and sign for document viewing |
 | Production | Unchanged before and after: both domains and the production target on `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`; `autoAssignCustomDomains=false` |
 
-**Not verified on the candidate by design** (post-release items):
+**Not verified on the candidate or in production by design** (post-release items):
 - A non-admin agent's view of Settings would need a sign-in as another production account.
 - Individual-agent form resolution on a real packet would need a Draft form to be opened or refreshed, which writes field values.
 
@@ -558,7 +579,7 @@ These are covered by development validation and by the packet #13 remediation pr
    - Do not mark any form Final during remediation.
 3. **Read-only check after.**
    - All 6 agent instances equal Susan's own values, and none equal the shared row.
-   - `is_override` is unchanged, and every form is still DRAFT.
+   - `is_override` is unchanged, and every form is still DRAFT. Packet #13 has 2 existing manual overrides, none on an agent field (production snapshot 2026-10-30); both must keep their values.
    - Any other changed instance is listed against the snapshot and reviewed with Susan.
    - No other packet changed.
 4. **Visual check:** download each refreshed form and confirm Susan's name, license number, email and phone.
@@ -5468,7 +5489,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
    - Take periodic encrypted recovery snapshots so newly completed Signing documents are backed up independently.
 2. **Post-launch backlog:** `backlog.md`.
    - **Item 1**, removing the "DEV QA Test Signing" default title, is completed and live in production since 2026-10-29 03:15 UTC (`dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`).
-   - **Item 2**, the critical multi-agent identity correction, is merged (`1ebbca9`, PR #70). Its candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` is validated and awaits Lee's promotion approval, then production verification and packet #13 remediation.
+   - **Item 2**, the critical multi-agent identity correction, is live in production (`dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, `1ebbca9`, since 2026-10-30 04:29 UTC). Packet #13 remediation (separate approval) is still pending, so the item is not complete.
    - **Item 3**, Help & Getting Started, is the highest-priority enhancement.
    - **Items 4–8** remain; **item 9** is deferred.
 3. **Synthetic production test data:** done. Lee approved the record-level cleanup plan, and it was carried out on 2026-10-28, 20:22–20:30 UTC; see "Post-launch cleanup (2026-10-28)".
