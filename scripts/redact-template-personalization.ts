@@ -37,7 +37,7 @@ async function main() {
   });
   console.log(`pages=${report.pageCount} removable blocks=${report.removedBlocks.length} blocked=${report.blockedMatches.length} unsupported=${report.unsupported.length}`);
   for (const b of report.removedBlocks) {
-    console.log(`  page ${b.page} ${b.streamRef} text=${mask(b.text)} box=[${b.box.x.toFixed(1)}, ${b.box.y.toFixed(1)}, ${b.box.width.toFixed(1)} x ${b.box.height.toFixed(1)}]`);
+    console.log(`  page ${b.page} ${b.streamRef} ${b.mode} text=${mask(b.text)} box=[${b.box.x.toFixed(1)}, ${b.box.y.toFixed(1)}, ${b.box.width.toFixed(1)} x ${b.box.height.toFixed(1)}]`);
   }
   report.blockedMatches.forEach((m) => console.log(`  BLOCKED ${m}`));
   report.unsupported.forEach((m) => console.log(`  UNSUPPORTED ${m}`));
