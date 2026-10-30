@@ -1,6 +1,14 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-30, evening Chicago. **Native Signing remains LIVE. Template footer cleanup merged: PRs #72 (`cd7ed35`), #73 (`e900b77`) and #74 (`696d8a5`) squash-merged to `main`. Production templates, packet copies, records and Storage NOT changed; no deployment. Backlog item 10 is not complete.**
+**As of:** 2026-10-30, 16:55 Chicago (21:55 UTC). **Native Signing remains LIVE. TXR-1501 production pilot COMPLETED (Lee approved): production form #1 now uses the footer-free PDF, and it is validated as the model for the remaining templates. Only form #1 changed; no other template and no existing packet copy was touched; no deployment. Backlog item 10 is not complete (1 of 33 templates done).**
+- **Template:** Unpublish → Replace PDF → Publish through the normal UI as Lee.
+  - Publish validation reported "55 active field mappings. No publish issues found."
+  - The stored object is SHA-256 `4e1dee90…3a175720`, identical to the validated pilot output. The original `c8cf7224…75437b6` is kept in Storage and in an encrypted backup.
+- **New packets:** a temporary test packet (#18, Lee's) got the clean copy. Fill Form, Download PDF and Map Fields work, agent fields come from Lee's own profile and brokerage fields from the shared settings. It was then soft-deleted with Delete.
+- **Integrity:** 70 of 76 tables are unchanged. The 6 that changed only gained the expected rows (pre-existing rows hash-identical), plus Lee's UI column-width preference. All 101 pre-existing Storage objects are unchanged.
+- See "TXR-1501 production pilot (2026-10-30; completed)". PR #75 merged as `8ff16e0`.
+
+Earlier: 2026-10-30, evening Chicago. **Native Signing remains LIVE. Template footer cleanup merged: PRs #72 (`cd7ed35`), #73 (`e900b77`) and #74 (`696d8a5`) squash-merged to `main`. Production templates, packet copies, records and Storage NOT changed; no deployment. Backlog item 10 is not complete.**
 - **Fixtures:** both development pilot fixture agents were removed with the admin test-user deletion workflow.
 - **TXR-1506:** the redacted fresh 06-15-26 download matches production form #54 in text, fonts, images, links, tagging and active content. The only differences are metadata and structure from production's 2026-10-26 re-save. It is ready for Lee's authorization.
 - **Plans prepared, not executed:** the production procedure for the 33 templates (TXR-1501 pilot first) and the in-place redaction of Susan's 5 Draft copies.
@@ -483,6 +491,75 @@ Earlier: 2026-10-14, evening (PR #46 Signing Placement Templates tranche impleme
 Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancellation in development now leaves the exact sandboxed email in `_audit_tmp/signing-email-sandbox/`. This needed a small dev-only code change; previously the sandbox discarded the body. No migration, production untouched, Gate A paused. See "Sandbox email inspection" below. Earlier: 2026-10-13, morning (PR #46 cancellation emails tranche implemented and browser-QA'd in development. Cancel Signing now asks for a required "Internal cancellation reason", which is saved in Signing history and never emailed, and an optional "Message to participants". It emails every invited participant after commit. Eligibility comes from invitation history, so finished, revoked-link, replaced-link and archived participants are included; Draft and in-person-only participants are not. The email has no link and makes no legal claim. Delivery uses the existing instruction / outbox / attempt architecture, is retried, never changes lifecycle, and sends at most one email per participant. New dev-only migration `20261013120000`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Cancellation emails tranche" below. Earlier: 2026-10-12, night (PR #46 Archive Signing tranche implemented and browser-QA'd in development. Archive is organizational state (`signings.archived_at`), not lifecycle. Any lifecycle state can be archived and unarchived. The Signings list hides archived Signings unless "Show archived" is selected. Archiving an In Progress Signing revokes every participant link, entry session, in-person handoff and open ceremony session in one transaction, and unarchiving never restores them (managers Replace links to resume). New dev-only migrations `20261012120000` and `20261012120100`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Archive Signing tranche" below. Earlier: 2026-10-12, evening (Stage 1 / Stage 2 npm scripts now run under `tsx`, and `participant-link-qa.test.ts` runs in the Stage 4 suite; all 54 `test:*` scripts pass on PR #46. Earlier the same afternoon: dependency-security PR #53 squash-merged to `main` as `a15bbb5`: Next.js 16.3.8, sharp 0.35.5, source-map-js 1.2.2, `npm audit --omit=dev` 0. PR #46 synced with patched `main` by a merge commit and fully revalidated; see "PR #46 synced with patched main" below. PR #46 still open and unmerged, Gate A paused, production untouched. Earlier: 2026-10-12, afternoon (PR #46 combined-package refresh tranche implemented and browser-QA'd in development. The combined signed package stays a post-Complete convenience artifact. An open manager dashboard now shows "Combined signed package — Preparing…" when it reaches Complete before the package exists, keeps refreshing every 20 s, and swaps in View / Download when the package is verified, with no reload or navigation. The watcher stops once completed artifacts settle. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Combined-package refresh tranche" below. Earlier: 2026-10-11, night (PR #46 completed-document access tranche implemented and browser-QA'd in development. On a Complete Signing, managers with existing Signing authority see "Completed documents" at the top of the dashboard: each signed document, the audit certificate and the combined package once generated, each with View (full-screen read-only viewer, Fit Width / Fit Page / zoom) and Download. Both serve the same immutable, re-hashed finalization artifact through one authorized server route. A fingerprint mismatch is refused, and Draft, In Progress, Declined and Cancelled show and serve nothing. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Completed-document access tranche" below. Earlier: 2026-10-11, evening (PR #46 ceremony-regression tranche implemented and browser-QA'd in development. Applied Initials, Date Signed and Signature show their full text inside the stored field box at every zoom, with no ellipsis, and the completed PDF uses the same fit. Your fields docks from one measured width (1024px and up) and is otherwise a keyboard-accessible drawer, with no dead zone and no horizontal scroll at any of 13 widths from 1440 to 390. A long-open manager Signing page now shows Declined (naming who declined), Cancelled and Complete without a reload: authorized polling every 20 s while In Progress, plus a refresh on tab focus or visibility. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony-regression tranche" below. Earlier: 2026-10-11, afternoon (PR #46 ceremony UX tranche implemented and browser-QA'd in development. Start signing records the read-only Signing name and derived, non-editable initials. The PDF fills the screen with Fit Width / Fit Page / zoom. Guidance goes to the first required field and, only after the server accepts each mark, to the next one or to Finish. Your fields navigates spatially. Finish and done wording separate the participant's part from Signing completion. Leave for now and Decline to sign are QA'd end to end. E-sign consent is now enforced on the server (security finding, fixed). No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony UX tranche" below. Earlier: 2026-10-10, afternoon (PR #46 toolbar tranche implemented and QA'd in development. The auto-add notice shows names, not "[object Object]", and stays one-time. Prepare Documents places with explicit one-shot tools (Signature, Initials, Date, Printed Name, Checkmark) instead of a Field type dropdown, and choosing a participant arms nothing. Link to is removed: Dates link to the nearest source at placement, a selected Date outlines its source, and relinking is delete-and-replace. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Toolbar tranche" below. Earlier the same day: PR #46 polish tranche implemented and QA'd in development. The "Added from the source Packet" notice now shows once and is acknowledged only after the browser displays it. Date Signed links automatically to the nearest Signature or Initials on the hovered page, with Link to as an explicit override. Send readiness updates from the server within about 2 seconds of each placement change, instead of after a 12–14 s reload. New dev-only migration `20261010120000`. PR still open and unmerged, Gate A paused, production untouched. See "Polish tranche" below. Earlier: 2026-10-09, evening (PR #46 Packet lifecycle cleanup implemented and QA'd in development. Packets are ACTIVE or DELETED only, and the unintended INACTIVE state is gone from the database constraint, types and UI. Dev Packet #12, the only INACTIVE Packet, was normalized to ACTIVE. New dev-only migration `20261009140000`. PR still open and unmerged, Gate A paused, production untouched. See "Packet lifecycle cleanup" below. Earlier the same day: PR #46 correctness tranche implemented and QA'd in development. Create Signing eligibility now comes from one server helper, and ineligible Packets show a disabled control with the reason. The Packets list and the selector agree: Inactive is listed, and only Deleted waits for Show deleted. Opening a Draft Signing completes Packet auto-add and identity sync before the first paint. Signing rename works in every lifecycle state and records a history event. New dev-only migration `20261009130000`. PR still open and unmerged, Gate A paused, production untouched. Next after Lee's approval: the separate dependency-advisory PR from `main`. See "Correctness tranche" below. Earlier: 2026-10-08, late (PR #46 Draft polish tranche implemented and QA'd in development: Packet parties auto-add while Draft with per-Signing removal suppression and Restore; linked participant identity live from Contact / profile / brokerage profile while Draft and canonized at activation, with Cancel + new Signing as the only post-activation correction; Date Signed click-to-link; Copy enters paste mode immediately; new fields anchor at the click's left edge. New dev-only migration `20261009120000`. PR still open and unmerged, Gate A paused, production untouched. See "Draft polish tranche" below. Earlier the same day: PR #46 Draft-preparation tranche implemented and QA'd in development: additive Add from Packet, participant roles, Include me / Include broker, Initials-linked Date Signed, click-anchored paste, Printed Name and Checkmark prepared content, Quick Fields removed; new dev-only migration `20261008120000`; PR still open and unmerged, Gate A paused, production untouched; see "Draft-preparation tranche" below. Earlier, 2026-10-05: PR #46 document-visible participant ceremony + read-only typed Signature implemented and browser-QA'd in development; ready for Lee's re-QA; PR still open and unmerged, Gate A paused, production untouched; new upstream `npm audit` advisories (source-map-js / postcss, braces) recorded for a separate dependency PR, see "Lee's manual QA findings and document-visible ceremony tranche" below. Earlier, 2026-10-02: PR #46 brought up to date with `main` `7733493` by merge commit `8769993` (Next.js 16.3.6, no conflicts left, full revalidation and ceremony browser regression pass); PR still open, awaiting Lee's manual re-QA, manager completed-document access is a pre-production blocker, see "PR #46 merged with current main" below; Native Signing participant ceremony QA complete on PR #46 at `3f92e48`: four ceremony defects fixed; packet Created/Updated timestamps fixed to Central time with CDT/CST, PR #52 squash-merged to `main` as `7733493`, live in production via hotfix `3e5eaa3` (= `c25e4c3` + PR #52 code only), deployment `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, rollback `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; dev-only `brace-expansion` advisories remediated by lockfile-only PR #51, squash-merged to `main` as `edfc5a7`, full lockfile audit clean, not deployed (dev-only, no production effect); admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 squash-merged to `main` as `c2a490a` on 2026-10-02; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j is live in production via hotfix `2a92d82` (= `a87b1aa` + dependency change only; deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`); PR #49 squash-merged to `main` as `9f00a80` on 2026-10-02. Earlier, 2026-09-30: Native Signing development and QA remain the active workstream; work paused briefly for the duplicate packet forms hotfix, now live in production. Resume Native Signing development/QA from the state recorded below. Production is running the isolated hotfix, not `main`; production Native Signing remains unavailable.)
 ## Current State
 
+### TXR-1501 production pilot (2026-10-30; completed)
+
+**Status:** completed and validated (Lee approved; scope: form #1 only, plus one temporary test packet). Backlog item 10 stays **not complete**: 1 of 33 templates is done. Remaining templates await Lee's approval.
+
+**Timeline (UTC).**
+- 21:41 baseline (read-only).
+- 21:48:13 Unpublish.
+- 21:48:36 Replace PDF.
+- 21:49:11 Publish.
+- 21:49–21:51 test packet created, checked and soft-deleted.
+- 21:53 final checks.
+
+**Baseline (read-only, before any change).** Everything matched, so the pilot went ahead:
+- Form #1 is the ACTIVE / PUBLISHED Global TXR-1501, version `TXR-1501-01-05-26`.
+- The only object in its folder, `BuyerRepAgreement_202601.pdf`, has SHA-256 `c8cf7224…75437b6`, the validated original.
+- 55 active mappings across pages 1–6.
+- The TCPDF structure is unchanged: the dry run found 12 blocks in block mode, 0 blocked, 0 unsupported.
+- The 3 packet copies of form #1 (pf#8, pf#50 and the deleted pf#66) are separate `generated-documents` objects.
+- Production is on `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, with automatic domain assignment off.
+
+**Backup and local validation.**
+- **Backup:** a DPAPI-encrypted archive (private folder) of the original PDF, the form row, all 214 mapping rows and the baseline, each verified by decrypt and hash. Plaintext copies of the original were deleted afterwards. The patterns file never left the private folder.
+- **Output:** the cleaned file `TXR-1501-01-05-26-footer-removed.pdf` (SHA-256 `4e1dee90…3a175720`, 308,219 bytes) is byte-identical to the validated pilot output, and a second run gave the same bytes. The tool's verification found no pattern in extracted text or raw objects.
+- **Checks:** all passed:
+  - structure comparison (page count, geometry, boxes, annotations, XObjects, Info and XMP);
+  - pixels at 2× (0 differences outside the footer boxes, boxes white; the no-whiteout variant identical);
+  - all 55 production mappings filled into both files (0 differences outside the boxes).
+
+**Replacement through the app (as Lee).**
+- **Session:** a one-time sign-in link, revoked after each run (local scope only).
+- **Steps:** Forms → Edit → Unpublish Form → Replace PDF file → Save changes → Publish Form. Publish validation: "55 active field mappings. No publish issues found."
+- **Verified read-only:**
+  - form #1 is ACTIVE / PUBLISHED, with the same ID, scope, code and version label;
+  - the source path is `global/forms/1/TXR-1501-01-05-26-footer-removed.pdf`, and its object's SHA-256 is `4e1dee90…`;
+  - the original object is still present and byte-identical;
+  - all 214 mapping rows are identical to the backup;
+  - the 3 existing packet copies are byte-identical, with unchanged rows.
+- **Failures:** none, so no recovery step was needed.
+
+**New packet verification (temporary test packet).**
+- **Created through the UI as Lee:** packet #18, a custom packet named "TEMP production verification - TXR-1501 footer pilot (delete after check)", with no contacts or property. TXR-1501 was added with Add form, giving packet form #67.
+- **Copy:** its copy is the clean template (SHA-256 `4e1dee90…`).
+- **Fill Form:** renders 6 pages.
+  - The 2 agent-sourced fields resolve to Lee's own agent profile.
+  - The 6 brokerage-sourced fields resolve to the shared brokerage settings.
+- **Download PDF:**
+  - no text in the footer boxes on any page;
+  - all 4,552 template text items at identical positions;
+  - pixel-identical to a local fill of the clean template with the packet's saved values.
+- **Map Fields:** renders 6 pages.
+- **Errors:** 0 browser errors and 0 server errors.
+- **Cleanup:** Delete Packet (soft delete, restorable), the documented procedure. Packet #18 and packet form #67 are DELETED. Its 48 field values and its PDF copy stay under the deleted packet, as for test packet #17.
+
+**Production integrity (before/after fingerprint of all 76 public tables and all Storage objects).**
+- **Unchanged:** 70 tables, including agent profiles, brokerage settings, every Signing table, contacts, collections, audit events and organization members.
+- **Changed, as expected:**
+  - `forms`: only form #1; no other form updated.
+  - `form_state_events`: +2 (form #1 FORM_UNPUBLISHED, FORM_PUBLISHED).
+  - `packets`: +1, `packet_forms`: +1, `field_instances`: +48; all test packet #18.
+  - In each of these tables, the rows that existed before are hash-identical to the baseline.
+- **Side effect:** `user_preferences` (Lee's single row) was rewritten at 21:49:37. The app stores list column widths and the workspace view when the Forms and Packets lists are shown. It is a cosmetic UI preference, not business data, and the earlier values were not captured to restore. Future runs should expect it.
+- **Storage:** 101 objects before, 103 after. The only new objects are the cleaned template and test packet #18's copy, both with MD5 `06e5ee3c…`. Every pre-existing object is unchanged, including Susan's packet #13 copies and Lee's copies.
+- **Unchanged otherwise:** Native Signing settings, the deployment and domains.
+
+**Result:** TXR-1501 is validated as the model for the remaining 31 TCPDF templates, which use the same procedure, checks and recovery path. TXR-1506 follows its own verified source (the fresh download).
+- **Process learnings:**
+  - Separate UI runs per lifecycle step, each verified read-only, worked well.
+  - The full-database fingerprint showed that the only incidental write is the UI-preference row.
+
 ### Template footers: merges, fixture cleanup and production plans (2026-10-30; plans prepared, not executed)
 
 **Status:** backlog item 10, **not complete**. The method is merged. Production templates, packet copies, database records and Storage objects are unchanged. Every production write below needs Lee's approval first.
@@ -641,8 +718,8 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 8. **Lee's 19 copies:** unchanged; their eTags are checked afterwards.
 
 **Remaining work, in order.**
-1. Lee authorizes the TXR-1501 production pilot.
-2. The 31 other TCPDF templates.
+1. Lee authorizes the TXR-1501 production pilot. *Done 2026-10-30; see "TXR-1501 production pilot (2026-10-30; completed)".*
+2. The 31 other TCPDF templates (needs Lee's approval).
 3. TXR-1506 from the fresh download.
 4. Susan's 5 copies.
 5. Avoid recurrence: check or clean future Texas REALTORS® downloads before upload.
@@ -5832,7 +5909,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
 2. **Post-launch backlog:** `backlog.md`.
    - **Item 1**, removing the "DEV QA Test Signing" default title, is completed and live in production since 2026-10-29 03:15 UTC (`dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`).
    - **Item 2**, the critical multi-agent identity correction, is live in production (`dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, `1ebbca9`, since 2026-10-30 04:29 UTC). Packet #13's agent fields were remediated and verified on 2026-10-30. **Completed 2026-10-30**; the Global template footer finding is tracked separately as item 10.
-   - **Item 10**, removing personalized footers from shared templates: the method is merged (PRs #73, #74), and the production procedure and Susan's copy plan are prepared. Next is Lee authorizing the TXR-1501 production pilot. **Not complete.**
+   - **Item 10**, removing personalized footers from shared templates: the method is merged (PRs #73, #74), and the production procedure and Susan's copy plan are prepared. The TXR-1501 production pilot is done and validated (2026-10-30); next is Lee's approval for the remaining 31 TCPDF templates. **Not complete** (1 of 33).
    - **Item 3**, Help & Getting Started, is the highest-priority enhancement.
    - **Items 4–8** remain; **item 9** is deferred.
 3. **Synthetic production test data:** done. Lee approved the record-level cleanup plan, and it was carried out on 2026-10-28, 20:22–20:30 UTC; see "Post-launch cleanup (2026-10-28)".

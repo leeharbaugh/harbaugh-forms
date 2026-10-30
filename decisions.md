@@ -52,6 +52,12 @@ Each decision should include:
     - FINAL copies are never rewritten.
   - **Rollout order:** TXR-1501 production pilot, then the other TCPDF templates one at a time, then TXR-1506.
   - **Approvals:** each phase needs Lee's approval. The procedure is in `project_status.md` "Template footers: merges, fixture cleanup and production plans".
+- *Update 2026-10-30 (TXR-1501 production pilot):* done, and validated as the model for the remaining TCPDF templates.
+  - **How:** Lee's admin session in the normal UI, from a one-time sign-in link revoked after each run. Each lifecycle step runs separately and is verified read-only before the next.
+  - **Integrity:** a full before/after fingerprint of every public table and Storage object proves no unrelated change.
+  - **Test packet:** new-packet behaviour is checked with one temporary custom test packet of Lee's, then soft-deleted with Delete Packet.
+  - **Known side effect:** Lee's UI column-width preference row is rewritten when the Forms and Packets lists are shown.
+  - **Status:** 1 of 33 templates done; the rest need Lee's approval.
 
 **Related:** `lib/forms/template-personalization-redaction.ts`, `lib/forms/template-personalization-redaction.test.ts`, `scripts/redact-template-personalization.ts`; decisions "Form Publication Lifecycle (Draft / Published / Retired)", "Agent identity on forms belongs to the packet owner; no cross-agent fallback"; `project_status.md` "Shared template personalized footers (2026-10-30; development pilot)".
 
