@@ -8,7 +8,17 @@ The credential rotation and security-incident cleanup from October 26 are comple
 
 **Current priorities**
 - **Completed:** 1. Remove the development test title from Create Signing (live in production since 2026-10-29).
-- **Remaining, in priority order:** 2. Help & Getting Started (highest-priority unfinished item); 3. Save buttons at both ends of edit screens; 4. Additional Packet transaction statuses; 5. View and restore hidden or inactive Packets; 6. Zero-mapping Form publishing; 7. Scroll to the Edit Form panel.
+- **Remaining, in priority order:**
+  2. **Critical — Correct multi-agent identity resolution** (production correctness bug; fixed in development, not yet released).
+  3. Help & Getting Started (highest-priority enhancement).
+  4. Save buttons at both ends of edit screens.
+  5. Additional Packet transaction statuses.
+  6. View and restore hidden or inactive Packets.
+  7. Zero-mapping Form publishing.
+  8. Scroll to the Edit Form panel.
+- **Deferred:** 9. Warn users when required agent identity information is incomplete.
+
+Items were renumbered on 2026-10-29 when item 2 was inserted. Help & Getting Started was item 2, and items 4–8 were 3–7.
 
 ## 1. Remove the development test title from Create Signing (COMPLETED)
 
@@ -28,13 +38,47 @@ The credential rotation and security-incident cleanup from October 26 are comple
 
 **Acceptance criteria:** No production Create Signing workflow automatically populates a development or QA test title.
 
-## 2. Help & Getting Started — New User Walkthrough
+## 2. Critical — Correct multi-agent identity resolution
+
+**Status:** Fixed in development in [PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), not merged or released. Susan's production packet #13 still shows another agent's details. **Not complete.** Added 2026-10-29.
+
+**Type:** Bug fix — production correctness
+
+**Priority:** Critical. Ahead of every enhancement, including Help & Getting Started.
+
+**Confirmed root cause:**
+- **Where values came from:** agent fields on forms resolved from the brokerage's single shared `brokerage_settings` row, instead of the packet owner's own `user_agent_settings` row. Both the mapped agent fields and the key-based fallback in `lib/field-resolver.ts` did this.
+- **What the shared row holds:** one agent's details (Lee's) for the whole brokerage.
+- **Settings had the same flaw:** its "Agent Profile" read and saved the shared row, which only app admins may save, so other agents could neither see nor correct their own details.
+
+**Confirmed impact:** Susan P.'s production packet #13 (Draft, 6 forms) has 6 agent field values: full name, license number, email and phone. All 6 are Lee's details, not hers. Lee's own packets are correct, and Signing participant identity is not affected.
+
+**Correction (PR #70, development only):**
+- **Resolution:** agent fields resolve from the packet owner's own ACTIVE agent profile, never the viewer's, with no cross-agent fallback. Brokerage fields stay shared.
+- **Settings:** "My Agent Profile" edits the signed-in user's own profile, and the Brokerage Profile is read-only for non-admins.
+- **No migration or RLS change.**
+
+**Remaining requirements:**
+- **Production release:** deploy the fix to production through the established PR, validation and promotion approvals.
+- **Remediate packet #13** after release, using the procedure in `project_status.md` "Multi-agent identity fix (2026-10-29; development only)": a read-only snapshot, then Refresh Values only on the forms that carry agent fields, then a read-only check.
+- **Preserve history:**
+  - No automatic rewrite of saved field values.
+  - Manual overrides stay unchanged.
+  - Final or Signed forms and historical documents stay unchanged.
+- **Verify every changed value:** compare every field instance that changed during remediation with the snapshot, and review any change other than the 6 agent values with Susan before the packet is used.
+
+**Completion criteria:**
+- The fix is deployed to production and validated on both domains.
+- Production identity resolution is verified: agents resolve their own details, and brokerage details stay shared.
+- Susan's packet #13 is corrected, every changed field instance is verified, and the downloaded PDFs show her name, license number, email and phone.
+
+## 3. Help & Getting Started — New User Walkthrough
 
 **Status:** Planned; not yet implemented. Added 2026-10-28.
 
 **Type:** Onboarding and support enhancement
 
-**Priority:** High. The highest-priority remaining enhancement now that item 1 is completed.
+**Priority:** High. The highest-priority enhancement, immediately after the critical multi-agent identity correction (item 2).
 
 **Purpose:** A first-time agent currently has no in-app explanation of how Harbaugh Forms fits together, or of whom to contact for help. A short, always-available Getting Started guide explains the normal Texas real estate workflow, from Contacts through completed Signings, in plain English. The same Help area gives the support phone number and email.
 
@@ -79,7 +123,7 @@ The current navigation order already follows this sequence (Contacts, Properties
 - Help can be reopened at any time; nothing in it is dismissed permanently.
 - No change to existing workflows, data, permissions or Native Signing behavior; participant `/sign` pages are unchanged.
 
-## 3. Save buttons at both ends of edit screens
+## 4. Save buttons at both ends of edit screens
 
 **Type:** Usability enhancement
 
@@ -90,7 +134,7 @@ On applicable, non-auto-saving edit screens, provide a **Save** button at both t
 - Both reflect the same saving, success, and error states; prevent duplicate submissions.
 - Apply only where a manual Save action is appropriate. Do not add redundant buttons to auto-save workflows (such as Signing field placements).
 
-## 4. Additional Packet transaction statuses
+## 5. Additional Packet transaction statuses
 
 **Type:** Workflow enhancement
 
@@ -104,7 +148,7 @@ Add transaction lifecycle statuses to distinguish completed deals from transacti
 - Preserve existing Packet data, generated documents, and history when the status changes.
 - Decide how these statuses appear in filters, lists, and Packet detail screens before implementation.
 
-## 5. View and restore hidden or inactive Packets
+## 6. View and restore hidden or inactive Packets
 
 **Type:** Discoverability and recovery enhancement
 
@@ -116,7 +160,7 @@ Provide a straightforward way to find Packets that are hidden from normal active
 - Respect organization ownership, existing permissions, and soft-delete rules.
 - Review existing delete/restore behavior first so this work fills actual gaps rather than duplicating functionality.
 
-## 6. Fix publishing a Form with zero field mappings
+## 7. Fix publishing a Form with zero field mappings
 
 **Type:** Bug fix — Form publishing
 
@@ -129,7 +173,7 @@ Provide a straightforward way to find Packets that are hidden from normal active
 - Correct the checkbox wording to **“Publish anyway with no field mappings.”**
 - Preserve all existing validation and authorization requirements unrelated to the mapping count.
 
-## 7. Scroll to the Edit Form panel when editing a Form
+## 8. Scroll to the Edit Form panel when editing a Form
 
 **Type:** Bug fix — Forms navigation / usability
 
@@ -146,9 +190,28 @@ Provide a straightforward way to find Packets that are hidden from normal active
 - Use a reliable target on the editor panel rather than an arbitrary fixed scroll distance; account for any sticky header so the editor is not obscured.
 - Preserve the selected Form and its loaded data. Avoid unnecessary scrolling when the editor is already visible.
 
+## 9. Warn users when required agent identity information is incomplete
+
+**Status:** Deferred; not designed or implemented. Added 2026-10-29.
+
+**Type:** Usability and data-quality enhancement
+
+**Purpose:** After the multi-agent correction (item 2), a missing personal agent detail leaves the matching form field blank rather than borrowing another agent's details. An agent with an incomplete profile could then produce forms that are missing their own name, license number, email or phone without noticing.
+
+**Scope to decide before implementation:**
+- Where a warning appears, for example Settings → My Agent Profile, Fill Form, or the Packet page.
+- Which details count as required.
+- How it is worded.
+
+The warning must stay **non-blocking** unless Lee approves otherwise. It must never fill in another agent's details.
+
 ## Implementation workflow
 
-Item 1 is completed and live in production. Items 2–7 are **not yet implemented**. Item 2, Help & Getting Started, is the highest-priority remaining enhancement (Lee's direction, 2026-10-28). Reprioritize items 3–7 based on actual use; the zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
+Item 1 is completed and live in production. Items 2–9 are **not complete**.
+- **Item 2:** the critical multi-agent identity correction, implemented in development (PR #70) and awaiting production release and packet remediation. It comes before all enhancements.
+- **Item 3:** Help & Getting Started, the highest-priority enhancement (Lee's direction, 2026-10-28 and 2026-10-29).
+- **Items 4–8:** reprioritize based on actual use. The zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
+- **Item 9:** deferred.
 
 For each item when work begins, have Cursor:
 1. Read `project_status.md` and `decisions.md` to establish the current repository state and existing design decisions.
