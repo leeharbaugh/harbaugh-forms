@@ -41,6 +41,17 @@ Each decision should include:
   - **Refusals:** a stamp that shares a font with the form content is refused. One that draws graphics falls back to removing matching blocks only.
   - **Decoding and location:** shown text is decoded as WinAnsi, and blocks are located by text or text-matrix origin.
   - **Result:** all 33 affected templates are processable.
+- *Update 2026-10-30 (merged; source and copy decisions):*
+  - **Merged:** the method and tool are on `main` (PRs #73 and #74). Production is still unchanged.
+  - **TXR-1506 source:** the replacement for form #54 is the fresh June 15, 2026 download, redacted. It is not the redacted production copy.
+    - **Authorization condition:** a non-visual comparison against form #54 (text, fonts, images, links, tagging, active content, metadata).
+    - **Status:** done. The only differences come from production's 2026-10-26 pdf-lib re-save: page-1 stream layout, CropBox and Rotate entries, and metadata dates, producer and instance ID.
+  - **Existing copies:**
+    - Susan's 5 Draft copies in packet #13 are redacted in place: same Storage paths, no database changes, encrypted backups, every PDF verified.
+    - Lee's 19 copies stay unchanged.
+    - FINAL copies are never rewritten.
+  - **Rollout order:** TXR-1501 production pilot, then the other TCPDF templates one at a time, then TXR-1506.
+  - **Approvals:** each phase needs Lee's approval. The procedure is in `project_status.md` "Template footers: merges, fixture cleanup and production plans".
 
 **Related:** `lib/forms/template-personalization-redaction.ts`, `lib/forms/template-personalization-redaction.test.ts`, `scripts/redact-template-personalization.ts`; decisions "Form Publication Lifecycle (Draft / Published / Retired)", "Agent identity on forms belongs to the packet owner; no cross-agent fallback"; `project_status.md` "Shared template personalized footers (2026-10-30; development pilot)".
 

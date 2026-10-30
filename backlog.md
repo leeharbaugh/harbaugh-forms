@@ -11,7 +11,7 @@ The credential rotation and security-incident cleanup from October 26 are comple
   1. Remove the development test title from Create Signing (live in production since 2026-10-29).
   2. Correct multi-agent identity resolution (live in production since 2026-10-30; Susan's packet #13 agent fields corrected). The separate personalized-footer problem in shared PDF templates is tracked as item 10.
 - **Remaining, in priority order:**
-  10. **High — Remove personalized footers from shared PDF templates**: method and development pilot done; production not started.
+  10. **High — Remove personalized footers from shared PDF templates**: method merged and production plans prepared; production not started.
   3. Help & Getting Started (highest-priority enhancement).
   4. Save buttons at both ends of edit screens.
   5. Additional Packet transaction statuses.
@@ -214,7 +214,12 @@ The warning must stay **non-blocking** unless Lee approves otherwise. It must ne
 
 ## 10. High — Remove personalized footers from shared PDF templates
 
-**Status:** Removal method implemented and piloted in development on TXR-1501 and TXR-1506; all 33 affected templates are processable by it. Production templates not changed. **Not complete.** Added 2026-10-30; Lee approved removing the personalized footer information.
+**Status: not complete.**
+- **Done:** the removal method was piloted in development on TXR-1501 and TXR-1506, and merged to `main` on 2026-10-30 ([PR #73](https://github.com/leeharbaugh/harbaugh-forms/pull/73), [PR #74](https://github.com/leeharbaugh/harbaugh-forms/pull/74)). All 33 affected templates are processable by it.
+- **Prepared, not executed:** the production procedure for the 33 templates and the in-place plan for Susan's 5 Draft copies (`project_status.md`).
+- **Unchanged:** production templates and packet copies.
+
+Added 2026-10-30; Lee approved removing the personalized footer information.
 
 **Type:** Data correctness — shared form templates
 
@@ -251,6 +256,12 @@ The warning must stay **non-blocking** unless Lee approves otherwise. It must ne
 - Production validation.
 - A decision on existing Draft copies, at least Susan's 5. Final copies stay unchanged.
 
+*Update 2026-10-30:*
+- **TXR-1506:** Lee chose the redacted fresh June 15, 2026 download. Its non-visual comparison against form #54 is done.
+- **Susan's 5 Draft copies:** to be redacted in place.
+- **Lee's 19 copies:** stay unchanged.
+- **Next:** Lee authorizes the TXR-1501 production pilot.
+
 **Completion criteria:**
 - Every affected active template is replaced and validated in production.
 - New packet forms carry no personalized footer.
@@ -263,7 +274,7 @@ Items 1 and 2 are completed and live in production. Items 3–10 are **not compl
 - **Item 3:** Help & Getting Started, the highest-priority enhancement (Lee's direction, 2026-10-28 and 2026-10-29).
 - **Items 4–8:** reprioritize based on actual use. The zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 - **Item 9:** deferred.
-- **Item 10:** the template-footer removal, ranked immediately after item 2; production rollout awaits Lee's approval.
+- **Item 10:** the template-footer removal, ranked immediately after item 2. The method is merged and the production plans are prepared; the rollout awaits Lee's approval, starting with the TXR-1501 pilot.
 
 For each item when work begins, have Cursor:
 1. Read `project_status.md` and `decisions.md` to establish the current repository state and existing design decisions.
