@@ -7,9 +7,10 @@
 The credential rotation and security-incident cleanup from October 26 are complete and recorded historically in `project_status.md` and `decisions.md`; they are not part of this backlog.
 
 **Current priorities**
-- **Completed:** 1. Remove the development test title from Create Signing (live in production since 2026-10-29).
+- **Completed:**
+  1. Remove the development test title from Create Signing (live in production since 2026-10-29).
+  2. Correct multi-agent identity resolution (live in production since 2026-10-30; Susan's packet #13 agent fields corrected). The separate personalized-footer problem in shared PDF templates is tracked as its own backlog item.
 - **Remaining, in priority order:**
-  2. **Critical — Correct multi-agent identity resolution** (production correctness bug; fixed in development, not yet released).
   3. Help & Getting Started (highest-priority enhancement).
   4. Save buttons at both ends of edit screens.
   5. Additional Packet transaction statuses.
@@ -38,9 +39,14 @@ Items were renumbered on 2026-10-29 when item 2 was inserted. Help & Getting Sta
 
 **Acceptance criteria:** No production Create Signing workflow automatically populates a development or QA test title.
 
-## 2. Critical — Correct multi-agent identity resolution
+## 2. Critical — Correct multi-agent identity resolution (COMPLETED)
 
-**Status:** Fixed in development in [PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), not merged or released. Susan's production packet #13 still shows another agent's details. **Not complete.** Added 2026-10-29.
+**Status: COMPLETED (2026-10-30).**
+- **Release:** merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70)), and **live in production** since 2026-10-30 04:29 UTC on `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, validated on both domains.
+- **Remediation:** Susan's packet #13 agent fields were corrected and verified on 2026-10-30. All 6 show her details, with nothing else changed.
+- **Separate issue:** Lee's name and phone printed into 33 shared template PDFs is static PDF content, not field resolution. Lee confirmed it is separate; it is tracked as its own backlog item.
+
+Added 2026-10-29.
 
 **Type:** Bug fix — production correctness
 
@@ -207,8 +213,8 @@ The warning must stay **non-blocking** unless Lee approves otherwise. It must ne
 
 ## Implementation workflow
 
-Item 1 is completed and live in production. Items 2–9 are **not complete**.
-- **Item 2:** the critical multi-agent identity correction, implemented in development (PR #70) and awaiting production release and packet remediation. It comes before all enhancements.
+Items 1 and 2 are completed and live in production. Items 3–9 are **not complete**.
+- **Item 2:** completed 2026-10-30 (dynamic agent resolution live; Susan's saved agent fields corrected).
 - **Item 3:** Help & Getting Started, the highest-priority enhancement (Lee's direction, 2026-10-28 and 2026-10-29).
 - **Items 4–8:** reprioritize based on actual use. The zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 - **Item 9:** deferred.

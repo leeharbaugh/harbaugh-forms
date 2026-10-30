@@ -39,7 +39,9 @@ Each decision should include:
 - **Packet #13** needs the remediation in `project_status.md` "Multi-agent identity fix (2026-10-29; development only)".
 - **Organization defaults:** they are no longer applied to agent identity fields; none existed in production.
 - **Participant technical change:** none.
+- **Release status:** merged as `1ebbca9` (PR #70) on 2026-10-30. The production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` was validated read-only at its unique URL, then promoted with Lee's approval at 04:29:17 UTC and validated on both domains. No migration. Saved field values, agent profiles and brokerage settings were unchanged by the release. Packet #13 remediation is pending.
 - **Priority:** this is `backlog.md` item 2, above Help & Getting Started (item 3). It is not complete until the fix is released to production, resolution is verified there, and packet #13 is remediated and validated.
+- **Completed 2026-10-30:** all three conditions are met. Packet #13's 6 agent fields were corrected with Refresh Values and verified. Lee confirmed the template footer is a separate PDF-template issue.
 
 **Related:** `lib/user-agent-profile.ts`, `lib/field-resolver.ts`, `lib/types/brokerage-settings.ts`, `components/settings/settings-page.tsx`, `lib/agent-identity-resolution.test.ts`, `scripts/validate-agent-identity-dev.ts`; decisions "Security remediation — brokerage profiles belong to organizations", "Brokerage Profile Versus Form Defaults"; `project_status.md` "Multi-agent identity fix (2026-10-29; development only)".
 

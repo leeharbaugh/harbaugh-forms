@@ -1,6 +1,26 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-29, 22:00 Chicago (03:00 UTC on 2026-10-30). **Native Signing remains LIVE. PR #70 (critical multi-agent identity correction, backlog item 2) is up to date with `main` and revalidated; implemented in development only, not merged or released. Production packet #13 still shows another agent's details.**
+**As of:** 2026-10-30, 16:15 Chicago (21:15 UTC). **Native Signing remains LIVE. Backlog item 2 (multi-agent identity resolution) is COMPLETED.** Dynamic agent resolution is live in production (`dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`), and Susan's 6 saved agent fields are corrected. Lee confirmed the template-footer finding is a separate PDF-template issue, tracked separately.
+
+Earlier: 2026-10-30, 12:55 Chicago (17:55 UTC). **Native Signing remains LIVE. Packet #13 agent fields remediated (Lee approved): its 6 agent values now match Susan's own profile, with nothing else changed. NEW FINDING: 33 of 49 active Global form templates have Lee's name and phone printed into the blank PDF, so the item 2 close-out needs Lee's decision.**
+- **Remediation:** Refresh Values through the normal Fill Form workflow, run only on IABS (pf#49) and the Buyer Rep Agreement (pf#50). The change preview was confirmed first, and every result was verified read-only afterwards.
+- **Finding:** the template footer text is static PDF content, not a field; for example, TXR-1501 has the member footer on all 6 pages. It appears on every agent's documents built from those templates, including Susan's Buyer Rep Agreement. Nothing was changed.
+- See "Multi-agent identity fix (2026-10-29; development only)", "Packet #13 remediation".
+
+Earlier: 2026-10-29, 23:45 Chicago (04:45 UTC on 2026-10-30). **Native Signing remains LIVE. The multi-agent identity correction (backlog item 2) is LIVE in production: `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` (`1ebbca9`), promoted with Lee's approval at 04:29:17 UTC. Packet #13 is NOT yet remediated, so item 2 is not complete.**
+- **Promoted:** with the guarded promotion script (dry run, then one fixed `vercel promote`); no rebuild. Both domains and the production target serve it, and `autoAssignCustomDomains=false`.
+- **Validation on each domain:** 33/33 security and fail-closed checks, 8/8 participant checks, and 100/100 authenticated read-only smoke. Settings → My Agent Profile shows Lee's own details, and the shared Brokerage Profile is editable for the admin. 0 HTTP 5xx; scheduled Cron 200 on the new deployment.
+- **Data preserved:** before-and-after read-only fingerprints are identical for agent profiles, brokerage settings, all 1,071 field instances (including packet #13's 60, whose 6 agent values still show the shared details), Signings, packets, forms and Storage. Only `user_preferences` changed, from the smoke sign-ins, as in every release.
+- **Rollback:** `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC` (`1cddb95`), READY. Not needed.
+- **Next (separate approval):** packet #13 remediation; see "Multi-agent identity fix (2026-10-29; development only)".
+
+Earlier: 2026-10-29, 23:10 Chicago (04:10 UTC on 2026-10-30). **Native Signing remains LIVE. The multi-agent identity correction (backlog item 2) is merged as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70)), and its production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` is validated at its unique URL. NOT promoted; awaiting Lee's approval.**
+- **Candidate:** the automatic production-target Git build of `1ebbca9`. Both recorded commit fields equal `1ebbca9`, the ref is `main`, and the repository is `leeharbaugh/harbaugh-forms`. No migration is required.
+- **Validation:** 33/33 security and fail-closed checks, 8/8 participant checks, and 100/100 authenticated read-only smoke. Settings shows Lee's own agent profile and an editable shared Brokerage Profile. There were 0 server errors, and no field instance, agent profile or brokerage row changed.
+- **Production unchanged:** both domains and the production target serve `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`; `autoAssignCustomDomains=false`.
+- **Not complete:** promotion, production verification and packet #13 remediation remain. See "Multi-agent identity fix (2026-10-29; development only)".
+
+Earlier: 2026-10-29, 22:00 Chicago (03:00 UTC on 2026-10-30). **Native Signing remains LIVE. PR #70 (critical multi-agent identity correction, backlog item 2) is up to date with `main` and revalidated; implemented in development only, not merged or released. Production packet #13 still shows another agent's details.**
 - **Update:** `main` (with #71, the backlog rename and new priorities) was merged into `fix/per-agent-profile-resolution`. The only conflict was this file's dated summary entries, kept in time order.
 - **Revalidation:** see "Multi-agent identity fix (2026-10-29; development only)".
 - **Not complete:** awaiting merge authorization, production release, verification, and packet #13 remediation.
@@ -449,7 +469,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 
 ### Multi-agent identity fix (2026-10-29; development only)
 
-**Status:** implemented and validated in development on `fix/per-agent-profile-resolution`; not merged, not deployed. **Backlog item 2 in `backlog.md`, the highest-priority open item**, above Help & Getting Started (item 3). Not complete until production is released and packet #13 is remediated and verified.
+**Status:** merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), 2026-10-30 04:03 UTC). Production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` was validated at its unique URL and is **LIVE in production since 2026-10-30 04:29:17 UTC** (Lee approved). Packet #13's agent fields were remediated and verified on 2026-10-30. **Backlog item 2 is COMPLETED (2026-10-30).** Lee confirmed the template-footer finding (below) is a separate PDF-template issue, tracked separately.
 
 **Root cause (confirmed read-only in production, 2026-10-29).**
 - **Where values came from:** every agent field resolved from the packet owner's organization `brokerage_settings` row (`lib/field-resolver.ts`, `resolveSettingsSourcePath` and the key-based `resolveSettingsFieldKey`). That row holds one agent's details (Lee's) for the whole brokerage.
@@ -508,17 +528,70 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
   - `test:agent-identity` passes 21 of 21. All 60 `test:*` suites pass, including the field-resolution, field-default, field-instance-sync, packet, fill-form PDF and storage suites. `build:validate` passes.
 
 **Production rollout (each step needs Lee's approval).**
-1. Merge the PR. The automatic production-target build takes no domain (`autoAssignCustomDomains=false`).
+1. Merge the PR. The automatic production-target build takes no domain (`autoAssignCustomDomains=false`). *Done 2026-10-30: squash-merged as `1ebbca9`, with a tree identical to the reviewed head `9797a42`.*
 2. Validate the candidate at its unique URL, read-only.
    - Lee's Settings shows "My Agent Profile" with his own details, and an editable shared Brokerage Profile.
    - No writes, no test packets and no Signings.
+   - *Done 2026-10-30; see "Production candidate" below.*
 3. Promote, then run the standard post-promotion smoke on both domains.
    - **Participant technical change:** none.
    - **Before and after promotion:** a read-only check that Lee's own record still matches the shared row on every mapped agent field (true on 2026-10-29), so his packets keep their values.
+   - *Done 2026-10-30; see "Production release" below. Agent profiles and the brokerage row were unchanged by the release.*
 4. Ask Susan to open Settings → My Agent Profile and confirm her details. Her record already has name, license, email and phone.
 5. Remediate packet #13 (below), then mark the item complete.
 
-**Packet #13 remediation (after production release; Lee's approval; not done).**
+**Production release (2026-10-30, 04:26–04:43 UTC; Lee authorized promotion).**
+
+| Step | Result |
+|------|--------|
+| Preflight | Candidate READY at `1ebbca9` (Git build, `main`, `leeharbaugh/harbaugh-forms`). Both domains and the production target on `dpl_DGk3…`; `autoAssignCustomDomains=false`. All 25 Vercel environment rows identical to the previous release record. PR #72 open, unmerged, with only a preview build. Live deployment: 0 errors, warnings or 5xx; scheduled Cron 200 |
+| Database before | Work and access operational; disclosure READY; 152 migrations. 2 Signings (archived TEST); no Signing events since 2026-10-28 20:23 UTC; 0 open ceremony sessions; every work item SUCCEEDED, every delivery ACCEPTED |
+| Promotion | Guarded promotion script, dry run then execute: one fixed `vercel promote` from the neutral directory, 04:29:11–04:29:17 UTC. No build was created |
+| After | Both domains and the production target on `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, and both login pages embed it; `autoAssignCustomDomains=false` |
+| Validation, each domain | Security checks 33/33, participant checks 8/8, smoke 100/100. Same coverage as the candidate, including Settings → My Agent Profile (Lee's own details) and the shared Brokerage Profile (editable for the admin, nothing saved), Fill Form PDF on a Final form, and both historical Signings. 0 HTTP 5xx; 0 hydration, page or console errors |
+| Operational health | Runtime logs since promotion: 0 error, warning or fatal; the only 5xx are the checks' designed 503 probes. Scheduled Cron on the new deployment at 04:40:26 and 04:42:26 UTC, both 200 |
+| Data | Read-only fingerprints before and after are identical for agent profiles (3), brokerage settings (1), all 1,071 field instances, packet #13 (60 instances, 2 overrides, 6 agent values still equal to the shared row, 6 DRAFT forms), Signings and events, work items and deliveries, packets, packet forms, contacts, properties, forms and Storage (101 objects). Only `user_preferences` changed, from the smoke sign-ins |
+| Rollback | `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC` (`1cddb95`) READY. Not needed |
+
+**Production candidate (2026-10-30, 04:06–04:10 UTC; validated before promotion).**
+
+| Step | Result |
+|------|--------|
+| Candidate | `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` at `https://harbaugh-forms-qs9cchvqs-lee-harbaugh-s-projects.vercel.app`: the automatic production-target Git build of `1ebbca9` (READY). `meta.githubCommitSha` and `gitSource.sha` both equal `1ebbca9`, ref `main`, repository `leeharbaugh/harbaugh-forms`. Only the two Vercel project aliases; no custom domain |
+| Release classification | No migration, no environment change. Participant technical change: none |
+| Security and fail-closed checks | 33/33. Headers and the strict `/sign` CSP are exact, and the login page embeds the candidate. Invalid participant, package and in-person links are refused (503, no cookie), and manager routes require login. Missing, wrong and swapped Cron and worker secrets return 401. No real-secret Cron or worker call was made |
+| Participant checks | 8/8 |
+| Authenticated read-only smoke | 100/100, signed in as Lee with a one-time link; the session was revoked afterwards. See the next row for the Settings checks |
+| Settings checks | "My Agent Profile" shows Lee's own `user_agent_settings`: first name, last name, license, phone and email all match. The Brokerage Profile is labeled shared, populated and editable for the admin. Address line 2 is present. Nothing was saved |
+| Other routes | Packets, Contacts, Properties, Collections, Forms, Settings, admin pages, Fill Form (Final form, PDF rendered) and the Signings pages render. The Create Signing title is blank and required. Admin controls show Signings enabled, work and access not suspended. Both historical Signings keep their stored titles |
+| Errors | 0 HTTP 5xx; 0 hydration, page or console errors |
+| Data | Signings, field instances (count, latest update, and all 60 on packet #13), agent profiles and the brokerage row are identical before and after. The browser's 25 non-GET requests are the same as the previous release's smoke: `user_preferences` saves, server-action reads, and Storage list and sign for document viewing |
+| Production | Unchanged before and after: both domains and the production target on `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`; `autoAssignCustomDomains=false` |
+
+**Not verified on the candidate or in production by design** (post-release items):
+- A non-admin agent's view of Settings would need a sign-in as another production account.
+- Individual-agent form resolution on a real packet would need a Draft form to be opened or refreshed, which writes field values.
+
+These are covered by development validation and by the packet #13 remediation procedure below.
+
+**Packet #13 remediation: result (2026-10-30, 17:36–17:55 UTC; Lee approved).**
+
+| Step | Result |
+|------|--------|
+| Baseline | Production on `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`. Database fingerprints identical to the post-release verification. Packet #13 owned by Susan, ACTIVE; 6 DRAFT forms; 60 ACTIVE instances, 2 manual overrides (two Buyer Rep intermediary checkboxes on pf#50); no Signing from it |
+| Snapshot | Full packet #13 state (packet, forms, all instances with sources and override flags, placements, annotations, contacts, Signings, the owner's agent profile, brokerage row metadata), DPAPI-encrypted outside the repository with a recorded SHA-256. Susan's profile is ACTIVE with name, license, email and phone present and different from the shared row |
+| Preview | Live resolver and the app's own planner, read-only. The 6 agent instances are on IABS (pf#49: name, email, license, phone) and the Buyer Rep Agreement (pf#50: name, license). Refresh on those two forms changes exactly those 6, from the shared values to Susan's; 0 unrelated updates; opening them inserts nothing; overrides untouched. TILA-RESPA and Wire Fraud Warning have never been opened (opening would insert 14 new values), and Home Inspection and Minerals have no mapped fields, so all four were left alone |
+| Correction | Signed in as Lee (app admin) with a one-time link; the session was revoked afterwards. Opened pf#49 and pf#50 directly in Fill Form and used **Refresh Values** on each. Guards checked after each form. The browser issued exactly 6 `field_instances` updates. 0 browser errors. No Mark Final, Signing or Settings action |
+| Verification | All 60 instances still present. Exactly 6 changed, only in `value` (and `update_date`). All 6 equal Susan's profile and none equals Lee's previous value. Source stays `settings`, and `is_override` is unchanged. Both overrides, the packet, all 6 forms (still DRAFT), placements, annotations, contacts, Susan's profile and the brokerage row are unchanged. Database-wide, only these 6 rows changed (all other fingerprints, including Storage, identical) |
+| PDFs | Downloaded through Download PDF (no data change) and stored DPAPI-encrypted. Visual check: IABS Sales Agent row and the Buyer Rep Broker's Associate printed name and license show Susan's details; brokerage and broker rows show the shared brokerage |
+
+**Finding: identity printed into Global form templates (no change made; Lee to decide).**
+- **Scope:** a read-only scan of the 49 active form templates found 33 Global TXR templates whose blank PDF contains Lee's name and/or phone. It is usually a member footer line with the brokerage address, Lee's phone and his name, presumably from the forms source the templates were exported from.
+- **Examples:** TXR-1501 (6/6 pages), TXR-1101 (11/11), TXR-2001 (16/16) and TXR-2201 (14/14). Twelve of those templates are used by active packet forms.
+- **Not a field:** this is static PDF content, so the identity fix cannot affect it. Every agent's documents from these templates show Lee's footer, including Susan's Buyer Rep Agreement.
+- **Decision for Lee:** whether to replace these templates with clean blank versions (or mask the footer area), and whether item 2 closes now with this tracked as a new item.
+
+**Packet #13 remediation procedure (as approved; carried out 2026-10-30).**
 1. **Read-only snapshot before.**
    - Every ACTIVE field instance on packet #13: id, field key, masked value, `source`, `is_override` and `update_date`.
    - The `document_state` of its 6 forms, all expected DRAFT.
@@ -530,7 +603,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
    - Do not mark any form Final during remediation.
 3. **Read-only check after.**
    - All 6 agent instances equal Susan's own values, and none equal the shared row.
-   - `is_override` is unchanged, and every form is still DRAFT.
+   - `is_override` is unchanged, and every form is still DRAFT. Packet #13 has 2 existing manual overrides, none on an agent field (production snapshot 2026-10-30); both must keep their values.
    - Any other changed instance is listed against the snapshot and reviewed with Susan.
    - No other packet changed.
 4. **Visual check:** download each refreshed form and confirm Susan's name, license number, email and phone.
@@ -5440,7 +5513,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
    - Take periodic encrypted recovery snapshots so newly completed Signing documents are backed up independently.
 2. **Post-launch backlog:** `backlog.md`.
    - **Item 1**, removing the "DEV QA Test Signing" default title, is completed and live in production since 2026-10-29 03:15 UTC (`dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`).
-   - **Item 2**, the critical multi-agent identity correction, is fixed in development (PR #70) and awaits production release and packet #13 remediation.
+   - **Item 2**, the critical multi-agent identity correction, is live in production (`dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, `1ebbca9`, since 2026-10-30 04:29 UTC). Packet #13's agent fields were remediated and verified on 2026-10-30. **Completed 2026-10-30**; the Global template footer finding is tracked as a separate item.
    - **Item 3**, Help & Getting Started, is the highest-priority enhancement.
    - **Items 4–8** remain; **item 9** is deferred.
 3. **Synthetic production test data:** done. Lee approved the record-level cleanup plan, and it was carried out on 2026-10-28, 20:22–20:30 UTC; see "Post-launch cleanup (2026-10-28)".
