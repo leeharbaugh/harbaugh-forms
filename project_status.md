@@ -1,6 +1,12 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-29, 22:00 Chicago (03:00 UTC on 2026-10-30). **Native Signing remains LIVE. PR #70 (critical multi-agent identity correction, backlog item 2) is up to date with `main` and revalidated; implemented in development only, not merged or released. Production packet #13 still shows another agent's details.**
+**As of:** 2026-10-29, 23:10 Chicago (04:10 UTC on 2026-10-30). **Native Signing remains LIVE. The multi-agent identity correction (backlog item 2) is merged as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70)), and its production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` is validated at its unique URL. NOT promoted; awaiting Lee's approval.**
+- **Candidate:** the automatic production-target Git build of `1ebbca9`. Both recorded commit fields equal `1ebbca9`, the ref is `main`, and the repository is `leeharbaugh/harbaugh-forms`. No migration is required.
+- **Validation:** 33/33 security and fail-closed checks, 8/8 participant checks, and 100/100 authenticated read-only smoke. Settings shows Lee's own agent profile and an editable shared Brokerage Profile. There were 0 server errors, and no field instance, agent profile or brokerage row changed.
+- **Production unchanged:** both domains and the production target serve `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`; `autoAssignCustomDomains=false`.
+- **Not complete:** promotion, production verification and packet #13 remediation remain. See "Multi-agent identity fix (2026-10-29; development only)".
+
+Earlier: 2026-10-29, 22:00 Chicago (03:00 UTC on 2026-10-30). **Native Signing remains LIVE. PR #70 (critical multi-agent identity correction, backlog item 2) is up to date with `main` and revalidated; implemented in development only, not merged or released. Production packet #13 still shows another agent's details.**
 - **Update:** `main` (with #71, the backlog rename and new priorities) was merged into `fix/per-agent-profile-resolution`. The only conflict was this file's dated summary entries, kept in time order.
 - **Revalidation:** see "Multi-agent identity fix (2026-10-29; development only)".
 - **Not complete:** awaiting merge authorization, production release, verification, and packet #13 remediation.
@@ -449,7 +455,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 
 ### Multi-agent identity fix (2026-10-29; development only)
 
-**Status:** implemented and validated in development on `fix/per-agent-profile-resolution`; not merged, not deployed. **Backlog item 2 in `backlog.md`, the highest-priority open item**, above Help & Getting Started (item 3). Not complete until production is released and packet #13 is remediated and verified.
+**Status:** merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), 2026-10-30 04:03 UTC). Production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` is validated at its unique URL and **not promoted**. **Backlog item 2 in `backlog.md`, the highest-priority open item**, above Help & Getting Started (item 3). Not complete until production is released and packet #13 is remediated and verified.
 
 **Root cause (confirmed read-only in production, 2026-10-29).**
 - **Where values came from:** every agent field resolved from the packet owner's organization `brokerage_settings` row (`lib/field-resolver.ts`, `resolveSettingsSourcePath` and the key-based `resolveSettingsFieldKey`). That row holds one agent's details (Lee's) for the whole brokerage.
@@ -508,15 +514,37 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
   - `test:agent-identity` passes 21 of 21. All 60 `test:*` suites pass, including the field-resolution, field-default, field-instance-sync, packet, fill-form PDF and storage suites. `build:validate` passes.
 
 **Production rollout (each step needs Lee's approval).**
-1. Merge the PR. The automatic production-target build takes no domain (`autoAssignCustomDomains=false`).
+1. Merge the PR. The automatic production-target build takes no domain (`autoAssignCustomDomains=false`). *Done 2026-10-30: squash-merged as `1ebbca9`, with a tree identical to the reviewed head `9797a42`.*
 2. Validate the candidate at its unique URL, read-only.
    - Lee's Settings shows "My Agent Profile" with his own details, and an editable shared Brokerage Profile.
    - No writes, no test packets and no Signings.
+   - *Done 2026-10-30; see "Production candidate" below.*
 3. Promote, then run the standard post-promotion smoke on both domains.
    - **Participant technical change:** none.
    - **Before and after promotion:** a read-only check that Lee's own record still matches the shared row on every mapped agent field (true on 2026-10-29), so his packets keep their values.
 4. Ask Susan to open Settings → My Agent Profile and confirm her details. Her record already has name, license, email and phone.
 5. Remediate packet #13 (below), then mark the item complete.
+
+**Production candidate (2026-10-30, 04:06–04:10 UTC; validated, NOT promoted).**
+
+| Step | Result |
+|------|--------|
+| Candidate | `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` at `https://harbaugh-forms-qs9cchvqs-lee-harbaugh-s-projects.vercel.app`: the automatic production-target Git build of `1ebbca9` (READY). `meta.githubCommitSha` and `gitSource.sha` both equal `1ebbca9`, ref `main`, repository `leeharbaugh/harbaugh-forms`. Only the two Vercel project aliases; no custom domain |
+| Release classification | No migration, no environment change. Participant technical change: none |
+| Security and fail-closed checks | 33/33. Headers and the strict `/sign` CSP are exact, and the login page embeds the candidate. Invalid participant, package and in-person links are refused (503, no cookie), and manager routes require login. Missing, wrong and swapped Cron and worker secrets return 401. No real-secret Cron or worker call was made |
+| Participant checks | 8/8 |
+| Authenticated read-only smoke | 100/100, signed in as Lee with a one-time link; the session was revoked afterwards. See the next row for the Settings checks |
+| Settings checks | "My Agent Profile" shows Lee's own `user_agent_settings`: first name, last name, license, phone and email all match. The Brokerage Profile is labeled shared, populated and editable for the admin. Address line 2 is present. Nothing was saved |
+| Other routes | Packets, Contacts, Properties, Collections, Forms, Settings, admin pages, Fill Form (Final form, PDF rendered) and the Signings pages render. The Create Signing title is blank and required. Admin controls show Signings enabled, work and access not suspended. Both historical Signings keep their stored titles |
+| Errors | 0 HTTP 5xx; 0 hydration, page or console errors |
+| Data | Signings, field instances (count, latest update, and all 60 on packet #13), agent profiles and the brokerage row are identical before and after. The browser's 25 non-GET requests are the same as the previous release's smoke: `user_preferences` saves, server-action reads, and Storage list and sign for document viewing |
+| Production | Unchanged before and after: both domains and the production target on `dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`; `autoAssignCustomDomains=false` |
+
+**Not verified on the candidate by design** (post-release items):
+- A non-admin agent's view of Settings would need a sign-in as another production account.
+- Individual-agent form resolution on a real packet would need a Draft form to be opened or refreshed, which writes field values.
+
+These are covered by development validation and by the packet #13 remediation procedure below.
 
 **Packet #13 remediation (after production release; Lee's approval; not done).**
 1. **Read-only snapshot before.**
@@ -5440,7 +5468,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
    - Take periodic encrypted recovery snapshots so newly completed Signing documents are backed up independently.
 2. **Post-launch backlog:** `backlog.md`.
    - **Item 1**, removing the "DEV QA Test Signing" default title, is completed and live in production since 2026-10-29 03:15 UTC (`dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`).
-   - **Item 2**, the critical multi-agent identity correction, is fixed in development (PR #70) and awaits production release and packet #13 remediation.
+   - **Item 2**, the critical multi-agent identity correction, is merged (`1ebbca9`, PR #70). Its candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` is validated and awaits Lee's promotion approval, then production verification and packet #13 remediation.
    - **Item 3**, Help & Getting Started, is the highest-priority enhancement.
    - **Items 4–8** remain; **item 9** is deferred.
 3. **Synthetic production test data:** done. Lee approved the record-level cleanup plan, and it was carried out on 2026-10-28, 20:22–20:30 UTC; see "Post-launch cleanup (2026-10-28)".

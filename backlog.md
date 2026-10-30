@@ -40,7 +40,7 @@ Items were renumbered on 2026-10-29 when item 2 was inserted. Help & Getting Sta
 
 ## 2. Critical — Correct multi-agent identity resolution
 
-**Status:** Fixed in development in [PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), not merged or released. Susan's production packet #13 still shows another agent's details. **Not complete.** Added 2026-10-29.
+**Status:** Merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70)). Production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` is validated at its unique URL, but **not promoted or released**. Susan's production packet #13 still shows another agent's details. **Not complete.** Added 2026-10-29.
 
 **Type:** Bug fix — production correctness
 
