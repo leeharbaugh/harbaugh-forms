@@ -214,7 +214,7 @@ The warning must stay **non-blocking** unless Lee approves otherwise. It must ne
 
 ## 10. High — Remove personalized footers from shared PDF templates
 
-**Status:** Removal method implemented and piloted in development on TXR-1501. Production templates not changed. **Not complete.** Added 2026-10-30; Lee approved removing the personalized footer information.
+**Status:** Removal method implemented and piloted in development on TXR-1501 and TXR-1506; all 33 affected templates are processable by it. Production templates not changed. **Not complete.** Added 2026-10-30; Lee approved removing the personalized footer information.
 
 **Type:** Data correctness — shared form templates
 
@@ -239,7 +239,7 @@ The warning must stay **non-blocking** unless Lee approves otherwise. It must ne
 **Inventory (production, read-only):**
 - 33 of 49 active templates carry the footer, all Global TXR templates.
 - 32 are TCPDF files with the identical structure and are cleanly removable by the same method.
-- TXR-1506 (pdf-lib-produced, footer mixed into the page's own content) is refused by the method and needs individual treatment, such as a clean re-download.
+- TXR-1506 (pdf-lib-produced, footer mixed into the page's own content) is refused by the method and needs individual treatment, such as a clean re-download. *Update 2026-10-30:* the method now handles TXR-1506's appended "stamp" stream, piloted on a fresh download, and the re-run inventory finds all 33 affected templates cleanly removable (107 pages). For TXR-1506, Lee chooses between redacting the production copy and redacting the fresh download; they render identically.
 
 **Existing packets:** packet forms keep their own PDF copy, made at creation, so replacing a template changes only packet forms created afterwards.
 - 24 existing copies from affected templates still carry the footer: 23 Draft, 1 Final, 0 Signed.

@@ -37,6 +37,10 @@ Each decision should include:
 **Consequences:**
 - No migration, no runtime code path, no deployment effect: the module and tool are maintenance utilities.
 - Backlog item 10 tracks the rollout. TXR-1506 and existing Draft copies need decisions. Future Texas REALTORS® downloads must be cleaned before upload.
+- *Update 2026-10-30 (TXR-1506):* a second structure is supported. An appended text-only stamp stream that uses its own fonts (pdf-lib overlay) is removed in full once any of its blocks matches, because every line of such a stamp is downloader personalization; one line was an office address no pattern named.
+  - **Refusals:** a stamp that shares a font with the form content is refused. One that draws graphics falls back to removing matching blocks only.
+  - **Decoding and location:** shown text is decoded as WinAnsi, and blocks are located by text or text-matrix origin.
+  - **Result:** all 33 affected templates are processable.
 
 **Related:** `lib/forms/template-personalization-redaction.ts`, `lib/forms/template-personalization-redaction.test.ts`, `scripts/redact-template-personalization.ts`; decisions "Form Publication Lifecycle (Draft / Published / Retired)", "Agent identity on forms belongs to the packet owner; no cross-agent fallback"; `project_status.md` "Shared template personalized footers (2026-10-30; development pilot)".
 

@@ -11,13 +11,16 @@ import {
   decodePDFRawStream,
   degrees,
 } from "pdf-lib";
+import { createHash } from "node:crypto";
 import {
   decodeStringOperand,
   extractedTextMatches,
   findPatternOccurrences,
   findTextBlocks,
+  isTextOnlyStream,
   redactTemplatePersonalization,
   tokenizeContentStream,
+  winAnsiText,
 } from "./template-personalization-redaction";
 import { fillPacketFormPdfBytes } from "../fill-packet-form-pdf";
 import { buildPacketFormFieldViews, type PacketFormFieldView } from "../types/packet-form-editor";
@@ -188,5 +191,118 @@ describe("redactTemplatePersonalization", () => {
     const pos = (t: string[][]) => t[0].find((s) => s.startsWith("Agent Value"));
     assert.ok(pos(filledA), "value drawn on the original");
     assert.equal(pos(filledB), pos(filledA), "value drawn at the identical position");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TXR-1506 structure: a native (Word-like) form whose pages carry an appended pdf-lib stamp stream
+// with its own font: line 1 names the member (WinAnsi em dash), line 2 an office address that no
+// pattern names. Fictional data only.
+// ---------------------------------------------------------------------------
+const STAMP_LINE_1 = "Jordan Example \u2014 Example Realty Group";
+const STAMP_LINE_2 = "100 Office Way, Ste 1, Exampletown, TX 75000 \u00b7 Phone: 5550100100";
+
+async function buildStampedForm(options: { drawingInStamp?: boolean } = {}) {
+  const base = await PDFDocument.create();
+  const font = await base.embedFont(StandardFonts.Helvetica);
+  for (let n = 1; n <= 2; n++) {
+    const p = base.addPage([612, 792]);
+    p.drawText("GENERAL INFORMATION AND NOTICE TO CONSUMERS", { x: 72, y: 720, size: 12, font });
+    p.drawText(`(TXR-0001) 06-15-26     Initial to acknowledge receipt ____, ____     Page ${n} of 2`, { x: 36, y: 48.6, size: 9, font });
+  }
+  const stamped = await PDFDocument.load(await base.save());
+  for (const page of stamped.getPages()) {
+    const stampFont = await stamped.embedFont(StandardFonts.Helvetica);
+    page.drawText(STAMP_LINE_1, { x: 16, y: 26, size: 8, font: stampFont });
+    page.drawText(STAMP_LINE_2, { x: 16, y: 16, size: 8, font: stampFont });
+    if (options.drawingInStamp) page.drawLine({ start: { x: 16, y: 12 }, end: { x: 200, y: 12 } });
+  }
+  return stamped.save({ useObjectStreams: false });
+}
+
+const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
+
+async function objectFingerprints(bytes: Uint8Array): Promise<Map<string, string>> {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  const out = new Map<string, string>();
+  for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
+    out.set(ref.toString(), obj instanceof PDFRawStream ? `s:${sha(decodePDFRawStream(obj).decode())}` : `o:${sha(Buffer.from(obj.toString()))}`);
+  }
+  return out;
+}
+
+describe("TXR-1506 stamp-stream structure", () => {
+  it("decodes WinAnsi high bytes and recognises text-only streams", () => {
+    assert.equal(winAnsiText("a\x97b\x93c\x94"), "a\u2014b\u201cc\u201d");
+    assert.equal(isTextOnlyStream("q BT 0.4 0.4 0.4 rg /H1 8 Tf 1 0 0 1 16 26 Tm <41> Tj T* ET Q"), true);
+    assert.equal(isTextOnlyStream("q BT (x) Tj ET 0 0 m 10 10 l S Q"), false);
+    assert.equal(isTextOnlyStream("q /Im1 Do Q"), false);
+  });
+
+  it("removes every line of the stamp, including lines no pattern names", async () => {
+    const original = await buildStampedForm();
+    assert.ok((await extractedTextMatches(original, [/Exampletown/])).length > 0, "fixture carries the address line");
+    const { bytes, report } = await redactTemplatePersonalization(original, { patterns: PATTERNS, apply: true });
+    assert.ok(bytes);
+    assert.equal(report.removedBlocks.length, 4);
+    assert.ok(report.removedBlocks.every((b) => b.mode === "stamp-stream"));
+    assert.deepEqual(report.unsupported, []);
+    assert.deepEqual(await extractedTextMatches(bytes!, [...PATTERNS, /Exampletown/, /5550100100/, /Example Realty Group/]), []);
+    assert.deepEqual(findPatternOccurrences(await PDFDocument.load(bytes!), [/Exampletown/, /Jordan/]), []);
+  });
+
+  it("changes only the stamp streams and keeps the form's text, geometry and objects", async () => {
+    const original = await buildStampedForm();
+    const { bytes } = await redactTemplatePersonalization(original, { patterns: PATTERNS, apply: true });
+    const a = await objectFingerprints(original);
+    const b = await objectFingerprints(bytes!);
+    const changed = [...a.keys()].filter((k) => a.get(k) !== b.get(k));
+    assert.equal(changed.length, 2, "one stamp stream per page changed; nothing else");
+    assert.deepEqual([...b.keys()].sort(), [...a.keys()].sort(), "no objects added or removed");
+    const ta = await texts(original);
+    const tb = await texts(bytes!);
+    ta.forEach((page, i) => assert.deepEqual(tb[i], page.filter((t) => !t.startsWith("Jordan") && !t.startsWith("100 Office"))));
+    assert.deepEqual(geometry(await PDFDocument.load(bytes!)), geometry(await PDFDocument.load(original)));
+  });
+
+  it("is repeatable: the same input gives byte-identical output", async () => {
+    const original = await buildStampedForm();
+    const one = await redactTemplatePersonalization(original, { patterns: PATTERNS, apply: true });
+    const two = await redactTemplatePersonalization(original, { patterns: PATTERNS, apply: true });
+    assert.equal(sha(one.bytes!), sha(two.bytes!));
+  });
+
+  it("falls back to matching blocks only when the stamp stream also draws graphics", async () => {
+    const original = await buildStampedForm({ drawingInStamp: true });
+    const { bytes, report } = await redactTemplatePersonalization(original, { patterns: PATTERNS, apply: true });
+    assert.ok(report.removedBlocks.every((b) => b.mode === "block"));
+    assert.equal(report.removedBlocks.length, 2, "only the pattern-matched line is removable here");
+    assert.ok((await extractedTextMatches(bytes!, [/Exampletown/])).length > 0, "unnamed line is not removed without the stamp guarantee");
+  });
+
+  it("refuses a stamp stream that shares a font with the form content", async () => {
+    const original = await buildStampedForm();
+    const doc = await PDFDocument.load(original);
+    const page = doc.getPage(0);
+    const fonts = (page.node.lookup(PDFName.of("Resources")) as PDFDict).lookup(PDFName.of("Font")) as PDFDict;
+    const formFontKey = fonts.keys().map(String).find((k) => {
+      const refs = page.node.lookup(PDFName.of("Contents")) as PDFArray;
+      const formStream = Buffer.from(decodePDFRawStream(doc.context.lookup(refs.get(1) as PDFRef) as PDFRawStream).decode()).toString("latin1");
+      return formStream.includes(`${k} `);
+    })!;
+    const stamp = doc.context.flateStream(`q BT ${formFontKey} 8 Tf 1 0 0 1 16 36 Tm (Jordan Example) Tj ET Q`);
+    (page.node.lookup(PDFName.of("Contents")) as PDFArray).push(doc.context.register(stamp));
+    const { bytes, report } = await redactTemplatePersonalization(await doc.save({ useObjectStreams: false }), { patterns: PATTERNS, apply: true });
+    assert.equal(bytes, null);
+    assert.ok(report.unsupported.some((u) => /shares fonts/.test(u)));
+  });
+
+  it("fails when a recoverable copy of the personal text remains elsewhere in the file", async () => {
+    const original = await buildStampedForm();
+    const doc = await PDFDocument.load(original);
+    doc.context.register(doc.context.flateStream("BT /F9 8 Tf (Jordan Example) Tj ET"));
+    const { bytes, report } = await redactTemplatePersonalization(await doc.save({ useObjectStreams: false }), { patterns: PATTERNS, apply: true });
+    assert.equal(bytes, null);
+    assert.ok(report.blockedMatches.length > 0, "unreferenced object with the name blocks the run");
   });
 });

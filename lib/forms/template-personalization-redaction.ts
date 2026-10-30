@@ -6,6 +6,10 @@
  * rewritten in place, so the text is not merely hidden. A white rectangle replaces each removed
  * block's box. Any match outside an eligible block, or any residual match after redaction, aborts.
  *
+ * Two structures are handled: matching blocks next to an imported form page in one stream
+ * (TCPDF/FPDI wrappers), and an appended text-only "stamp" stream with its own fonts (a pdf-lib
+ * overlay), where every block of the stamp is removed once one of them matches.
+ *
  * Patterns are supplied by the caller (kept outside the repository); this module holds no
  * personal data.
  */
@@ -26,6 +30,8 @@ export type RedactionBlock = {
   streamRef: string;
   text: string;
   box: { x: number; y: number; width: number; height: number };
+  /** `block`: matching block in a mixed stream; `stamp-stream`: every block of an appended text-only stamp. */
+  mode: "block" | "stamp-stream";
 };
 
 export type TemplateRedactionReport = {
@@ -116,25 +122,64 @@ export function decodeStringOperand(token: string): string {
   return out;
 }
 
-type TextBlock = { start: number; end: number; text: string };
+/** WinAnsiEncoding bytes 0x80–0x9F that differ from Latin-1 (simple fonts; e.g. 0x97 em dash). */
+const WIN_ANSI_HIGH: Record<number, string> = {
+  0x80: "\u20ac", 0x82: "\u201a", 0x83: "\u0192", 0x84: "\u201e", 0x85: "\u2026", 0x86: "\u2020", 0x87: "\u2021",
+  0x88: "\u02c6", 0x89: "\u2030", 0x8a: "\u0160", 0x8b: "\u2039", 0x8c: "\u0152", 0x8e: "\u017d", 0x91: "\u2018",
+  0x92: "\u2019", 0x93: "\u201c", 0x94: "\u201d", 0x95: "\u2022", 0x96: "\u2013", 0x97: "\u2014", 0x98: "\u02dc",
+  0x99: "\u2122", 0x9a: "\u0161", 0x9b: "\u203a", 0x9c: "\u0153", 0x9e: "\u017e", 0x9f: "\u0178",
+};
+
+export function winAnsiText(latin1: string): string {
+  let out = "";
+  for (const ch of latin1) out += WIN_ANSI_HIGH[ch.charCodeAt(0)] ?? ch;
+  return out;
+}
+
+type TextBlock = { start: number; end: number; text: string; origin: { x: number; y: number } | null; fonts: string[] };
 
 /** Top-level BT…ET blocks with the text they show. Throws on inline images. */
 export function findTextBlocks(src: string): TextBlock[] {
   const tokens = tokenizeContentStream(src);
   const blocks: TextBlock[] = [];
-  let open: { start: number; parts: string[] } | null = null;
+  let open: { start: number; parts: string[]; origin: { x: number; y: number } | null; fonts: string[] } | null = null;
   let operands: Token[] = [];
   for (const t of tokens) {
     if (t.kind === "operand") { operands.push(t); continue; }
     if (t.value === "BI") throw new Error("inline image in content stream (unsupported)");
-    if (t.value === "BT") open = { start: t.start, parts: [] };
-    else if (t.value === "ET" && open) { blocks.push({ start: open.start, end: t.end, text: open.parts.join("") }); open = null; }
-    else if (open && (t.value === "Tj" || t.value === "TJ" || t.value === "'" || t.value === '"')) {
-      for (const o of operands) if (o.value.startsWith("(") || (o.value.startsWith("<") && o.value !== "<<")) open.parts.push(decodeStringOperand(o.value));
+    if (t.value === "BT") open = { start: t.start, parts: [], origin: null, fonts: [] };
+    else if (t.value === "ET" && open) {
+      blocks.push({ start: open.start, end: t.end, text: open.parts.join(""), origin: open.origin, fonts: open.fonts });
+      open = null;
+    } else if (open && (t.value === "Tj" || t.value === "TJ" || t.value === "'" || t.value === '"')) {
+      for (const o of operands) if (o.value.startsWith("(") || (o.value.startsWith("<") && o.value !== "<<")) open.parts.push(winAnsiText(decodeStringOperand(o.value)));
+    } else if (open && !open.origin && (t.value === "Td" || t.value === "TD") && operands.length >= 2) {
+      open.origin = { x: Number(operands[operands.length - 2].value), y: Number(operands[operands.length - 1].value) };
+    } else if (open && !open.origin && t.value === "Tm" && operands.length >= 6) {
+      open.origin = { x: Number(operands[operands.length - 2].value), y: Number(operands[operands.length - 1].value) };
+    } else if (open && t.value === "Tf" && operands.length >= 2 && operands[operands.length - 2].value.startsWith("/")) {
+      open.fonts.push(operands[operands.length - 2].value);
     }
     operands = [];
   }
   return blocks;
+}
+
+/** Operators allowed in an appended text-only stamp stream (text, text state, colour, save/restore). */
+const STAMP_OPERATORS = new Set([
+  "q", "Q", "BT", "ET", "Tf", "TL", "Tm", "Td", "TD", "T*", "Tj", "TJ", "'", '"', "Tc", "Tw", "Tz", "Ts", "Tr",
+  "rg", "RG", "g", "G", "k", "K", "cs", "CS", "sc", "SC", "scn", "SCN",
+]);
+
+/** True when a content stream only draws text (no paths, images, XObjects or CTM changes). */
+export function isTextOnlyStream(src: string): boolean {
+  const ops = tokenizeContentStream(src).filter((t) => t.kind === "op");
+  return ops.some((t) => t.value === "BT") && ops.every((t) => STAMP_OPERATORS.has(t.value));
+}
+
+function usesFont(src: string, font: string): boolean {
+  const escaped = font.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`${escaped}\\s+[-+]?[\\d.]+\\s+Tf`).test(src);
 }
 
 function decodeStream(stream: PDFRawStream): string {
@@ -228,25 +273,56 @@ export async function redactTemplatePersonalization(
   const textBoxes = await pageTextBoxes(input);
   const edits = new Map<string, { ref: PDFRef; stream: PDFRawStream; src: string; blocks: { start: number; end: number; box: RedactionBlock["box"] }[] }>();
 
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim();
+  const locate = (p: number, block: TextBlock): TextBox | undefined =>
+    textBoxes[p]?.find((t) => norm(t.str) === norm(block.text)) ??
+    (block.origin
+      ? textBoxes[p]?.find((t) => Math.abs(t.x - block.origin!.x) < 0.6 && Math.abs(t.y - block.origin!.y) < 0.6)
+      : undefined);
+
   for (let p = 0; p < doc.getPageCount(); p++) {
-    for (const ref of pageContentRefs(doc, p)) {
+    const refs = pageContentRefs(doc, p);
+    const sources = new Map<string, string>();
+    for (const ref of refs) {
+      const s = doc.context.lookup(ref);
+      if (s instanceof PDFRawStream) sources.set(ref.toString(), decodeStream(s));
+    }
+    for (const ref of refs) {
       const stream = doc.context.lookup(ref);
       if (!(stream instanceof PDFRawStream)) continue;
-      const src = decodeStream(stream);
+      const src = sources.get(ref.toString())!;
       let blocks: TextBlock[];
       try { blocks = findTextBlocks(src); } catch (e) {
         if (matchesAny(src, patterns)) report.unsupported.push(`page ${p + 1} ${ref.toString()}: ${(e as Error).message}`);
         continue;
       }
-      for (const block of blocks.filter((b) => matchesAny(b.text, patterns))) {
-        const box = textBoxes[p]?.find((t) => t.str === block.text || t.str.replace(/\s+/g, " ").trim() === block.text.replace(/\s+/g, " ").trim());
-        if (!box) { report.unsupported.push(`page ${p + 1} ${ref.toString()}: no rendered position for a matching block`); continue; }
+      const matching = blocks.filter((b) => matchesAny(b.text, patterns));
+      if (matching.length === 0) continue;
+
+      // An appended, text-only stream with its own fonts is a stamp: all of its text goes, even
+      // lines the patterns do not name (e.g. an office address under the member's name).
+      let selected = matching;
+      let mode: RedactionBlock["mode"] = "block";
+      if (refs.length > 1 && isTextOnlyStream(src)) {
+        const fonts = [...new Set(blocks.flatMap((b) => b.fonts))];
+        const shared = fonts.filter((f) => [...sources].some(([k, other]) => k !== ref.toString() && usesFont(other, f)));
+        if (shared.length) {
+          report.unsupported.push(`page ${p + 1} ${ref.toString()}: text-only stamp stream shares fonts with page content (${shared.join(",")})`);
+          continue;
+        }
+        selected = blocks;
+        mode = "stamp-stream";
+      }
+
+      for (const block of selected) {
+        const box = locate(p, block);
+        if (!box) { report.unsupported.push(`page ${p + 1} ${ref.toString()}: no rendered position for a ${mode === "stamp-stream" ? "stamp" : "matching"} block`); continue; }
         const rect = { x: box.x - padding, y: box.y - box.size * 0.3 - padding, width: box.width + 2 * padding, height: box.size * 1.3 + 2 * padding };
         const key = ref.toString();
         const entry = edits.get(key) ?? { ref, stream, src, blocks: [] };
         if (!entry.blocks.some((b) => b.start === block.start)) entry.blocks.push({ start: block.start, end: block.end, box: rect });
         edits.set(key, entry);
-        report.removedBlocks.push({ page: p + 1, streamRef: key, text: block.text, box: rect });
+        report.removedBlocks.push({ page: p + 1, streamRef: key, text: block.text, box: rect, mode });
       }
     }
   }
@@ -259,7 +335,11 @@ export async function redactTemplatePersonalization(
       const fill = options.whiteout === false ? "" : `q 1 1 1 rg ${b.box.x.toFixed(3)} ${b.box.y.toFixed(3)} ${b.box.width.toFixed(3)} ${b.box.height.toFixed(3)} re f Q`;
       out = `${out.slice(0, b.start)}${fill}${out.slice(b.end)}`;
     }
-    if (matchesAny(out, patterns)) report.blockedMatches.push(`stream ${key}: matching text remains outside removable blocks`);
+    let residualBlocks: string[] = [];
+    try { residualBlocks = findTextBlocks(out).map((b) => b.text); } catch { residualBlocks = []; }
+    if (matchesAny(out, patterns) || residualBlocks.some((t) => matchesAny(t, patterns))) {
+      report.blockedMatches.push(`stream ${key}: matching text remains outside removable blocks`);
+    }
     prospective.set(key, out);
   }
   report.blockedMatches.push(...findPatternOccurrences(doc, patterns, new Set(edits.keys())));
