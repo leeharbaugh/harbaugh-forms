@@ -40,7 +40,7 @@ Items were renumbered on 2026-10-29 when item 2 was inserted. Help & Getting Sta
 
 ## 2. Critical — Correct multi-agent identity resolution
 
-**Status:** Merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70)). **Live in production** since 2026-10-30 04:29 UTC on `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, validated on both domains. Susan's production packet #13 still shows another agent's details, and its remediation awaits approval. **Not complete.** Added 2026-10-29.
+**Status:** Merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70)). **Live in production** since 2026-10-30 04:29 UTC on `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, validated on both domains. Susan's packet #13 agent fields were remediated and verified on 2026-10-30: all 6 now show her details, with nothing else changed. **Not marked complete:** a related finding needs Lee's decision first. 33 Global form templates have Lee's name or phone printed into the blank PDF (see `project_status.md`). Added 2026-10-29.
 
 **Type:** Bug fix — production correctness
 
