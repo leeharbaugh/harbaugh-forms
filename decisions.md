@@ -12,6 +12,36 @@ Each decision should include:
 
 ---
 
+## Personalized template footers are removed at the source PDF; replacements are forward-only
+
+**Date:** 2026-10-30 (Lee approved removing the personalized footer information; development pilot only)
+
+**Decision:**
+1. **Real removal, not hiding.** Downloader-personalized text is removed from template PDFs by deleting the overlay's text operators from the page's top-level content stream, rewriting the stream object in place, and filling the removed box with white (`lib/forms/template-personalization-redaction.ts`). An opaque box over text that remains extractable is not acceptable.
+2. **Narrow scope.**
+   - Only top-level overlay text blocks that match explicit personal-identifier patterns are removed. Imported form content (Form XObjects), annotations, form structure, geometry and mappings are not touched.
+   - Any match elsewhere, an unsupported construct, or residual extractable text makes the tool refuse and write nothing. Such templates are handled individually, for example with a clean re-download.
+   - No page is rasterized.
+3. **No personal data in the repository.** Patterns are supplied from a private file outside Git; tests use fictional data; tool output masks matched text.
+4. **Replacement path.**
+   - A template is replaced only through the app's lifecycle: Unpublish Form → Replace PDF file → Publish Form, done by an application admin. The same form record keeps its ID, mappings, defaults and collection links, and Publish revalidates the stored PDF and mapping pages.
+   - The replacement uses a distinct filename, so the original object is kept, and the original is backed up first.
+   - Service-role path swaps are not used. Published forms and their template objects stay immutable to signed-in users by design.
+5. **Forward-only effect.**
+   - Replacing a template changes only packet forms created afterwards. Existing packet copies, Draft or Final, and completed Signing artifacts are never rewritten automatically.
+   - Correcting existing Draft copies of other agents is a separate, explicitly approved step that preserves field values and annotations. Final copies stay as finalized.
+6. **Production needs approval.** Production templates are changed only after Lee approves the rollout, one template at a time, with read-only verification.
+
+**Reason:** Texas REALTORS® inserts the downloading member's name, phone and address into a footer, and templates downloaded under Lee's membership put his identity on every agent's documents. The pilot proved the footer is a separate overlay in 32 of the 33 affected templates, so it can be removed exactly without disturbing the form.
+
+**Consequences:**
+- No migration, no runtime code path, no deployment effect: the module and tool are maintenance utilities.
+- Backlog item 10 tracks the rollout. TXR-1506 and existing Draft copies need decisions. Future Texas REALTORS® downloads must be cleaned before upload.
+
+**Related:** `lib/forms/template-personalization-redaction.ts`, `lib/forms/template-personalization-redaction.test.ts`, `scripts/redact-template-personalization.ts`; decisions "Form Publication Lifecycle (Draft / Published / Retired)", "Agent identity on forms belongs to the packet owner; no cross-agent fallback"; `project_status.md` "Shared template personalized footers (2026-10-30; development pilot)".
+
+---
+
 ## Agent identity on forms belongs to the packet owner; no cross-agent fallback
 
 **Date:** 2026-10-29 (Lee's direction, after the read-only production investigation; development implementation)
