@@ -1,6 +1,6 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-30, 15:30 Chicago (20:30 UTC). **Native Signing remains LIVE. Template personalized-footer removal (backlog item 10): method implemented and piloted in development on TXR-1501; production templates NOT changed.**
+**As of:** 2026-10-30, 16:15 Chicago (21:15 UTC). **Native Signing remains LIVE. Backlog item 2 (multi-agent identity resolution) is COMPLETED**: dynamic agent resolution is live in production (`dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`), and Susan's 6 saved agent fields are corrected. **Template personalized-footer removal (backlog item 10), a separate PDF-template issue: method implemented and piloted in development on TXR-1501; production templates NOT changed.**
 - **Method:** removes the member footer's text blocks from each page's top-level content. It is real removal, verified by text extraction and a raw-object scan, with a white fill. Geometry, form content and mappings are unchanged.
 - **Development pilot:** form #1 was replaced through the normal Unpublish → Replace PDF → Publish workflow. New packet forms get the clean copy; Fill Form, Download PDF and Map Fields work, and agent fields still come from the packet owner's own profile.
 - **Inventory:** 33 of 49 active production templates are affected; 32 are cleanly removable by the same method, and TXR-1506 needs individual treatment. Existing packet copies keep their footer (24 copies: 23 Draft, including 5 in Susan's packet #13, and 1 Final).
@@ -547,7 +547,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 
 ### Multi-agent identity fix (2026-10-29; development only)
 
-**Status:** merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), 2026-10-30 04:03 UTC). Production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` was validated at its unique URL and is **LIVE in production since 2026-10-30 04:29:17 UTC** (Lee approved). Packet #13's agent fields were remediated and verified on 2026-10-30. A template-footer finding awaits Lee's decision (below). **Backlog item 2 in `backlog.md`, the highest-priority open item**, above Help & Getting Started (item 3). Not complete until production is released and packet #13 is remediated and verified.
+**Status:** merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), 2026-10-30 04:03 UTC). Production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` was validated at its unique URL and is **LIVE in production since 2026-10-30 04:29:17 UTC** (Lee approved). Packet #13's agent fields were remediated and verified on 2026-10-30. **Backlog item 2 is COMPLETED (2026-10-30).** Lee confirmed the template-footer finding (below) is a separate PDF-template issue, tracked as backlog item 10.
 
 **Root cause (confirmed read-only in production, 2026-10-29).**
 - **Where values came from:** every agent field resolved from the packet owner's organization `brokerage_settings` row (`lib/field-resolver.ts`, `resolveSettingsSourcePath` and the key-based `resolveSettingsFieldKey`). That row holds one agent's details (Lee's) for the whole brokerage.
@@ -5592,7 +5592,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
    - Take periodic encrypted recovery snapshots so newly completed Signing documents are backed up independently.
 2. **Post-launch backlog:** `backlog.md`.
    - **Item 1**, removing the "DEV QA Test Signing" default title, is completed and live in production since 2026-10-29 03:15 UTC (`dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`).
-   - **Item 2**, the critical multi-agent identity correction, is live in production (`dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, `1ebbca9`, since 2026-10-30 04:29 UTC). Packet #13's agent fields were remediated and verified on 2026-10-30. The item stays open pending Lee's decision on the Global template footer finding.
+   - **Item 2**, the critical multi-agent identity correction, is live in production (`dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, `1ebbca9`, since 2026-10-30 04:29 UTC). Packet #13's agent fields were remediated and verified on 2026-10-30. **Completed 2026-10-30**; the Global template footer finding is tracked separately as item 10.
    - **Item 3**, Help & Getting Started, is the highest-priority enhancement.
    - **Items 4–8** remain; **item 9** is deferred.
 3. **Synthetic production test data:** done. Lee approved the record-level cleanup plan, and it was carried out on 2026-10-28, 20:22–20:30 UTC; see "Post-launch cleanup (2026-10-28)".
