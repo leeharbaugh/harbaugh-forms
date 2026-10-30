@@ -28,6 +28,7 @@
     "test:field-defaults-management": "node --experimental-strip-types --test lib/field-defaults-management.test.ts lib/types/field-provenance-labels.test.ts",
     "test:field-instance-sync": "node --experimental-strip-types --test lib/field-instance-sync.test.ts",
     "test:agent-identity": "npx --yes tsx --tsconfig tsconfig.json --test lib/agent-identity-resolution.test.ts",
+    "test:template-redaction": "npx --yes tsx --tsconfig tsconfig.json --test lib/forms/template-personalization-redaction.test.ts",
     "test:contract-source-removal": "node --experimental-strip-types --test lib/contract-details-source-removal.test.ts",
     "test:contract-architecture-removal": "node --experimental-strip-types --test lib/contract-details-architecture-removal.test.ts",
     "test:listing-source-removal": "node --experimental-strip-types --test lib/listing-details-source-removal.test.ts",

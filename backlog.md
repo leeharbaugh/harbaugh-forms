@@ -9,8 +9,9 @@ The credential rotation and security-incident cleanup from October 26 are comple
 **Current priorities**
 - **Completed:**
   1. Remove the development test title from Create Signing (live in production since 2026-10-29).
-  2. Correct multi-agent identity resolution (live in production since 2026-10-30; Susan's packet #13 agent fields corrected). The separate personalized-footer problem in shared PDF templates is tracked as its own backlog item.
+  2. Correct multi-agent identity resolution (live in production since 2026-10-30; Susan's packet #13 agent fields corrected). The separate personalized-footer problem in shared PDF templates is tracked as item 10.
 - **Remaining, in priority order:**
+  10. **High — Remove personalized footers from shared PDF templates**: method and development pilot done; production not started.
   3. Help & Getting Started (highest-priority enhancement).
   4. Save buttons at both ends of edit screens.
   5. Additional Packet transaction statuses.
@@ -44,7 +45,7 @@ Items were renumbered on 2026-10-29 when item 2 was inserted. Help & Getting Sta
 **Status: COMPLETED (2026-10-30).**
 - **Release:** merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70)), and **live in production** since 2026-10-30 04:29 UTC on `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, validated on both domains.
 - **Remediation:** Susan's packet #13 agent fields were corrected and verified on 2026-10-30. All 6 show her details, with nothing else changed.
-- **Separate issue:** Lee's name and phone printed into 33 shared template PDFs is static PDF content, not field resolution. Lee confirmed it is separate; it is tracked as its own backlog item.
+- **Separate issue:** Lee's name and phone printed into 33 shared template PDFs is static PDF content, not field resolution. Lee confirmed it is separate; it is tracked as backlog item 10.
 
 Added 2026-10-29.
 
@@ -211,13 +212,58 @@ Provide a straightforward way to find Packets that are hidden from normal active
 
 The warning must stay **non-blocking** unless Lee approves otherwise. It must never fill in another agent's details.
 
+## 10. High — Remove personalized footers from shared PDF templates
+
+**Status:** Removal method implemented and piloted in development on TXR-1501. Production templates not changed. **Not complete.** Added 2026-10-30; Lee approved removing the personalized footer information.
+
+**Type:** Data correctness — shared form templates
+
+**Priority:** High, immediately after item 2: the footer puts one agent's identity on every agent's documents.
+
+**Root cause:** Texas REALTORS® inserts the downloading member's details into a footer when a form is downloaded, so templates downloaded under Lee's membership carry his brokerage address, phone and name.
+
+**PDF structure:** these files are TCPDF wrappers. Each page draws the original form as an imported Form XObject, then two separate top-level text blocks (7 pt, y about 14–34) for the member footer. The form's own wording, revision line, initials line and page number are inside the imported XObject and are not affected.
+
+**Method:** `lib/forms/template-personalization-redaction.ts` plus the local tool `scripts/redact-template-personalization.ts`, with personal-identifier patterns supplied from a private file outside the repository.
+- **Removes:** only matching top-level text blocks. Their operators and strings are deleted, the stream is rewritten in place, and a white rectangle fills each removed box.
+- **Refuses, writing nothing:** if any match is elsewhere (imported form content, annotations, metadata), on unsupported constructs, or if anything is still extractable afterwards.
+
+**Pilot (TXR-1501, form #1):**
+- 12 blocks removed, 2 on each of 6 pages.
+- Personal text no longer found by text extraction or in any raw object.
+- Geometry, boxes, rotation, imported XObjects, annotations and metadata unchanged.
+- Pixels outside the footer boxes identical, and the white fill covers nothing.
+- All 55 mappings fill at identical positions.
+- In development, the normal Unpublish → Replace PDF → Publish workflow succeeded: a new packet form got the clean copy, Fill Form and Download PDF worked, agent fields showed the packet owner's own details, and Map Fields rendered.
+
+**Inventory (production, read-only):**
+- 33 of 49 active templates carry the footer, all Global TXR templates.
+- 32 are TCPDF files with the identical structure and are cleanly removable by the same method.
+- TXR-1506 (pdf-lib-produced, footer mixed into the page's own content) is refused by the method and needs individual treatment, such as a clean re-download.
+
+**Existing packets:** packet forms keep their own PDF copy, made at creation, so replacing a template changes only packet forms created afterwards.
+- 24 existing copies from affected templates still carry the footer: 23 Draft, 1 Final, 0 Signed.
+- 5 belong to Susan's packet #13 (Draft); the rest are Lee's own.
+
+**Remaining requirements:**
+- Lee approval for production.
+- Per-template Unpublish → Replace PDF → Publish, with a backup and a distinct filename.
+- Production validation.
+- A decision on existing Draft copies, at least Susan's 5. Final copies stay unchanged.
+
+**Completion criteria:**
+- Every affected active template is replaced and validated in production.
+- New packet forms carry no personalized footer.
+- The agreed handling of existing copies is done and verified.
+
 ## Implementation workflow
 
-Items 1 and 2 are completed and live in production. Items 3–9 are **not complete**.
+Items 1 and 2 are completed and live in production. Items 3–10 are **not complete**.
 - **Item 2:** completed 2026-10-30 (dynamic agent resolution live; Susan's saved agent fields corrected).
 - **Item 3:** Help & Getting Started, the highest-priority enhancement (Lee's direction, 2026-10-28 and 2026-10-29).
 - **Items 4–8:** reprioritize based on actual use. The zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 - **Item 9:** deferred.
+- **Item 10:** the template-footer removal, ranked immediately after item 2; production rollout awaits Lee's approval.
 
 For each item when work begins, have Cursor:
 1. Read `project_status.md` and `decisions.md` to establish the current repository state and existing design decisions.
