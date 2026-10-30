@@ -21,7 +21,7 @@ Each decision should include:
 2. **Brokerage stays shared.** Brokerage, broker and supervisor fields keep resolving from the packet owner's organization `brokerage_settings` row. The legacy `brokerage_settings.agent_*` columns remain in the schema but are never form identity.
 3. **No cross-agent fallback.**
    - A missing profile or blank personal column leaves the field unresolved. It falls through the existing default chain without Organization-scoped defaults, so only the owner's own Private default or a catalog structural default can apply, and otherwise it stays blank.
-   - No new warning or blocking workflow was added; whether incomplete agent identity should warn is open for Lee.
+   - No new warning or blocking workflow was added. A non-blocking warning for incomplete agent identity is deferred as `backlog.md` item 9.
 4. **One source of truth for agent details.**
    - Settings "My Agent Profile" edits only the signed-in user's own `user_agent_settings` row, and admin user management edits the same row.
    - The Brokerage Profile stays organization-wide and editable only by app admins, enforced by RLS and mirrored in the UI as read-only.
@@ -39,7 +39,7 @@ Each decision should include:
 - **Packet #13** needs the remediation in `project_status.md` "Multi-agent identity fix (2026-10-29; development only)".
 - **Organization defaults:** they are no longer applied to agent identity fields; none existed in production.
 - **Participant technical change:** none.
-- **Priority:** this item is above Help & Getting Started.
+- **Priority:** this is `backlog.md` item 2, above Help & Getting Started (item 3). It is not complete until the fix is released to production, resolution is verified there, and packet #13 is remediated and validated.
 
 **Related:** `lib/user-agent-profile.ts`, `lib/field-resolver.ts`, `lib/types/brokerage-settings.ts`, `components/settings/settings-page.tsx`, `lib/agent-identity-resolution.test.ts`, `scripts/validate-agent-identity-dev.ts`; decisions "Security remediation — brokerage profiles belong to organizations", "Brokerage Profile Versus Form Defaults"; `project_status.md` "Multi-agent identity fix (2026-10-29; development only)".
 
@@ -50,7 +50,8 @@ Each decision should include:
 **Date:** 2026-10-28 (Lee's direction; planning only)
 
 **Decision:**
-1. **Priority.** "Help & Getting Started — New User Walkthrough" is item 2 in `Harbaugh_Forms_Post_Launch_Improvements.md`, directly after the completed Create Signing title fix, and is the highest-priority remaining enhancement. The former items 2–6 become 3–7, unchanged.
+1. **Priority.** "Help & Getting Started — New User Walkthrough" is item 2 in `backlog.md`, directly after the completed Create Signing title fix, and is the highest-priority remaining enhancement. The former items 2–6 become 3–7, unchanged.
+   - *Update 2026-10-29 (Lee's direction):* the critical multi-agent identity correction was inserted ahead of it as item 2. Help & Getting Started is now item 3 and remains the highest-priority enhancement, immediately after that correction.
 2. **Scope.** An accessible Help menu or section with a plain-English, numbered Getting Started walkthrough of the normal workflow (Contacts, Properties, Forms, Collections, Packets, Fill and review, Send for signatures, Track and download) and support contact information: phone 817-881-4768, email lee@harbaughbrothers.com.
 3. **First release is a simple walkthrough page.** An interactive, page-by-page guided tour is a possible later step, not a requirement.
 4. **Match the live application.** At implementation, the steps and terminology are checked against the live workflows and adjusted. Creating custom Forms and Collections is labeled optional.
@@ -62,7 +63,7 @@ Each decision should include:
 - No code change until the item is picked up. It then follows the backlog's implementation workflow and the established PR and release process.
 - Manager-side workspace pages only, so the item is expected to be "Participant technical change: none".
 
-**Related:** `Harbaugh_Forms_Post_Launch_Improvements.md` item 2; `project_status.md` "Help & Getting Started planned (2026-10-28; post-launch item 2)"; `components/app-nav.tsx` (main navigation).
+**Related:** `backlog.md` item 3 (item 2 until 2026-10-29); `project_status.md` "Help & Getting Started planned (2026-10-28; post-launch item 2)"; `components/app-nav.tsx` (main navigation).
 
 ---
 
@@ -76,7 +77,7 @@ Each decision should include:
 3. **The agent's title wins.** A nonblank requested title is used as typed (trimmed). Choosing a source Packet later never rewrites the title.
 4. **Required.** A title is still required: Create stays disabled while it is blank, and the server rejects a blank title before any write.
 5. **History untouched.** Existing Signings keep their stored titles; changing a title remains the rename action ("A Signing's name is operational metadata, renamable in any lifecycle state").
-6. **Backlog.** Item 1 in `Harbaugh_Forms_Post_Launch_Improvements.md` is marked completed in place; items 2–6 stay active. (Since 2026-10-28 the remaining items are 2–7, after Help & Getting Started was inserted as item 2.)
+6. **Backlog.** Item 1 in `backlog.md` is marked completed in place; items 2–6 stay active. (The remaining items have since been renumbered; see `backlog.md`.)
 
 **Reason:** The "DEV QA Test Signing" default came from the page's origin as a local QA harness (`fb022a5`). In production it would name real Signings, and their emails, unless the agent retyped it. A blank required field forces a deliberate title, and the Packet label is a reliable, meaningful default where it exists.
 
@@ -183,7 +184,7 @@ Each decision should include:
 **Date:** 2026-10-28 (post-launch cleanup; Lee's direction)
 
 **Decision:**
-1. **Canonical backlog.** `Harbaugh_Forms_Post_Launch_Improvements.md` is tracked in the repository. It lists only active work, in Lee's order:
+1. **Canonical backlog.** `backlog.md` (named `Harbaugh_Forms_Post_Launch_Improvements.md` until 2026-10-29) is tracked in the repository. It lists only active work, in Lee's order:
    1. Remove the "DEV QA Test Signing" default title from Create Signing (highest-priority application fix).
    2. Save buttons at the top and bottom of edit screens.
    3. Packet lifecycle statuses.
@@ -192,6 +193,15 @@ Each decision should include:
    6. Scroll to the Edit Form panel.
 
    **Update 2026-10-28:** item 1 is completed and marked so in place (live in production since 2026-10-29 03:15 UTC). Help & Getting Started was inserted as item 2 (highest-priority remaining enhancement), so the former items 2–6 are now 3–7. See the decision "Help & Getting Started is the highest-priority remaining post-launch enhancement".
+
+   **Update 2026-10-29 (Lee's direction):** the file was renamed with `git mv` to `backlog.md`, with its contents unchanged. `backlog.md` is the canonical location for the enhancement backlog from now on. References that identify the current file use the new name; dated history entries keep the old name as written.
+
+   **Update 2026-10-29, later (Lee's direction):** current order:
+   1. Item 1 is completed.
+   2. **Critical — Correct multi-agent identity resolution.** It comes before every enhancement, and is complete only after the production release, verified resolution, and validated remediation of Susan's packet #13.
+   3. Help & Getting Started.
+   4. Items 4–8 are the former 3–7.
+   5. Item 9 is a deferred, non-blocking warning for incomplete agent identity.
 
    Completed work (credential rotation, incident cleanup) is recorded in `project_status.md` and `decisions.md`, not in the backlog.
 2. **Synthetic test data.** It is removed from ordinary workflows only by supported, reversible means:
@@ -399,7 +409,7 @@ Each decision should include:
 - *Promoted 2026-10-27 14:28 UTC with Lee's approval, by the same guarded procedure. Native Signing is on in production with work and access suspended; rollback target is the feature-off `dpl_G7WwFBSjmC8VSG7omDQGqRSTzXXh` (`project_status.md` "Gate D: feature-on promotion").*
 - Later automatic builds of `main` are feature-on but never live without manual promotion (`autoAssignCustomDomains=false`).
 
-**Related:** `project_status.md` "Gate D: feature-on candidate (2026-10-27)"; local `security.md` R51–R53; `Harbaugh_Forms_Post_Launch_Improvements.md` item 1.
+**Related:** `project_status.md` "Gate D: feature-on candidate (2026-10-27)"; local `security.md` R51–R53; `backlog.md` item 1.
 
 ---
 
