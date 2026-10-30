@@ -12,6 +12,39 @@ Each decision should include:
 
 ---
 
+## Agent identity on forms belongs to the packet owner; no cross-agent fallback
+
+**Date:** 2026-10-29 (Lee's direction, after the read-only production investigation; development implementation)
+
+**Decision:**
+1. **Source.** Every agent identity field (`settings_agent`, any `agent_*` source path, or an unmapped `agent_*` key) resolves from the packet owner's own ACTIVE `user_agent_settings` row. It never comes from the viewer, from the organization's shared `brokerage_settings` row, or from another agent. The column mapping is explicit (`resolveUserAgentSettingsField`).
+2. **Brokerage stays shared.** Brokerage, broker and supervisor fields keep resolving from the packet owner's organization `brokerage_settings` row. The legacy `brokerage_settings.agent_*` columns remain in the schema but are never form identity.
+3. **No cross-agent fallback.**
+   - A missing profile or blank personal column leaves the field unresolved. It falls through the existing default chain without Organization-scoped defaults, so only the owner's own Private default or a catalog structural default can apply, and otherwise it stays blank.
+   - No new warning or blocking workflow was added. A non-blocking warning for incomplete agent identity is deferred as `backlog.md` item 9.
+4. **One source of truth for agent details.**
+   - Settings "My Agent Profile" edits only the signed-in user's own `user_agent_settings` row, and admin user management edits the same row.
+   - The Brokerage Profile stays organization-wide and editable only by app admins, enforced by RLS and mirrored in the UI as read-only.
+   - Account identity in `profiles` (used by Signing "Include me") is separate and unchanged.
+5. **History is never rewritten automatically.**
+   - Saved field instances do not change because the resolver changed. Manual overrides and FINAL or SIGNED forms are never touched.
+   - Draft forms pick up corrected values only through an explicit Refresh Values, run deliberately for affected packets with Lee's approval.
+
+**Reason:** In production the second Davey Goosmann Realty agent's packet #13 carried Lee's name, license number, email and phone, because agent fields resolved from the brokerage-wide row. Forms naming the wrong licensed agent are a correctness and compliance problem. The per-user record already existed and was RLS-protected to its owner and app admins, the same audience that can read the packet.
+
+**Consequences:**
+- **No schema change:** no migration and no RLS change.
+- **Lee unaffected:** Lee's own values are unchanged, because his personal record matches the shared row on every mapped agent field.
+- **Other agents must fill in their own profile:** an agent without a complete personal profile gets blank agent fields, rather than someone else's details.
+- **Packet #13** needs the remediation in `project_status.md` "Multi-agent identity fix (2026-10-29; development only)".
+- **Organization defaults:** they are no longer applied to agent identity fields; none existed in production.
+- **Participant technical change:** none.
+- **Priority:** this is `backlog.md` item 2, above Help & Getting Started (item 3). It is not complete until the fix is released to production, resolution is verified there, and packet #13 is remediated and validated.
+
+**Related:** `lib/user-agent-profile.ts`, `lib/field-resolver.ts`, `lib/types/brokerage-settings.ts`, `components/settings/settings-page.tsx`, `lib/agent-identity-resolution.test.ts`, `scripts/validate-agent-identity-dev.ts`; decisions "Security remediation — brokerage profiles belong to organizations", "Brokerage Profile Versus Form Defaults"; `project_status.md` "Multi-agent identity fix (2026-10-29; development only)".
+
+---
+
 ## Help & Getting Started is the highest-priority remaining post-launch enhancement
 
 **Date:** 2026-10-28 (Lee's direction; planning only)
@@ -7145,7 +7178,7 @@ Production already contained an empty ACTIVE Global TXR-1605 shell (form 20) wit
 
 **Reason:** The legacy singleton profile was visible to every authenticated user. In a multi-organization application, that exposed brokerage contact and license details across organization boundaries and could populate a packet with the viewer’s or an unrelated organization’s brokerage information.
 
-**Consequences:** A user whose active primary organization has no brokerage profile sees blank brokerage-sourced fields until its authorized administrator creates one. The Settings page saves only the signed-in user’s primary organization profile. This security repair does not revise Native Signing architecture or authorize its implementation.
+**Consequences:** A user whose active primary organization has no brokerage profile sees blank brokerage-sourced fields until its authorized administrator creates one. The Settings page saves only the signed-in user’s primary organization profile. *Update 2026-10-29 (development, not yet released): agent fields no longer come from this row; see "Agent identity on forms belongs to the packet owner; no cross-agent fallback".* This security repair does not revise Native Signing architecture or authorize its implementation.
 
 **Production rollout:** Migration `20260913200000_scope_brokerage_settings_to_organization.sql` was preflighted and applied to `harbaugh-forms-prod` on 2026-09-13. Deployment `Buf16cJ567deHtzvuiEZ1kan4NqJ` for commit `eb98228` passed its isolated login-page check and was manually promoted to both production domains.
 

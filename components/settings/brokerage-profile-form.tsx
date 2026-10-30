@@ -18,6 +18,8 @@ type BrokerageProfileFormProps = {
   onSubmit: () => void;
   isSubmitting: boolean;
   error: string | null;
+  /** Shared brokerage profile is view-only for users who cannot change it. */
+  readOnly?: boolean;
 };
 
 export function BrokerageProfileForm({
@@ -26,6 +28,7 @@ export function BrokerageProfileForm({
   onSubmit,
   isSubmitting,
   error,
+  readOnly = false,
 }: BrokerageProfileFormProps) {
   const setField = <K extends keyof BrokerageProfileInput>(
     key: K,
@@ -36,7 +39,7 @@ export function BrokerageProfileForm({
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (validateBrokerageProfileInput(value)) {
+    if (readOnly || validateBrokerageProfileInput(value)) {
       return;
     }
     onSubmit();
@@ -51,9 +54,12 @@ export function BrokerageProfileForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <p className="text-xs text-muted-foreground">
-        Required fields are marked with *
-      </p>
+      <fieldset disabled={readOnly} className="min-w-0 space-y-6">
+      {!readOnly && (
+        <p className="text-xs text-muted-foreground">
+          Required fields are marked with *
+        </p>
+      )}
 
       <FormSection
         title="Brokerage / Firm"
@@ -222,16 +228,19 @@ export function BrokerageProfileForm({
           />
         </div>
       </FormSection>
+      </fieldset>
 
-      {(error || validationError) && (
+      {!readOnly && (error || validationError) && (
         <p className="text-sm text-destructive">{error ?? validationError}</p>
       )}
 
-      <FormActions>
-        <Button type="submit" disabled={isSubmitting || Boolean(validationError)}>
-          {isSubmitting ? "Saving…" : "Save brokerage profile"}
-        </Button>
-      </FormActions>
+      {!readOnly && (
+        <FormActions>
+          <Button type="submit" disabled={isSubmitting || Boolean(validationError)}>
+            {isSubmitting ? "Saving…" : "Save brokerage profile"}
+          </Button>
+        </FormActions>
+      )}
     </form>
   );
 }

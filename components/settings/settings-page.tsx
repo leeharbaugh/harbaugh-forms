@@ -17,9 +17,7 @@ import {
 } from "@/lib/user-preferences";
 import {
   type BrokerageSettings,
-  agentProfileInputToRow,
   brokerageProfileInputToRow,
-  brokerageSettingsToAgentInput,
   brokerageSettingsToBrokerageInput,
   emptyAgentProfileInput,
   emptyBrokerageProfileInput,
@@ -29,12 +27,19 @@ import {
   validateAgentProfileInput,
   validateBrokerageProfileInput,
 } from "@/lib/types/brokerage-settings";
+import {
+  loadCurrentUserAgentProfile,
+  saveCurrentUserAgentProfile,
+  userAgentSettingsToAgentInput,
+} from "@/lib/user-agent-profile";
 import { useCallback, useEffect, useState } from "react";
 import { Label } from "@/components/ui/label";
 
 export function SettingsPage() {
   const [settingsId, setSettingsId] = useState<number | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [canEditBrokerage, setCanEditBrokerage] = useState(false);
+  const [agentProfileInactive, setAgentProfileInactive] = useState(false);
   const [agentValue, setAgentValue] = useState(emptyAgentProfileInput());
   const [brokerageValue, setBrokerageValue] = useState(emptyBrokerageProfileInput());
   const [isLoading, setIsLoading] = useState(true);
@@ -43,20 +48,21 @@ export function SettingsPage() {
   const [onlyMyData, setOnlyMyData] = useState(false);
   const [isSavingWorkspaceView, setIsSavingWorkspaceView] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [brokerageNotice, setBrokerageNotice] = useState<string | null>(null);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [brokerageError, setBrokerageError] = useState<string | null>(null);
   const [workspaceViewError, setWorkspaceViewError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
-  const applySettings = useCallback((settings: BrokerageSettings) => {
+  const applyBrokerageSettings = useCallback((settings: BrokerageSettings) => {
     setSettingsId(settings.id);
-    setAgentValue(brokerageSettingsToAgentInput(settings));
     setBrokerageValue(brokerageSettingsToBrokerageInput(settings));
   }, []);
 
   const loadSettings = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
+    setBrokerageNotice(null);
 
     try {
       const supabase = createClient();
@@ -74,21 +80,35 @@ export function SettingsPage() {
       const visibility = await loadCurrentUserDataVisibility(supabase);
       setOnlyMyData(visibility?.onlyMyData ?? false);
 
+      const agentProfile = await loadCurrentUserAgentProfile(supabase);
+      setAgentValue(userAgentSettingsToAgentInput(agentProfile));
+      setAgentProfileInactive(
+        agentProfile != null && agentProfile.status !== "ACTIVE",
+      );
+
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("primary_organization_id")
+        .select("primary_organization_id, app_role, status")
         .eq("id", user.id)
         .maybeSingle();
       if (profileError) {
         throw profileError;
       }
 
+      // Mirrors public.is_app_admin(), the only role RLS lets write this row.
+      setCanEditBrokerage(
+        profile?.app_role === "ADMIN" && profile?.status === "ACTIVE",
+      );
+
       const activeOrganizationId = profile?.primary_organization_id ?? null;
       setOrganizationId(activeOrganizationId);
       if (!activeOrganizationId) {
-        throw new Error(
-          "Your account needs an active primary organization before you can manage brokerage settings.",
+        setSettingsId(null);
+        setBrokerageValue(emptyBrokerageProfileInput());
+        setBrokerageNotice(
+          "Your account needs an active primary organization before brokerage settings are available.",
         );
+        return;
       }
 
       const settings = await fetchActiveBrokerageSettings(
@@ -97,10 +117,9 @@ export function SettingsPage() {
       );
 
       if (settings) {
-        applySettings(settings);
+        applyBrokerageSettings(settings);
       } else {
         setSettingsId(null);
-        setAgentValue(emptyAgentProfileInput());
         setBrokerageValue(emptyBrokerageProfileInput());
       }
     } catch (error) {
@@ -110,70 +129,11 @@ export function SettingsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [applySettings]);
+  }, [applyBrokerageSettings]);
 
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
-
-  const saveProfileFields = async (
-    row: Record<string, string | null>,
-    setSaving: (value: boolean) => void,
-    setError: (value: string | null) => void,
-    successMessage: string,
-  ) => {
-    setSaving(true);
-    setError(null);
-    setSaveSuccess(null);
-
-    const supabase = createClient();
-
-    if (!organizationId) {
-      setError(
-        "Your account needs an active primary organization before you can save brokerage settings.",
-      );
-      setSaving(false);
-      return;
-    }
-
-    if (settingsId === null) {
-      const { data, error } = await supabase
-        .from("brokerage_settings")
-        .insert({ ...row, organization_id: organizationId })
-        .select("*")
-        .single();
-
-      if (error) {
-        setError(error.message);
-        setSaving(false);
-        return;
-      }
-
-      applySettings(data as BrokerageSettings);
-      setSaveSuccess(successMessage);
-      setSaving(false);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("brokerage_settings")
-      .update(row)
-      .eq("id", settingsId)
-      .eq("status", "ACTIVE")
-      .eq("organization_id", organizationId)
-      .select("*")
-      .single();
-
-    if (error) {
-      setError(error.message);
-      setSaving(false);
-      return;
-    }
-
-    applySettings(data as BrokerageSettings);
-    setSaveSuccess(successMessage);
-    setSaving(false);
-  };
 
   const handleSaveAgent = async () => {
     const normalized = normalizeAgentProfileInput(agentValue);
@@ -184,12 +144,21 @@ export function SettingsPage() {
       return;
     }
 
-    await saveProfileFields(
-      agentProfileInputToRow(normalized),
-      setIsSavingAgent,
-      setAgentError,
-      "Agent profile saved.",
-    );
+    setIsSavingAgent(true);
+    setAgentError(null);
+    setSaveSuccess(null);
+
+    try {
+      const saved = await saveCurrentUserAgentProfile(createClient(), normalized);
+      setAgentValue(userAgentSettingsToAgentInput(saved));
+      setSaveSuccess("Your agent profile was saved.");
+    } catch (error) {
+      setAgentError(
+        error instanceof Error ? error.message : "Failed to save your agent profile.",
+      );
+    } finally {
+      setIsSavingAgent(false);
+    }
   };
 
   const handleSaveBrokerage = async () => {
@@ -201,12 +170,43 @@ export function SettingsPage() {
       return;
     }
 
-    await saveProfileFields(
-      brokerageProfileInputToRow(normalized),
-      setIsSavingBrokerage,
-      setBrokerageError,
-      "Brokerage profile saved.",
-    );
+    setIsSavingBrokerage(true);
+    setBrokerageError(null);
+    setSaveSuccess(null);
+
+    if (!canEditBrokerage || !organizationId) {
+      setBrokerageError("Only an administrator can change the brokerage profile.");
+      setIsSavingBrokerage(false);
+      return;
+    }
+
+    const supabase = createClient();
+    const row = brokerageProfileInputToRow(normalized);
+    const { data, error } =
+      settingsId === null
+        ? await supabase
+            .from("brokerage_settings")
+            .insert({ ...row, organization_id: organizationId })
+            .select("*")
+            .single()
+        : await supabase
+            .from("brokerage_settings")
+            .update(row)
+            .eq("id", settingsId)
+            .eq("status", "ACTIVE")
+            .eq("organization_id", organizationId)
+            .select("*")
+            .single();
+
+    if (error) {
+      setBrokerageError(error.message);
+      setIsSavingBrokerage(false);
+      return;
+    }
+
+    applyBrokerageSettings(data as BrokerageSettings);
+    setSaveSuccess("Brokerage profile saved.");
+    setIsSavingBrokerage(false);
   };
 
   const handleOnlyMyDataChange = async (checked: boolean) => {
@@ -240,8 +240,8 @@ export function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Default agent and brokerage information for automatic form field
-          population.
+          Your personal agent details and your brokerage&apos;s shared details,
+          used to fill forms automatically.
         </p>
       </div>
 
@@ -292,19 +292,28 @@ export function SettingsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Agent Profile</CardTitle>
+              <CardTitle>My Agent Profile</CardTitle>
               <CardDescription>
-                Your default agent details for forms and agreements.
+                Personal to you. Your name, license number, phone and email fill
+                the agent fields on forms in packets you own. Other agents in
+                your brokerage keep their own profiles.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <AgentProfileForm
-                value={agentValue}
-                onChange={setAgentValue}
-                onSubmit={() => void handleSaveAgent()}
-                isSubmitting={isSavingAgent}
-                error={agentError}
-              />
+              {agentProfileInactive ? (
+                <p className="text-sm text-destructive">
+                  Your agent profile is inactive. Ask an administrator to
+                  reactivate it.
+                </p>
+              ) : (
+                <AgentProfileForm
+                  value={agentValue}
+                  onChange={setAgentValue}
+                  onSubmit={() => void handleSaveAgent()}
+                  isSubmitting={isSavingAgent}
+                  error={agentError}
+                />
+              )}
             </CardContent>
           </Card>
 
@@ -312,17 +321,26 @@ export function SettingsPage() {
             <CardHeader>
               <CardTitle>Brokerage Profile</CardTitle>
               <CardDescription>
-                Brokerage office and designated broker defaults.
+                Shared by everyone in your brokerage: the firm and the broker of
+                record.{" "}
+                {canEditBrokerage
+                  ? "Changes apply to every agent's forms."
+                  : "Only an administrator can change it."}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <BrokerageProfileForm
-                value={brokerageValue}
-                onChange={setBrokerageValue}
-                onSubmit={() => void handleSaveBrokerage()}
-                isSubmitting={isSavingBrokerage}
-                error={brokerageError}
-              />
+              {brokerageNotice ? (
+                <p className="text-sm text-muted-foreground">{brokerageNotice}</p>
+              ) : (
+                <BrokerageProfileForm
+                  value={brokerageValue}
+                  onChange={setBrokerageValue}
+                  onSubmit={() => void handleSaveBrokerage()}
+                  isSubmitting={isSavingBrokerage}
+                  error={brokerageError}
+                  readOnly={!canEditBrokerage}
+                />
+              )}
             </CardContent>
           </Card>
         </div>

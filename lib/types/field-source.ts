@@ -166,7 +166,7 @@ export function formatCustomResolverKeyLabel(resolverKey: string): string {
 }
 
 const SOURCE_TYPE_LABELS: Record<FieldSourceType, string> = {
-  settings_agent: "Settings · Agent profile",
+  settings_agent: "Settings · Packet owner's agent profile",
   settings_brokerage: "Settings · Brokerage profile",
   packet_contact: "Packet contact",
   packet_property: "Packet property",

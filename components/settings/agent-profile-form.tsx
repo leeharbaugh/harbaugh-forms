@@ -110,11 +110,21 @@ export function AgentProfileForm({
           />
         </div>
         <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="agent_address">Address</Label>
+          <Label htmlFor="agent_address">Address line 1</Label>
           <Input
             id="agent_address"
             value={value.agent_address}
             onChange={(event) => setField("agent_address", event.target.value)}
+          />
+        </div>
+        <div className="space-y-2 sm:col-span-2">
+          <Label htmlFor="agent_address_line_2">Address line 2</Label>
+          <Input
+            id="agent_address_line_2"
+            value={value.agent_address_line_2}
+            onChange={(event) =>
+              setField("agent_address_line_2", event.target.value)
+            }
           />
         </div>
         <div className="space-y-2">

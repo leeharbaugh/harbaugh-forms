@@ -374,7 +374,9 @@ export function AdminUserDetailPage({
         <CardHeader>
           <CardTitle>Agent settings</CardTitle>
           <CardDescription>
-            Real-estate agent business profile stored in user_agent_settings.
+            This agent&apos;s personal profile. It fills the agent fields on
+            forms in packets this user owns, and the user can also edit it under
+            Settings → My Agent Profile.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
