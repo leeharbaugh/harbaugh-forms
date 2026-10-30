@@ -1,6 +1,8 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-30, 12:55 Chicago (17:55 UTC). **Native Signing remains LIVE. Packet #13 agent fields remediated (Lee approved): its 6 agent values now match Susan's own profile, with nothing else changed. NEW FINDING: 33 of 49 active Global form templates have Lee's name and phone printed into the blank PDF, so the item 2 close-out needs Lee's decision.**
+**As of:** 2026-10-30, 16:15 Chicago (21:15 UTC). **Native Signing remains LIVE. Backlog item 2 (multi-agent identity resolution) is COMPLETED.** Dynamic agent resolution is live in production (`dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`), and Susan's 6 saved agent fields are corrected. Lee confirmed the template-footer finding is a separate PDF-template issue, tracked separately.
+
+Earlier: 2026-10-30, 12:55 Chicago (17:55 UTC). **Native Signing remains LIVE. Packet #13 agent fields remediated (Lee approved): its 6 agent values now match Susan's own profile, with nothing else changed. NEW FINDING: 33 of 49 active Global form templates have Lee's name and phone printed into the blank PDF, so the item 2 close-out needs Lee's decision.**
 - **Remediation:** Refresh Values through the normal Fill Form workflow, run only on IABS (pf#49) and the Buyer Rep Agreement (pf#50). The change preview was confirmed first, and every result was verified read-only afterwards.
 - **Finding:** the template footer text is static PDF content, not a field; for example, TXR-1501 has the member footer on all 6 pages. It appears on every agent's documents built from those templates, including Susan's Buyer Rep Agreement. Nothing was changed.
 - See "Multi-agent identity fix (2026-10-29; development only)", "Packet #13 remediation".
@@ -467,7 +469,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 
 ### Multi-agent identity fix (2026-10-29; development only)
 
-**Status:** merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), 2026-10-30 04:03 UTC). Production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` was validated at its unique URL and is **LIVE in production since 2026-10-30 04:29:17 UTC** (Lee approved). Packet #13's agent fields were remediated and verified on 2026-10-30. A template-footer finding awaits Lee's decision (below). **Backlog item 2 in `backlog.md`, the highest-priority open item**, above Help & Getting Started (item 3). Not complete until production is released and packet #13 is remediated and verified.
+**Status:** merged to `main` as `1ebbca9` ([PR #70](https://github.com/leeharbaugh/harbaugh-forms/pull/70), 2026-10-30 04:03 UTC). Production candidate `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` was validated at its unique URL and is **LIVE in production since 2026-10-30 04:29:17 UTC** (Lee approved). Packet #13's agent fields were remediated and verified on 2026-10-30. **Backlog item 2 is COMPLETED (2026-10-30).** Lee confirmed the template-footer finding (below) is a separate PDF-template issue, tracked separately.
 
 **Root cause (confirmed read-only in production, 2026-10-29).**
 - **Where values came from:** every agent field resolved from the packet owner's organization `brokerage_settings` row (`lib/field-resolver.ts`, `resolveSettingsSourcePath` and the key-based `resolveSettingsFieldKey`). That row holds one agent's details (Lee's) for the whole brokerage.
@@ -5511,7 +5513,7 @@ Do not edit already-applied migrations. Add a new corrective migration when need
    - Take periodic encrypted recovery snapshots so newly completed Signing documents are backed up independently.
 2. **Post-launch backlog:** `backlog.md`.
    - **Item 1**, removing the "DEV QA Test Signing" default title, is completed and live in production since 2026-10-29 03:15 UTC (`dpl_DGk3zdeNY7rcvY6eFTdwwcPdTwsC`).
-   - **Item 2**, the critical multi-agent identity correction, is live in production (`dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, `1ebbca9`, since 2026-10-30 04:29 UTC). Packet #13's agent fields were remediated and verified on 2026-10-30. The item stays open pending Lee's decision on the Global template footer finding.
+   - **Item 2**, the critical multi-agent identity correction, is live in production (`dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`, `1ebbca9`, since 2026-10-30 04:29 UTC). Packet #13's agent fields were remediated and verified on 2026-10-30. **Completed 2026-10-30**; the Global template footer finding is tracked as a separate item.
    - **Item 3**, Help & Getting Started, is the highest-priority enhancement.
    - **Items 4–8** remain; **item 9** is deferred.
 3. **Synthetic production test data:** done. Lee approved the record-level cleanup plan, and it was carried out on 2026-10-28, 20:22–20:30 UTC; see "Post-launch cleanup (2026-10-28)".
