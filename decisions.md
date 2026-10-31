@@ -182,8 +182,32 @@ Each decision should include:
 **Consequences:**
 - No code change until the item is picked up. It then follows the backlog's implementation workflow and the established PR and release process.
 - Manager-side workspace pages only, so the item is expected to be "Participant technical change: none".
+- *Update 2026-10-31:* picked up in development. The implementation decisions are in "Help & Getting Started is a static page beside the account name". Not released.
 
 **Related:** `backlog.md` item 3 (item 2 until 2026-10-29); `project_status.md` "Help & Getting Started planned (2026-10-28; post-launch item 2)"; `components/app-nav.tsx` (main navigation).
+
+---
+
+## Help & Getting Started is a static page beside the account name
+
+**Date:** 2026-10-31 (implementation; not released)
+
+**Decision:**
+1. **Route.** Signed-in agents open `/help`, titled Help & Getting Started. The existing login check protects it. It is not a participant `/sign` page.
+2. **Navigation.** Help is a link in the fixed right-hand part of the main menu, next to the account name, on every workspace page. It is outside the scrolling row of section links.
+3. **Profiles.** The guide follows the live multi-agent behavior. An agent updates My Agent Profile. A brokerage administrator updates the shared Brokerage Profile. The October 29 assessment's description of one shared agent profile is obsolete.
+4. **Names.** The guide uses the menu labels and the page headings, and says where they differ: Forms is headed Form Templates, and Collections is headed Packet Templates.
+5. **Signings.** Steps for Create Signing, preparation, sending, and completed downloads render only when Native Signing is enabled. The page speaks of Signings, which is the menu name, and does not say "Native Signing."
+6. **Scope.** A numbered walkthrough and a Need Help? section: phone 817-881-4768, email lee@harbaughbrothers.com. No tour, progress tracking, first-visit notice, or empty-state hint. No database change.
+7. **Wizard sentence.** When a packet type has no packet template, the message is "Add a packet template under Collections first." That replaces "Create a collection under Forms → Collections first." The wizard still refuses to create the packet in that case.
+
+**Reason:** A new agent needs a plain explanation of the real screens, including whose profile is whose, and a way back to that explanation later. The October 29 assessment asked for these choices before coding; they are now applied.
+
+**Consequences:**
+- Implemented on `feat/help-getting-started`. Not merged and not released. Backlog item 3 stays open until the page is checked in production.
+- Participant technical change: none. Help does not change packet, form, or Signing behavior beyond the one wizard sentence.
+
+**Related:** `backlog.md` item 3; `project_status.md` "Help & Getting Started page (2026-10-31; development)"; `app/help/page.tsx`; `components/app-nav.tsx`; `lib/help/getting-started.ts`; `lib/types/packet-workflow.ts` (`NO_COLLECTIONS_MESSAGE`).
 
 ---
 
