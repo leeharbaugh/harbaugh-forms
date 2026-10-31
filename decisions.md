@@ -59,6 +59,7 @@ Each decision should include:
 - *Update 2026-10-31 (released):* promoted to production at 14:16:17 UTC with Lee's approval. Rollback target: `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`.
   - **Verification:** both domains passed the production suites and serve the fixed dialog code.
   - **Closing condition:** item 7 stays open until the workflow is used successfully on #2 and #4 in production.
+- *Update 2026-10-31 (closed):* the confirmed zero-mapping publish workflow republished #2 TXR-1928 and #4 TXR-2509 in production. Publish stayed disabled until the confirmation was ticked, then the server accepted. Backlog item 7 is completed.
 
 **Related:** `lib/types/form-publish-validation.ts`, `components/forms/forms-page.tsx`, `lib/types/form-publish-zero-mappings.test.ts`, `lib/forms/zero-mapping-form.test.ts`; backlog item 7.
 
@@ -121,6 +122,9 @@ Each decision should include:
   - **Lee's copies:** stay unchanged.
   - **Read-only checks on real packets** must never call the packet-form editor loader, because it saves field values on first load. Accidental writes are reported and, with Lee's approval, reversed by a guarded delete.
   - **Prerequisite:** #2 and #4 remain until backlog item 7 is fixed.
+- *Update 2026-10-31 (completed):* #2 and #4 were replaced with the same procedure after the item 7 release, so all 33 affected templates are footer-free. Backlog item 10 is completed.
+  - **Unchanged by design:** Lee's own existing copies.
+  - **Going forward:** new Texas REALTORS® downloads are cleaned with this tool before upload.
 
 **Related:** `lib/forms/template-personalization-redaction.ts`, `lib/forms/template-personalization-redaction.test.ts`, `scripts/redact-template-personalization.ts`; decisions "Form Publication Lifecycle (Draft / Published / Retired)", "Agent identity on forms belongs to the packet owner; no cross-agent fallback"; `project_status.md` "Shared template personalized footers (2026-10-30; development pilot)".
 
