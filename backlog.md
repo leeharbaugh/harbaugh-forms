@@ -10,13 +10,13 @@ The credential rotation and security-incident cleanup from October 26 are comple
 - **Completed:**
   1. Remove the development test title from Create Signing (live in production since 2026-10-29).
   2. Correct multi-agent identity resolution (live in production since 2026-10-30; Susan's packet #13 agent fields corrected). The separate personalized-footer problem in shared PDF templates is tracked as item 10.
+  7. Zero-mapping Form publishing (live since 2026-10-31; verified in production on #2 and #4).
+  10. Remove personalized footers from shared PDF templates (completed 2026-10-31; all 33 affected templates and Susan's 5 Draft copies are footer-free).
 - **Remaining, in priority order:**
-  10. **High — Remove personalized footers from shared PDF templates**: 31 of 33 templates clean in production, and Susan's 5 Draft copies footer-free. Remaining: #2 and #4, which need item 7 first.
   3. Help & Getting Started (highest-priority enhancement).
   4. Save buttons at both ends of edit screens.
   5. Additional Packet transaction statuses.
   6. View and restore hidden or inactive Packets.
-  7. Zero-mapping Form publishing (implemented and released to production 2026-10-31, `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt`; stays open until verified on #2 and #4; prerequisite for finishing item 10).
   8. Scroll to the Edit Form panel.
 - **Deferred:** 9. Warn users when required agent identity information is incomplete.
 
@@ -167,7 +167,16 @@ Provide a straightforward way to find Packets that are hidden from normal active
 - Respect organization ownership, existing permissions, and soft-delete rules.
 - Review existing delete/restore behavior first so this work fills actual gaps rather than duplicating functionality.
 
-## 7. Fix publishing a Form with zero field mappings
+## 7. Fix publishing a Form with zero field mappings (COMPLETED)
+
+**Status: COMPLETED (2026-10-31).**
+- **Released:** live in production on `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` (`23457d9`).
+- **Verified in production** on forms #2 TXR-1928 and #4 TXR-2509:
+  - the dialog showed 0 mappings, only the zero-mapping confirmation, and Publish disabled;
+  - ticking "Publish anyway with no field mappings" enabled Publish;
+  - the server accepted it, and both forms are ACTIVE / PUBLISHED.
+
+Earlier history follows.
 
 **Type:** Bug fix — Form publishing
 
@@ -222,9 +231,14 @@ Provide a straightforward way to find Packets that are hidden from normal active
 
 The warning must stay **non-blocking** unless Lee approves otherwise. It must never fill in another agent's details.
 
-## 10. High — Remove personalized footers from shared PDF templates
+## 10. High — Remove personalized footers from shared PDF templates (COMPLETED)
 
-**Status: not complete.**
+**Status: COMPLETED (2026-10-31).**
+- **Templates:** all 33 affected shared templates are ACTIVE / PUBLISHED on verified footer-free files. A final production scan of every stored template found 0 personal matches.
+- **The last two:** #2 TXR-1928 and #4 TXR-2509 were replaced on 2026-10-31.
+- **Existing copies:** Susan's 5 Draft copies in packet #13 are footer-free. Lee's copies stay as they are, by decision. See `project_status.md` "Personalized footer cleanup completed (2026-10-31)".
+
+Earlier status (2026-10-30), kept for history: **not complete.**
 - **Done:** the removal method was piloted in development on TXR-1501 and TXR-1506, and merged to `main` on 2026-10-30 ([PR #73](https://github.com/leeharbaugh/harbaugh-forms/pull/73), [PR #74](https://github.com/leeharbaugh/harbaugh-forms/pull/74)). All 33 affected templates are processable by it.
 - **Prepared, not executed:** the production procedure for the 33 templates and the in-place plan for Susan's 5 Draft copies (`project_status.md`).
 - **Unchanged:** production templates and packet copies.
@@ -301,13 +315,13 @@ Added 2026-10-30; Lee approved removing the personalized footer information.
 
 ## Implementation workflow
 
-Items 1 and 2 are completed and live in production. Items 3–10 are **not complete**.
+Items 1, 2, 7 and 10 are completed and live in production. Items 3–6 and 8 are **not complete**, and item 9 is deferred.
 - **Item 2:** completed 2026-10-30 (dynamic agent resolution live; Susan's saved agent fields corrected).
 - **Item 3:** Help & Getting Started, the highest-priority enhancement (Lee's direction, 2026-10-28 and 2026-10-29).
 - **Items 4–8:** reprioritize based on actual use. The zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 - **Item 9:** deferred.
-- **Item 10:** the template-footer removal, ranked immediately after item 2. The method is merged and the production plans are prepared. 31 of 33 templates and Susan's 5 Draft copies are done (2026-10-30). Remaining: #2 and #4, after item 7.
-- **Item 7:** fixing zero-mapping publishing now also unblocks the footer cleanup of #2 and #4. Released to production on 2026-10-31; not complete until #2/#4 are republished with it.
+- **Item 10:** completed 2026-10-31 (all 33 templates and Susan's 5 Draft copies footer-free).
+- **Item 7:** completed 2026-10-31 (released, and verified in production by republishing #2 and #4).
 
 For each item when work begins, have Cursor:
 1. Read `project_status.md` and `decisions.md` to establish the current repository state and existing design decisions.
