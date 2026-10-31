@@ -11,7 +11,7 @@ The credential rotation and security-incident cleanup from October 26 are comple
   1. Remove the development test title from Create Signing (live in production since 2026-10-29).
   2. Correct multi-agent identity resolution (live in production since 2026-10-30; Susan's packet #13 agent fields corrected). The separate personalized-footer problem in shared PDF templates is tracked as item 10.
 - **Remaining, in priority order:**
-  10. **High — Remove personalized footers from shared PDF templates**: method merged; TXR-1501 production pilot done and validated (1 of 33 templates); remaining templates await approval.
+  10. **High — Remove personalized footers from shared PDF templates**: 30 of 33 templates clean in production (TXR-1501 pilot plus 29 more). Remaining: #2 and #4 (blocked by item 7), TXR-1506, and Susan's 5 copies.
   3. Help & Getting Started (highest-priority enhancement).
   4. Save buttons at both ends of edit screens.
   5. Additional Packet transaction statuses.
@@ -268,6 +268,15 @@ Added 2026-10-30; Lee approved removing the personalized footer information.
 - **Integrity:** no other template and no existing packet copy changed.
 - **Status:** 1 of 33 templates done. **Next:** Lee's approval for the remaining 31 TCPDF templates, then TXR-1506, then Susan's 5 copies.
 
+*Update 2026-10-30 (TCPDF batch):* 29 more templates cleaned and verified in production.
+- **Now clean:** 30 of 33.
+- **Not processed:** #2 TXR-1928 and #4 TXR-2509, which have zero mappings; Publish is blocked by item 7. Both passed a local preflight.
+- **#7 TXR-1101:** needed a Lee-approved fix to one mapping's occurrence index before it would publish.
+- **Unchanged:** no packet copies, packet data or profiles.
+- **Remaining:** #2/#4 after item 7, TXR-1506 (fresh download, awaiting authorization), and Susan's 5 Draft copies.
+
+**Not complete.**
+
 **Completion criteria:**
 - Every affected active template is replaced and validated in production.
 - New packet forms carry no personalized footer.
@@ -280,7 +289,8 @@ Items 1 and 2 are completed and live in production. Items 3–10 are **not compl
 - **Item 3:** Help & Getting Started, the highest-priority enhancement (Lee's direction, 2026-10-28 and 2026-10-29).
 - **Items 4–8:** reprioritize based on actual use. The zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 - **Item 9:** deferred.
-- **Item 10:** the template-footer removal, ranked immediately after item 2. The method is merged and the production plans are prepared. The TXR-1501 production pilot is done (2026-10-30); the remaining templates await Lee's approval.
+- **Item 10:** the template-footer removal, ranked immediately after item 2. The method is merged and the production plans are prepared. The TXR-1501 production pilot and 29 more TCPDF templates are done (2026-10-30). Remaining: #2 and #4 (blocked by item 7), TXR-1506 and Susan's 5 copies.
+- **Item 7:** fixing zero-mapping publishing now also unblocks the footer cleanup of #2 and #4.
 
 For each item when work begins, have Cursor:
 1. Read `project_status.md` and `decisions.md` to establish the current repository state and existing design decisions.

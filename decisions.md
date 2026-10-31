@@ -58,6 +58,11 @@ Each decision should include:
   - **Test packet:** new-packet behaviour is checked with one temporary custom test packet of Lee's, then soft-deleted with Delete Packet.
   - **Known side effect:** Lee's UI column-width preference row is rewritten when the Forms and Packets lists are shown.
   - **Status:** 1 of 33 templates done; the rest need Lee's approval.
+- *Update 2026-10-30 (TCPDF batch, Lee approved):* 29 of the 31 remaining TCPDF templates cleaned with the same procedure, one at a time; 30 of 33 are now clean.
+  - **Zero-mapping forms (#2, #4):** not unpublished, because backlog item 7 blocks re-publishing them.
+  - **Mapping-only publish blockers:** when validation fails because of the mappings rather than the PDF, restoring the original cannot recover Published. Any mapping fix needs Lee's explicit approval.
+    - For #7, Lee approved a guarded single-row update of `occurrence_index` instead of Map Fields, because a Map Fields Save also rewrites the shared Global field.
+    - Future runs should check publish readiness before Unpublish.
 
 **Related:** `lib/forms/template-personalization-redaction.ts`, `lib/forms/template-personalization-redaction.test.ts`, `scripts/redact-template-personalization.ts`; decisions "Form Publication Lifecycle (Draft / Published / Retired)", "Agent identity on forms belongs to the packet owner; no cross-agent fallback"; `project_status.md` "Shared template personalized footers (2026-10-30; development pilot)".
 
