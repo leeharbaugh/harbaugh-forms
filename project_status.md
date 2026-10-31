@@ -1,6 +1,17 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-31, 14:55 Chicago (19:55 UTC). **Native Signing remains LIVE. Help & Getting Started (backlog item 3) is implemented in development on `feat/help-getting-started`. It is not merged and not released.**
+**As of:** 2026-10-31, 18:17 Chicago (23:17 UTC). **Native Signing remains LIVE. Help & Getting Started (backlog item 3) is merged as `6b65bdf` (PR #83). Release candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is validated at its unique URL and NOT promoted.**
+- **Candidate:** https://harbaugh-forms-c70mjha4o-lee-harbaugh-s-projects.vercel.app is READY and was built from `6b65bdf`. It has not taken forms.harbaughrealestate.com or harbaugh-forms.vercel.app. Vercel also attached its automatic main-branch hostnames to that deployment. Those are not the production domains.
+- **Production:** both domains still serve `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt`. Automatic domain assignment remains off.
+- **Checks:** 34/34 security and fail-closed checks, including signed-out `/help` redirecting to login. 8/8 participant checks. 96/96 authenticated read-only smoke checks, with 0 server errors. On the merged tree, `test:help` is 12/12, including the seven-step walkthrough when Signings is off.
+- **Help page:** signed in, `/help` shows all nine steps because Signings is on, the approved profile and optional-form wording, the packet-type chooser (opened and cancelled), and the phone and email links. Help stays in the fixed right-hand menu on the other workspace pages. The account name and Logout work. Logout was clicked and returned to login.
+- **Layout:** a desktop width and 390px have no page-level horizontal scroll. At 320px the Logout button extends about 44px past the viewport, so the page can scroll sideways. The menu content is about 364px wide.
+- **Integrity:** every public table except `user_preferences` is hash-identical, and Storage is unchanged. The one preferences row, created 2026-07-05, was updated at 23:14:08 UTC. Its keys are table column widths and the workspace view. No packet, form, profile, or Signing row changed. Fill Form was not opened.
+- **Not complete:** item 3 stays open until the page is promoted and checked in production.
+- **Participant technical change:** none.
+- See "Help & Getting Started release candidate (2026-10-31; validated, not promoted)".
+
+Earlier: 2026-10-31, 14:55 Chicago (19:55 UTC). **Native Signing remains LIVE. Help & Getting Started (backlog item 3) is implemented in development on `feat/help-getting-started`. It is not merged and not released.**
 - **Page:** signed-in `/help`, titled Help & Getting Started. A numbered walkthrough, plus Need Help? with phone 817-881-4768 (`tel:`) and email lee@harbaughbrothers.com (`mailto:`).
 - **Menu:** Help is in the fixed right-hand side of the main menu, next to the account name, on every workspace page. Participant `/sign` pages are unchanged.
 - **Profiles:** the guide follows the live behavior. Each agent updates My Agent Profile. A brokerage administrator updates the shared Brokerage Profile.
@@ -1545,9 +1556,23 @@ The first release is a simple numbered walkthrough page; an interactive guided t
 
 **Unchanged:** application code, production, Vercel, Supabase, data and Native Signing (live).
 
+### Help & Getting Started release candidate (2026-10-31; validated, not promoted)
+
+**Status:** merged to `main` as `6b65bdf` (PR #83). Candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is READY at https://harbaugh-forms-c70mjha4o-lee-harbaugh-s-projects.vercel.app and is not promoted. Backlog item 3 stays open until production verification.
+
+**What was checked.** Signed-out `/help` redirects to login. Signed in, the page title is Help & Getting Started, Help is current in the fixed right-hand menu, and the account name and Logout are usable. The walkthrough has the seven core steps plus Signing steps 8 and 9, because Native Signing is enabled on this deployment. The off state remains covered by `test:help`: seven steps and no `/signings` link when the flag is off. Production settings were not changed. Internal links open Settings, Contacts, Properties, Forms, Collections, Packets, and Signings, and Help is still in the menu afterward. Phone is `tel:817-881-4768`. Email is `mailto:lee@harbaughbrothers.com`. The packet wizard was opened only far enough to see Buyer Rep, Listing, Contract Offer, and Custom Packet, then cancelled. Fill Form and the form editor were not opened.
+
+**Layout.** At a desktop width and at 390px the page does not scroll sideways, and Help and Logout stay inside the screen. The section links scroll inside the menu. At 320px Logout extends past the right edge by about 44px.
+
+**Release checks.** 34/34 security and fail-closed checks, 8/8 participant checks, and 96/96 authenticated smoke checks. The Vercel build of `6b65bdf` is READY. No migration.
+
+**Integrity.** Public-table hashes match the pre-check fingerprint except the single `user_preferences` row. Storage objects are unchanged. Both production domains still serve `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt`, and automatic custom-domain assignment is off.
+
+**Participant technical change:** none.
+
 ### Help & Getting Started page (2026-10-31; development)
 
-**Status:** implemented on `feat/help-getting-started`. Not merged. Not released. Backlog item 3 stays open until production verification.
+**Status:** implemented on `feat/help-getting-started`, then squash-merged as `6b65bdf`. The candidate record is above. Backlog item 3 stays open until production verification.
 
 **What shipped in development.**
 - **`/help`:** a server-rendered page in the normal workspace layout. The existing login check covers it, because the path is not under `/auth`, `/login`, or participant `/sign`.
