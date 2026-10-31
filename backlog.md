@@ -13,7 +13,7 @@ The credential rotation and security-incident cleanup from October 26 are comple
   7. Zero-mapping Form publishing (live since 2026-10-31; verified in production on #2 and #4).
   10. Remove personalized footers from shared PDF templates (completed 2026-10-31; all 33 affected templates and Susan's 5 Draft copies are footer-free).
 - **Remaining, in priority order:**
-  3. Help & Getting Started (highest-priority enhancement).
+  3. Help & Getting Started (implemented in development; awaiting release).
   4. Save buttons at both ends of edit screens.
   5. Additional Packet transaction statuses.
   6. View and restore hidden or inactive Packets.
@@ -81,7 +81,9 @@ Added 2026-10-29.
 
 ## 3. Help & Getting Started — New User Walkthrough
 
-**Status:** Planned; not yet implemented. Added 2026-10-28.
+**Status:** Implemented in development (2026-10-31), not released. Not complete until it is live in production and verified there. Added 2026-10-28.
+
+**Development (2026-10-31).** `/help` is a numbered Getting Started page for every signed-in agent, opened from a Help link beside the account name. It explains My Agent Profile, the shared Brokerage Profile, Contacts, Properties, Form Templates, Packet Templates (Collections), the packet wizard, Fill form, Refresh Values, and PDF download. Signings steps appear only when Native Signing is enabled. Need Help? shows 817-881-4768 and lee@harbaughbrothers.com. No tour, progress tracking, or migration. The empty packet-template sentence now points at Collections. See `project_status.md` "Help & Getting Started page (2026-10-31; development)".
 
 **Type:** Onboarding and support enhancement
 

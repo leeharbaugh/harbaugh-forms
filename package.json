@@ -103,6 +103,7 @@
     "test:packet-form-lifecycle": "node --experimental-strip-types --test lib/types/packet-form-lifecycle.test.ts",
     "test:user-preferences": "node --experimental-strip-types --test lib/types/user-preferences.test.ts",
     "test:ui-lists": "node --experimental-strip-types --test lib/ui/list-badges.test.ts lib/ui/nav-styles.test.ts lib/types/profile.test.ts lib/ui/dialogs-polish.test.ts",
+    "test:help": "npx --yes tsx --tsconfig tsconfig.json --test lib/help/getting-started.test.ts",
     "test:form-controls": "node --experimental-strip-types --test lib/ui/form-controls.test.ts lib/types/packet-workflow.test.ts",
     "migrate:storage-paths": "node --experimental-strip-types --env-file=.env.local scripts/migrate-storage-paths.ts",
     "migrate:storage-paths:cli": "node --experimental-strip-types scripts/migrate-storage-paths-cli.ts",

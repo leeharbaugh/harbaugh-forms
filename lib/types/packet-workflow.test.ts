@@ -5,9 +5,20 @@ import {
   getPacketCreateFlowCopy,
   isCollectionPacketWorkflow,
   isPacketWorkflowType,
+  NO_COLLECTIONS_MESSAGE,
   workflowRequiresProperty,
   workflowSupportsPropertySelection,
 } from "./packet-workflow.ts";
+
+describe("NO_COLLECTIONS_MESSAGE", () => {
+  it("points at Collections, the current navigation label", () => {
+    assert.equal(
+      NO_COLLECTIONS_MESSAGE,
+      "Add a packet template under Collections first.",
+    );
+    assert.equal(NO_COLLECTIONS_MESSAGE.includes("Forms → Collections"), false);
+  });
+});
 
 describe("workflowSupportsPropertySelection", () => {
   it("excludes buyer rep packets", () => {

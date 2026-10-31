@@ -39,15 +39,17 @@ export async function AuthButton() {
   });
 
   return (
-    <div className="flex max-w-[14rem] items-center gap-2 sm:max-w-none sm:gap-3">
+    <div className="flex min-w-0 max-w-[14rem] items-center gap-1 sm:max-w-none sm:gap-3">
       <span
-        className="truncate text-xs text-muted-foreground"
+        className="min-w-0 truncate text-xs text-muted-foreground"
         title={user.email ?? greeting}
         aria-label={greeting}
       >
         {greeting}
       </span>
-      <LogoutButton />
+      <span className="shrink-0">
+        <LogoutButton />
+      </span>
     </div>
   );
 }
