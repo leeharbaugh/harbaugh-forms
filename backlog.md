@@ -11,7 +11,7 @@ The credential rotation and security-incident cleanup from October 26 are comple
   1. Remove the development test title from Create Signing (live in production since 2026-10-29).
   2. Correct multi-agent identity resolution (live in production since 2026-10-30; Susan's packet #13 agent fields corrected). The separate personalized-footer problem in shared PDF templates is tracked as item 10.
 - **Remaining, in priority order:**
-  10. **High — Remove personalized footers from shared PDF templates**: 30 of 33 templates clean in production (TXR-1501 pilot plus 29 more). Remaining: #2 and #4 (blocked by item 7), TXR-1506, and Susan's 5 copies.
+  10. **High — Remove personalized footers from shared PDF templates**: 31 of 33 templates clean in production, and Susan's 5 Draft copies footer-free. Remaining: #2 and #4, which need item 7 first.
   3. Help & Getting Started (highest-priority enhancement).
   4. Save buttons at both ends of edit screens.
   5. Additional Packet transaction statuses.
@@ -171,6 +171,8 @@ Provide a straightforward way to find Packets that are hidden from normal active
 
 **Type:** Bug fix — Form publishing
 
+**Prerequisite for item 10 (2026-10-30):** forms #2 TXR-1928 and #4 TXR-2509 have zero mappings, so their footer cleanup (Unpublish → Replace PDF → Publish) waits for this fix. Their cleaned files are already verified.
+
 **Current observed behavior:** When publishing a Form with **0 field mappings**, a confirmation pop-up offers a checkbox labeled **“Publish anyway with not field mappings.”** However, the **Publish Form** button remains grayed out, preventing publication even when the user intends to publish without mappings.
 
 **Expected behavior**
@@ -275,6 +277,13 @@ Added 2026-10-30; Lee approved removing the personalized footer information.
 - **Unchanged:** no packet copies, packet data or profiles.
 - **Remaining:** #2/#4 after item 7, TXR-1506 (fresh download, awaiting authorization), and Susan's 5 Draft copies.
 
+*Update 2026-10-30 (TXR-1506 and Susan's copies):*
+- **TXR-1506:** replaced with the verified fresh 06-15-26 file. Publish validation passed with 2 mappings.
+- **Susan's 5 Draft copies:** overwritten in place, each byte-identical to its cleaned template output. Her saved values, overrides and profile are unchanged.
+- **Lee's copies:** unchanged.
+- **Now clean:** 31 of 33 templates.
+- **Remaining:** only #2 TXR-1928 and #4 TXR-2509. **Prerequisite:** item 7 (zero-mapping publishing).
+
 **Not complete.**
 
 **Completion criteria:**
@@ -289,7 +298,7 @@ Items 1 and 2 are completed and live in production. Items 3–10 are **not compl
 - **Item 3:** Help & Getting Started, the highest-priority enhancement (Lee's direction, 2026-10-28 and 2026-10-29).
 - **Items 4–8:** reprioritize based on actual use. The zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 - **Item 9:** deferred.
-- **Item 10:** the template-footer removal, ranked immediately after item 2. The method is merged and the production plans are prepared. The TXR-1501 production pilot and 29 more TCPDF templates are done (2026-10-30). Remaining: #2 and #4 (blocked by item 7), TXR-1506 and Susan's 5 copies.
+- **Item 10:** the template-footer removal, ranked immediately after item 2. The method is merged and the production plans are prepared. 31 of 33 templates and Susan's 5 Draft copies are done (2026-10-30). Remaining: #2 and #4, after item 7.
 - **Item 7:** fixing zero-mapping publishing now also unblocks the footer cleanup of #2 and #4.
 
 For each item when work begins, have Cursor:
