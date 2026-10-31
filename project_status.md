@@ -1,6 +1,14 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-31, 09:11 Chicago (14:11 UTC). **Native Signing remains LIVE. The zero-mapping publishing fix (backlog item 7) is merged as `23457d9` (PR #79). Its production candidate `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` is validated at its unique URL and NOT promoted; it awaits Lee's approval.**
+**As of:** 2026-10-31, 09:25 Chicago (14:25 UTC). **Native Signing remains LIVE. The zero-mapping publishing fix (backlog item 7) is LIVE in production: `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` (`23457d9`) was promoted at 14:16:17 UTC with Lee's approval and is serving both domains.**
+- **Verification:** both domains pass 33/33 security and fail-closed checks, 8/8 participant checks and 96/96 authenticated read-only smoke checks, and serve the fixed Publish dialog code. The scheduled signing-worker Cron answers 200.
+- **Integrity:** production data is unchanged except Lee's UI column-width row.
+- **Unchanged otherwise:** automatic domain assignment is off, and forms #2 and #4 are untouched.
+- **Rollback target:** `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`.
+- **Still open:** items 7 and 10, until #2 and #4 are republished.
+- See "Zero-mapping publishing production release (2026-10-31; live)". PR #80 merged as `c5f5e23`.
+
+Earlier: 2026-10-31, 09:11 Chicago (14:11 UTC). **Native Signing remains LIVE. The zero-mapping publishing fix (backlog item 7) is merged as `23457d9` (PR #79). Its production candidate `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` is validated at its unique URL and NOT promoted; it awaits Lee's approval.**
 - **Validation:** 33/33 security and fail-closed checks, 8/8 participant checks and 96/96 authenticated read-only smoke checks, with 0 server errors.
 - **Fix confirmed:** the candidate serves the fixed Publish dialog code, while current production still serves the old one.
 - **Release:** no migration.
@@ -521,7 +529,69 @@ Earlier: 2026-10-14, evening (PR #46 Signing Placement Templates tranche impleme
 Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancellation in development now leaves the exact sandboxed email in `_audit_tmp/signing-email-sandbox/`. This needed a small dev-only code change; previously the sandbox discarded the body. No migration, production untouched, Gate A paused. See "Sandbox email inspection" below. Earlier: 2026-10-13, morning (PR #46 cancellation emails tranche implemented and browser-QA'd in development. Cancel Signing now asks for a required "Internal cancellation reason", which is saved in Signing history and never emailed, and an optional "Message to participants". It emails every invited participant after commit. Eligibility comes from invitation history, so finished, revoked-link, replaced-link and archived participants are included; Draft and in-person-only participants are not. The email has no link and makes no legal claim. Delivery uses the existing instruction / outbox / attempt architecture, is retried, never changes lifecycle, and sends at most one email per participant. New dev-only migration `20261013120000`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Cancellation emails tranche" below. Earlier: 2026-10-12, night (PR #46 Archive Signing tranche implemented and browser-QA'd in development. Archive is organizational state (`signings.archived_at`), not lifecycle. Any lifecycle state can be archived and unarchived. The Signings list hides archived Signings unless "Show archived" is selected. Archiving an In Progress Signing revokes every participant link, entry session, in-person handoff and open ceremony session in one transaction, and unarchiving never restores them (managers Replace links to resume). New dev-only migrations `20261012120000` and `20261012120100`. PR #46 still open and unmerged, Gate A paused, production untouched. See "Archive Signing tranche" below. Earlier: 2026-10-12, evening (Stage 1 / Stage 2 npm scripts now run under `tsx`, and `participant-link-qa.test.ts` runs in the Stage 4 suite; all 54 `test:*` scripts pass on PR #46. Earlier the same afternoon: dependency-security PR #53 squash-merged to `main` as `a15bbb5`: Next.js 16.3.8, sharp 0.35.5, source-map-js 1.2.2, `npm audit --omit=dev` 0. PR #46 synced with patched `main` by a merge commit and fully revalidated; see "PR #46 synced with patched main" below. PR #46 still open and unmerged, Gate A paused, production untouched. Earlier: 2026-10-12, afternoon (PR #46 combined-package refresh tranche implemented and browser-QA'd in development. The combined signed package stays a post-Complete convenience artifact. An open manager dashboard now shows "Combined signed package — Preparing…" when it reaches Complete before the package exists, keeps refreshing every 20 s, and swaps in View / Download when the package is verified, with no reload or navigation. The watcher stops once completed artifacts settle. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Combined-package refresh tranche" below. Earlier: 2026-10-11, night (PR #46 completed-document access tranche implemented and browser-QA'd in development. On a Complete Signing, managers with existing Signing authority see "Completed documents" at the top of the dashboard: each signed document, the audit certificate and the combined package once generated, each with View (full-screen read-only viewer, Fit Width / Fit Page / zoom) and Download. Both serve the same immutable, re-hashed finalization artifact through one authorized server route. A fingerprint mismatch is refused, and Draft, In Progress, Declined and Cancelled show and serve nothing. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Completed-document access tranche" below. Earlier: 2026-10-11, evening (PR #46 ceremony-regression tranche implemented and browser-QA'd in development. Applied Initials, Date Signed and Signature show their full text inside the stored field box at every zoom, with no ellipsis, and the completed PDF uses the same fit. Your fields docks from one measured width (1024px and up) and is otherwise a keyboard-accessible drawer, with no dead zone and no horizontal scroll at any of 13 widths from 1440 to 390. A long-open manager Signing page now shows Declined (naming who declined), Cancelled and Complete without a reload: authorized polling every 20 s while In Progress, plus a refresh on tab focus or visibility. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony-regression tranche" below. Earlier: 2026-10-11, afternoon (PR #46 ceremony UX tranche implemented and browser-QA'd in development. Start signing records the read-only Signing name and derived, non-editable initials. The PDF fills the screen with Fit Width / Fit Page / zoom. Guidance goes to the first required field and, only after the server accepts each mark, to the next one or to Finish. Your fields navigates spatially. Finish and done wording separate the participant's part from Signing completion. Leave for now and Decline to sign are QA'd end to end. E-sign consent is now enforced on the server (security finding, fixed). No migration. PR still open and unmerged, Gate A paused, production untouched. See "Ceremony UX tranche" below. Earlier: 2026-10-10, afternoon (PR #46 toolbar tranche implemented and QA'd in development. The auto-add notice shows names, not "[object Object]", and stays one-time. Prepare Documents places with explicit one-shot tools (Signature, Initials, Date, Printed Name, Checkmark) instead of a Field type dropdown, and choosing a participant arms nothing. Link to is removed: Dates link to the nearest source at placement, a selected Date outlines its source, and relinking is delete-and-replace. No migration. PR still open and unmerged, Gate A paused, production untouched. See "Toolbar tranche" below. Earlier the same day: PR #46 polish tranche implemented and QA'd in development. The "Added from the source Packet" notice now shows once and is acknowledged only after the browser displays it. Date Signed links automatically to the nearest Signature or Initials on the hovered page, with Link to as an explicit override. Send readiness updates from the server within about 2 seconds of each placement change, instead of after a 12–14 s reload. New dev-only migration `20261010120000`. PR still open and unmerged, Gate A paused, production untouched. See "Polish tranche" below. Earlier: 2026-10-09, evening (PR #46 Packet lifecycle cleanup implemented and QA'd in development. Packets are ACTIVE or DELETED only, and the unintended INACTIVE state is gone from the database constraint, types and UI. Dev Packet #12, the only INACTIVE Packet, was normalized to ACTIVE. New dev-only migration `20261009140000`. PR still open and unmerged, Gate A paused, production untouched. See "Packet lifecycle cleanup" below. Earlier the same day: PR #46 correctness tranche implemented and QA'd in development. Create Signing eligibility now comes from one server helper, and ineligible Packets show a disabled control with the reason. The Packets list and the selector agree: Inactive is listed, and only Deleted waits for Show deleted. Opening a Draft Signing completes Packet auto-add and identity sync before the first paint. Signing rename works in every lifecycle state and records a history event. New dev-only migration `20261009130000`. PR still open and unmerged, Gate A paused, production untouched. Next after Lee's approval: the separate dependency-advisory PR from `main`. See "Correctness tranche" below. Earlier: 2026-10-08, late (PR #46 Draft polish tranche implemented and QA'd in development: Packet parties auto-add while Draft with per-Signing removal suppression and Restore; linked participant identity live from Contact / profile / brokerage profile while Draft and canonized at activation, with Cancel + new Signing as the only post-activation correction; Date Signed click-to-link; Copy enters paste mode immediately; new fields anchor at the click's left edge. New dev-only migration `20261009120000`. PR still open and unmerged, Gate A paused, production untouched. See "Draft polish tranche" below. Earlier the same day: PR #46 Draft-preparation tranche implemented and QA'd in development: additive Add from Packet, participant roles, Include me / Include broker, Initials-linked Date Signed, click-anchored paste, Printed Name and Checkmark prepared content, Quick Fields removed; new dev-only migration `20261008120000`; PR still open and unmerged, Gate A paused, production untouched; see "Draft-preparation tranche" below. Earlier, 2026-10-05: PR #46 document-visible participant ceremony + read-only typed Signature implemented and browser-QA'd in development; ready for Lee's re-QA; PR still open and unmerged, Gate A paused, production untouched; new upstream `npm audit` advisories (source-map-js / postcss, braces) recorded for a separate dependency PR, see "Lee's manual QA findings and document-visible ceremony tranche" below. Earlier, 2026-10-02: PR #46 brought up to date with `main` `7733493` by merge commit `8769993` (Next.js 16.3.6, no conflicts left, full revalidation and ceremony browser regression pass); PR still open, awaiting Lee's manual re-QA, manager completed-document access is a pre-production blocker, see "PR #46 merged with current main" below; Native Signing participant ceremony QA complete on PR #46 at `3f92e48`: four ceremony defects fixed; packet Created/Updated timestamps fixed to Central time with CDT/CST, PR #52 squash-merged to `main` as `7733493`, live in production via hotfix `3e5eaa3` (= `c25e4c3` + PR #52 code only), deployment `dpl_E9HTxf45epr8ckKifivWCPNgpFAU`, rollback `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`; dev-only `brace-expansion` advisories remediated by lockfile-only PR #51, squash-merged to `main` as `edfc5a7`, full lockfile audit clean, not deployed (dev-only, no production effect); admin-page React #418 hydration fix live in production via hotfix `c25e4c3` (= `2a92d82` + fix), deployment `dpl_4ys2PciJMmfdg4QkhZr7dHHeSjyo`, rollback `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`; PR #50 squash-merged to `main` as `c2a490a` on 2026-10-02; Next.js 16.3.6 security patch for GHSA-vcvr-r3jv-pc5j is live in production via hotfix `2a92d82` (= `a87b1aa` + dependency change only; deployment `dpl_DBUMG2wVXxXvzQvhgtf65khSUpWf`); PR #49 squash-merged to `main` as `9f00a80` on 2026-10-02. Earlier, 2026-09-30: Native Signing development and QA remain the active workstream; work paused briefly for the duplicate packet forms hotfix, now live in production. Resume Native Signing development/QA from the state recorded below. Production is running the isolated hotfix, not `main`; production Native Signing remains unavailable.)
 ## Current State
 
+### Zero-mapping publishing production release (2026-10-31; live)
+
+**Status:** LIVE (Lee approved). `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` (`23457d9`, PR #79) has been the production target since **2026-10-31 14:16:17 UTC**, serving `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app`.
+- **Rollback target:** `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz` (`1ebbca9`). No migration was involved, so a rollback is a promotion only.
+- **Still open:** backlog item 7 until the zero-mapping workflow is verified with #2 and #4, and item 10 until both are cleaned.
+
+**Before promotion (read-only).**
+- **Candidate:** unchanged from validation (same ID, commit, URL and creation time), READY, production target, `main` at `23457d9`.
+- **Live state:** both domains and the production target were on `dpl_DhZ5…`, and `autoAssignCustomDomains=false`. No environment variable had changed since 2026-10-29.
+- **Forms #2 and #4:** PUBLISHED with 0 mappings.
+- **Fingerprint:** the whole-database and Storage fingerprint is identical to the end of candidate validation.
+
+**Promotion.**
+- **Procedure:** the guarded procedure (`promote-candidate-r70.ps1`), from the empty neutral directory. The dry run passed every guard:
+  - candidate READY, production target, built from `23457d9` on `leeharbaugh/harbaugh-forms` `main`, and belonging to the project;
+  - `autoAssignCustomDomains=false`, with the expected live deployment on both domains;
+  - one Sensitive Production `SUPABASE_SECRET_KEY`, and the candidate newer than it.
+- **Run:** `vercel promote dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt --yes` succeeded in 4 s.
+- **After:** production target and both aliases on `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt`, with `autoAssignCustomDomains=False`.
+
+**Production verification (both domains).**
+- **Security and fail-closed checks, 33/33:**
+  - the login page embeds the new deployment ID;
+  - headers and the exact sign-route CSP, and the pdf.js worker;
+  - Cron and worker refuse missing, wrong and swapped secrets;
+  - internal routes require login.
+- **Participant checks, 8/8.**
+- **Authenticated read-only smoke, 96/96:**
+  - core routes, Settings agent and brokerage profiles (nothing saved), Forms, Packets and packet detail, Contacts, Collections, Properties;
+  - Signings with their historical titles, and admin Signing controls (enabled, not suspended);
+  - Next.js 16.4.1;
+  - 0 HTTP 5xx and 0 page errors.
+
+  Fill Form was not opened. The smoke's snapshots show field instances, packet #13, agent and brokerage profiles, and Signings unchanged.
+- **Fix-specific check:** each domain serves the fixed Publish dialog code (shared `empty_mappings`, no `"EMPTY_MAPPINGS"`). The Forms editor opens TXR-1928 (#2) with its lifecycle panel (nothing clicked), and the check sent 0 non-GET requests.
+- **Runtime logs since promotion:**
+  - 0 error, warning or fatal entries;
+  - the only 5xx are the participant checks' expected fail-closed `503` responses on `/sign/*`;
+  - the scheduled `/api/internal/cron/signing-worker` returned 200 at 14:22:26 and 14:24:26 UTC.
+- **Not exercised in production:** the Publish dialog itself, because there are no Draft forms and the task forbids unpublishing #2 or #4 to test it. Its first production use is the #2/#4 cleanup.
+
+**Data integrity (whole-database and Storage fingerprint, before and after promotion and verification).**
+- **Unchanged:** 75 of 76 tables, including `forms`, `form_field_mappings`, `packets`, `packet_forms` and `field_instances`; `user_agent_settings` and `brokerage_settings`; `signings`, `signing_events`, `signing_artifacts` and `signing_system_controls`.
+- **Changed:** only `user_preferences` (Lee's single row, rewritten with list column widths when the smoke shows the Forms and Packets lists). This is an ordinary UI-preference write, not substantive data.
+- **Storage:** 133 objects, none changed.
+- **Forms #2 and #4:** still PUBLISHED with 0 mappings, on their original objects.
+
+**Documentation merge.**
+- **PR #80:** merged as `c5f5e23` after verification.
+- **Network failure on the first attempt:** a GitHub TLS timeout and connection reset stopped the merge, but the unconditional command chain still removed the docs worktree and deleted its local branch. Nothing was lost, because the branch was fully pushed. The retry used failure guards.
+- **Automatic build:** the merge's production-target build `dpl_Bd1Edn8vNassB4SYJmo6JESyzbUe` was **not promoted**.
+
+**Next (needs Lee's approval):** clean #2 TXR-1928 and #4 TXR-2509 with the established footer procedure:
+1. Preflight against the verified cleaned files (`5d57ec9e…`, `83675be9…`) with fresh encrypted backups.
+2. Check publish readiness before Unpublish, which must show only the zero-mapping confirmation.
+3. Unpublish → Replace PDF → Publish with "Publish anyway with no field mappings" ticked, as Lee.
+4. Take a fingerprint before and after.
+
+Then close items 7 and 10.
+
 ### Zero-mapping publishing release candidate (2026-10-31; validated, not promoted)
+
+*Update 2026-10-31 14:16 UTC: promoted; see "Zero-mapping publishing production release (2026-10-31; live)".*
 
 **Status:** [PR #79](https://github.com/leeharbaugh/harbaugh-forms/pull/79) was squash-merged as `23457d9`, after final verification; the merged tree equals the reviewed head `9ac1f28`. The automatic production-target build is validated at its unique URL and is **not promoted**. Backlog items 7 and 10 stay open.
 
@@ -574,7 +644,7 @@ Earlier: 2026-10-14, afternoon (PR #46 sandbox email inspection: a manual cancel
 - **Ready:** the verified cleaned files (`5d57ec9e…`, `83675be9…`) and encrypted backups of the current originals are in the private folder. They are not replaced yet.
 
 **Next (each needs Lee's approval).**
-1. Promote `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` with the guarded promotion procedure from the neutral directory, keeping automatic domain assignment off. Then run the production suites on both domains.
+1. Promote `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` with the guarded promotion procedure from the neutral directory, keeping automatic domain assignment off. Then run the production suites on both domains. *Done 2026-10-31 14:16 UTC.*
 2. Run the #2/#4 footer procedure; see "Zero-mapping publishing fix (2026-10-31; development)", "Remaining production steps".
 
 ### Zero-mapping publishing fix (2026-10-31; development)
@@ -631,7 +701,7 @@ The new tests fail on `main`'s code. `tsc`, ESLint, all 62 `test:*` suites (incl
 
 **Remaining production steps (each needs Lee's approval).**
 1. Review and merge the PR, then validate the automatic production-target build at its unique URL. *Done 2026-10-31: `23457d9`, candidate `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` validated.*
-2. Promote with the guarded promotion procedure; autoAssignCustomDomains stays off.
+2. Promote with the guarded promotion procedure; autoAssignCustomDomains stays off. *Done 2026-10-31 14:16 UTC (`dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt`).*
 3. For #2 and #4, run the established footer procedure:
    - preflight against the verified cleaned files (`5d57ec9e…` and `83675be9…`);
    - check publish readiness before Unpublish, which must report only the zero-mapping confirmation;
