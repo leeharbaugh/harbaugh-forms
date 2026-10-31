@@ -53,6 +53,10 @@ Each decision should include:
 
 **Consequences:** no migration. The database publish function never required mappings. Packet copies, collections, Fill Form and Download PDF already handle zero-field forms.
 
+- *Update 2026-10-31:* merged as `23457d9` (PR #79).
+  - **Candidate:** `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` is validated at its unique URL, including confirmation that it serves the fixed dialog code. Not promoted.
+  - **Not tested in production:** the Publish dialog is not exercised there before promotion, because doing so would require unpublishing a real form. The development browser run is the evidence for the rendered dialog.
+
 **Related:** `lib/types/form-publish-validation.ts`, `components/forms/forms-page.tsx`, `lib/types/form-publish-zero-mappings.test.ts`, `lib/forms/zero-mapping-form.test.ts`; backlog item 7.
 
 ---
