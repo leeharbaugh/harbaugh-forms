@@ -56,6 +56,9 @@ Each decision should include:
 - *Update 2026-10-31:* merged as `23457d9` (PR #79).
   - **Candidate:** `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` is validated at its unique URL, including confirmation that it serves the fixed dialog code. Not promoted.
   - **Not tested in production:** the Publish dialog is not exercised there before promotion, because doing so would require unpublishing a real form. The development browser run is the evidence for the rendered dialog.
+- *Update 2026-10-31 (released):* promoted to production at 14:16:17 UTC with Lee's approval. Rollback target: `dpl_DhZ5sJg7tL949hdcQEviLAfAAvpz`.
+  - **Verification:** both domains passed the production suites and serve the fixed dialog code.
+  - **Closing condition:** item 7 stays open until the workflow is used successfully on #2 and #4 in production.
 
 **Related:** `lib/types/form-publish-validation.ts`, `components/forms/forms-page.tsx`, `lib/types/form-publish-zero-mappings.test.ts`, `lib/forms/zero-mapping-form.test.ts`; backlog item 7.
 
