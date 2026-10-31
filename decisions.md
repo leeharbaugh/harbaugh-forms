@@ -63,6 +63,12 @@ Each decision should include:
   - **Mapping-only publish blockers:** when validation fails because of the mappings rather than the PDF, restoring the original cannot recover Published. Any mapping fix needs Lee's explicit approval.
     - For #7, Lee approved a guarded single-row update of `occurrence_index` instead of Map Fields, because a Map Fields Save also rewrites the shared Global field.
     - Future runs should check publish readiness before Unpublish.
+- *Update 2026-10-30 (TXR-1506 and Susan's copies, Lee approved):*
+  - **TXR-1506:** replaced with the redacted fresh 06-15-26 download, after a simulated publish-readiness check (the app's own validation) passed before Unpublish.
+  - **Susan's 5 Draft copies:** overwritten in place at their own Storage paths as Lee's admin session, so Storage RLS enforced Draft-only. No database writes; each verified byte-identical to its cleaned template output.
+  - **Lee's copies:** stay unchanged.
+  - **Read-only checks on real packets** must never call the packet-form editor loader, because it saves field values on first load. Accidental writes are reported and, with Lee's approval, reversed by a guarded delete.
+  - **Prerequisite:** #2 and #4 remain until backlog item 7 is fixed.
 
 **Related:** `lib/forms/template-personalization-redaction.ts`, `lib/forms/template-personalization-redaction.test.ts`, `scripts/redact-template-personalization.ts`; decisions "Form Publication Lifecycle (Draft / Published / Retired)", "Agent identity on forms belongs to the packet owner; no cross-agent fallback"; `project_status.md` "Shared template personalized footers (2026-10-30; development pilot)".
 
