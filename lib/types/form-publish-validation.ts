@@ -51,6 +51,49 @@ export type PublishValidationIssue = {
   blocking: boolean;
 };
 
+/**
+ * Issue code for a form with zero ACTIVE mappings. It is a confirmation
+ * prompt, not a defect: the explicit "publish with no field mappings" choice
+ * satisfies it. UI and server must compare against this constant.
+ */
+export const EMPTY_MAPPINGS_ISSUE_CODE = "empty_mappings";
+
+/** Blocking issues that remain once the zero-mapping confirmation is applied. */
+export function remainingPublishBlockers(
+  issues: readonly PublishValidationIssue[],
+  allowEmptyMappings: boolean,
+): PublishValidationIssue[] {
+  return issues.filter(
+    (issue) =>
+      issue.blocking &&
+      !(allowEmptyMappings && issue.code === EMPTY_MAPPINGS_ISSUE_CODE),
+  );
+}
+
+/** Whether the Publish dialog may submit, given the server preview and the user's choices. */
+export function canConfirmPublish(input: {
+  isPreviewLoading: boolean;
+  preview: {
+    requiresEmptyMappingsConfirmation: boolean;
+    hasConflict: boolean;
+    issues: readonly PublishValidationIssue[];
+  } | null;
+  allowEmptyMappings: boolean;
+  retirePreviousConfirmed: boolean;
+}): boolean {
+  const { preview } = input;
+  if (input.isPreviewLoading || preview == null) {
+    return false;
+  }
+  if (preview.requiresEmptyMappingsConfirmation && !input.allowEmptyMappings) {
+    return false;
+  }
+  if (preview.hasConflict && !input.retirePreviousConfirmed) {
+    return false;
+  }
+  return remainingPublishBlockers(preview.issues, input.allowEmptyMappings).length === 0;
+}
+
 export type PublishValidationResult = {
   ok: boolean;
   issues: PublishValidationIssue[];
@@ -142,7 +185,7 @@ export function validateFormForPublish(input: {
 
   if (requiresEmptyMappingsConfirmation && !input.allowEmptyMappings) {
     issues.push({
-      code: "empty_mappings",
+      code: EMPTY_MAPPINGS_ISSUE_CODE,
       message:
         "This form has no field mappings. Confirm it is intentionally non-fillable before publishing.",
       blocking: true,

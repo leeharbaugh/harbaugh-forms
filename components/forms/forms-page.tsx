@@ -51,6 +51,11 @@ import {
   type FormStateEventListItem,
 } from "@/lib/forms/form-lifecycle-actions";
 import {
+  EMPTY_MAPPINGS_ISSUE_CODE,
+  canConfirmPublish,
+  remainingPublishBlockers,
+} from "@/lib/types/form-publish-validation";
+import {
   canOfferCopyToGlobalLibrary,
   presentFormOwnership,
   resolveFormOwnerDisplayName,
@@ -553,17 +558,12 @@ export function FormsPage({
             "Choose Publish and retire previous, or cancel.",
           );
         }
-        const blocking = (publishPreview?.issues ?? []).filter(
-          (issue) => issue.blocking,
+        const blocking = remainingPublishBlockers(
+          publishPreview?.issues ?? [],
+          allowEmptyMappings,
         );
-        if (blocking.length > 0 && !allowEmptyMappings) {
-          // Blocking issues other than empty mappings still block.
-          const nonEmpty = blocking.filter(
-            (issue) => issue.code !== "EMPTY_MAPPINGS",
-          );
-          if (nonEmpty.length > 0) {
-            throw new Error(nonEmpty[0]!.message);
-          }
+        if (blocking.length > 0) {
+          throw new Error(blocking[0]!.message);
         }
 
         const result = await publishFormTemplate({
@@ -981,17 +981,19 @@ export function FormsPage({
     return ` ${parts.join("; ")}.`;
   })();
 
-  const publishBlockingIssues =
-    publishPreview?.issues.filter((issue) => issue.blocking) ?? [];
-  const publishConfirmDisabled =
-    isPublishPreviewLoading ||
-    publishPreview == null ||
-    (publishPreview.requiresEmptyMappingsConfirmation && !allowEmptyMappings) ||
-    (publishPreview.conflict != null && !retirePreviousConfirmed) ||
-    publishBlockingIssues.some(
-      (issue) =>
-        issue.code !== "EMPTY_MAPPINGS" || !allowEmptyMappings,
-    );
+  const publishConfirmDisabled = !canConfirmPublish({
+    isPreviewLoading: isPublishPreviewLoading,
+    preview: publishPreview
+      ? {
+          requiresEmptyMappingsConfirmation:
+            publishPreview.requiresEmptyMappingsConfirmation,
+          hasConflict: publishPreview.conflict != null,
+          issues: publishPreview.issues,
+        }
+      : null,
+    allowEmptyMappings,
+    retirePreviousConfirmed,
+  });
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
@@ -1066,7 +1068,10 @@ export function FormsPage({
                     <li
                       key={`${issue.code}-${issue.message}`}
                       className={
-                        issue.blocking ? "text-destructive" : undefined
+                        issue.blocking &&
+                        issue.code !== EMPTY_MAPPINGS_ISSUE_CODE
+                          ? "text-destructive"
+                          : undefined
                       }
                     >
                       {issue.message}
