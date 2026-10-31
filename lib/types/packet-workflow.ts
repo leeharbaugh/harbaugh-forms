@@ -264,7 +264,7 @@ export function getPropertyRequiredMessage(
 }
 
 export const NO_COLLECTIONS_MESSAGE =
-  "Create a collection under Forms → Collections first.";
+  "Add a packet template under Collections first.";
 
 /** Values allowed by packets_packet_type_check (plus SQL NULL). */
 export function isAllowedPacketTypeValue(

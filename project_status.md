@@ -1,6 +1,19 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-31, 14:20 Chicago (19:20 UTC). **Native Signing remains LIVE. Backlog items 7 (zero-mapping publishing) and 10 (personalized template footers) are COMPLETED.**
+**As of:** 2026-10-31, 14:55 Chicago (19:55 UTC). **Native Signing remains LIVE. Help & Getting Started (backlog item 3) is implemented in development on `feat/help-getting-started`. It is not merged and not released.**
+- **Page:** signed-in `/help`, titled Help & Getting Started. A numbered walkthrough, plus Need Help? with phone 817-881-4768 (`tel:`) and email lee@harbaughbrothers.com (`mailto:`).
+- **Menu:** Help is in the fixed right-hand side of the main menu, next to the account name, on every workspace page. Participant `/sign` pages are unchanged.
+- **Profiles:** the guide follows the live behavior. Each agent updates My Agent Profile. A brokerage administrator updates the shared Brokerage Profile.
+- **Names:** the menu says Forms and Collections; the pages are headed Form Templates and Packet Templates. The guide says so.
+- **Signings:** Create Signing, preparation, sending, and completed downloads appear only when Native Signing is enabled. The page itself does not use the name "Native Signing."
+- **Wizard sentence only:** an empty packet-template list now says "Add a packet template under Collections first." Creating a packet is otherwise unchanged.
+- **Not built:** an interactive tour, progress tracking, a first-visit notice, or extra empty-state hints. No migration.
+- **Validation:** `tsc --noEmit` clean; ESLint `--max-warnings=0` on the changed files; 63 of 63 `test:*` suites pass, including new `test:help` (12 tests); `build:validate` passes. In the browser, signed-out `/help` goes to login. Signed in, the walkthrough, Help, and the phone and email links work on a desktop width and at 390px, with no page-level horizontal scroll. On a narrow screen the section links scroll inside the menu, and Help and Logout stay visible.
+- **Not complete:** item 3 stays open until the page is released and checked in production.
+- **Participant technical change:** none.
+- See "Help & Getting Started page (2026-10-31; development)".
+
+Earlier: 2026-10-31, 14:20 Chicago (19:20 UTC). **Native Signing remains LIVE. Backlog items 7 (zero-mapping publishing) and 10 (personalized template footers) are COMPLETED.**
 - **The last two templates (Lee approved):** #2 TXR-1928 and #4 TXR-2509 were replaced through Unpublish → Replace PDF → Publish, using the "Publish anyway with no field mappings" confirmation. This was the first production use of the fix, and it worked.
 - **All 33:** every affected template is ACTIVE / PUBLISHED on its verified footer-free file, with 0 personal matches in a final scan.
 - **Integrity:** the only changes are rows #2 and #4 in `forms`, their 4 lifecycle events, Lee's UI-preference row and 2 new template objects. No packet copy, saved value, profile or Signing data changed.
@@ -1493,7 +1506,9 @@ The first release is a simple numbered walkthrough page; an interactive guided t
 
 ### Help & Getting Started: implementation assessment (2026-10-29; not started)
 
-**Status:** read-only assessment; item 2 (item 3 since 2026-10-29) is **not started**. The requirements in `backlog.md` are unchanged. The open questions below need Lee's decisions before coding.
+**Status:** read-only assessment; item 2 (item 3 since 2026-10-29) was **not started** when this was written. The requirements in `backlog.md` are unchanged.
+
+*Update 2026-10-31:* the page is now implemented in development. Use the live behavior, not the Settings finding below: My Agent Profile is each agent's own record, and Brokerage Profile stays shared. See "Help & Getting Started page (2026-10-31; development)".
 
 **What exists today.**
 - **No help:** there is no Help, Getting Started, onboarding or support-contact content in the workspace.
@@ -1529,6 +1544,23 @@ The first release is a simple numbered walkthrough page; an interactive guided t
 - **Optional later:** a one-line "New here? See Getting Started" hint on empty states; a dismissible first-visit notice stored in `user_preferences`; an interactive tour (the backlog marks this as later).
 
 **Unchanged:** application code, production, Vercel, Supabase, data and Native Signing (live).
+
+### Help & Getting Started page (2026-10-31; development)
+
+**Status:** implemented on `feat/help-getting-started`. Not merged. Not released. Backlog item 3 stays open until production verification.
+
+**What shipped in development.**
+- **`/help`:** a server-rendered page in the normal workspace layout. The existing login check covers it, because the path is not under `/auth`, `/login`, or participant `/sign`.
+- **Walkthrough:** review My Agent Profile and the shared Brokerage Profile; add contacts; add a property when the packet type needs one; review Form Templates, with adding your own form optional; review Packet Templates (the Collections page), with creating your own optional; create a packet through Buyer Rep, Listing, Contract Offer, or Custom Packet; fill a form, Refresh Values on a Draft, and download PDFs. When Native Signing is enabled, two further steps cover Create Signing, Use this Packet, Prepare Documents, Send or Begin In-Person Signing, and the completed downloads.
+- **Support:** Need Help? shows phone 817-881-4768 and email lee@harbaughbrothers.com as `tel:` and `mailto:` links.
+- **Menu:** Help uses the same focus ring as the other menu links and sits outside the horizontally scrolling section list, beside the account name. On a narrow screen the account name truncates so Help and Logout remain on screen, and the section list keeps a small scrollable area.
+- **One sentence in the packet wizard:** `NO_COLLECTIONS_MESSAGE` is now "Add a packet template under Collections first." The wizard still shows that sentence only when no packet template matches, and it still does not create a packet in that case.
+
+**Left out on purpose.** No interactive tour, no stored onboarding progress, no first-visit notice, and no new empty-state hint. No migration. Help does not call packet, form, or Signing actions. Participant `/sign` pages do not gain the workspace menu.
+
+**Validation.** `tsc --noEmit` clean. ESLint `--max-warnings=0` on the changed application files. All 63 `test:*` suites pass with 0 failures, including `test:help` (12) and the packet-workflow sentence test in `test:form-controls`. `build:validate` passes. Browser check against the development server (Native Signing on, matching production): a signed-out visit to `/help` redirects to login; after sign-in the page title is Help & Getting Started, Help is the current menu item, the nine steps and Need Help? are present, and the Settings link in the walkthrough opens Settings, where Help is still in the menu. At 390px the page does not scroll sideways; Help and Logout stay visible; Contacts remains visible and the rest of the section menu scrolls.
+
+**Participant technical change:** none.
 
 ### Create Signing default title (2026-10-28; post-launch item 1)
 
