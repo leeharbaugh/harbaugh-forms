@@ -16,7 +16,7 @@ The credential rotation and security-incident cleanup from October 26 are comple
   4. Save buttons at both ends of edit screens.
   5. Additional Packet transaction statuses.
   6. View and restore hidden or inactive Packets.
-  7. Zero-mapping Form publishing.
+  7. Zero-mapping Form publishing (fixed in development 2026-10-31, PR open; prerequisite for finishing item 10).
   8. Scroll to the Edit Form panel.
 - **Deferred:** 9. Warn users when required agent identity information is incomplete.
 
@@ -171,6 +171,14 @@ Provide a straightforward way to find Packets that are hidden from normal active
 
 **Type:** Bug fix — Form publishing
 
+**Status (2026-10-31): fixed in development, on branch `fix/zero-mapping-publish` (PR open, not merged, not released). Not complete** until the fix is in production and #2 and #4 are republished there.
+- **Root cause:** the server's zero-mapping issue code is `empty_mappings`, but the Publish dialog compared against `EMPTY_MAPPINGS`, so the confirmation never cleared the block.
+- **Fix:** a shared code constant and shared dialog helpers. All other publish checks are unchanged, and no migration is needed. The checkbox wording was already "Publish anyway with no field mappings".
+- **Development:**
+  - the bug reproduced on `main`;
+  - with the fix, two zero-mapping forms equivalent to TXR-1928 and TXR-2509 published, then went through Unpublish → Replace PDF → Publish;
+  - both were added to a collection and to packets, and Fill Form and Download PDF worked.
+
 **Prerequisite for item 10 (2026-10-30):** forms #2 TXR-1928 and #4 TXR-2509 have zero mappings, so their footer cleanup (Unpublish → Replace PDF → Publish) waits for this fix. Their cleaned files are already verified.
 
 **Current observed behavior:** When publishing a Form with **0 field mappings**, a confirmation pop-up offers a checkbox labeled **“Publish anyway with not field mappings.”** However, the **Publish Form** button remains grayed out, preventing publication even when the user intends to publish without mappings.
@@ -299,7 +307,7 @@ Items 1 and 2 are completed and live in production. Items 3–10 are **not compl
 - **Items 4–8:** reprioritize based on actual use. The zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 - **Item 9:** deferred.
 - **Item 10:** the template-footer removal, ranked immediately after item 2. The method is merged and the production plans are prepared. 31 of 33 templates and Susan's 5 Draft copies are done (2026-10-30). Remaining: #2 and #4, after item 7.
-- **Item 7:** fixing zero-mapping publishing now also unblocks the footer cleanup of #2 and #4.
+- **Item 7:** fixing zero-mapping publishing now also unblocks the footer cleanup of #2 and #4. Fixed in development on 2026-10-31 (PR open); not complete until released and #2/#4 are republished.
 
 For each item when work begins, have Cursor:
 1. Read `project_status.md` and `decisions.md` to establish the current repository state and existing design decisions.

@@ -12,6 +12,51 @@ Each decision should include:
 
 ---
 
+## Opening Fill Form or the packet-form editor loader is never a read-only operation
+
+**Date:** 2026-10-31 (Lee's direction, after the 2026-10-30 packet #13 incident)
+
+**Decision:**
+1. **Not read-only:** opening Fill Form in a browser, and calling `loadPacketFormEditorData` (or any code path that builds the Fill Form editor), may create and persist `field_instances`. On a packet form's first load it saves resolved values. Neither is ever treated as read-only.
+2. **Production integrity checks** use only proven non-mutating paths:
+   - direct read-only SQL (`default_transaction_read_only`);
+   - service-role `select` queries and Storage downloads;
+   - local PDF inspection;
+   - field views built from rows already read, for example with `buildPacketFormFieldViews` from mappings and existing instances.
+3. **Real packets:** a mutating loader is never called merely to inspect one. Opening a real packet's Fill Form in production happens only when that change is intended and approved.
+4. **Verification:** a whole-database fingerprint before and after any production check confirms that nothing changed.
+
+**Reason:** on 2026-10-30, a preflight alignment check called `loadPacketFormEditorData` on Susan's packet #13. It created 14 field values on pf#51 and pf#52, which were removed with Lee's approval; see `project_status.md` "TXR-1506 and Susan's packet #13 copies (2026-10-30; completed)".
+
+**Consequences:** scripts that need saved values read `field_instances` and `form_field_mappings` directly. Browser smoke tests on production avoid opening Fill Form on real packets.
+
+**Related:** `lib/packet-form-editor.ts` (`loadPacketFormEditorData`), `lib/types/packet-form-editor.ts` (`buildPacketFormFieldViews`); decision "Personalized template footers are removed at the source PDF; replacements are forward-only".
+
+---
+
+## Forms may be published intentionally with zero field mappings
+
+**Date:** 2026-10-31 (backlog item 7; implemented in development, not released)
+
+**Decision:**
+1. **Valid state:** a form with zero ACTIVE mappings, such as an informational notice, is valid and publishable. Publishing it takes the explicit "Publish anyway with no field mappings" confirmation in the Publish dialog, which the server re-checks on every Publish.
+2. **Unchanged:** the confirmation clears only the zero-mapping prompt. Every other check still blocks:
+   - Draft state;
+   - a readable PDF with a known page count;
+   - a Private owner;
+   - mapping-specific checks (unlinked, inactive field, unsupported source, unknown resolver, duplicate identity, out-of-range page);
+   - the publish-family conflict and retire-previous choice;
+   - the structure fingerprint and authorization.
+3. **One source of truth:** the issue code is shared as `EMPTY_MAPPINGS_ISSUE_CODE`, and the dialog's enablement and confirm checks use the shared `canConfirmPublish` / `remainingPublishBlockers` helpers.
+
+**Reason:** the server emitted `empty_mappings` while the dialog compared against `EMPTY_MAPPINGS`. Publish therefore stayed disabled even after the confirmation, which blocked the footer cleanup of #2 TXR-1928 and #4 TXR-2509.
+
+**Consequences:** no migration. The database publish function never required mappings. Packet copies, collections, Fill Form and Download PDF already handle zero-field forms.
+
+**Related:** `lib/types/form-publish-validation.ts`, `components/forms/forms-page.tsx`, `lib/types/form-publish-zero-mappings.test.ts`, `lib/forms/zero-mapping-form.test.ts`; backlog item 7.
+
+---
+
 ## Personalized template footers are removed at the source PDF; replacements are forward-only
 
 **Date:** 2026-10-30 (Lee approved removing the personalized footer information; development pilot only)
