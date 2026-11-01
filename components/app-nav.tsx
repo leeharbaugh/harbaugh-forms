@@ -27,14 +27,14 @@ export function AppNav({ active }: AppNavProps) {
     <>
       {hasEnvVars && <EnsureProfile />}
       <nav className="border-b border-border bg-card">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-3 text-sm sm:gap-3 sm:px-5">
+        <div className="mx-auto flex h-14 min-w-0 max-w-6xl items-center gap-2 px-3 text-sm sm:gap-3 sm:px-5">
           <Link
             href="/"
             className="shrink-0 font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             Harbaugh Forms
           </Link>
-          <div className="flex min-w-[6.5rem] flex-1 items-center gap-1 overflow-x-auto py-1">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1">
             <Suspense fallback={null}>
               <ContactsNavLink
                 className={navLinkClass(active === "contacts")}

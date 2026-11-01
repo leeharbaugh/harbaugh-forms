@@ -1,6 +1,14 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-31, 14:55 Chicago (19:55 UTC). **Native Signing remains LIVE. Help & Getting Started (backlog item 3) is implemented in development on `feat/help-getting-started`. It is not merged and not released.**
+**As of:** 2026-10-31, 21:30 Chicago (02:30 UTC on 2026-11-01). **Native Signing remains LIVE. The 320px menu overflow is fixed in development on `fix/nav-320-overflow`. It is not merged and not released. Backlog item 3 stays open.**
+- **Cause:** the scrolling section-link row had a 6.5rem minimum, so the menu was about 364px wide. At 320px the page scrolled sideways and Logout sat partly past the edge.
+- **Change:** that minimum is removed. The row uses `min-w-0`, still scrolls inside the menu, and the menu bar itself can shrink. Below 360px the account name is visually hidden and remains available to assistive technology, so Help and Logout stay on screen.
+- **Unchanged:** the Help walkthrough, the packet wizard, and Signing behavior. No migration.
+- **Validation:** `tsc --noEmit` clean. ESLint `--max-warnings=0` on the changed files. `test:help` 12/12 and `test:ui-lists` 29/29. `build:validate` passes. Signed in, the page does not scroll sideways at 320, 364, 390, or 1440px. Help and Logout are fully visible, the section links scroll inside the menu, keyboard focus reaches Help, and Logout returns to login.
+- **Not complete:** item 3 stays open until Help is promoted and checked in production.
+- **Participant technical change:** none.
+
+Earlier: 2026-10-31, 14:55 Chicago (19:55 UTC). **Native Signing remains LIVE. Help & Getting Started (backlog item 3) is implemented in development on `feat/help-getting-started`. It is not merged and not released.**
 - **Page:** signed-in `/help`, titled Help & Getting Started. A numbered walkthrough, plus Need Help? with phone 817-881-4768 (`tel:`) and email lee@harbaughbrothers.com (`mailto:`).
 - **Menu:** Help is in the fixed right-hand side of the main menu, next to the account name, on every workspace page. Participant `/sign` pages are unchanged.
 - **Profiles:** the guide follows the live behavior. Each agent updates My Agent Profile. A brokerage administrator updates the shared Brokerage Profile.

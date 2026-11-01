@@ -41,7 +41,7 @@ export async function AuthButton() {
   return (
     <div className="flex min-w-0 max-w-[14rem] items-center gap-1 sm:max-w-none sm:gap-3">
       <span
-        className="min-w-0 truncate text-xs text-muted-foreground"
+        className="min-w-0 truncate text-xs text-muted-foreground max-[359px]:sr-only"
         title={user.email ?? greeting}
         aria-label={greeting}
       >
