@@ -182,7 +182,8 @@ Each decision should include:
 **Consequences:**
 - No code change until the item is picked up. It then follows the backlog's implementation workflow and the established PR and release process.
 - Manager-side workspace pages only, so the item is expected to be "Participant technical change: none".
-- *Update 2026-10-31:* picked up in development, then merged as `6b65bdf` (PR #83). The first candidate is validated and not promoted. Its 320px menu overflow is corrected in `321e0d2` (PR #85). Item 3 stays open until production.
+- *Update 2026-10-31:* picked up in development, then merged as `6b65bdf` (PR #83). The first candidate is validated and not promoted. Its 320px menu overflow is corrected in `321e0d2` (PR #85).
+- *Update 2026-11-01:* live in production on `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs` (`01f2c61`). Item 3 is complete. Item 4, Save buttons at both ends of edit screens, is the highest-priority remaining enhancement.
 
 **Related:** `backlog.md` item 3 (item 2 until 2026-10-29); `project_status.md` "Help & Getting Started planned (2026-10-28; post-launch item 2)"; `components/app-nav.tsx` (main navigation).
 
@@ -190,7 +191,7 @@ Each decision should include:
 
 ## Help & Getting Started is a static page beside the account name
 
-**Date:** 2026-10-31 (merged as `6b65bdf`; candidate validated; not released to production)
+**Date:** 2026-10-31 (merged as `6b65bdf`; live in production 2026-11-01 on `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs`)
 
 **Decision:**
 1. **Route.** Signed-in agents open `/help`, titled Help & Getting Started. The existing login check protects it. It is not a participant `/sign` page.
@@ -204,7 +205,8 @@ Each decision should include:
 **Reason:** A new agent needs a plain explanation of the real screens, including whose profile is whose, and a way back to that explanation later. The October 29 assessment asked for these choices before coding; they are now applied.
 
 **Consequences:**
-- Merged to `main` as `6b65bdf` (PR #83). Candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is validated and not promoted. At 320px that candidate's menu overflowed because the section-link row had a 6.5rem minimum. The correction is on `main` as `321e0d2` (PR #85): the row uses `min-w-0` and still scrolls internally, and below 360px the account name is visually hidden. Help stays outside that row. Not promoted. Backlog item 3 stays open until the page is checked in production.
+- Merged to `main` as `6b65bdf` (PR #83). Candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` was validated and not promoted. At 320px that candidate's menu overflowed because the section-link row had a 6.5rem minimum. The correction is on `main` as `321e0d2` (PR #85): the row uses `min-w-0` and still scrolls internally, and below 360px the account name is visually hidden. Help stays outside that row.
+- *Update 2026-11-01:* promoted and verified on both production domains as `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs` (`01f2c61`). Automatic domain assignment stayed off. Backlog item 3 is complete.
 - Participant technical change: none. Help does not change packet, form, or Signing behavior beyond the one wizard sentence.
 
 **Related:** `backlog.md` item 3; `project_status.md` "Help & Getting Started page (2026-10-31; development)"; `app/help/page.tsx`; `components/app-nav.tsx`; `lib/help/getting-started.ts`; `lib/types/packet-workflow.ts` (`NO_COLLECTIONS_MESSAGE`).
@@ -345,6 +347,8 @@ Each decision should include:
    2. **Critical — Correct multi-agent identity resolution.** It comes before every enhancement, and is complete only after the production release, verified resolution, and validated remediation of Susan's packet #13.
    3. Help & Getting Started.
    4. Items 4–8 are the former 3–7.
+
+   **Update 2026-11-01:** item 3 is completed and live on `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs`. Item 4, Save buttons at both ends of edit screens, is the highest-priority remaining enhancement. Items 5, 6, and 8 remain open. Item 9 stays deferred.
    5. Item 9 is a deferred, non-blocking warning for incomplete agent identity.
 
    Completed work (credential rotation, incident cleanup) is recorded in `project_status.md` and `decisions.md`, not in the backlog.
