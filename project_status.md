@@ -1,12 +1,14 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-31, 21:30 Chicago (02:30 UTC on 2026-11-01). **Native Signing remains LIVE. The 320px menu overflow is fixed in development on `fix/nav-320-overflow`. It is not merged and not released. Backlog item 3 stays open.**
-- **Cause:** the scrolling section-link row had a 6.5rem minimum, so the menu was about 364px wide. At 320px the page scrolled sideways and Logout sat partly past the edge.
-- **Change:** that minimum is removed. The row uses `min-w-0`, still scrolls inside the menu, and the menu bar itself can shrink. Below 360px the account name is visually hidden and remains available to assistive technology, so Help and Logout stay on screen.
-- **Unchanged:** the Help walkthrough, the packet wizard, and Signing behavior. No migration.
-- **Validation:** `tsc --noEmit` clean. ESLint `--max-warnings=0` on the changed files. `test:help` 12/12 and `test:ui-lists` 29/29. `build:validate` passes. Signed in, the page does not scroll sideways at 320, 364, 390, or 1440px. Help and Logout are fully visible, the section links scroll inside the menu, keyboard focus reaches Help, and Logout returns to login.
+**As of:** 2026-10-31, 21:35 Chicago (02:35 UTC on 2026-11-01). **Native Signing remains LIVE. Help & Getting Started is on `main` and is not promoted. The 320px menu overflow found on candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is corrected in `321e0d2` (PR #85). Backlog item 3 stays open.**
+- **Help merge:** PR #83 squash-merged as `6b65bdf`.
+- **First candidate:** `dpl_27dficHMYKj95tCZLeMXKweRshqd` at https://harbaugh-forms-c70mjha4o-lee-harbaugh-s-projects.vercel.app passed 34/34 security checks, 8/8 participant checks, and 96/96 smoke checks. It did not take either production domain. At 390px the menu fit. At 320px Logout extended about 44px past the viewport because the section-link row had a 6.5rem minimum.
+- **Correction:** `321e0d2` removes that minimum. The row uses `min-w-0` and still scrolls inside the menu. Below 360px the account name is visually hidden and remains available to assistive technology. Local checks at 320, 364, 390, and 1440px showed no page-level horizontal scroll, with Help and Logout fully visible. The Help walkthrough is unchanged. This correction is on `main` and is not promoted.
+- **Production:** both domains still serve `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt`. Automatic domain assignment remains off.
+- **Integrity of the first candidate check:** every public table except `user_preferences` was hash-identical, and Storage was unchanged. The one preferences row, created 2026-07-05, was updated at 23:14:08 UTC. Its keys are table column widths and the workspace view. No packet, form, profile, or Signing row changed.
 - **Not complete:** item 3 stays open until Help is promoted and checked in production.
 - **Participant technical change:** none.
+- See "Help & Getting Started release candidate (2026-10-31; validated, not promoted)".
 
 Earlier: 2026-10-31, 14:55 Chicago (19:55 UTC). **Native Signing remains LIVE. Help & Getting Started (backlog item 3) is implemented in development on `feat/help-getting-started`. It is not merged and not released.**
 - **Page:** signed-in `/help`, titled Help & Getting Started. A numbered walkthrough, plus Need Help? with phone 817-881-4768 (`tel:`) and email lee@harbaughbrothers.com (`mailto:`).
@@ -1553,9 +1555,23 @@ The first release is a simple numbered walkthrough page; an interactive guided t
 
 **Unchanged:** application code, production, Vercel, Supabase, data and Native Signing (live).
 
+### Help & Getting Started release candidate (2026-10-31; validated, not promoted)
+
+**Status:** merged to `main` as `6b65bdf` (PR #83). Candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is READY at https://harbaugh-forms-c70mjha4o-lee-harbaugh-s-projects.vercel.app and is not promoted. The 320px overflow found on this candidate is corrected on `main` as `321e0d2` (PR #85). Backlog item 3 stays open until production verification.
+
+**What was checked.** Signed-out `/help` redirects to login. Signed in, the page title is Help & Getting Started, Help is current in the fixed right-hand menu, and the account name and Logout are usable. The walkthrough has the seven core steps plus Signing steps 8 and 9, because Native Signing is enabled on this deployment. The off state remains covered by `test:help`: seven steps and no `/signings` link when the flag is off. Production settings were not changed. Internal links open Settings, Contacts, Properties, Forms, Collections, Packets, and Signings, and Help is still in the menu afterward. Phone is `tel:817-881-4768`. Email is `mailto:lee@harbaughbrothers.com`. The packet wizard was opened only far enough to see Buyer Rep, Listing, Contract Offer, and Custom Packet, then cancelled. Fill Form and the form editor were not opened.
+
+**Layout.** At a desktop width and at 390px the page does not scroll sideways, and Help and Logout stay inside the screen. The section links scroll inside the menu. At 320px Logout extended past the right edge by about 44px. That overflow is corrected on `main` as `321e0d2` (PR #85): the section-link row no longer has a 6.5rem minimum, and below 360px the account name is visually hidden.
+
+**Release checks.** 34/34 security and fail-closed checks, 8/8 participant checks, and 96/96 authenticated smoke checks. The Vercel build of `6b65bdf` is READY. No migration.
+
+**Integrity.** Public-table hashes match the pre-check fingerprint except the single `user_preferences` row. Storage objects are unchanged. Both production domains still serve `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt`, and automatic custom-domain assignment is off.
+
+**Participant technical change:** none.
+
 ### Help & Getting Started page (2026-10-31; development)
 
-**Status:** implemented on `feat/help-getting-started`. Not merged. Not released. Backlog item 3 stays open until production verification.
+**Status:** implemented on `feat/help-getting-started`, then squash-merged as `6b65bdf`. The candidate record is above. Backlog item 3 stays open until production verification.
 
 **What shipped in development.**
 - **`/help`:** a server-rendered page in the normal workspace layout. The existing login check covers it, because the path is not under `/auth`, `/login`, or participant `/sign`.

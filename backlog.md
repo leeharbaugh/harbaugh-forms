@@ -13,7 +13,7 @@ The credential rotation and security-incident cleanup from October 26 are comple
   7. Zero-mapping Form publishing (live since 2026-10-31; verified in production on #2 and #4).
   10. Remove personalized footers from shared PDF templates (completed 2026-10-31; all 33 affected templates and Susan's 5 Draft copies are footer-free).
 - **Remaining, in priority order:**
-  3. Help & Getting Started (320px menu fix in review; awaiting production release).
+  3. Help & Getting Started (merged; 320px menu correction on main; awaiting production promotion).
   4. Save buttons at both ends of edit screens.
   5. Additional Packet transaction statuses.
   6. View and restore hidden or inactive Packets.
@@ -81,11 +81,11 @@ Added 2026-10-29.
 
 ## 3. Help & Getting Started — New User Walkthrough
 
-**Status:** Implemented in development (2026-10-31). The 320px menu correction is in review on `fix/nav-320-overflow` and is not released. Not complete until Help is live in production and verified there. Added 2026-10-28.
+**Status:** Merged to `main` as `6b65bdf` (PR #83). The first candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` was validated and showed a 320px menu overflow. That overflow is corrected on `main` as `321e0d2` (PR #85) and is not promoted. Not complete until Help is live in production and verified there. Added 2026-10-28.
 
 **Development (2026-10-31).** `/help` is a numbered Getting Started page for every signed-in agent, opened from a Help link beside the account name. It explains My Agent Profile, the shared Brokerage Profile, Contacts, Properties, Form Templates, Packet Templates (Collections), the packet wizard, Fill form, Refresh Values, and PDF download. Signings steps appear only when Native Signing is enabled. Need Help? shows 817-881-4768 and lee@harbaughbrothers.com. No tour, progress tracking, or migration. The empty packet-template sentence now points at Collections. See `project_status.md` "Help & Getting Started page (2026-10-31; development)".
 
-**Menu width (2026-10-31).** The section-link row no longer keeps a 6.5rem minimum, which had pushed Logout past a 320px screen. Help and Logout stay visible, and the section links scroll inside the menu. Not released. Item 3 stays open.
+**Candidate (2026-10-31).** Squash-merged as `6b65bdf`. The unpromoted deployment `dpl_27dficHMYKj95tCZLeMXKweRshqd` passed the release checks at its unique URL. At 320px Logout extended past the screen. The section-link minimum that caused it is removed in `321e0d2`. Production domains are unchanged. Item 3 stays open until Help is promoted and verified in production. See `project_status.md` "Help & Getting Started release candidate (2026-10-31; validated, not promoted)".
 
 **Type:** Onboarding and support enhancement
 
@@ -321,7 +321,7 @@ Added 2026-10-30; Lee approved removing the personalized footer information.
 
 Items 1, 2, 7 and 10 are completed and live in production. Items 3–6 and 8 are **not complete**, and item 9 is deferred.
 - **Item 2:** completed 2026-10-30 (dynamic agent resolution live; Susan's saved agent fields corrected).
-- **Item 3:** Help & Getting Started remains the highest-priority open enhancement. The 320px menu correction is in review and is not released (Lee's direction, 2026-10-28 and 2026-10-29).
+- **Item 3:** Help & Getting Started is merged. The first candidate was validated, and the 320px menu correction is on `main` as `321e0d2`. It stays the highest-priority open enhancement until it is promoted and verified in production (Lee's direction, 2026-10-28 and 2026-10-29).
 - **Items 4–8:** reprioritize based on actual use. The zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 - **Item 9:** deferred.
 - **Item 10:** completed 2026-10-31 (all 33 templates and Susan's 5 Draft copies footer-free).
