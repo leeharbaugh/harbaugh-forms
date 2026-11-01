@@ -204,7 +204,8 @@ Each decision should include:
 **Reason:** A new agent needs a plain explanation of the real screens, including whose profile is whose, and a way back to that explanation later. The October 29 assessment asked for these choices before coding; they are now applied.
 
 **Consequences:**
-- Implemented on `feat/help-getting-started`. Not merged and not released. Backlog item 3 stays open until the page is checked in production.
+- The Help page is on `main` as `6b65bdf`. Backlog item 3 stays open until the page is checked in production.
+- *Update 2026-10-31, evening:* the section-link row's 6.5rem minimum made the menu about 364px wide. At 320px the page scrolled sideways and Logout was partly off screen. That minimum is removed. The row uses `min-w-0` and still scrolls internally. Below 360px the account name is visually hidden. Help stays outside that row. The correction is on `fix/nav-320-overflow`, not merged and not released. Item 3 stays open.
 - Participant technical change: none. Help does not change packet, form, or Signing behavior beyond the one wizard sentence.
 
 **Related:** `backlog.md` item 3; `project_status.md` "Help & Getting Started page (2026-10-31; development)"; `app/help/page.tsx`; `components/app-nav.tsx`; `lib/help/getting-started.ts`; `lib/types/packet-workflow.ts` (`NO_COLLECTIONS_MESSAGE`).
