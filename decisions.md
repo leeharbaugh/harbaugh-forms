@@ -182,7 +182,7 @@ Each decision should include:
 **Consequences:**
 - No code change until the item is picked up. It then follows the backlog's implementation workflow and the established PR and release process.
 - Manager-side workspace pages only, so the item is expected to be "Participant technical change: none".
-- *Update 2026-10-31:* picked up in development, then merged as `6b65bdf` (PR #83). The candidate is validated and not promoted. Item 3 stays open until production.
+- *Update 2026-10-31:* picked up in development, then merged as `6b65bdf` (PR #83). The first candidate is validated and not promoted. Its 320px menu overflow is corrected in `321e0d2` (PR #85). Item 3 stays open until production.
 
 **Related:** `backlog.md` item 3 (item 2 until 2026-10-29); `project_status.md` "Help & Getting Started planned (2026-10-28; post-launch item 2)"; `components/app-nav.tsx` (main navigation).
 
@@ -204,7 +204,7 @@ Each decision should include:
 **Reason:** A new agent needs a plain explanation of the real screens, including whose profile is whose, and a way back to that explanation later. The October 29 assessment asked for these choices before coding; they are now applied.
 
 **Consequences:**
-- Merged to `main` as `6b65bdf` (PR #83). Candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is validated and not promoted. Backlog item 3 stays open until the page is checked in production.
+- Merged to `main` as `6b65bdf` (PR #83). Candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is validated and not promoted. At 320px that candidate's menu overflowed because the section-link row had a 6.5rem minimum. The correction is on `main` as `321e0d2` (PR #85): the row uses `min-w-0` and still scrolls internally, and below 360px the account name is visually hidden. Help stays outside that row. Not promoted. Backlog item 3 stays open until the page is checked in production.
 - Participant technical change: none. Help does not change packet, form, or Signing behavior beyond the one wizard sentence.
 
 **Related:** `backlog.md` item 3; `project_status.md` "Help & Getting Started page (2026-10-31; development)"; `app/help/page.tsx`; `components/app-nav.tsx`; `lib/help/getting-started.ts`; `lib/types/packet-workflow.ts` (`NO_COLLECTIONS_MESSAGE`).

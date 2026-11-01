@@ -96,13 +96,15 @@ describe("Help navigation", () => {
       /aria-current=\{active === "help" \? "page" : undefined\}/,
     );
     assert.match(nav, />\s*Help\s*</);
-    assert.match(nav, /min-w-\[6\.5rem\]/);
+    assert.match(nav, /min-w-0 flex-1/);
+    assert.doesNotMatch(nav, /min-w-\[6\.5rem\]/);
     assert.match(nav, /sm:shrink-0/);
   });
 
   it("lets the account name shrink so Help and Logout stay on a narrow bar", () => {
     const auth = readRepo("components/auth-button.tsx");
     assert.match(auth, /min-w-0 truncate/);
+    assert.match(auth, /max-\[359px\]:sr-only/);
     assert.match(auth, /shrink-0/);
     assert.match(auth, /<LogoutButton \/>/);
     assert.match(auth, /aria-label=\{greeting\}/);
