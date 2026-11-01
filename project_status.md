@@ -1,6 +1,16 @@
 # Harbaugh Forms — Project Status
 
-**As of:** 2026-10-31, 21:35 Chicago (02:35 UTC on 2026-11-01). **Native Signing remains LIVE. Help & Getting Started is on `main` and is not promoted. The 320px menu overflow found on candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is corrected in `321e0d2` (PR #85). Backlog item 3 stays open.**
+**As of:** 2026-10-31, 22:10 Chicago (03:10 UTC on 2026-11-01). **Native Signing remains LIVE. Help & Getting Started (backlog item 3) is LIVE in production on `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs` (`01f2c61`).**
+- **Promotion:** the guarded script's dry run passed, then the same deployment was promoted at 02:59:32–02:59:38 UTC. No new build was created. The earlier overflowing candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` was not promoted. The previous production deployment `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` remains the rollback target and was not needed.
+- **Domains:** `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` both serve `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs` over HTTPS. Each login page embeds that deployment id. Signed-out `/help` returns 307 to `/auth/login` on both. Automatic domain assignment remains off.
+- **Help:** on both domains, a signed-in agent opens Help from the fixed right-hand menu. The seven core steps and Signing steps 8 and 9 are present. My Agent Profile is personal and the Brokerage Profile is shared. Forms and Collections are described as optional. The walkthrough links open their pages, and the packet-type chooser shows Buyer Rep, Listing, Contract Offer, and Custom Packet. Phone is `tel:817-881-4768`. Email is `mailto:lee@harbaughbrothers.com`. Native Signing settings were not changed; the disabled-state wording stays covered by `test:help`.
+- **Menu:** at 320, 364, 390, 768, and 1440px there is no page-level horizontal scroll. Help and Logout are fully visible, and keyboard focus on Help stays visible. The section row scrolls internally (about 52px, 39px, and 65px visible at 320, 364, and 390). Below 360px the account greeting leaves the menu layout and stays available to assistive technology. At 320 and 364 the last section link is wider than that visible row; scrolling reaches its end.
+- **Checks:** each domain passed 33/33 security and fail-closed checks, 8/8 participant checks, and 96/96 authenticated smoke checks. Next.js 16.4.1. The PDF worker answers 200. Fill Form and the form editor were not opened. 0 HTTP 5xx from the smoke. Runtime logs on the new deployment show 0 errors, warnings, or fatal messages. The 503s are the designed unavailable answers from the security checks. The scheduled signing-worker Cron answered 200 at 03:06:26 UTC.
+- **Integrity:** every public table except `user_preferences` matches the pre-promotion fingerprint, and Storage is unchanged. The one preferences row, created 2026-07-05, was updated at 03:06:17 UTC. Its keys remain table column widths and the workspace view. No packet, form, field, contact, property, profile, or Signing row changed. All 25 Vercel environment rows keep the same names, targets, types, and update times as the 2026-10-29 record.
+- **Participant technical change:** none.
+- See "Help & Getting Started production release (2026-10-31; live)".
+
+Earlier: 2026-10-31, 21:35 Chicago (02:35 UTC on 2026-11-01). **Native Signing remains LIVE. Help & Getting Started is on `main` and is not promoted. The 320px menu overflow found on candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is corrected in `321e0d2` (PR #85). Backlog item 3 stays open.**
 - **Help merge:** PR #83 squash-merged as `6b65bdf`.
 - **First candidate:** `dpl_27dficHMYKj95tCZLeMXKweRshqd` at https://harbaugh-forms-c70mjha4o-lee-harbaugh-s-projects.vercel.app passed 34/34 security checks, 8/8 participant checks, and 96/96 smoke checks. It did not take either production domain. At 390px the menu fit. At 320px Logout extended about 44px past the viewport because the section-link row had a 6.5rem minimum.
 - **Correction:** `321e0d2` removes that minimum. The row uses `min-w-0` and still scrolls inside the menu. Below 360px the account name is visually hidden and remains available to assistive technology. Local checks at 320, 364, 390, and 1440px showed no page-level horizontal scroll, with Help and Logout fully visible. The Help walkthrough is unchanged. This correction is on `main` and is not promoted.
@@ -1555,9 +1565,25 @@ The first release is a simple numbered walkthrough page; an interactive guided t
 
 **Unchanged:** application code, production, Vercel, Supabase, data and Native Signing (live).
 
+### Help & Getting Started production release (2026-10-31; live)
+
+**Status:** live on both production domains since 02:59:38 UTC on 2026-11-01. Deployment `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs`, commit `01f2c61` (PR #84's documentation plus the Help page from PR #83 and the menu correction from PR #85). Backlog item 3 is complete.
+
+**Promotion.** The guarded promotion script confirmed the deployment was READY, built from `01f2c61` on `main` in `leeharbaugh/harbaugh-forms`, created after the current production Supabase key, and that both domains still served `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` with automatic domain assignment off. The dry run passed. The execute step promoted that exact deployment and did not create a build. Afterward, both aliases and the production target are `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs`, and automatic domain assignment is still off. `dpl_27dficHMYKj95tCZLeMXKweRshqd` was not promoted.
+
+**Production Help.** On each domain, signed-out `/help` redirects to login. Signed in, the title is Help & Getting Started, Help is current in the fixed right-hand menu, and Logout is present and enabled. The walkthrough lists the seven core steps and, because Native Signing is enabled, steps 8 and 9. The copy distinguishes the personal My Agent Profile from the shared Brokerage Profile, and it marks adding a form and creating a packet template as optional. Links open Settings, Contacts, Properties, Forms, Collections, Packets, and Signings, and the matching menu item stays current. The packet-type chooser shows Buyer Rep, Listing, Contract Offer, and Custom Packet, and was cancelled. Phone is `tel:817-881-4768`. Email is `mailto:lee@harbaughbrothers.com`. The disabled Signing wording was not tested by changing production settings.
+
+**Responsive menu.** At 320, 364, 390, 768, and 1440px the page does not scroll sideways, and Help and Logout stay inside the viewport. Keyboard focus reaches Help and the focus style is visible. At 320 the account greeting is visually removed from the menu layout. At 364 and wider it stays inside the menu. The section links scroll inside the row. At 320 and 364 the last section link is wider than the visible portion of that row; scrolling brings its end into view.
+
+**Release checks, each domain.** 33/33 security and fail-closed checks, 8/8 participant checks, and 96/96 authenticated smoke checks. Login embeds `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs`. The PDF worker returns 200. Missing, wrong, and swapped Cron and worker secrets return 401. Smoke reports Next.js 16.4.1, 0 HTTP 5xx, unchanged Signings, field instances, agent profiles, and the brokerage row. Fill Form was not opened. Runtime logs since promotion: 0 errors, warnings, or fatal messages. The scheduled Cron returned 200 at 03:06:26 UTC. The 503 responses in that window are the security checks' unavailable answers.
+
+**Integrity.** Pre-promotion and post-promotion fingerprints match except `user_preferences`, which stays one row. It was created 2026-07-05 and updated 2026-11-01 03:06:17 UTC. Its keys are `table_column_widths` and `workspace_view`. Storage objects are unchanged. No packet, packet form, field instance, manual override, form template, mapping, contact, property, agent profile, brokerage profile, or Signing record changed. The 25 environment rows are unchanged in name, target, type, and update time.
+
+**Participant technical change:** none.
+
 ### Help & Getting Started release candidate (2026-10-31; validated, not promoted)
 
-**Status:** merged to `main` as `6b65bdf` (PR #83). Candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is READY at https://harbaugh-forms-c70mjha4o-lee-harbaugh-s-projects.vercel.app and is not promoted. The 320px overflow found on this candidate is corrected on `main` as `321e0d2` (PR #85). Backlog item 3 stays open until production verification.
+**Status:** merged to `main` as `6b65bdf` (PR #83). Candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` is READY at https://harbaugh-forms-c70mjha4o-lee-harbaugh-s-projects.vercel.app and was not promoted. The 320px overflow found on this candidate is corrected on `main` as `321e0d2` (PR #85). *Update 2026-11-01: the corrected release is live; see "Help & Getting Started production release (2026-10-31; live)". This candidate was not the one promoted.*
 
 **What was checked.** Signed-out `/help` redirects to login. Signed in, the page title is Help & Getting Started, Help is current in the fixed right-hand menu, and the account name and Logout are usable. The walkthrough has the seven core steps plus Signing steps 8 and 9, because Native Signing is enabled on this deployment. The off state remains covered by `test:help`: seven steps and no `/signings` link when the flag is off. Production settings were not changed. Internal links open Settings, Contacts, Properties, Forms, Collections, Packets, and Signings, and Help is still in the menu afterward. Phone is `tel:817-881-4768`. Email is `mailto:lee@harbaughbrothers.com`. The packet wizard was opened only far enough to see Buyer Rep, Listing, Contract Offer, and Custom Packet, then cancelled. Fill Form and the form editor were not opened.
 
@@ -1571,7 +1597,7 @@ The first release is a simple numbered walkthrough page; an interactive guided t
 
 ### Help & Getting Started page (2026-10-31; development)
 
-**Status:** implemented on `feat/help-getting-started`, then squash-merged as `6b65bdf`. The candidate record is above. Backlog item 3 stays open until production verification.
+**Status:** implemented on `feat/help-getting-started`, then squash-merged as `6b65bdf`. *Update 2026-11-01: live in production; see "Help & Getting Started production release (2026-10-31; live)".*
 
 **What shipped in development.**
 - **`/help`:** a server-rendered page in the normal workspace layout. The existing login check covers it, because the path is not under `/auth`, `/login`, or participant `/sign`.

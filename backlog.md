@@ -10,10 +10,10 @@ The credential rotation and security-incident cleanup from October 26 are comple
 - **Completed:**
   1. Remove the development test title from Create Signing (live in production since 2026-10-29).
   2. Correct multi-agent identity resolution (live in production since 2026-10-30; Susan's packet #13 agent fields corrected). The separate personalized-footer problem in shared PDF templates is tracked as item 10.
+  3. Help & Getting Started (live in production since 2026-11-01 on `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs`).
   7. Zero-mapping Form publishing (live since 2026-10-31; verified in production on #2 and #4).
   10. Remove personalized footers from shared PDF templates (completed 2026-10-31; all 33 affected templates and Susan's 5 Draft copies are footer-free).
 - **Remaining, in priority order:**
-  3. Help & Getting Started (merged; 320px menu correction on main; awaiting production promotion).
   4. Save buttons at both ends of edit screens.
   5. Additional Packet transaction statuses.
   6. View and restore hidden or inactive Packets.
@@ -81,15 +81,15 @@ Added 2026-10-29.
 
 ## 3. Help & Getting Started — New User Walkthrough
 
-**Status:** Merged to `main` as `6b65bdf` (PR #83). The first candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` was validated and showed a 320px menu overflow. That overflow is corrected on `main` as `321e0d2` (PR #85) and is not promoted. Not complete until Help is live in production and verified there. Added 2026-10-28.
+**Status: COMPLETED and live in production (2026-11-01).** Released on `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs` (`01f2c61`) at 02:59:38 UTC. Both production domains serve that deployment. The walkthrough, support links, and the corrected narrow menu were verified there. No application data changed. Added 2026-10-28.
 
 **Development (2026-10-31).** `/help` is a numbered Getting Started page for every signed-in agent, opened from a Help link beside the account name. It explains My Agent Profile, the shared Brokerage Profile, Contacts, Properties, Form Templates, Packet Templates (Collections), the packet wizard, Fill form, Refresh Values, and PDF download. Signings steps appear only when Native Signing is enabled. Need Help? shows 817-881-4768 and lee@harbaughbrothers.com. No tour, progress tracking, or migration. The empty packet-template sentence now points at Collections. See `project_status.md` "Help & Getting Started page (2026-10-31; development)".
 
-**Candidate (2026-10-31).** Squash-merged as `6b65bdf`. The unpromoted deployment `dpl_27dficHMYKj95tCZLeMXKweRshqd` passed the release checks at its unique URL. At 320px Logout extended past the screen. The section-link minimum that caused it is removed in `321e0d2`. Production domains are unchanged. Item 3 stays open until Help is promoted and verified in production. See `project_status.md` "Help & Getting Started release candidate (2026-10-31; validated, not promoted)".
+**Production (2026-11-01).** Promoted `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs` (`01f2c61`), which includes the walkthrough from `6b65bdf` and the menu correction from `321e0d2`. The overflowing candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` was not promoted. Both domains passed the security, participant, and smoke checks, and the Help page was checked at 320, 364, 390, 768, and desktop width. Automatic domain assignment stayed off. The only database change during verification was the existing UI-preference row. See `project_status.md` "Help & Getting Started production release (2026-10-31; live)".
 
 **Type:** Onboarding and support enhancement
 
-**Priority:** High. The highest-priority enhancement, immediately after the critical multi-agent identity correction (item 2).
+**Priority:** Was the highest-priority enhancement after the multi-agent identity correction. Completed 2026-11-01. Item 4 is now the highest-priority remaining enhancement.
 
 **Purpose:** A first-time agent currently has no in-app explanation of how Harbaugh Forms fits together, or of whom to contact for help. A short, always-available Getting Started guide explains the normal Texas real estate workflow, from Contacts through completed Signings, in plain English. The same Help area gives the support phone number and email.
 
@@ -319,9 +319,10 @@ Added 2026-10-30; Lee approved removing the personalized footer information.
 
 ## Implementation workflow
 
-Items 1, 2, 7 and 10 are completed and live in production. Items 3–6 and 8 are **not complete**, and item 9 is deferred.
+Items 1, 2, 3, 7 and 10 are completed and live in production. Items 4–6 and 8 are **not complete**, and item 9 is deferred.
 - **Item 2:** completed 2026-10-30 (dynamic agent resolution live; Susan's saved agent fields corrected).
-- **Item 3:** Help & Getting Started is merged. The first candidate was validated, and the 320px menu correction is on `main` as `321e0d2`. It stays the highest-priority open enhancement until it is promoted and verified in production (Lee's direction, 2026-10-28 and 2026-10-29).
+- **Item 3:** completed 2026-11-01. Help & Getting Started is live on `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs`. The 320px menu correction from `321e0d2` is included. Verified on both production domains.
+- **Item 4:** the highest-priority remaining enhancement.
 - **Items 4–8:** reprioritize based on actual use. The zero-mapping publishing bug may merit earlier attention if it blocks routine Form publishing.
 - **Item 9:** deferred.
 - **Item 10:** completed 2026-10-31 (all 33 templates and Susan's 5 Draft copies footer-free).
