@@ -1,5 +1,7 @@
 # Harbaugh Forms — Project Status
 
+**Release update 2026-11-01 Chicago (2026-11-02 04:11 UTC):** The Help copy refresh from PR #87 (`167149e`) is LIVE on both domains as `dpl_HZZC7zD5R89p7VqLnzUjEbG25jps`. The guarded promotion dry run and execution passed; both aliases and the production target point to that deployment. Signed-out `/help` redirects to `/auth/login` (307), and the login page answers 200 on each domain. Local `test:help` passed 12/12 and `build:validate` passed before release. Previous deployment `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs` is the rollback target. This was a copy-only release; no functional or data change.
+
 **Update 2026-11-01 (development only):** Help & Getting Started copy was rewritten from three production screenshots for a warmer, clearer walkthrough. The nine-step structure, optional Forms and Collections paths, packet-type differences, agent versus brokerage profile ownership, Signing feature gate, UI labels, navigation links, and support contacts remain intact. No workflow or production deployment changed. `test:help` passed 12/12; `build:validate` passed.
 
 **As of:** 2026-10-31, 22:10 Chicago (03:10 UTC on 2026-11-01). **Native Signing remains LIVE. Help & Getting Started (backlog item 3) is LIVE in production on `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs` (`01f2c61`).**
