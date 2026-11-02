@@ -10,6 +10,8 @@
 
 **Related:** `components/help/help-getting-started.tsx`; `lib/help/getting-started.ts`; `project_status.md`.
 
+**Release update 2026-11-01 Chicago:** PR #87 merged as `167149e`. Its production-target build `dpl_HZZC7zD5R89p7VqLnzUjEbG25jps` passed guarded promotion and now serves both production domains. The previous live build is `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs`.
+
 ---
 
 ## Decision Format
