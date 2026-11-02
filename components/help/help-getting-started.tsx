@@ -46,10 +46,8 @@ export function HelpGettingStarted({
           Help & Getting Started
         </h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Harbaugh Forms takes a transaction from the people and the property
-          through the forms and the finished PDFs. Follow these steps the first
-          time. This page stays in the menu, so you can open it again whenever
-          you need it.
+          New to Harbaugh Forms? Start here to see how contacts, properties,
+          forms, and packets fit together. You can come back to Help anytime.
         </p>
       </div>
 
@@ -84,7 +82,7 @@ export function HelpGettingStarted({
               Need Help?
             </h2>
             <p className="text-sm text-muted-foreground">
-              Call or email if you get stuck.
+              Have a question or need a hand? Call or email us.
             </p>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">

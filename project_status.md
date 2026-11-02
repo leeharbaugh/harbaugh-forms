@@ -1,5 +1,7 @@
 # Harbaugh Forms — Project Status
 
+**Update 2026-11-01 (development only):** Help & Getting Started copy was rewritten from three production screenshots for a warmer, clearer walkthrough. The nine-step structure, optional Forms and Collections paths, packet-type differences, agent versus brokerage profile ownership, Signing feature gate, UI labels, navigation links, and support contacts remain intact. No workflow or production deployment changed. `test:help` passed 12/12; `build:validate` passed.
+
 **As of:** 2026-10-31, 22:10 Chicago (03:10 UTC on 2026-11-01). **Native Signing remains LIVE. Help & Getting Started (backlog item 3) is LIVE in production on `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs` (`01f2c61`).**
 - **Promotion:** the guarded script's dry run passed, then the same deployment was promoted at 02:59:32–02:59:38 UTC. No new build was created. The earlier overflowing candidate `dpl_27dficHMYKj95tCZLeMXKweRshqd` was not promoted. The previous production deployment `dpl_E2LUBo8YdkxUgu12u6TeELLXvmdt` remains the rollback target and was not needed.
 - **Domains:** `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` both serve `dpl_71GDkxSnQfgfNZK1w2TsoHSXsyYs` over HTTPS. Each login page embeds that deployment id. Signed-out `/help` returns 307 to `/auth/login` on both. Automatic domain assignment remains off.

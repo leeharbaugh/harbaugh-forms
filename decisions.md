@@ -1,5 +1,17 @@
 # Harbaugh Forms — Architectural Decisions
 
+## Help wording follows the existing workflow
+
+**Date:** 2026-11-01
+
+**Decision:** Rewrite the Help & Getting Started introduction, numbered steps, and support invitation in warm, direct language. Preserve the existing page structure, accurate control labels, links, optional template paths, packet-type distinctions, profile ownership, and conditional Signing steps. Make no functional change.
+
+**Reason:** The production page is accurate, but its wording feels formal and repetitive in the three reviewed screenshots.
+
+**Related:** `components/help/help-getting-started.tsx`; `lib/help/getting-started.ts`; `project_status.md`.
+
+---
+
 ## Decision Format
 
 Each decision should include:
