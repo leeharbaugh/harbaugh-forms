@@ -30,18 +30,18 @@ function link(href: string, label: string): HelpInline {
 
 const SETTINGS_STEP: HelpStep = {
   id: "settings",
-  title: "Review My Agent Profile",
+  title: "Check your agent profile",
   paragraphs: [
     [
       text("Open "),
       link("/settings", "Settings"),
       text(
-        " and check My Agent Profile. It is your own name, license number, phone, and email. You keep it up to date. Those details fill the agent lines on forms in packets you own. Each agent in your brokerage has a separate profile.",
+        " and check My Agent Profile for your own name, license number, phone, and email. Keep these details current: they fill the agent lines on forms in packets you own. Each agent in your brokerage has a separate profile.",
       ),
     ],
     [
       text(
-        "Brokerage Profile is on the same page. It is the firm and the broker of record, shared by everyone in the brokerage. A brokerage administrator updates it. Other agents can read the shared Brokerage Profile.",
+        "The Brokerage Profile is on the same page. It holds the firm's and broker of record's details and is shared by everyone in the brokerage. A brokerage administrator updates it; other agents can view it.",
       ),
     ],
   ],
@@ -53,7 +53,7 @@ const CONTACTS_STEP: HelpStep = {
   paragraphs: [
     [
       text(
-        "Add the people who belong on the paperwork: buyers, sellers, landlords, tenants, and anyone else on the transaction. You choose from these contacts when you create a packet. On ",
+        "Start with the people involved in the transaction, such as buyers, sellers, landlords, or tenants. You'll choose from these contacts when you create a packet. In ",
       ),
       link("/contacts", "Contacts"),
       text(", choose Add contact."),
@@ -67,7 +67,7 @@ const PROPERTIES_STEP: HelpStep = {
   paragraphs: [
     [
       text(
-        "A listing packet and a contract-offer packet each ask you to choose a property, so add it first. A Buyer Rep packet is about your buyers and does not include a property. A Custom Packet can include a property when you want one. On ",
+        "For a Listing or Contract Offer packet, add the property before creating the packet. A Buyer Rep packet focuses on the buyers and does not include a property. You can add a property to a Custom Packet if you need one. In ",
       ),
       link("/properties", "Properties"),
       text(", choose Add property."),
@@ -80,15 +80,15 @@ const FORMS_STEP: HelpStep = {
   title: "Review Form Templates",
   paragraphs: [
     [
-      text("In the menu this page is "),
+      text("Choose "),
       link("/forms", "Forms"),
       text(
-        ". On the page the heading is Form Templates. The forms your brokerage already uses are usually here and ready to use.",
+        " in the menu to open Form Templates. Your brokerage's forms may already be here and ready to use.",
       ),
     ],
     [
       text(
-        "Adding your own form is optional. Choose Add form template and upload the PDF. Then choose Map Fields and mark the blanks you want filled in. When the form is ready, choose Publish Form. A form has to be published before a packet template or a packet can include it.",
+        "Adding your own form is optional. If you need one, choose Add form template and upload its PDF. Use Map Fields to mark the blanks you want filled in, then choose Publish Form when it's ready. A form must be published before you can add it to a packet template or packet.",
       ),
     ],
   ],
@@ -99,15 +99,15 @@ const COLLECTIONS_STEP: HelpStep = {
   title: "Review Packet Templates",
   paragraphs: [
     [
-      text("In the menu this page is "),
+      text("Choose "),
       link("/collections", "Collections"),
       text(
-        ". On the page the heading is Packet Templates. A packet template is a set of forms you reuse, such as a buyer-rep set or a listing set. Your brokerage may already have templates you can use. Copy to My Collections makes a copy that belongs to you.",
+        " in the menu to open Packet Templates. A packet template is a reusable set of forms, such as a buyer representation or listing set. Your brokerage may already have one you can use. Choose Copy to My Collections if you'd like your own copy.",
       ),
     ],
     [
       text(
-        "Creating your own packet template is optional. Choose Add packet template when you need a set that is not already there. You can add a form after it is published.",
+        "Creating your own packet template is optional. If you need a set that isn't there yet, choose Add packet template. Once a form is published, you can add it to the template.",
       ),
     ],
   ],
@@ -118,7 +118,7 @@ const PACKETS_STEP: HelpStep = {
   title: "Create a packet",
   paragraphs: [
     [
-      text("A packet is one transaction. On "),
+      text("A packet keeps the paperwork for one transaction together. In "),
       link("/", "Packets"),
       text(
         ", choose Create packet, then choose Buyer Rep, Listing, Contract Offer, or Custom Packet.",
@@ -126,27 +126,27 @@ const PACKETS_STEP: HelpStep = {
     ],
     [
       text(
-        "Buyer Rep: choose a buyer-rep packet template, add the buyers, review the forms, and choose Create packet.",
+        "Buyer Rep: choose a buyer representation packet template, add the buyers, review the forms, and choose Create packet.",
       ),
     ],
     [
       text(
-        "Listing: choose a listing packet template, add the sellers, choose the property, review the forms, and choose Create packet. A lease listing asks for the landlords.",
+        "Listing: choose a listing packet template, add the sellers and property, review the forms, and choose Create packet. For a lease listing, add the landlords instead of sellers.",
       ),
     ],
     [
       text(
-        "Contract Offer: choose a contract-offer packet template, add the contacts, choose the property, review the forms, and choose Create packet.",
+        "Contract Offer: choose a contract offer packet template, add the contacts and property, review the forms, and choose Create packet.",
       ),
     ],
     [
       text(
-        "Custom Packet: name the packet, add contacts and a property when you need them, and create the empty packet. Then upload your own documents.",
+        "Custom Packet: name the packet and add any contacts or property you need. Create the empty packet, then upload your own documents.",
       ),
     ],
     [
       text(
-        "The first person you add is the main party. On the packet you can change anyone's role later.",
+        "The first person you add becomes the main party. You can change anyone's role later in the packet.",
       ),
     ],
   ],
@@ -160,17 +160,17 @@ const FILL_STEP: HelpStep = {
       text("Open the packet from "),
       link("/", "Packets"),
       text(
-        " and choose Fill form. Check the names, the property, and the other blanks, and complete anything still empty.",
+        " and choose Fill form. Review the names, property, and other fields, then fill in anything that's still blank.",
       ),
     ],
     [
       text(
-        "If you later correct a contact, a property, My Agent Profile, or the Brokerage Profile, open that form and choose Refresh Values while it is still a Draft. Refresh Values brings in the latest of those details. Anything you typed by hand stays as you left it. Refresh Values is available while the form is a Draft.",
+        "If a contact, property, My Agent Profile, or the Brokerage Profile changes, open the form and choose Refresh Values while it's still a Draft. This brings in the updated details and keeps anything you entered by hand.",
       ),
     ],
     [
       text(
-        "Choose Download PDF for one form, or Download All Forms for the whole packet. When a form is finished, Mark Final locks it so it stays as it is. You can still download it.",
+        "Choose Download PDF for one form or Download All Forms for the whole packet. When a form is ready, choose Mark Final to lock it. You can still download a final form.",
       ),
     ],
   ],
@@ -186,12 +186,12 @@ const SEND_STEP: HelpStep = {
       text(". You can also start from "),
       link("/signings", "Signings"),
       text(
-        ". A Signing started from the packet takes its title from the packet name. On Signings, you enter the title yourself.",
+        ". A Signing started from a packet uses the packet name as its title. If you start in Signings, you'll enter the title yourself.",
       ),
     ],
     [
       text(
-        "Choose Use this Packet to bring in the people and the documents. Then choose Prepare Documents and place each signature, initial, and date. When that is done, choose Send to email the invitations, or Begin In-Person Signing when the parties are with you.",
+        "Choose Use this Packet to bring in its people and documents. Next, choose Prepare Documents and place the signatures, initials, and dates. Choose Send to email invitations, or Begin In-Person Signing when everyone is with you.",
       ),
     ],
   ],
@@ -205,7 +205,7 @@ const TRACK_STEP: HelpStep = {
       text("Open "),
       link("/signings", "Signings"),
       text(
-        " to see whether each one is a draft, in progress, complete, declined, or cancelled. On a completed Signing, download each signed document, the Audit certificate, and the Combined signed package.",
+        " to check whether a Signing is a draft, in progress, complete, declined, or cancelled. Once it's complete, you can download individual signed documents, the Audit certificate, and the Combined signed package.",
       ),
     ],
   ],
