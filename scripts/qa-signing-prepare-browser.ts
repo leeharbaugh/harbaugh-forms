@@ -49,6 +49,8 @@ const OUT_DIR = path.join("_audit_tmp", "signing-prepare-qa");
 const GENERATED_DOCUMENTS_BUCKET = "generated-documents";
 const SIGNING_ARTIFACTS_BUCKET = "signing-artifacts";
 const LONG_NAME = "Lisa Ann Ellison Hernandez";
+const LOGIN_NAME = "Lee Harbaugh";
+const AGENT_NAME = "Kenneth Lee Harbaugh";
 /** Buyer Rep-style printed lines on page 1 (PDF points, y from top). */
 const PRINTED = {
   initials: { x: 470, width: 36, top: 740 },
@@ -123,6 +125,7 @@ async function main() {
 
   const stamp = Date.now();
   const email = `prepare-qa-${stamp}@example.com`;
+  const agentEmail = `kenneth.prepare-qa-${stamp}@example.com`;
   let userId = "";
   let organizationId = "";
   let packetId = 0;
@@ -159,7 +162,7 @@ async function main() {
   async function participantsInDb() {
     const { data, error } = await admin
       .from("signing_participants")
-      .select("id, full_name, role_code, optional_role, linked_user_id, linked_contact_id, linked_brokerage_settings_id")
+      .select("id, full_name, email, role_code, optional_role, linked_user_id, linked_contact_id, linked_brokerage_settings_id")
       .eq("signing_id", signingId);
     if (error) fail(error.message);
     return data ?? [];
@@ -245,9 +248,10 @@ async function main() {
       status: "ACTIVE",
       app_role: "USER",
       onboarding_status: "ACTIVE",
-      display_name: "Prepare QA Agent",
-      first_name: "Prepare",
-      last_name: "QA",
+      display_name: LOGIN_NAME,
+      preferred_name: "Lee",
+      first_name: "Lee",
+      last_name: "Harbaugh",
       primary_organization_id: organizationId,
       must_change_password: false,
     });
@@ -257,6 +261,17 @@ async function main() {
       membership_role: "MEMBER",
       status: "ACTIVE",
     });
+    const { error: agentProfileError } = await admin.from("user_agent_settings").upsert({
+      user_id: userId,
+      status: "ACTIVE",
+      legal_first_name: "Kenneth",
+      legal_middle_name: "Lee",
+      legal_last_name: "Harbaugh",
+      preferred_name: "Lee",
+      display_name: LOGIN_NAME,
+      email: agentEmail,
+    });
+    if (agentProfileError) fail(agentProfileError.message);
 
     const { data: packet } = await admin
       .from("packets")
@@ -343,7 +358,7 @@ async function main() {
       `${APP_ORIGIN}/auth/confirm?token_hash=${encodeURIComponent(
         link.properties.hashed_token,
       )}&type=magiclink&next=${encodeURIComponent("/signings")}`,
-      { waitUntil: "networkidle" },
+      { waitUntil: "domcontentloaded" },
     );
     if (page.url().includes("/auth/")) fail(`auth failed: ${page.url()}`);
     ok("signed in as disposable QA agent");
@@ -443,7 +458,7 @@ async function main() {
       contact_id: buyer3!.id,
       sort_order: 2,
     });
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     const autoNotice = page.locator('[data-testid="packet-auto-added"]');
     await autoNotice.getByText(/Added from the source Packet: Bea Buyerthree/).waitFor({ timeout: 30000 });
     if ((await autoNotice.innerText()).trim() !== "Added from the source Packet: Bea Buyerthree.") {
@@ -477,7 +492,7 @@ async function main() {
       if (!beaAck) await page.waitForTimeout(250);
     }
     if (!beaAck) fail("displaying the auto-add notice must acknowledge it");
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await participantList.getByText("Bea Buyerthree").waitFor({ timeout: 30000 });
     if ((await participantsInDb()).length !== 4) fail("a second load must not duplicate Packet participants");
     if ((await autoNotice.count()) !== 0) fail("an acknowledged auto-add notice must not show again");
@@ -505,7 +520,7 @@ async function main() {
     // Removing a Packet participant suppresses it until Restore.
     await rowFor("Bea Buyerthree").getByRole("button", { name: "Remove participant" }).click();
     await page.getByText("Bea Buyerthree removed. They will not be added back from the Packet unless you restore them.").waitFor({ timeout: 30000 });
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     const removedList = page.locator('[data-testid="removed-packet-participants"]');
     await removedList.getByText(/Bea Buyerthree/).waitFor({ timeout: 30000 });
     if ((await participantList.getByText("Bea Buyerthree").count()) !== 0 || (await participantsInDb()).length !== 3) {
@@ -524,6 +539,7 @@ async function main() {
     // Quick include agent / broker.
     const signers = page.locator('[data-testid="internal-signers"]');
     await signers.getByRole("button", { name: "Include me as a signer" }).click();
+    await page.getByText(`${AGENT_NAME} added as a signer.`).waitFor({ timeout: 30000 });
     await signers.getByRole("button", { name: "You are a signer" }).waitFor({ timeout: 30000 });
     await signers.getByRole("button", { name: "Include broker as a signer (Bob Broker)" }).click();
     await signers.getByRole("button", { name: "Broker Bob Broker is a signer" }).waitFor({ timeout: 30000 });
@@ -539,26 +555,37 @@ async function main() {
     if (
       agentRows.length !== 1 ||
       agentRows[0].role_code !== "AGENT" ||
-      agentRows[0].full_name !== "Prepare QA Agent" ||
+      agentRows[0].full_name !== AGENT_NAME ||
+      agentRows[0].email !== agentEmail ||
       brokerRows.length !== 1 ||
       brokerRows[0].role_code !== "BROKER" ||
       brokerRows[0].full_name !== "Bob Broker"
     ) {
       fail(`agent/broker quick-add: ${JSON.stringify(withInternal)}`);
     }
-    await participantList.getByText("Prepare QA Agent").waitFor();
+    await participantList.getByText(AGENT_NAME, { exact: true }).waitFor();
+    await participantList.getByText(agentEmail, { exact: true }).waitFor();
     await participantList.getByText("Bob Broker").waitFor();
     await shot(page, "00c-agent-broker-included");
-    ok("Include me / Include broker added real participants once (roles Agent / Broker)");
+    ok("Include me immediately shows and persists the complete Agent Profile name/email, not the distinct login identity; broker remains independent");
 
     // Agent profile and brokerage profile edits flow to those rows while Draft.
-    await admin.from("profiles").update({ display_name: "Prepare QA Agent Updated" }).eq("id", userId);
+    const { error: loginEditError } = await admin.from("profiles").update({ display_name: "Changed Login Name" }).eq("id", userId);
+    if (loginEditError) fail(loginEditError.message);
     await admin.from("brokerage_settings").update({ broker_first_name: "Roberta" }).eq("id", brokerageSettingsId);
-    await page.reload({ waitUntil: "networkidle" });
-    await participantList.getByText("Prepare QA Agent Updated").waitFor({ timeout: 30000 });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await participantList.getByText(AGENT_NAME, { exact: true }).waitFor({ timeout: 30000 });
+    if ((await participantsInDb()).find((row) => row.linked_user_id === userId)?.email !== agentEmail) {
+      fail("Draft reopen replaced Agent Profile email with login email");
+    }
+    const { error: agentEditError } = await admin.from("user_agent_settings").update({ legal_last_name: "Harbaugh-Smith", email: `updated-${agentEmail}` }).eq("user_id", userId);
+    if (agentEditError) fail(agentEditError.message);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await participantList.getByText("Kenneth Lee Harbaugh-Smith", { exact: true }).waitFor({ timeout: 30000 });
+    await participantList.getByText(`updated-${agentEmail}`, { exact: true }).waitFor();
     await participantList.getByText("Roberta Broker").waitFor({ timeout: 30000 });
     const agentSource = await participantList
-      .locator("div.rounded-lg", { hasText: "Prepare QA Agent Updated" })
+      .locator("div.rounded-lg", { hasText: "Kenneth Lee Harbaugh-Smith" })
       .first()
       .locator('[data-testid="participant-identity-source"]')
       .innerText();
@@ -566,12 +593,12 @@ async function main() {
     if ((await participantList.locator("div.rounded-lg", { hasText: "Roberta Broker" }).getByRole("button", { name: "Edit details" }).count()) !== 0) {
       fail("the broker row must not offer Edit details");
     }
-    ok("agent profile and brokerage profile changes flow to Include me / Include broker rows while Draft; no edit UI");
+    ok("Draft reopen ignores login-profile edits and follows Agent Profile name/email changes; broker remains independent");
 
     // Role edit persists across reload.
     await page.getByLabel(`Role for ${LONG_NAME}`).selectOption("TENANT");
     await participantList.getByText("Tenant · Co-buyer").waitFor({ timeout: 30000 });
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await participantList.getByText("Tenant · Co-buyer").waitFor({ timeout: 30000 });
     if ((await page.getByLabel(`Role for ${LONG_NAME}`).inputValue()) !== "TENANT") {
       fail("role edit did not survive reload");
@@ -1627,7 +1654,7 @@ async function main() {
       .update({ first_name: "Beatrice", email: `beatrice-${stamp}@example.com` })
       .eq("id", buyer3!.id);
     await admin.from("contacts").update({ first_name: "Calvin" }).eq("id", contactIds[1]);
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     const renamedRow = participantList.locator("div.rounded-lg", { hasText: "Beatrice Buyerthree" }).first();
     await renamedRow.getByText(`beatrice-${stamp}@example.com`).waitFor({ timeout: 30000 });
     const beaDb = (await participantsInDb()).find((row) => row.id === pid("Bea Buyerthree"));
@@ -1703,6 +1730,7 @@ async function main() {
     }
     if (packetId) await admin.from("packets").update({ status: "DELETED" }).eq("id", packetId);
     if (userId) {
+      await admin.from("user_agent_settings").delete().eq("user_id", userId);
       await admin.from("organization_members").delete().eq("user_id", userId);
       await admin.from("profiles").delete().eq("id", userId);
       await admin.auth.admin.deleteUser(userId);

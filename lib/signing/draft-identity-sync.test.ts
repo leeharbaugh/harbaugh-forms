@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   brokerSignerIdentityFromSettings,
   contactSignerIdentity,
   isDraftIdentityLive,
   isLinkedParticipant,
   participantIdentitySourceKind,
+  syncDraftParticipantIdentities,
   userSignerIdentity,
 } from "@/lib/signing/draft-participant-sync";
 import {
@@ -19,7 +21,8 @@ import {
 import type { SigningPreviewField } from "@/lib/signing/preview";
 import type { BrokerageSettings } from "@/lib/types/brokerage-settings";
 import type { Contact } from "@/lib/types/contact";
-import type { Profile } from "@/lib/types/profile";
+import type { UserAgentSettings } from "@/lib/types/user-agent-settings";
+import type { SigningRow } from "@/lib/signing/types";
 
 const root = process.cwd();
 const read = (relativePath: string) => readFileSync(join(root, relativePath), "utf8");
@@ -45,16 +48,18 @@ function contact(extra: Partial<Contact> = {}): Contact {
   } as Contact;
 }
 
-function profile(extra: Partial<Profile> = {}): Profile {
+function profile(extra: Partial<UserAgentSettings> = {}): UserAgentSettings {
   return {
-    first_name: "Ann",
-    middle_name: null,
-    last_name: "Agent",
+    user_id: "agent-1",
+    status: "ACTIVE",
+    legal_first_name: "Ann",
+    legal_middle_name: null,
+    legal_last_name: "Agent",
     preferred_name: null,
     display_name: null,
     email: "profile@example.com",
     ...extra,
-  } as Profile;
+  } as UserAgentSettings;
 }
 
 function field(
@@ -118,13 +123,18 @@ describe("Authoritative Draft participant identity", () => {
     );
   });
 
-  it("derives Include me identity from the profile, preferring the auth email", () => {
-    assert.deepEqual(userSignerIdentity(profile(), "Auth@Example.com"), {
-      fullName: "Ann Agent",
-      email: "auth@example.com",
+  it("derives Include me identity only from the complete Agent Profile", () => {
+    assert.deepEqual(userSignerIdentity(profile({ legal_first_name: "Ann Marie", legal_middle_name: "Elise", legal_last_name: "Van Buren", preferred_name: "Annie", display_name: "A. Agent", email: "Agent@Example.com" })), {
+      fullName: "Ann Marie Elise Van Buren",
+      email: "agent@example.com",
     });
-    assert.equal(userSignerIdentity(profile(), null)?.email, "profile@example.com");
-    assert.equal(userSignerIdentity(profile({ preferred_name: "Annie" }), null)?.fullName, "Annie");
+    assert.deepEqual(userSignerIdentity(profile()), {
+      fullName: "Ann Agent",
+      email: "profile@example.com",
+    });
+    assert.equal(userSignerIdentity(profile({ email: null })), null);
+    assert.equal(userSignerIdentity(profile({ legal_first_name: null, legal_last_name: null })), null);
+    assert.equal(userSignerIdentity(null), null);
   });
 
   it("derives Include broker identity from the brokerage profile and requires an email", () => {
@@ -144,6 +154,64 @@ describe("Authoritative Draft participant identity", () => {
       brokerSignerIdentityFromSettings({ ...settings, broker_first_name: null, broker_last_name: null }),
       null,
     );
+  });
+});
+
+describe("Include me server persistence", () => {
+  function fixture(profiles: Record<string, UserAgentSettings | null>) {
+    const rows = [
+      { id: "self", full_name: "Login Name", email: "login@example.com", linked_contact_id: null, linked_user_id: "agent-2", linked_brokerage_settings_id: null },
+      { id: "manual", full_name: "Manual Signer", email: "manual@example.com", linked_contact_id: null, linked_user_id: null, linked_brokerage_settings_id: null },
+    ];
+    const updates: Array<{ id: string; full_name: string; email: string }> = [];
+    const reads: string[] = [];
+    const admin = {
+      from(table: string) {
+        const filters: Record<string, unknown> = {};
+        let patch: { full_name: string; email: string } | null = null;
+        const query = {
+          select() { return query; },
+          eq(key: string, value: unknown) { filters[key] = value; return query; },
+          neq() { return query; },
+          update(value: { full_name: string; email: string }) { patch = value; return query; },
+          async maybeSingle() {
+            assert.equal(table, "user_agent_settings");
+            const userId = String(filters.user_id);
+            reads.push(userId);
+            const candidate = profiles[userId];
+            return { data: candidate?.status === filters.status ? candidate : null, error: null };
+          },
+          then(resolve: (value: unknown) => void) {
+            if (table === "signing_participants" && patch) {
+              updates.push({ id: String(filters.id), ...patch });
+              resolve({ error: null });
+            } else {
+              resolve({ data: rows, error: null });
+            }
+          },
+        };
+        return query;
+      },
+    } as unknown as SupabaseClient;
+    const signing = { id: "signing-1", lifecycle_state: "DRAFT", current_package_revision_id: null } as SigningRow;
+    return { admin, signing, updates, reads };
+  }
+
+  it("persists the acting linked agent's full legal name and profile email without changing manual participants", async () => {
+    const first = profile({ user_id: "agent-1", legal_first_name: "Other", email: "other@example.com" });
+    const second = profile({ user_id: "agent-2", legal_first_name: "Mary Ann", legal_middle_name: "Elise", legal_last_name: "Van Buren", preferred_name: "Mary", display_name: "Login Name", email: "Mary@Agency.example" });
+    const { admin, signing, updates, reads } = fixture({ "agent-1": first, "agent-2": second });
+    assert.deepEqual(await syncDraftParticipantIdentities(admin, signing, { requireUserIdentity: true }), { updatedParticipantIds: ["self"] });
+    assert.deepEqual(reads, ["agent-2"]);
+    assert.deepEqual(updates, [{ id: "self", full_name: "Mary Ann Elise Van Buren", email: "mary@agency.example" }]);
+  });
+
+  it("blocks activation when the linked agent's profile is missing or incomplete", async () => {
+    for (const missing of [null, profile({ user_id: "agent-2", email: null })]) {
+      const { admin, signing, updates } = fixture({ "agent-2": missing });
+      await assert.rejects(syncDraftParticipantIdentities(admin, signing, { requireUserIdentity: true }), /Complete your Agent Profile full name and email/);
+      assert.deepEqual(updates, []);
+    }
   });
 });
 
@@ -191,7 +259,10 @@ describe("Draft identity sync boundaries (source)", () => {
 
   it("Include me is always the signed-in User; Include broker is the org's active profile", () => {
     assert.match(participants, /linkedUserId: actor\.userId/);
-    assert.match(participants, /userSignerIdentity\(actor\.profile, actor\.email\)/);
+    assert.match(participants, /fetchActiveUserAgentSettings\(admin, actor\.userId\)/);
+    assert.match(sync, /fetchActiveUserAgentSettings\(admin, userId\)/);
+    assert.doesNotMatch(sync, /\.from\("profiles"\)|getUserById/);
+    assert.match(activation, /requireUserIdentity: true/);
     assert.match(participants, /fetchActiveBrokerageSettings\(\s*admin,\s*signing\.originating_organization_id/);
     assert.doesNotMatch(actions, /linkedUserId|linkedBrokerageSettingsId/);
   });
@@ -217,7 +288,7 @@ describe("Draft identity sync boundaries (source)", () => {
   });
 
   it("syncs identity before readiness at activation and rejects a frozen-identity mismatch", () => {
-    const syncAt = activation.indexOf("syncDraftParticipantIdentities(admin, signing)");
+    const syncAt = activation.indexOf("syncDraftParticipantIdentities(admin, signing, { requireUserIdentity: true })");
     const readinessAt = activation.indexOf("evaluateSigningReadiness(admin, signing.id");
     const promoteAt = activation.indexOf("promotePackageRevisionFromDraftWithActor(");
     assert.ok(syncAt > 0 && syncAt < readinessAt && readinessAt < promoteAt);

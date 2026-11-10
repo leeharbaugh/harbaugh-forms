@@ -4,7 +4,7 @@
  * While a Signing is Draft (no package revision yet), a linked participant's
  * name and email come from its authoritative source and follow it:
  *   - linked Contact (Packet / Contact participants),
- *   - the linked User's profile ("Include me"),
+ *   - the linked User's active Agent Profile ("Include me"),
  *   - the originating organization's active brokerage profile ("Include broker").
  * Ad hoc participants have no source and keep what the manager typed.
  *
@@ -17,8 +17,9 @@ import { formatContactDisplayName, hasUsableContactDisplayName } from "@/lib/typ
 import type { Contact } from "@/lib/types/contact";
 import { brokerFullName } from "@/lib/types/brokerage-settings";
 import type { BrokerageSettings } from "@/lib/types/brokerage-settings";
-import { formatProfileDisplayName } from "@/lib/types/profile";
-import type { Profile } from "@/lib/types/profile";
+import { fetchActiveUserAgentSettings, resolveUserAgentSettingsField } from "@/lib/user-agent-profile";
+import type { UserAgentSettings } from "@/lib/types/user-agent-settings";
+import { SigningError } from "./errors";
 import type { SigningRow } from "./types";
 
 export type ParticipantIdentitySourceKind = "CONTACT" | "USER" | "BROKER" | "AD_HOC";
@@ -80,14 +81,14 @@ export function contactSignerIdentity(
 }
 
 export function userSignerIdentity(
-  profile: Profile,
-  authEmail: string | null | undefined,
+  profile: UserAgentSettings | null,
 ): AuthoritativeIdentity | null {
-  const fullName = formatProfileDisplayName(profile).trim();
-  if (!fullName) return null;
+  const fullName = resolveUserAgentSettingsField(profile, "agent_full_name");
+  const email = resolveUserAgentSettingsField(profile, "agent_email")?.toLowerCase();
+  if (!fullName || fullName.length > 200 || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
   return {
-    fullName: fullName.slice(0, 200),
-    email: (authEmail ?? profile.email ?? "").trim().toLowerCase(),
+    fullName,
+    email,
   };
 }
 
@@ -162,18 +163,7 @@ export async function resolveAuthoritativeIdentities(
 
   const users = new Map<string, AuthoritativeIdentity>();
   for (const userId of userIds) {
-    const { data: profile, error } = await admin
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!profile) continue;
-    const { data: authUser } = await admin.auth.admin.getUserById(userId);
-    const identity = userSignerIdentity(
-      profile as Profile,
-      authUser?.user?.email ?? null,
-    );
+    const identity = userSignerIdentity(await fetchActiveUserAgentSettings(admin, userId));
     if (identity) users.set(userId, identity);
   }
 
@@ -219,6 +209,7 @@ const LINKED_ROW_COLUMNS =
 export async function syncDraftParticipantIdentities(
   admin: SupabaseClient,
   signing: SigningRow,
+  options: { requireUserIdentity?: boolean } = {},
 ): Promise<{ updatedParticipantIds: string[] }> {
   if (!isDraftIdentityLive(signing)) return { updatedParticipantIds: [] };
 
@@ -232,6 +223,11 @@ export async function syncDraftParticipantIdentities(
   if (rows.length === 0) return { updatedParticipantIds: [] };
 
   const identities = await resolveAuthoritativeIdentities(admin, signing, rows);
+  if (options.requireUserIdentity && rows.some((row) =>
+    participantIdentitySourceKind(row) === "USER" && !identities.has(row.id)
+  )) {
+    throw new SigningError("NOT_READY", "Complete your Agent Profile full name and email before sending this Signing.");
+  }
   const updatedParticipantIds: string[] = [];
   for (const row of rows) {
     const identity = identities.get(row.id);

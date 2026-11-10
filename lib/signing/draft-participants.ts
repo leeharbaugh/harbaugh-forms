@@ -31,6 +31,7 @@ import {
   suppressDraftPacketParticipant,
 } from "./draft-packet-suppressions";
 import { fetchActiveBrokerageSettings } from "@/lib/types/brokerage-settings";
+import { fetchActiveUserAgentSettings } from "@/lib/user-agent-profile";
 import type { Contact } from "@/lib/types/contact";
 
 const LINKED_IDENTITY_EDIT_MESSAGE: Record<
@@ -39,7 +40,7 @@ const LINKED_IDENTITY_EDIT_MESSAGE: Record<
 > = {
   CONTACT:
     "This participant's name and email come from the linked Contact. Edit the Contact instead.",
-  USER: "Your name and email come from your profile. Edit your profile instead.",
+  USER: "Your name and email come from your Agent Profile. Edit your Agent Profile instead.",
   BROKER:
     "The broker's name and email come from the brokerage profile. Edit the brokerage profile instead.",
 };
@@ -466,9 +467,9 @@ type InternalSignerIdentity = {
   linkedBrokerageSettingsId: number | null;
 };
 
-/** The signed-in User, from the server session profile (never browser input). */
-function selfSignerIdentity(actor: SigningActor): InternalSignerIdentity | null {
-  const identity = userSignerIdentity(actor.profile, actor.email);
+/** The signed-in User's active Agent Profile, never browser or login identity. */
+async function selfSignerIdentity(actor: SigningActor, admin: SupabaseClient): Promise<InternalSignerIdentity | null> {
+  const identity = userSignerIdentity(await fetchActiveUserAgentSettings(admin, actor.userId));
   if (!identity) return null;
   return {
     ...identity,
@@ -549,8 +550,8 @@ export async function loadInternalSignerOptionsWithActor(
 
   return {
     self: await option(
-      selfSignerIdentity(actor),
-      "Your profile needs a name before you can sign.",
+      await selfSignerIdentity(actor, admin),
+      "Complete your Agent Profile full name and email before you can sign.",
     ),
     broker: await option(
       await brokerSignerIdentity(admin, signing),
@@ -580,13 +581,13 @@ export async function includeInternalSignerWithActor(
   }
   const identity =
     input.kind === "SELF"
-      ? selfSignerIdentity(actor)
+      ? await selfSignerIdentity(actor, admin)
       : await brokerSignerIdentity(admin, signing);
   if (!identity) {
     throw new SigningError(
       "INVALID_INPUT",
       input.kind === "SELF"
-        ? "Your profile needs a name before you can sign."
+        ? "Complete your Agent Profile full name and email before you can sign."
         : "This organization's brokerage profile has no broker name and email.",
     );
   }

@@ -1,5 +1,19 @@
 # Harbaugh Forms — Architectural Decisions
 
+## PR #89 Preview validation: build provenance and browser coverage
+
+**Date:** 2026-11-10. **Status:** PR open; production unchanged.
+
+**Finding:** The Preview URL used for the failed "Include me as a signer" check was built from `main` commit `35f14458a31ee7627ddb487b2a83cad414a7fadb`, not PR #89. Its linked User participant in development Supabase stored the login preferred name `Lee` and login email. That build's include and Draft synchronization code uses `profiles` and Auth email. PR #89's server path reads the acting user's ACTIVE `user_agent_settings` and uses full legal name and Agent Profile email. The browser renders the server include-action result and then reloads the persisted Draft participant. The observed wrong identity was therefore displayed and persisted; it does not establish a failure in PR-head code.
+
+**Decision:** Keep the signing identity source and authorization rules in PR #89. Add a real browser QA regression with deliberately different login (`Lee Harbaugh`) and Agent Profile (`Kenneth Lee Harbaugh`) names and emails. Assert immediate include feedback, UI row, database row, Draft reopen, independence from login-profile edits, and Agent Profile Draft synchronization. Require a fresh unique Preview tied to the PR head and manual validation there before any merge or production promotion. No migration, permissions, production data, or deployment configuration change is authorized by this finding.
+
+**Reason:** The earlier 372 passing tests exercised server code and source assertions, but did not prove that the manually tested Preview ran that commit or test the checkbox-equivalent browser workflow. The control is a button labeled "Include me as a signer" in `components/signings/signing-draft-prep-panel.tsx`.
+
+**Related:** `scripts/qa-signing-prepare-browser.ts`; `project_status.md`; PR #89.
+
+---
+
 ## Help wording follows the existing workflow
 
 **Date:** 2026-11-01
@@ -7808,4 +7822,16 @@ Copy recipients receive the completed package only. Current add path issues comp
 * General manager-page banners promoting representative signing or typed adoption are unnecessary; capacity and ceremony instructions belong in participant setup and ceremony.
 
 **Related:** `lib/signing/preview.ts`; `app/signings/[signingId]/preview/document/[documentId]/route.ts`; Signing dashboard Preview Signing.
+
+## Signing "Include me" uses the acting user's Agent Profile
+
+**Date:** 2026-11-10. **Status:** PR #89 Preview; not merged or promoted.
+
+**Decision:** The linked User participant's signing identity comes from that user's ACTIVE `user_agent_settings` row, keyed by the authenticated acting user's ID at inclusion and by `linked_user_id` during Draft sync. Use the full legal first, middle and last name and the Agent Profile email. Preferred/display/login names and Auth email are not signing identity. Reject inclusion when the Agent Profile has no usable full name or email; block activation if an existing linked Draft participant's profile becomes unusable. Keep Contact, broker and ad hoc identity rules and the existing organization/authorization boundaries. No migration, RLS change or retroactive identity rewrite.
+
+**Reason:** The prior implementation used `profiles` and Auth email for insertion and sync, even after form fields had moved to `user_agent_settings`. Activation then froze those incorrect values for invitations, signing and completion. The correction reuses `fetchActiveUserAgentSettings` and `resolveUserAgentSettingsField` from the existing agent identity resolver. Changed files: `lib/signing/draft-participants.ts`, `draft-participant-sync.ts`, `activation.ts`, `draft-identity-sync.test.ts`. Validation: Draft prep 220/220, Stage 4 55/55, completion delivery 46/46, Stage 6 30/30, agent identity 21/21, TypeScript, changed-file ESLint and diff check. Existing active signings remain frozen; review any affected active signing individually before deciding on remediation. Rollout requires unique-URL validation and explicit approval before promotion, with automatic production-domain assignment disabled.
+
+**Release preparation (2026-11-10):** Commit `08664552b798b8354a7060b52ffc13aa754ec29b` was pushed on `codex/hotfix-signing-agent-profile`; [PR #89](https://github.com/leeharbaugh/harbaugh-forms/pull/89) targets `main`. GitHub reports the Vercel check and Preview deployment successful at [the unique preview URL](https://harbaugh-forms-km7l12f5b-lee-harbaugh-s-projects.vercel.app). Unauthenticated access redirects to Vercel SSO. Preview is documented to use development Supabase `ewxsxwzezhkeawnjvigx`; live variables remain unverified because Vercel project inspection returned 403 for `lee-harbaugh-s-projects`. Team access and deployment settings were left unchanged. Verify Preview variables and perform the two-agent signing flow before considering a merge or production promotion.
+
+---
 
