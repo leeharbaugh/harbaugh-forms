@@ -336,7 +336,7 @@ export async function activateSigningWithActor(
     // time, then promotion freezes them. Packet auto-add is deliberately not
     // run here so Send never activates with a participant the agent has not
     // seen.
-    await syncDraftParticipantIdentities(admin, signing);
+    await syncDraftParticipantIdentities(admin, signing, { requireUserIdentity: true });
 
     // Re-run readiness inside the operation: source drift fails closed here.
     const readiness = await evaluateSigningReadiness(admin, signing.id, actor);

@@ -7809,3 +7809,13 @@ Copy recipients receive the completed package only. Current add path issues comp
 
 **Related:** `lib/signing/preview.ts`; `app/signings/[signingId]/preview/document/[documentId]/route.ts`; Signing dashboard Preview Signing.
 
+## Signing "Include me" uses the acting user's Agent Profile
+
+**Date:** 2026-11-10. **Status:** development patch; no deployment.
+
+**Decision:** The linked User participant's signing identity comes from that user's ACTIVE `user_agent_settings` row, keyed by the authenticated acting user's ID at inclusion and by `linked_user_id` during Draft sync. Use the full legal first, middle and last name and the Agent Profile email. Preferred/display/login names and Auth email are not signing identity. Reject inclusion when the Agent Profile has no usable full name or email; block activation if an existing linked Draft participant's profile becomes unusable. Keep Contact, broker and ad hoc identity rules and the existing organization/authorization boundaries. No migration, RLS change or retroactive identity rewrite.
+
+**Reason:** The prior implementation used `profiles` and Auth email for insertion and sync, even after form fields had moved to `user_agent_settings`. Activation then froze those incorrect values for invitations, signing and completion. The correction reuses `fetchActiveUserAgentSettings` and `resolveUserAgentSettingsField` from the existing agent identity resolver. Changed files: `lib/signing/draft-participants.ts`, `draft-participant-sync.ts`, `activation.ts`, `draft-identity-sync.test.ts`. Validation: Draft prep 220/220, Stage 4 55/55, completion delivery 46/46, Stage 6 30/30, agent identity 21/21, TypeScript, changed-file ESLint and diff check. Existing active signings remain frozen; review any affected active signing individually before deciding on remediation. Rollout requires unique-URL validation and explicit approval before promotion, with automatic production-domain assignment disabled.
+
+---
+
