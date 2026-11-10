@@ -1,5 +1,19 @@
 # Harbaugh Forms — Architectural Decisions
 
+## PR #89 Preview validation: build provenance and browser coverage
+
+**Date:** 2026-11-10. **Status:** PR open; production unchanged.
+
+**Finding:** The Preview URL used for the failed "Include me as a signer" check was built from `main` commit `35f14458a31ee7627ddb487b2a83cad414a7fadb`, not PR #89. Its linked User participant in development Supabase stored the login preferred name `Lee` and login email. That build's include and Draft synchronization code uses `profiles` and Auth email. PR #89's server path reads the acting user's ACTIVE `user_agent_settings` and uses full legal name and Agent Profile email. The browser renders the server include-action result and then reloads the persisted Draft participant. The observed wrong identity was therefore displayed and persisted; it does not establish a failure in PR-head code.
+
+**Decision:** Keep the signing identity source and authorization rules in PR #89. Add a real browser QA regression with deliberately different login (`Lee Harbaugh`) and Agent Profile (`Kenneth Lee Harbaugh`) names and emails. Assert immediate include feedback, UI row, database row, Draft reopen, independence from login-profile edits, and Agent Profile Draft synchronization. Require a fresh unique Preview tied to the PR head and manual validation there before any merge or production promotion. No migration, permissions, production data, or deployment configuration change is authorized by this finding.
+
+**Reason:** The earlier 372 passing tests exercised server code and source assertions, but did not prove that the manually tested Preview ran that commit or test the checkbox-equivalent browser workflow. The control is a button labeled "Include me as a signer" in `components/signings/signing-draft-prep-panel.tsx`.
+
+**Related:** `scripts/qa-signing-prepare-browser.ts`; `project_status.md`; PR #89.
+
+---
+
 ## Help wording follows the existing workflow
 
 **Date:** 2026-11-01
@@ -7811,7 +7825,7 @@ Copy recipients receive the completed package only. Current add path issues comp
 
 ## Signing "Include me" uses the acting user's Agent Profile
 
-**Date:** 2026-11-10. **Status:** development patch; no deployment.
+**Date:** 2026-11-10. **Status:** PR #89 Preview; not merged or promoted.
 
 **Decision:** The linked User participant's signing identity comes from that user's ACTIVE `user_agent_settings` row, keyed by the authenticated acting user's ID at inclusion and by `linked_user_id` during Draft sync. Use the full legal first, middle and last name and the Agent Profile email. Preferred/display/login names and Auth email are not signing identity. Reject inclusion when the Agent Profile has no usable full name or email; block activation if an existing linked Draft participant's profile becomes unusable. Keep Contact, broker and ad hoc identity rules and the existing organization/authorization boundaries. No migration, RLS change or retroactive identity rewrite.
 
