@@ -1,5 +1,19 @@
 # Harbaugh Forms — Architectural Decisions
 
+## Production release decision — Agent Profile signer identity (PR #89)
+
+**Date:** 2026-11-11. **Status:** Released and user-verified in production.
+
+**Decision:** Retain the acting user's active Agent Profile (`user_agent_settings`) as the authoritative identity source for self-included Signing participants, including full legal name and configured email. Do not fall back to account `profiles` or authentication email. Preserve the existing freeze of active/completed signing identities; only eligible Draft synchronization can update the linked participant before activation. Release PR #89 via the established unique production-targeted deployment, explicit approval, and manual promotion flow.
+
+**Reason and verification:** Initial Preview failure came from testing a deployment built from `main` rather than the hotfix branch. Fresh Preview and browser regression QA verified immediate identity, persisted participant, and Draft reopen, with 372/372 relevant automated tests passing. PR #89 merged as `a07be566097b6219f90bc424ca018ffc1b672796`. Lee approved promotion of production candidate `dpl_8gcTS15CovoME2J5poHwgiy95wbd`; Vercel confirmed both `forms.harbaughrealestate.com` and `harbaugh-forms.vercel.app` mapped to that deployment after promotion. Lee confirmed the live issue is fixed. The Production Supabase URL was manually verified as `eetonalyyyssvkyfdoxh` before promotion. No migrations or retrospective participant rewrites.
+
+**Consequences / process improvement:** Verify the exact deployed commit, not just the URL, before browser QA; keep Preview feature flags such as `NATIVE_SIGNING_ENABLED` documented. Preserve independent promotion approval and alias checks. **Outstanding operational check:** verify that Vercel `Auto-assign Custom Production Domains` remains disabled after this promotion; pre-promotion state was confirmed false, but no post-promotion confirmation was obtained.
+
+**Related:** PR #89; `project_status.md`; `lib/signing/draft-participants.ts`; `lib/signing/draft-participant-sync.ts`; `lib/signing/activation.ts`; `scripts/qa-signing-prepare-browser.ts`.
+
+---
+
 ## PR #89 Preview validation: build provenance and browser coverage
 
 **Date:** 2026-11-10. **Status:** PR open; production unchanged.
